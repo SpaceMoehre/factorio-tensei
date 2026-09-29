@@ -77,8 +77,16 @@ One of a belt's two sides, each carrying half the belt's throughput. Output inse
 _Avoid_: treating a belt as one undivided stream
 
 **Belt Merge**:
-Putting two items on one belt, one per Lane. Eligible only when both items already travel the same route (the same Side Input path feeding the same Sub-Blocks in the same order) — not any two unrelated belts — and only when each item's rate fits within one Lane.
+Putting two items on one belt, one per Lane. Eligible only when both items already travel the same route (the same Side Input path feeding the same Sub-Blocks in the same order) — not any two unrelated belts — and only when each item's rate fits within one Lane. Parallel belts are judged per part: two single-item Side Inputs of one Sub-Block, each split into parallel belts, may share each part's belt when each item fits its Lane for the rows that belt feeds.
 _Avoid_: merging belts that don't share a route
+
+**Parallel Belts**:
+One item on several belts from (or to) the train, each serving some of a Sub-Block's machine rows with its share of the rate — when one belt cannot carry it all. Only a Side Input taken by one Sub-Block, or an output nothing else takes, splits.
+_Avoid_: belt balancing, splitters (the parts never join)
+
+**Pipe Row**:
+A row of a Band kept for one fluid's pipe, joining every connection of that fluid in the Band. A connection elsewhere in the Band dives under the belts to a tap just before the Pipe Row. Pipe Rows of one fluid in different Bands join in a riser beside the Sub-Block.
+_Avoid_: pipe lane (a Lane is one side of a belt)
 
 **Service Row**:
 A row of a Band with no belt in it, left open so pipes can run between machines; long-handed inserters reach over it. The layout search leaves one wherever that is more compact.

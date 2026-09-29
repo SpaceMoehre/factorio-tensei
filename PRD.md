@@ -33,7 +33,10 @@ v1 stamps a fixed template per Sub-Block. v2 replaces that with a search over la
 - **Objective:** minimise Compactness — bounding-box area first, entity count as tie-break. A candidate counts only if it passes every validity rule the v1 tests check: no overlaps, connected belts and pipe networks, no fluid mixing or fused networks, and powered, connected poles.
 - **Per Sub-Block, the search chooses:**
   - machine rotation;
-  - one machine row or several, where facing rows may share the belts between them;
+  - one machine row or several stacked rows (chains), each row as long as its belts can feed; the band between two rows is shared, so both rows reach its belts;
+  - parallel belts for a heavy item: a Side Input only this Sub-Block takes, or an output nothing else takes, may split into parts, each a belt from (or to) the train serving some of the rows;
+  - Belt Merge per part: two single-item Side Inputs may share the parts of one belt, one per Lane, when each fits its Lane for the rows that belt feeds;
+  - pipe rows: a band row kept for a fluid, joining every connection of that fluid in the band. A connection elsewhere in the band dives under the belts to a tap just before the row and joins it on a tile that takes a plain pipe. Pipe rows of two fluids never touch; every second machine row may shift sideways within the gap, so facing rows' connections do not interleave;
   - which inputs and outputs go on which side;
   - gaps between machines;
   - how many inserters each item needs, from real inserter throughput.
@@ -82,9 +85,9 @@ npm run build-sprites -- <Factorio install folder, the one holding data/> [~/.fa
 - `js/solve.js`: `solve()` runs the search for a candidate or time budget and returns the best Compound Block.
 - `js/chain.js`: Goals + Train Inputs + Recipe Selections → the Production Chain (every step's rate, down to the Train Inputs), and the recipe and building options for each item.
 - `js/plan.js`: Goals → Sub-Blocks (Count, rates, Byproducts, Fuel). `js/flows.js`: Dependency Order, Internal Paths, Side Input, Side Output. `js/routes.js`: routes with Belt Merge.
-- `js/layout/core.js`: one Sub-Block from a variant — rotation, one row or two facing rows with a shared middle band, which band and row each belt takes (up to 4 per face), gaps, pole slots. A small depth-first search picks inserter columns for one machine period (repeated for every machine) so every machine gets its share of each belt and every belt row stays passable.
-- `js/layout/compound.js`: places cores, routes belts and pipes (rip-up and reroute on failure), places poles.
-- `js/layout/router.js`: A* belts through waypoints and pipe trees; tunnels of any hop length up to the reach (ADR 0003), never interleaved on a line; a waypoint may hold a belt, a tunnel entrance or exit.
+- `js/layout/core.js`: one Sub-Block from a variant — rotation, stacked machine rows with shared bands between them, which band and row each belt part and pipe row takes (up to 4 belts per face), row shift, gaps, pole slots, taps. A small depth-first search picks inserter columns for one machine period (repeated for every machine) so every machine gets its share of each belt and every belt row stays passable.
+- `js/layout/compound.js`: places cores, splits parallel and merged belts into routes, routes belts and pipes (rip-up and reroute on failure), places poles. A fluid with pipe rows in several bands gets a riser column beside its core (first fluid west, next east) that joins them; belts cross risers underground. The search also tries each variant with the side room its belts' turns between rows and its risers need.
+- `js/layout/router.js`: A* belts through waypoints and pipe trees; tunnels of any hop length up to the reach (ADR 0003), never interleaved on a line; a waypoint may hold a belt, a tunnel entrance or exit (an exit only where the belt can go on). A pipe tunnel never ends on or passes under a tile that must take a plain pipe (a connection on its pipe row, or where a tap joins it).
 - `js/layout/pack.js` (shelf packing with chosen gaps and level rows for shared belts), `poles.js` (Minimal Pole Placement; poles may stand just north or south of the block), `grid.js`, `validity.js` (the rules every candidate and every test checks).
 - `js/inserters.js`: approximate inserter throughput. One item per swing (no capacity bonus): a swing turns the hand 180° (90° for a 90° inserter) at the prototype's rotation speed while it extends between its pickup and drop distances; the slower of the two sets its time. Pickup and drop are ignored, so real rates run a few percent lower (fast 2.4/s estimated vs 2.31/s measured).
 - `js/sim.js`: Starvation per route in belt order, plus machines whose inserters cannot move their share.
@@ -93,7 +96,7 @@ npm run build-sprites -- <Factorio install folder, the one holding data/> [~/.fa
 - `scripts/build-sprites.mjs` + `scripts/sprites.mjs`: extract the catalog's icons from the game and the mod zips into `sprites/`.
 
 ## Testing
-- `npm test`: Node test suite at the agreed seams — `expandChain`, `planSubBlocks` (incl. Fuel), `buildFlows`, `solve` (every layout passes `validateBlock`: no overlaps, belt chains with tunnels within reach at their nearest partner, feeding and draining inserters, connected pipe networks, no fluid mixing, separate networks, powered and connected poles, no custom vectors when 90° inserters are off), the search's capabilities (a 5-belt Py recipe, Py nitrogen-mustard at 4 machines, inserter counts that scale with throughput, burner Fuel, Compactness never worse than v1 on fixed scenarios, determinism under a seed), the router, packing, poles and their wires, sprite extraction from mod zips, `simulate` (incl. inserter throughput), `inserterRate`, `encodeBlueprint`, `buildCatalog`.
+- `npm test`: Node test suite at the agreed seams — `expandChain`, `planSubBlocks` (incl. Fuel), `buildFlows`, `solve` (every layout passes `validateBlock`: no overlaps, belt chains with tunnels within reach at their nearest partner, feeding and draining inserters, connected pipe networks, no fluid mixing, separate networks, powered and connected poles, no custom vectors when 90° inserters are off), the search's capabilities (Py science pack 2 at 450/min: 75 research centres in stacked rows with pipe rows and moss on 13 parallel yellow belts, no Starvation; a 5-belt Py recipe, Py nitrogen-mustard at 4 machines, inserter counts that scale with throughput, burner Fuel, Compactness never worse than v1 on fixed scenarios, determinism under a seed), the router, packing, poles and their wires, sprite extraction from mod zips, `simulate` (incl. inserter throughput), `inserterRate`, `encodeBlueprint`, `buildCatalog`.
 - `npm run typecheck`: `tsc --checkJs` over all modules.
 - `node scripts/measure.mjs [samples] [seed] [budgetMs]`: success rate, failure reasons and time on sampled catalog recipes at 2–4 machines.
 - UI checked in headless Chromium (Playwright): Production Chain (small-parts-01 from iron and copper plates), recipe and building per step, Train Inputs, build, progressive map updates with area, icons, pole wires, Stop, settings (inserters, Fuel, 90° toggle, search time), blueprint vectors, persistence, phone width.
@@ -105,7 +108,8 @@ Measured with `scripts/measure.mjs` (300 sampled Pyanodons recipes at 2–4 mach
 - Every machine in a row uses the same inserter columns (one period repeated); a layout that would need different columns per machine is not found.
 - Inserter throughput assumes one item per swing (no inserter capacity research) and ignores pickup and drop time.
 - Output inserters, 90° ones included, are assumed to fill only the far lane.
-- The search is a randomised local search: it finds good layouts, not proven optimal ones, and harder blocks need more search time.
+- The search is a randomised local search: it finds good layouts, not proven optimal ones, and harder blocks need more search time. Py science pack 2 at 450/min (96×203, 5,698 entities) takes about a minute for 16 candidates.
+- Belts turn between their rows beside the block, alternately east and west; a stacked block needs several columns of margin for them.
 - Only burner machines take Fuel; machines burning fluids are not fed.
 - In a recipe loop the Production Chain brings the looping item by train, but the layout still feeds it from its own Sub-Block when one makes it.
 - Icons with several layers (tinted, overlaid) show only their first layer.
