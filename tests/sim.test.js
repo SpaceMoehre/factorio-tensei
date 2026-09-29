@@ -50,43 +50,53 @@ test('items sharing a lane split its capacity in proportion to their supply', ()
 
 const asm2 = (item, rate) => ({ goal: { item, rate }, selection: { recipe: item, building: 'assembling-machine-2' } });
 
-test('solved block: one yellow belt of iron (900/min) starves the gear Sub-Block after the circuits take theirs', async () => {
+// 300 circuits take 300 iron/min and 900 gears 1800: 2100/min is more than a yellow belt
+// (900/min), so each Sub-Block gets its iron on belts of its own and neither starves.
+test('solved block: an import beyond one belt comes on its own belts to each consumer', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
   const block = solve([asm2('electronic-circuit', 300), asm2('copper-cable', 900), asm2('iron-gear-wheel', 900)], catalog, logistics);
-  const gear = block.subBlocks.findIndex(s => s.item === 'iron-gear-wheel');
-  const iron = simulate(block).starvation.filter(s => s.item === 'iron-plate');
-  assert.deepEqual(iron.map(s => [s.subBlock, s.demand, s.available]), [[gear, 1800, 600]]);
+  const iron = block.routes.filter(r => r.items.some(i => i.item === 'iron-plate'));
+  assert.ok(iron.every(r => r.consumers.length === 1), 'each iron belt goes to one Sub-Block');
+  const rate = sb => iron.filter(r => r.consumers[0] === block.subBlocks.findIndex(s => s.item === sb)).reduce((sum, r) => sum + r.items[0].rate, 0);
+  assert.deepEqual([rate('electronic-circuit'), rate('iron-gear-wheel')], [300, 1800]);
+  assert.deepEqual(simulate(block).starvation.filter(s => s.item === 'iron-plate'), []);
 });
 
-test('solved block: output inserters fill only the far lane, so an output belt carries half a belt', async () => {
+// Output inserters fill the far lane: one lane (450/min) from one side of a belt, both lanes
+// where rows on both sides drop onto it. 900 cable/min for the circuits runs on both lanes or
+// on parallel belts, and arrives whole.
+test('solved block: an Internal Path beyond one lane fills both lanes or runs on parallel belts', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
   const block = solve([asm2('electronic-circuit', 300), asm2('copper-cable', 900)], catalog, logistics);
-  const cable = simulate(block).starvation.find(s => s.item === 'copper-cable');
-  assert.deepEqual([cable.demand, cable.available], [900, 450]);
+  const cable = block.routes.filter(r => r.items.some(i => i.item === 'copper-cable'));
+  assert.ok(cable.every(r => r.items[0].rate <= r.items[0].capacity + 1e-9), 'every cable belt within its capacity');
+  assert.deepEqual(simulate(block).starvation.filter(s => s.item === 'copper-cable'), []);
 });
 
-// 1000 cable/min is more than one far lane (450/min): the output leaves on parallel belts.
-test('solved block: a Goal output beyond one lane leaves on parallel belts, each within its lane', async () => {
+// 1000 cable/min is more than one far lane (450/min): the output leaves on parallel belts, each
+// within its capacity (450/min a lane, twice that where rows on both sides fill it).
+test('solved block: a Goal output beyond one lane leaves on parallel belts, each within its capacity', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
   const block = solve([asm2('copper-cable', 1000)], catalog, logistics);
   const parts = block.routes.filter(r => r.sink === 'side-output');
-  assert.ok(parts.length >= 3, `${parts.length} output belts`);
-  assert.ok(parts.every(r => r.items[0].rate <= 450 + 1e-9));
+  assert.ok(parts.length >= 2, `${parts.length} output belts`);
+  assert.ok(parts.every(r => r.items[0].rate <= r.items[0].capacity + 1e-9));
   assert.ok(Math.abs(parts.reduce((sum, r) => sum + r.items[0].rate, 0) - 1000) < 1e-6);
   assert.deepEqual(simulate(block).starvation, []);
 });
 
-// Sand and gravel share the far lane (300 + 300 > 450), so the output splits and each belt
-// carries both.
-test('solved block: a Byproduct shares the far lane with the Goal item, on as many belts as that takes', async () => {
+// Sand and gravel share the far lane (300 + 300 > 450), so the output needs both lanes or
+// several belts, each carrying both items.
+test('solved block: a Byproduct shares the far lane with the Goal item, on as many belts or lanes as that takes', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
   const block = solve([{ goal: { item: 'sand', rate: 300 }, selection: { recipe: 'ore-sifting', building: 'assembling-machine-2' } }], catalog, logistics);
   const parts = block.routes.filter(r => r.sink === 'side-output');
-  assert.ok(parts.length >= 2 && parts.every(r => r.items.map(i => i.item).join() === 'sand,gravel'));
+  assert.ok(parts.every(r => r.items.map(i => i.item).join() === 'sand,gravel'));
+  assert.ok(parts.every(r => r.items.reduce((sum, i) => sum + i.rate, 0) <= r.items[0].capacity + 1e-9));
   assert.deepEqual(simulate(block).starvation, []);
 });
 

@@ -51,7 +51,8 @@ test('every Tunnel surfaces within the underground reach at its nearest partner'
   const tunnels = block.entities.filter(e => e.kind === 'underground-belt');
   assert.ok(tunnels.length >= 2, 'expected at least one tunnel');
   for (const r of block.routes) assertRouteChain(block, r, catalog, logistics);
-  const iron = block.routes.find(r => r.items.some(i => i.item === 'iron-plate'));
+  // Iron comes on a belt per consumer (2100/min is more than one belt): together they feed every machine.
+  const iron = { id: 'iron-plate', pieces: block.routes.filter(r => r.items.some(i => i.item === 'iron-plate')).flatMap(r => r.pieces) };
   assertFeedsEveryMachine(block, iron, [...machinesOf(block, 'electronic-circuit'), ...machinesOf(block, 'iron-gear-wheel')], catalog);
   assertNoOverlaps(block.entities);
   assertValid(block, catalog, logistics);
@@ -67,9 +68,17 @@ test('Belt Merge: two Side Input items for the same consumers share one belt whe
   assertValid(block, catalog, logistics);
 });
 
-test('Belt Merge: items stay on separate belts when one would overflow its lane', () => {
+// 200 circuits take 600 cable/min, more than a lane (450): one belt for all of it cannot merge.
+// Split into parallel belts, each part's cable fits a lane, and a part may merge (per-part Belt
+// Merge); either way no item on a shared belt exceeds its lane, and nothing starves.
+test('Belt Merge: items share a belt only where each fits its lane', async () => {
+  const { simulate } = await import('../js/sim.js');
   const block = solve([asm2('electronic-circuit', 200)], catalog, logistics);
-  assert.deepEqual(sideInputItems(block).sort(), [['copper-cable'], ['iron-plate']]);
+  const sideInputs = block.routes.filter(r => r.source === 'side-input');
+  const lane = catalog.belts[logistics.belt].itemsPerSecond * 30;
+  for (const r of sideInputs.filter(r => r.items.length === 2)) assert.ok(r.items.every(i => i.rate <= lane + 1e-9), `${r.items.map(i => `${i.item} ${i.rate}`)}`);
+  assert.deepEqual([...new Set(sideInputItems(block).flat())].sort(), ['copper-cable', 'iron-plate']);
+  assert.deepEqual(simulate(block).starvation, []);
   assertValid(block, catalog, logistics);
 });
 

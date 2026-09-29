@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { solve } from '../js/solve.js';
 import { simulate } from '../js/sim.js';
+import { expandChain } from '../js/chain.js';
 import { catalog, pyCatalog, logistics } from './fixtures/catalog.js';
 import { assertValid, assertNoCustomVectors, assertFeedsEveryMachine } from './support/invariants.js';
 
@@ -83,6 +84,25 @@ test('Py science pack 2 at 450/min: 75 research centres, moss on parallel belts,
   assert.ok(moss.every(r => r.items[0].rate <= 900 + 1e-9));
   assert.deepEqual(simulate(block).starvation, []);
   assertValid(block, pyCatalog, logistics);
+});
+
+// Py small parts at 600/min in automated factories: 900 bolts, 900 iron sticks and 900 cable a
+// minute between them, twice what one lane of a yellow belt carries (450/min). Output inserters
+// fill both lanes where machine rows face the belt from both sides, or the path runs on parallel
+// belts, so every Internal Path carries its whole rate. (Hand size 3: inserter capacity research.)
+test('Internal Paths beyond one lane arrive whole: Py small parts at 600/min', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 600 }], pyCatalog, { made: items.slice(1), selections });
+  const settings = { ...logistics, handSize: 3 };
+  const block = solve(entries, pyCatalog, settings, { maxCandidates: 12 });
+  const internal = block.routes.filter(r => typeof r.source === 'number' && r.consumers.length);
+  for (const item of ['bolts', 'iron-stick', 'copper-cable']) {
+    const rate = internal.filter(r => r.items[0].item === item).reduce((sum, r) => sum + r.items[0].rate, 0);
+    assert.ok(Math.abs(rate - 900) < 1e-6, `${item} ${rate}`);
+  }
+  assert.deepEqual(simulate(block).starvation.filter(s => s.subBlock !== null), []);
+  assertValid(block, pyCatalog, settings);
 });
 
 // Areas v1's template reached on the same scenarios (bounds including its routing margin).

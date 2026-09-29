@@ -3,7 +3,7 @@ import { VEC, E, W, turnLeft, turnRight, opposite, key, span, spansOverlap } fro
 const TURN_COST = 0.2;
 const TUNNEL_COST = 2;
 // How far back a growing leg checks itself for crossings; the whole leg is checked on arrival.
-const RECENT_STEPS = 32;
+const RECENT_STEPS = 8;
 const EXPANSIONS_PER_TILE = 12;
 
 export class RoutingError extends Error {}
@@ -31,7 +31,8 @@ export function routeBelt(grid, spec, names) {
       surfaced = false;
       continue;
     }
-    const leg = search(grid, starts, isGoal, (x, y) => Math.abs(x - wx) + Math.abs(y - wy), moves);
+    const leg = search(grid, starts, isGoal, (x, y) => Math.abs(x - wx) + Math.abs(y - wy), moves,
+      () => !reachable(grid, spec.id, starts, wx, wy, names.reach, pending));
     if (!leg) throw new RoutingError(`belt ${spec.id}: no path to waypoint ${wx},${wy}`);
     commit(leg);
     starts = [leg.state];
@@ -141,18 +142,23 @@ function commitLeg(grid, spec, undergroundName, leg, pieces) {
   });
 }
 
-function search(grid, starts, isGoal, heuristic, moves) {
+// hopeless(): a cheap check that the goal cannot be reached at all, asked once a leg has taken
+// longer than a direct path would, so a waypoint walled in fails fast instead of spending the
+// whole budget.
+function search(grid, starts, isGoal, heuristic, moves, hopeless = () => false) {
   const open = new Heap();
-  const best = new Map();
+  const best = bestCosts(grid.area);
   for (const s of starts) {
     open.push({ ...s, reached: false, g: 0, prev: null, pieces: [] }, heuristic(s.x, s.y));
-    best.set(stateKey(s), 0);
+    best.set(s, 0);
   }
   // A leg that has not found its goal after exploring every tile many times over has none.
   let budget = EXPANSIONS_PER_TILE * grid.area.w * grid.area.h;
+  let check = 200 + 20 * Math.min(...starts.map(s => heuristic(s.x, s.y)));
   while (open.size && budget-- > 0) {
+    if (check-- === 0 && hopeless()) return null;
     const node = open.pop();
-    if (node.g > best.get(stateKey(node))) continue;
+    if (node.g > best.get(node)) continue;
     if (isGoal(node) && node.prev) {
       // Recent steps are checked as the leg grows; the whole leg once it arrives.
       const leg = unwind(node);
@@ -163,25 +169,91 @@ function search(grid, starts, isGoal, heuristic, moves) {
       if (!grid.inBounds(next.x, next.y) && !isGoal(next)) continue;
       if (conflictsWithOwnPath(node, next.pieces, RECENT_STEPS)) continue;
       next.g = node.g + next.cost;
+      if (best.get(next) <= next.g) continue;
       next.prev = node;
-      const k = stateKey(next);
-      if (best.has(k) && best.get(k) <= next.g) continue;
-      best.set(k, next.g);
+      best.set(next, next.g);
       open.push(next, next.g + heuristic(next.x, next.y));
     }
   }
   return null;
 }
 
+// Whether a belt could reach (wx, wy) from the starts at all: a flood over tiles free for it,
+// stepping to a neighbour or tunnelling up to its reach over anything but its own later
+// waypoints. It ignores headings and every finer rule, so it only ever says no when no path
+// exists.
+function reachable(grid, id, starts, wx, wy, reach, pending) {
+  const { x: ax, y: ay, w, h } = grid.area;
+  const seen = new Uint8Array(w * h);
+  const queue = [];
+  const visit = (x, y) => {
+    if (x < ax || y < ay || x >= ax + w || y >= ay + h) return false;
+    const i = (y - ay) * w + (x - ax);
+    if (seen[i]) return false;
+    seen[i] = 1;
+    if (x === wx && y === wy) return true;
+    if (!grid.freeFor(x, y, id) || pending.has(key(x, y))) return false;
+    queue.push(x, y);
+    return false;
+  };
+  // A leg starts where its next piece goes, whatever holds that tile.
+  for (const s of starts) {
+    if (s.x === wx && s.y === wy) return true;
+    if (s.x >= ax && s.y >= ay && s.x < ax + w && s.y < ay + h) seen[(s.y - ay) * w + (s.x - ax)] = 1;
+    queue.push(s.x, s.y);
+  }
+  for (let q = 0; q < queue.length; q += 2) {
+    const x = queue[q], y = queue[q + 1];
+    for (const [dx, dy] of Object.values(VEC)) {
+      for (let n = 1; n <= reach && !pending.has(key(x + dx * n, y + dy * n)); n++) if (visit(x + dx * n, y + dy * n)) return true;
+    }
+  }
+  return false;
+}
+
+// The cheapest cost found so far to each search state (tile, heading, whether the current
+// waypoint was reached), in a typed array reused from search to search: a generation stamp marks
+// the entries this search wrote. States off the grid (edge goals) go in a map.
+let costs = new Float64Array(0), stamps = new Uint32Array(0), generation = 0;
+function bestCosts(area) {
+  const size = area.w * area.h * 8;
+  if (costs.length < size) {
+    costs = new Float64Array(size);
+    stamps = new Uint32Array(size);
+    generation = 0;
+  }
+  if (++generation === 0xffffffff) { stamps.fill(0); generation = 1; }
+  const outside = new Map();
+  const index = s => {
+    const x = s.x - area.x, y = s.y - area.y;
+    if (x < 0 || y < 0 || x >= area.w || y >= area.h) return -1;
+    return ((y * area.w + x) * 4 + (s.a >> 2)) * 2 + (s.reached ? 1 : 0);
+  };
+  return {
+    get(s) {
+      const i = index(s);
+      if (i < 0) return outside.get(stateKey(s)) ?? Infinity;
+      return stamps[i] === generation ? costs[i] : Infinity;
+    },
+    set(s, g) {
+      const i = index(s);
+      if (i < 0) { outside.set(stateKey(s), g); return; }
+      stamps[i] = generation;
+      costs[i] = g;
+    },
+  };
+}
+
 // Search states don't record the path that reached them, so a leg must not reuse its own
 // tiles or overlap its own tunnels on the same line.
 function conflictsWithOwnPath(node, pieces, steps = Infinity) {
-  const tiles = new Set(pieces.map(p => key(p.x, p.y)));
   const tunnel = tunnelSpan(pieces);
   for (let n = node; n.prev && steps-- > 0; n = n.prev) {
-    if (n.pieces.some(p => tiles.has(key(p.x, p.y)))) return true;
-    const earlier = tunnelSpan(n.pieces);
-    if (tunnel && earlier && spansOverlap(tunnel, earlier)) return true;
+    for (const p of n.pieces) for (const q of pieces) if (p.x === q.x && p.y === q.y) return true;
+    if (tunnel) {
+      if (n.tunnel === undefined) n.tunnel = tunnelSpan(n.pieces);
+      if (n.tunnel && spansOverlap(tunnel, n.tunnel)) return true;
+    }
   }
   return false;
 }

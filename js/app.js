@@ -53,6 +53,12 @@ for (const key of SELECTS) {
 }
 $('right-angle').checked = state.logistics.rightAngle;
 $('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
+$('handSize').value = String(state.logistics.handSize);
+$('handSize').addEventListener('change', () => {
+  state.logistics.handSize = Math.min(12, Math.max(1, Math.floor(Number($('handSize').value) || 1)));
+  $('handSize').value = String(state.logistics.handSize);
+  save();
+});
 $('budget').value = String(state.logistics.budget);
 $('budget').addEventListener('change', () => { state.logistics.budget = Math.max(1, Number($('budget').value) || 10); save(); });
 $('add-goal').addEventListener('click', () => {
@@ -94,6 +100,7 @@ function defaultLogistics() {
     longInserter: prefer(choices.longInserter, 'long-handed-inserter'),
     fuel: prefer(choices.fuel, 'coal'),
     rightAngle: true,
+    handSize: 1,
     budget: 10,
   };
 }

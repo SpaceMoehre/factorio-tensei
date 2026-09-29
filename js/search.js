@@ -27,7 +27,7 @@ export function* search(entries, catalog, logistics, options = {}) {
   let failure = null;
   let tried = 0;
   const first = initialCandidate(ctx, pools);
-  const queue = sweep(first, pools);
+  const queue = sweep(first, pools, ctx.routes);
   while (tried < maxCandidates && now() < deadline) {
     const candidate = queue.length ? queue.shift() : mutate(best?.candidate ?? first, ctx, pools, rng);
     tried++;
@@ -54,7 +54,6 @@ export function* search(entries, catalog, logistics, options = {}) {
     const score = [Math.round(starving * 1000) / 1000, block.bounds.w * block.bounds.h, block.entities.length];
     if (!best || better(score, best.score)) {
       best = { candidate, score };
-      queue.length = 0;
       yield { block, score, tried };
     }
   }
@@ -80,6 +79,8 @@ function context(entries, catalog, logistics) {
     beltReach: belt.underground.maxDistance,
     pipeReach: catalog.pipes[logistics.pipe].maxDistance,
     laneCapacity: belt.itemsPerSecond * 30,
+    // Items per swing: 1, more with inserter capacity research.
+    handSize: Math.max(1, Math.floor(logistics.handSize ?? 1)),
   };
   return { plan, flows, routes, catalog, logistics, env };
 }
@@ -106,10 +107,12 @@ function variantPool(ctx, sb, index, rng) {
   };
   for (const rotation of ROTATIONS) {
     attempt(stackVariant(shape, { rotation, rowLength: sb.count, plain: true }, rng));
-    for (const { merge, cap } of [{ merge: false, cap: shape.rowCap }, { merge: true, cap: shape.mergeCap }]) {
-      if (cap >= sb.count) continue;
+    // Rows as long as the busiest belt allows, and half that: each part of a split belt is then
+    // a pair of rows facing it, which fill both its lanes.
+    for (const { merge, cap } of [{ merge: false, cap: shape.rowCap }, { merge: true, cap: shape.mergeCap }, { merge: false, cap: Math.ceil(shape.rowCap / 2) }]) {
+      if (cap >= sb.count || (merge && cap === shape.rowCap)) continue;
       for (const middle of [4, 5, 6]) {
-        for (const pipes of [false, true]) {
+        for (const pipes of links.fluids.length ? [false, true] : [false]) {
           for (const shift of pipes ? [0, -1, 1, -2, 2, -3, 3, -4, 4] : [0]) {
             attempt(stackVariant(shape, { rotation, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng));
           }
@@ -120,16 +123,20 @@ function variantPool(ctx, sb, index, rng) {
   for (let n = 0; n < VARIANT_TRIES; n++) {
     const merge = rng() < 0.3;
     const cap = merge ? shape.mergeCap : shape.rowCap;
-    const lengths = [sb.count, Math.ceil(sb.count / 2), cap, Math.max(1, cap - 1), 1 + Math.floor(rng() * sb.count)];
+    const lengths = [sb.count, Math.ceil(sb.count / 2), cap, Math.max(1, cap - 1), Math.ceil(cap / 2), 1 + Math.floor(rng() * sb.count)];
     const variant = stackVariant(shape, {
-      rotation: choose(ROTATIONS, rng), rowLength: choose(lengths, rng), flip: rng() < 0.5, pipes: rng() < 0.5, merge,
+      rotation: choose(ROTATIONS, rng), rowLength: choose(lengths, rng), flip: rng() < 0.5, pipes: links.fluids.length > 0 && rng() < 0.5, merge,
     }, rng);
     // Which connection each fluid uses, where its box has several.
     if (variant && rng() < 0.5) variant.ports = links.fluids.map(() => Math.floor(rng() * 8));
     attempt(variant);
   }
   const trouble = c => c.shortfall + c.overload;
-  const ranked = [...seen.values()].sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.w * a.core.h - b.core.w * b.core.h);
+  // Stacked rows whose fluids have no pipe rows rarely route: their pipes must find their own
+  // way between the rows. Among equals, those come after.
+  const stuck = ({ variant }) => (links.fluids.length > 0 && variant.rowLength < sb.count && !variant.pipes.length ? 1 : 0);
+  const ranked = [...seen.values()].sort((a, b) => trouble(a.core) - trouble(b.core) || stuck(a) - stuck(b)
+    || a.core.w * a.core.h - b.core.w * b.core.h);
   if (!ranked.length) {
     const [reason] = [...errors].sort((a, b) => b[1] - a[1])[0] ?? ['no layout fits'];
     throw new LayoutError(`${sb.recipe}: ${reason}`);
@@ -142,19 +149,30 @@ function variantPool(ctx, sb, index, rng) {
 }
 
 // What shapes a Sub-Block's layout: its belt routes, how many machines one belt of each can
-// feed, which routes may split into parallel belts (a Side Input only it takes, or an output
-// nothing else takes), and its fluids.
+// feed, which routes may split into parallel belts (a Side Input only it takes, an output
+// nothing else takes, or an Internal Path between it and one other Sub-Block), and its fluids.
 function shapeOf(ctx, sb, index, links) {
   const belts = [...links.inputs, ...(links.output !== null ? [links.output] : [])].map(routeId => {
     const route = ctx.routes[routeId];
     const isOutput = routeId === links.output;
     const items = routeItems(sb, route, isOutput);
+    // An Internal Path is filled by its producer's output inserters: one lane, or both where rows
+    // on either side drop onto the belt, as the rows of a split part do in pairs.
+    const internal = typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output';
+    const lanes = isOutput || internal ? 2 : 1;
     const perBelt = isOutput
-      ? route.items[0].capacity / (items.reduce((sum, i) => sum + i.rate, 0) / sb.count)
-      : Math.min(...items.map(i => route.items.find(x => x.item === i.name).capacity / (i.rate / sb.count)));
-    const splittable = isOutput ? route.consumers.length === 0 : route.source === 'side-input' && route.consumers.length === 1;
-    // A single-item input that may split can share parallel belts with another: one lane each.
-    const perLane = !isOutput && splittable && items.length === 1 ? Math.floor(ctx.env.laneCapacity / (items[0].rate / sb.count) + 1e-9) : 0;
+      ? lanes * route.items[0].capacity / (items.reduce((sum, i) => sum + i.rate, 0) / sb.count)
+      : Math.min(...items.map(i => lanes * route.items.find(x => x.item === i.name).capacity / (i.rate / sb.count)));
+    const splittable = internal || (isOutput ? route.consumers.length === 0 : route.source === 'side-input' && route.consumers.length === 1);
+    // A single-item Side Input that may split can share parallel belts with another: one lane each.
+    const perLane = !isOutput && splittable && route.source === 'side-input' && items.length === 1
+      ? Math.floor(ctx.env.laneCapacity / (items[0].rate / sb.count) + 1e-9) : 0;
+    // Both ends of an Internal Path cut it into the same number of parallel belts, as many as its
+    // rate needs, so each belt links about the same share of producers and consumers.
+    if (internal) {
+      const belts = Math.ceil(route.items.reduce((sum, i) => sum + i.rate, 0) / (2 * route.items[0].capacity) - 1e-9);
+      return { routeIds: [routeId], perBelt: Math.ceil(sb.count / belts), splittable, perLane };
+    }
     return { routeIds: [routeId], perBelt: Math.max(1, Math.floor(perBelt + 1e-9)), splittable, perLane };
   });
   const depths = ctx.env.rightAngle ? [1, 2, 3, 4] : [2, 3, 4];
@@ -234,7 +252,9 @@ function stackVariant(shape, { rotation, rowLength, flip = false, plain = false,
       // As many whole rows as one belt can feed.
       let last = first, machines = counts[first];
       while (last + 1 < rows && machines + counts[last + 1] <= machinesPerPart) machines += counts[++last];
-      for (const serves of groupsOf(first, last, offset)) wanted.push({ routeIds: b.routeIds, part, serves });
+      // A part of a belt split into several pairs its own rows, so its belt gets both lanes.
+      const split = first > 0 || last < rows - 1;
+      for (const serves of groupsOf(first, last, split && last > first ? first : offset)) wanted.push({ routeIds: b.routeIds, part, serves });
       part++;
       first = last + 1;
     }
@@ -296,7 +316,7 @@ function initialCandidate(ctx, pools) {
 
 // First, each Sub-Block's most compact variants in turn, with roomy and tight packing, then
 // with wide margins; then wider gaps and margins for the most compact.
-function sweep(first, pools) {
+function sweep(first, pools, routes) {
   const longest = Math.max(...pools.map(p => p.length));
   const at = (v, g) => ({ ...first, variants: first.variants.map(() => v), gaps: first.gaps.map(() => g), shelfGap: g, margin: { w: g, e: g, n: g, s: g } });
   // Stacked rows need room beside them to route around; try each variant with it early.
@@ -305,8 +325,25 @@ function sweep(first, pools) {
     const w = Math.max(...room.map(r => r.w)), e = Math.max(...room.map(r => r.e));
     return w > 2 || e > 2 ? [{ ...at(v, 2), margin: { w: Math.max(w, 2), e: Math.max(e, 2), n: 2, s: 2 } }] : [];
   };
-  const list = [];
-  for (let v = 0; v < longest; v++) list.push(at(v, 2), ...roomy(v), at(v, 1));
+  // A chain of Sub-Blocks stacked one per shelf in Dependency Order: every row reaches the west
+  // edge for its Side Inputs and the east edge for its Side Output, and Internal Paths drop down
+  // the sides, one lane per parallel belt beside each core's own turns.
+  const stacked = v => {
+    if (pools.length < 2) return [];
+    const cores = pools.map(p => p[Math.min(v, p.length - 1)].core);
+    const room = cores.map(sideRoom);
+    const partsOf = (i, id) => cores[i].parts.filter(p => p.routeIds.includes(id)).length;
+    const internal = routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length)
+      .reduce((sum, r) => sum + Math.max(1, Math.min(partsOf(r.source, r.id), ...r.consumers.map(c => partsOf(c, r.id)))), 0);
+    const side = which => Math.max(2, ...room.map(r => r[which])) + Math.ceil(internal / 2);
+    return [{ ...at(v, 2), stack: true, margin: { w: side('w'), e: side('e'), n: 2, s: 2 } }];
+  };
+  // Something to show early: each Sub-Block's variant with the fewest belts, which routes most
+  // easily, packed with room.
+  const fewest = pools.map(p => p.reduce((best, v, i) => (v.core.parts.length < p[best].core.parts.length ? i : best), 0));
+  const simplest = { ...at(0, 2), variants: fewest, margin: { w: 4, e: 4, n: 2, s: 2 } };
+  const list = [first, simplest];
+  for (let v = 0; v < longest; v++) list.push(...stacked(v), at(v, 2), ...roomy(v), at(v, 1));
   // Room for pipes and belts to reach every band from outside the machines.
   for (let v = 0; v < longest; v++) list.push(at(v, 4));
   if (first.share.length > 1) list.push({ ...at(0, 2), share: first.share.map(() => true) }, { ...at(0, 1), share: first.share.map(() => true) });
@@ -378,10 +415,10 @@ function pack(candidate, pools, routes) {
     if (!candidate.share[j]) return null;
     const route = routes.find(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.includes(j));
     if (!route) return null;
-    const rowOf = (c, id) => c.rows.find(r => r.routeId === id)?.y;
+    const rowOf = (c, id) => c.rows.find(r => r.routeIds.includes(id))?.y;
     return { with: route.source, rows: [rowOf(cores[route.source], route.id), rowOf(core, route.id)] };
   });
-  const placed = shelfPack(cores, candidate.order, { gaps: candidate.gaps, shelfGap: candidate.shelfGap, shelf: candidate.shelf, shares });
+  const placed = shelfPack(cores, candidate.order, { gaps: candidate.gaps, shelfGap: candidate.shelfGap, shelf: candidate.shelf, shares, stack: candidate.stack });
   return {
     cores, placed, margin: candidate.margin, routeOrder: candidate.routeOrder,
     trouble: cores.reduce((sum, c) => sum + c.shortfall + c.overload, 0),
