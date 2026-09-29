@@ -94,7 +94,9 @@ npm run build-catalog -- ~/.factorio/script-output/data-raw-dump.json
 - UI checked in headless Chromium (Playwright): build, progressive map updates with area, Stop, settings (inserters, Fuel, 90° toggle, search time), blueprint vectors, persistence, phone width.
 
 ## Known limitations
+Measured with `scripts/measure.mjs` (300 sampled Pyanodons recipes at 2–4 machines, 3 s search each, vanilla inserter data standing in until the catalog is regenerated): 90.7% solve (v1: 79.3%).
 - A row of machines reaches at most 4 belts per face (8 per Sub-Block with 90° inserters, 6 without). About 6% of sampled Pyanodons recipes need more after Belt Merge and are rejected with an error. Py cranes, and belts along the machines' left and right sides, are not used.
+- About 3% fail on fluids: a connection boxed in by the machine's other connections and belts that the pipe cannot leave (a pipe tree starts only with a pipe or a straight dive at its first connection), or a pipe that cannot reach the rest of its network.
 - Every machine in a row uses the same inserter columns (one period repeated); a layout that would need different columns per machine is not found.
 - Inserter throughput assumes one item per swing (no inserter capacity research) and ignores pickup and drop time.
 - Output inserters, 90° ones included, are assumed to fill only the far lane.
