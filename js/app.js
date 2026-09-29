@@ -19,6 +19,8 @@ const state = load() ?? { goals: [], logistics: {} };
 state.logistics = { ...defaultLogistics(), ...state.logistics };
 let map = null;
 let worker = null;
+// The best layout the running (or last) search has sent, and how many layouts it had tried.
+let best = null;
 
 $('items').replaceChildren(...[...index.producers.keys()].sort().map(name => new Option(name)));
 for (const key of SELECTS) {
@@ -161,17 +163,15 @@ function build() {
   worker.onmessage = ({ data }) => {
     if (data.type === 'best') show(data.block, data.tried);
     else if (data.type === 'done') finish('Done', data.tried, data.failure);
-    else finish('Stopped', 0, data.message);
+    else finish('Stopped', undefined, data.message);
   };
-  worker.onerror = e => finish('Stopped', 0, e.message);
+  worker.onerror = e => finish('Stopped', undefined, e.message);
   const { budget, ...logistics } = state.logistics;
   worker.postMessage({
     entries: goals.map(g => ({ goal: { item: g.item, rate: g.rate }, selection: { recipe: g.recipe, building: g.building } })),
     logistics, budgetMs: budget * 1000, seed: 1,
   });
 }
-
-let best = null;
 
 async function show(block, tried) {
   best = { block, tried };
@@ -198,6 +198,7 @@ function finish(how, tried = best?.tried ?? 0, error = null) {
   $('stop').hidden = true;
   if (!best) {
     $('results').hidden = true;
+    $('empty').textContent = 'No layout yet.';
     return showStatus('error', error ?? 'No layout found. Give the search more time.');
   }
   report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts.`);
