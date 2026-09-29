@@ -199,4 +199,32 @@ export const catalog = {
   },
 };
 
-export const logistics = { belt: 'transport-belt', pipe: 'pipe-to-ground', pole: 'medium-electric-pole', fuel: 'coal' };
+export const logistics = {
+  belt: 'transport-belt', pipe: 'pipe-to-ground', pole: 'medium-electric-pole',
+  inserter: 'fast-inserter', longInserter: 'long-handed-inserter', fuel: 'coal', rightAngle: true,
+};
+
+// Exact Pyanodons entries from data/catalog.json. Py names its own electronic-circuit recipe the
+// same as vanilla's, so it lives in a catalog of its own.
+export const pyCatalog = {
+  ...catalog,
+  recipes: {
+    ...catalog.recipes,
+    'electronic-circuit': {
+      name: 'electronic-circuit', category: 'chip', time: 4,
+      ingredients: [
+        { type: 'item', name: 'pcb1', amount: 1 }, { type: 'item', name: 'vacuum-tube', amount: 3 },
+        { type: 'item', name: 'inductor1', amount: 3 }, { type: 'item', name: 'capacitor1', amount: 5 },
+        { type: 'item', name: 'resistor1', amount: 6 }, { type: 'item', name: 'solder', amount: 2 },
+        { type: 'item', name: 'battery-mk00', amount: 1 },
+      ],
+      products: [{ type: 'item', name: 'electronic-circuit', amount: 3 }],
+    },
+  },
+  buildings: {
+    ...catalog.buildings,
+    'chipshooter-mk01': {
+      name: 'chipshooter-mk01', size: { w: 5, h: 5 }, craftingSpeed: 1, categories: ['chip'], energy: 'electric', fluidBoxes: [],
+    },
+  },
+};

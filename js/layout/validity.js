@@ -267,6 +267,7 @@ export function startsAtWestEdge(block, route) {
 export function validateBlock(block, catalog, logistics) {
   const machinesOf = i => block.entities.filter(e => e.kind === 'building' && e.subBlock === i);
   const problems = [
+    ...block.subBlocks.filter(sb => machinesOf(sb.index).length !== sb.count).map(sb => `${sb.item} does not have its ${sb.count} machines`),
     ...overlaps(block.entities),
     ...noFluidMixing(block, catalog, logistics),
     ...separateNetworks(block, catalog, logistics),
@@ -274,12 +275,12 @@ export function validateBlock(block, catalog, logistics) {
   ];
   for (const route of block.routes) {
     if (!route.pieces.length) { problems.push(`route ${route.id} has no pieces`); continue; }
-    problems.push(...routeChain(route, catalog, logistics, block.entities));
     if (route.kind === 'pipe') {
       const machines = [...(typeof route.source === 'number' ? machinesOf(route.source) : []), ...route.consumers.flatMap(machinesOf)];
       problems.push(...pipeNetwork(block, route, catalog, logistics, machines));
       continue;
     }
+    problems.push(...routeChain(route, catalog, logistics, block.entities));
     if (typeof route.source === 'number') problems.push(...drainsEveryMachine(block, route, machinesOf(route.source), catalog));
     else problems.push(...startsAtWestEdge(block, route));
     problems.push(...feedsEveryMachine(block, route, route.consumers.flatMap(machinesOf), catalog));

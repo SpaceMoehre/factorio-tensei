@@ -1,4 +1,4 @@
-class PowerError extends Error {}
+export class PowerError extends Error {}
 
 const center = e => [e.x + e.w / 2, e.y + e.h / 2];
 const distance = (a, b) => {
