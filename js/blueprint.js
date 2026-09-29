@@ -1,3 +1,5 @@
+import { wirePairs } from './layout/wires.js';
+
 // Factorio 2.0.0 as the packed 64-bit version number blueprints carry.
 const VERSION = 562949953421312;
 const POLE_COPPER = 5;
@@ -10,6 +12,11 @@ export async function encodeBlueprint(block, catalog) {
     if (e.direction) out.direction = e.direction;
     if (e.recipe) out.recipe = e.recipe;
     if (e.underground && e.kind === 'underground-belt') out.type = e.underground;
+    // 90° inserters (Inserter_Config): vectors relative to the inserter, in world axes.
+    if (e.vectors) {
+      out.pickup_position = { ...e.vectors.pickup };
+      out.drop_position = { ...e.vectors.drop };
+    }
     return out;
   });
   const icons = block.subBlocks.slice(0, 4).map((sb, i) => ({
@@ -26,28 +33,8 @@ export async function encodeBlueprint(block, catalog) {
   return { string: '0' + await zlibBase64(json), json };
 }
 
-// Kruskal over pole pairs within wire reach: the shortest wires that join every pole.
 function poleWires(entities, catalog) {
-  const poles = entities.map((e, i) => ({ e, number: i + 1 })).filter(p => p.e.kind === 'pole');
-  const center = ({ e }) => [e.x + e.w / 2, e.y + e.h / 2];
-  const edges = [];
-  poles.forEach((a, i) => poles.slice(i + 1).forEach(b => {
-    const [ax, ay] = center(a), [bx, by] = center(b);
-    const d = Math.hypot(ax - bx, ay - by);
-    const reach = Math.min(catalog.poles[a.e.name].wireReach, catalog.poles[b.e.name].wireReach);
-    if (d <= reach) edges.push({ a: a.number, b: b.number, d });
-  }));
-  edges.sort((p, q) => p.d - q.d || p.a - q.a || p.b - q.b);
-  const parent = new Map(poles.map(p => [p.number, p.number]));
-  const root = n => (parent.get(n) === n ? n : root(parent.get(n)));
-  const wires = [];
-  for (const { a, b } of edges) {
-    const ra = root(a), rb = root(b);
-    if (ra === rb) continue;
-    parent.set(ra, rb);
-    wires.push([a, POLE_COPPER, b, POLE_COPPER]);
-  }
-  return wires;
+  return wirePairs(entities, catalog).map(([a, b]) => [a + 1, POLE_COPPER, b + 1, POLE_COPPER]);
 }
 
 async function zlibBase64(text) {

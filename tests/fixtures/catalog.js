@@ -77,6 +77,11 @@ export const catalog = {
       ingredients: [{ type: 'item', name: 'moss', amount: 1 }],
       products: [{ type: 'item', name: 'biomass', amount: 1 }],
     },
+    'iron-plate': {
+      name: 'iron-plate', category: 'smelting', time: 3.2,
+      ingredients: [{ type: 'item', name: 'iron-ore', amount: 1 }],
+      products: [{ type: 'item', name: 'iron-plate', amount: 1 }],
+    },
     'advanced-oil-processing': {
       name: 'advanced-oil-processing', category: 'oil-processing', time: 5,
       ingredients: [
@@ -158,6 +163,30 @@ export const catalog = {
         { production: 'output', connections: [{ x: 3.5, y: 3.5, direction: 4 }] },
       ],
     },
+    // Burns chemical fuel at 90kW (effectivity 1).
+    'stone-furnace': {
+      name: 'stone-furnace', size: { w: 2, h: 2 }, craftingSpeed: 1, categories: ['smelting'], energy: 'burner',
+      energyUsage: 90000, effectivity: 1, fuelCategories: ['chemical'], fluidBoxes: [],
+    },
+  },
+  fuels: {
+    coal: { name: 'coal', fuelValue: 4000000, categories: ['chemical'] },
+    'nuclear-fuel-cell': { name: 'nuclear-fuel-cell', fuelValue: 8000000000, categories: ['nuclear'] },
+  },
+  // Vanilla Factorio 2.0 prototypes; the owner's Inserter_Config mod allows custom vectors.
+  inserters: {
+    'fast-inserter': {
+      name: 'fast-inserter', pickup: { x: 0, y: -1 }, insert: { x: 0, y: 1.2 },
+      rotationSpeed: 0.04, extensionSpeed: 0.1, energy: 'electric', customVectors: true,
+    },
+    'long-handed-inserter': {
+      name: 'long-handed-inserter', pickup: { x: 0, y: -2 }, insert: { x: 0, y: 2.2 },
+      rotationSpeed: 0.02, extensionSpeed: 0.05, energy: 'electric', customVectors: true,
+    },
+    'burner-inserter': {
+      name: 'burner-inserter', pickup: { x: 0, y: -1 }, insert: { x: 0, y: 1.2 },
+      rotationSpeed: 0.013, extensionSpeed: 0.035, energy: 'burner', customVectors: true,
+    },
   },
   poles: {
     'medium-electric-pole': { name: 'medium-electric-pole', size: { w: 1, h: 1 }, supplyRadius: 3.5, wireReach: 9 },
@@ -170,4 +199,85 @@ export const catalog = {
   },
 };
 
-export const logistics = { belt: 'transport-belt', pipe: 'pipe-to-ground', pole: 'medium-electric-pole' };
+export const logistics = {
+  belt: 'transport-belt', pipe: 'pipe-to-ground', pole: 'medium-electric-pole',
+  inserter: 'fast-inserter', longInserter: 'long-handed-inserter', fuel: 'coal', rightAngle: true,
+};
+
+// Exact Pyanodons entries from data/catalog.json. Py names its own electronic-circuit recipe the
+// same as vanilla's, so it lives in a catalog of its own.
+export const pyCatalog = {
+  ...catalog,
+  recipes: {
+    ...catalog.recipes,
+    'electronic-circuit': {
+      name: 'electronic-circuit', category: 'chip', time: 4,
+      ingredients: [
+        { type: 'item', name: 'pcb1', amount: 1 }, { type: 'item', name: 'vacuum-tube', amount: 3 },
+        { type: 'item', name: 'inductor1', amount: 3 }, { type: 'item', name: 'capacitor1', amount: 5 },
+        { type: 'item', name: 'resistor1', amount: 6 }, { type: 'item', name: 'solder', amount: 2 },
+        { type: 'item', name: 'battery-mk00', amount: 1 },
+      ],
+      products: [{ type: 'item', name: 'electronic-circuit', amount: 3 }],
+    },
+    'small-parts-01': {
+      name: 'small-parts-01', category: 'crafting', time: 0.2,
+      ingredients: [
+        { type: 'item', name: 'iron-gear-wheel', amount: 1 }, { type: 'item', name: 'copper-cable', amount: 3 },
+        { type: 'item', name: 'bolts', amount: 3 },
+      ],
+      products: [{ type: 'item', name: 'small-parts-01', amount: 2 }],
+    },
+    'py-science-pack-2': {
+      name: 'py-science-pack-2', category: 'research', time: 180,
+      ingredients: [
+        { type: 'item', name: 'moss', amount: 400 }, { type: 'item', name: 'zipir-eggs', amount: 15 },
+        { type: 'item', name: 'paragen', amount: 1 }, { type: 'item', name: 'solidified-sarcorus', amount: 2 },
+        { type: 'item', name: 'alien-sample-02', amount: 1 }, { type: 'item', name: 'casein', amount: 30 },
+        { type: 'fluid', name: 'arqad-honey', amount: 600 }, { type: 'fluid', name: 'flavonoids', amount: 100 },
+        { type: 'item', name: 'plastic-bar', amount: 36 }, { type: 'item', name: 'flask', amount: 18 },
+        { type: 'item', name: 'mechanical-parts-01', amount: 2 },
+      ],
+      products: [{ type: 'item', name: 'py-science-pack-2', amount: 18 }],
+    },
+    bolts: {
+      name: 'bolts', category: 'crafting', time: 0.2,
+      ingredients: [{ type: 'item', name: 'iron-stick', amount: 2 }],
+      products: [{ type: 'item', name: 'bolts', amount: 2 }],
+    },
+    'iron-stick': {
+      name: 'iron-stick', category: 'crafting', time: 0.5,
+      ingredients: [{ type: 'item', name: 'iron-plate', amount: 1 }],
+      products: [{ type: 'item', name: 'iron-stick', amount: 2 }],
+    },
+  },
+  buildings: {
+    ...catalog.buildings,
+    'chipshooter-mk01': {
+      name: 'chipshooter-mk01', size: { w: 5, h: 5 }, craftingSpeed: 1, categories: ['chip'], energy: 'electric', fluidBoxes: [],
+    },
+    'research-center-mk01': {
+      name: 'research-center-mk01', size: { w: 10, h: 10 }, craftingSpeed: 1, categories: ['research', 'research-handcrafting'],
+      energy: 'electric', energyUsage: 800000,
+      fluidBoxes: [
+        { production: 'input', connections: [{ x: 0.5, y: -4.5, direction: 0 }] },
+        { production: 'input', connections: [{ x: -1.5, y: -4.5, direction: 0 }] },
+        { production: 'input', connections: [{ x: 2.5, y: -4.5, direction: 0 }] },
+        { production: 'output', connections: [{ x: 0.5, y: 4.5, direction: 8 }] },
+        { production: 'output', connections: [{ x: -1.5, y: 4.5, direction: 8 }] },
+        { production: 'output', connections: [{ x: 2.5, y: 4.5, direction: 8 }] },
+      ],
+    },
+    'automated-factory-mk01': {
+      name: 'automated-factory-mk01', size: { w: 7, h: 7 }, craftingSpeed: 1, categories: ['crafting', 'crafting-with-fluid', 'advanced-crafting'],
+      energy: 'electric',
+      fluidBoxes: [
+        { production: 'input', connections: [{ x: 0, y: 3, direction: 8 }] },
+        { production: 'input', connections: [{ x: 0, y: -3, direction: 0 }] },
+        { production: 'output', connections: [{ x: 2, y: 3, direction: 8 }] },
+      ],
+    },
+  },
+  // Pyanodons' yellow belt: its underground reaches 9 tiles.
+  belts: { 'transport-belt': { name: 'transport-belt', itemsPerSecond: 15, underground: { name: 'underground-belt', maxDistance: 9 } } },
+};

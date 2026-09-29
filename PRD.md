@@ -3,7 +3,7 @@ name: factorio-factory-block-blueprint-tool
 description: Factorio factory block blueprint generator with dynamic sub-blocks, belt/pipe routing, simulation, and browser-tested UI.
 metadata:
   type: project
-  status: v1 implemented; dynamic layout search (v2) agreed, not yet built
+  status: v2 (dynamic layout search) implemented
 ---
 
 # Factorio Factory Block Blueprint Tool — PRD
@@ -26,14 +26,17 @@ See `CONTEXT.md` for the domain glossary (Goal, Sub-Block, Compound Block, Tunne
 - Pan/zoom map-style preview of the Compound Block (not a static fixed-size SVG) — renders real per-Sub-Block dimensions and positions.
 - Side input path (train) and output path (to train), per the Side Input/Output glossary definitions.
 
-## v2: dynamic layout search (agreed, not yet built)
+## v2: dynamic layout search (implemented)
 v1 stamps a fixed template per Sub-Block. v2 replaces that with a search over layout variants that keeps the most compact valid Compound Block (ADR 0004). Where v2 differs from the requirements above, v2 wins.
 
 - **Search:** an anytime search in a background worker. The default budget is about 10 s, the user can change it, and a Stop button keeps the best layout so far. The map shows the best layout found so far and its area.
 - **Objective:** minimise Compactness — bounding-box area first, entity count as tie-break. A candidate counts only if it passes every validity rule the v1 tests check: no overlaps, connected belts and pipe networks, no fluid mixing or fused networks, and powered, connected poles.
 - **Per Sub-Block, the search chooses:**
   - machine rotation;
-  - one machine row or several, where facing rows may share the belts between them;
+  - one machine row or several stacked rows (chains), each row as long as its belts can feed; the band between two rows is shared, so both rows reach its belts;
+  - parallel belts for a heavy item: a Side Input only this Sub-Block takes, or an output nothing else takes, may split into parts, each a belt from (or to) the train serving some of the rows;
+  - Belt Merge per part: two single-item Side Inputs may share the parts of one belt, one per Lane, when each fits its Lane for the rows that belt feeds;
+  - pipe rows: a band row kept for a fluid, joining every connection of that fluid in the band. A connection elsewhere in the band dives under the belts to a tap just before the row and joins it on a tile that takes a plain pipe. Pipe rows of two fluids never touch; every second machine row may shift sideways within the gap, so facing rows' connections do not interleave;
   - which inputs and outputs go on which side;
   - gaps between machines;
   - how many inserters each item needs, from real inserter throughput.
@@ -64,29 +67,51 @@ v1 stamps a fixed template per Sub-Block. v2 replaces that with a search over la
 - **Unchanged:** planning (Count, Byproducts), flows, Belt Merge rules, the Side Input and Side Output definitions, and the blueprint encoding.
 
 ## Catalog
-`data/catalog.json` is generated from the game's own data dump (`factorio --dump-data`, Factorio 2.0.77 with the Pyanodons modset): 6,947 recipes and 645 buildings with crafting speeds, fluid connections, poles, belt tiers and underground reaches. Regenerate after changing mods with `npm run build-catalog -- <path to data-raw-dump.json>`.
+`data/catalog.json` is generated from the game's own data dump (`factorio --dump-data`, Factorio 2.0.77 with the Pyanodons modset): recipes, buildings with crafting speeds, fluid connections and power draw (burners with effectivity and fuel categories), poles, belt tiers and underground reaches, inserters (vectors, rotation and extension speed, energy type, `allow_custom_vectors`) and fuel items with their fuel value. Regenerate after changing mods, and once for v2 (a catalog built before v2 has no inserter or fuel data and the app asks for a regenerated one):
+
+```
+factorio --dump-data
+npm run build-catalog -- ~/.factorio/script-output/data-raw-dump.json
+npm run build-sprites -- <Factorio install folder, the one holding data/> [~/.factorio/mods]
+```
+
+`build-sprites` extracts every item and fluid icon the catalog names — base-game ones from the install, mod ones from the newest zip of each mod — into the git-ignored `sprites/` folder.
 
 ## Implementation
-- `index.html` + `js/app.js`: Goals (item + rate) with a separate Recipe Selection (recipe + building, filtered to buildings that can run the recipe), logistics settings, build, starvation report, Side Input/Output lists, blueprint string and JSON.
-- `js/render.js`: pan/zoom canvas map (drag, wheel, fit) with hover details.
-- `js/plan.js`: Goals → Sub-Blocks (Count, rates, Byproducts).
-- `js/flows.js`: Dependency Order, Internal Paths, Side Input, Side Output.
-- `js/solve.js`: routes (with Belt Merge), cores, packing, routing (rip-up and reroute on failure), poles → Compound Block.
-- `js/layout/`: `core.js` (one Sub-Block's machines, inserters, belt rows, fluid connections), `pack.js` (shelf packing), `router.js` (A* belts and pipe trees with max-reach tunnels), `poles.js` (Minimal Pole Placement), `grid.js`.
-- `js/sim.js`: Starvation per route in belt order.
-- `js/blueprint.js`: importable blueprint string + JSON, with pole wires.
-- `js/catalog-builder.js` + `scripts/build-catalog.mjs`: data dump → catalog.
-- `sprites/`: symlink to Factorio `base/graphics/icons/`; only base-game icons are shown.
+- `index.html` + `js/app.js`: Goals (item + rate), Train Inputs, and the Production Chain overview: every step with its rate, machine count, Recipe Selection (recipe + building, filtered to buildings that can run the recipe) and a switch to bring it by train instead; logistics settings (belt, pipe-to-ground, pole, inserter and long-handed inserter — electric only —, Fuel, the 90° inserters toggle, search time), build and Stop, starvation report, Side Input/Output lists, blueprint string and JSON. The map redraws with every better layout and shows its area.
+- `js/render.js`: pan/zoom canvas map (drag, wheel, fit) with hover details, item icons on machines, belts and pipes, and the copper wires between poles (`js/layout/wires.js`, shared with the blueprint).
+- `js/worker.js`: runs the search in a module Web Worker and posts each better layout; Stop terminates it and the page keeps the best one.
+- `js/search.js`: the anytime layout search (ADR 0004). It builds a pool of locally valid variants per Sub-Block, then tries Compound Blocks — a sweep of each pool's most compact variants, then random changes to the best so far: variant, packing order, gaps, shelf width, margins, belt sharing between neighbours, routing order. Each candidate is fully routed, powered and checked by `validateBlock`; the best by inserter shortfall, then area, then entity count is kept. Deterministic for a seed and candidate count.
+- `js/solve.js`: `solve()` runs the search for a candidate or time budget and returns the best Compound Block.
+- `js/chain.js`: Goals + Train Inputs + Recipe Selections → the Production Chain (every step's rate, down to the Train Inputs), and the recipe and building options for each item.
+- `js/plan.js`: Goals → Sub-Blocks (Count, rates, Byproducts, Fuel). `js/flows.js`: Dependency Order, Internal Paths, Side Input, Side Output. `js/routes.js`: routes with Belt Merge.
+- `js/layout/core.js`: one Sub-Block from a variant — rotation, stacked machine rows with shared bands between them, which band and row each belt part and pipe row takes (up to 4 belts per face), row shift, gaps, pole slots, taps. A small depth-first search picks inserter columns for one machine period (repeated for every machine) so every machine gets its share of each belt and every belt row stays passable.
+- `js/layout/compound.js`: places cores, splits parallel and merged belts into routes, routes belts and pipes (rip-up and reroute on failure), places poles. A fluid with pipe rows in several bands gets a riser column beside its core (first fluid west, next east) that joins them; belts cross risers underground. The search also tries each variant with the side room its belts' turns between rows and its risers need.
+- `js/layout/router.js`: A* belts through waypoints and pipe trees; tunnels of any hop length up to the reach (ADR 0003), never interleaved on a line; a waypoint may hold a belt, a tunnel entrance or exit (an exit only where the belt can go on). A pipe tunnel never ends on or passes under a tile that must take a plain pipe (a connection on its pipe row, or where a tap joins it).
+- `js/layout/pack.js` (shelf packing with chosen gaps and level rows for shared belts), `poles.js` (Minimal Pole Placement; poles may stand just north or south of the block), `grid.js`, `validity.js` (the rules every candidate and every test checks).
+- `js/inserters.js`: approximate inserter throughput. One item per swing (no capacity bonus): a swing turns the hand 180° (90° for a 90° inserter) at the prototype's rotation speed while it extends between its pickup and drop distances; the slower of the two sets its time. Pickup and drop are ignored, so real rates run a few percent lower (fast 2.4/s estimated vs 2.31/s measured).
+- `js/sim.js`: Starvation per route in belt order, plus machines whose inserters cannot move their share.
+- `js/blueprint.js`: importable blueprint string + JSON, with pole wires and `pickup_position` / `drop_position` vectors on 90° inserters.
+- `js/catalog-builder.js` + `scripts/build-catalog.mjs`: data dump → catalog. `scripts/measure.mjs`: samples recipes from the catalog and reports how many solve.
+- `scripts/build-sprites.mjs` + `scripts/sprites.mjs`: extract the catalog's icons from the game and the mod zips into `sprites/`.
 
 ## Testing
-- `npm test`: Node test suite at the agreed seams — `planSubBlocks`, `buildFlows`, `solve` (layout invariants: no overlaps, connected belts and pipe networks, exact-reach tunnels, no fluid mixing, powered and connected poles), `simulate`, `encodeBlueprint`, `buildCatalog`.
+- `npm test`: Node test suite at the agreed seams — `expandChain`, `planSubBlocks` (incl. Fuel), `buildFlows`, `solve` (every layout passes `validateBlock`: no overlaps, belt chains with tunnels within reach at their nearest partner, feeding and draining inserters, connected pipe networks, no fluid mixing, separate networks, powered and connected poles, no custom vectors when 90° inserters are off), the search's capabilities (Py science pack 2 at 450/min: 75 research centres in stacked rows with pipe rows and moss on 13 parallel yellow belts, no Starvation; a 5-belt Py recipe, Py nitrogen-mustard at 4 machines, inserter counts that scale with throughput, burner Fuel, Compactness never worse than v1 on fixed scenarios, determinism under a seed), the router, packing, poles and their wires, sprite extraction from mod zips, `simulate` (incl. inserter throughput), `inserterRate`, `encodeBlueprint`, `buildCatalog`.
 - `npm run typecheck`: `tsc --checkJs` over all modules.
-- UI checked in headless Chromium (Playwright): build, map pan/zoom/hover, blueprint decode, errors, persistence, phone width.
+- `node scripts/measure.mjs [samples] [seed] [budgetMs]`: success rate, failure reasons and time on sampled catalog recipes at 2–4 machines.
+- UI checked in headless Chromium (Playwright): Production Chain (small-parts-01 from iron and copper plates), recipe and building per step, Train Inputs, build, progressive map updates with area, icons, pole wires, Stop, settings (inserters, Fuel, 90° toggle, search time), blueprint vectors, persistence, phone width.
 
-## Known limitations (v1)
-- A Sub-Block has at most 4 belt rows (near and far rows on each side, the reach of vanilla inserters). About 16–18% of Pyanodons recipes need more and are rejected with an error. v2 raises this to 4 belts per side.
-- Dense multi-fluid machines (several fluids entering side by side, boxed in by belts) sometimes cannot be routed, because every tunnel must use the full underground reach (ADR 0002). About 6% of sampled Pyanodons recipes. v2 lets the search choose hop lengths.
+## Known limitations
+Measured with `scripts/measure.mjs` (300 sampled Pyanodons recipes at 2–4 machines, 3 s search each, vanilla inserter data standing in until the catalog is regenerated): 90.7% solve (v1: 79.3%).
+- A row of machines reaches at most 4 belts per face (8 per Sub-Block with 90° inserters, 6 without). About 6% of sampled Pyanodons recipes need more after Belt Merge and are rejected with an error. Py cranes, and belts along the machines' left and right sides, are not used.
+- About 3% fail on fluids: a connection boxed in by the machine's other connections and belts that the pipe cannot leave (a pipe tree starts only with a pipe or a straight dive at its first connection), or a pipe that cannot reach the rest of its network.
+- Every machine in a row uses the same inserter columns (one period repeated); a layout that would need different columns per machine is not found.
+- Inserter throughput assumes one item per swing (no inserter capacity research) and ignores pickup and drop time.
+- Output inserters, 90° ones included, are assumed to fill only the far lane.
+- The search is a randomised local search: it finds good layouts, not proven optimal ones, and harder blocks need more search time. Py science pack 2 at 450/min (96×203, 5,698 entities) takes about a minute for 16 candidates.
+- Belts turn between their rows beside the block, alternately east and west; a stacked block needs several columns of margin for them.
+- Only burner machines take Fuel; machines burning fluids are not fed.
+- In a recipe loop the Production Chain brings the looping item by train, but the layout still feeds it from its own Sub-Block when one makes it.
+- Icons with several layers (tinted, overlaid) show only their first layer.
 - Pole placement is locally minimal (no pole can be removed), not a proven global minimum.
-- Inserter throughput and burner fuel supply are not modelled. v2 adds both.
-- Icons for mod items are not shown.
 - Custom/mod entity definitions are deferred (see Requirements).

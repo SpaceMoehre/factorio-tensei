@@ -9,8 +9,16 @@ An item and a target production rate (items/minute), independent of how it is pr
 _Avoid_: recipe rate, item goal (when a recipe is implied)
 
 **Recipe Selection**:
-The recipe (and building tier) currently chosen to fulfill a Goal. Re-choosable without changing the Goal itself — a Goal has exactly one active Recipe Selection at a time. Multiple recipes may be able to produce the same item; picking among them is a separate concern from stating the Goal.
+The recipe (and building tier) currently chosen to make an item of the Production Chain — a Goal or an ingredient made in the block. Re-choosable without changing the Goal itself — each step has exactly one active Recipe Selection at a time. Multiple recipes may be able to produce the same item; picking among them is a separate concern from stating the Goal.
 _Avoid_: baking a fixed recipe into Goal identity
+
+**Production Chain**:
+The Goals plus a Sub-Block for every ingredient the block makes itself, found by following each Recipe Selection's ingredients down to the Train Inputs. Each step's rate is its Goal rate (if any) plus what its consumers take.
+_Avoid_: recipe tree (it is not always a tree: steps share ingredients)
+
+**Train Input**:
+An item the Production Chain does not make but receives by train: one the user chooses to bring in, one no recipe makes, or one a recipe loop would have to make from itself. Train Inputs are what the Side Input carries.
+_Avoid_: raw material (a Train Input can be any intermediate the user chooses to import)
 
 **Count**:
 The number of assembler buildings a Sub-Block needs to meet its Goal's target rate: `ceil(targetRate / ((building.craftingSpeed / recipe.time) * recipe.outputs[item] * 60))`.
@@ -37,8 +45,12 @@ The preferred placement order of Sub-Blocks, derived by topologically sorting on
 _Avoid_: input order, list order
 
 **Compactness**:
-What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties.
+What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness.
 _Avoid_: size, footprint (ambiguous between area and entity count)
+
+**Band**:
+The rows of belts beside a row of machines, counted outward from the machines' face (row 1 against the machines). Inserters stand in rows 1 and 2 and reach belts up to row 4. Two facing machine rows share the band between them: both reach its belts.
+_Avoid_: lane (a Lane is one side of a belt), belt row index without saying which face it counts from
 
 **Packing**:
 Arranging Sub-Block rectangles into the Compound Block. The layout search chooses each position and the width of each gap (down to none where no path must pass), and neighbours may share a belt when one's output is the other's input.
@@ -65,11 +77,19 @@ One of a belt's two sides, each carrying half the belt's throughput. Output inse
 _Avoid_: treating a belt as one undivided stream
 
 **Belt Merge**:
-Putting two items on one belt, one per Lane. Eligible only when both items already travel the same route (the same Side Input path feeding the same Sub-Blocks in the same order) — not any two unrelated belts — and only when each item's rate fits within one Lane.
+Putting two items on one belt, one per Lane. Eligible only when both items already travel the same route (the same Side Input path feeding the same Sub-Blocks in the same order) — not any two unrelated belts — and only when each item's rate fits within one Lane. Parallel belts are judged per part: two single-item Side Inputs of one Sub-Block, each split into parallel belts, may share each part's belt when each item fits its Lane for the rows that belt feeds.
 _Avoid_: merging belts that don't share a route
 
+**Parallel Belts**:
+One item on several belts from (or to) the train, each serving some of a Sub-Block's machine rows with its share of the rate — when one belt cannot carry it all. Only a Side Input taken by one Sub-Block, or an output nothing else takes, splits.
+_Avoid_: belt balancing, splitters (the parts never join)
+
+**Pipe Row**:
+A row of a Band kept for one fluid's pipe, joining every connection of that fluid in the Band. A connection elsewhere in the Band dives under the belts to a tap just before the Pipe Row. Pipe Rows of one fluid in different Bands join in a riser beside the Sub-Block.
+_Avoid_: pipe lane (a Lane is one side of a belt)
+
 **Service Row**:
-A free row between a Sub-Block's fluid connections and its single belt on the same side, left open so pipes can run between machines; long-handed inserters reach over it.
+A row of a Band with no belt in it, left open so pipes can run between machines; long-handed inserters reach over it. The layout search leaves one wherever that is more compact.
 _Avoid_: gap, spacer
 
 **Minimal Pole Placement**:

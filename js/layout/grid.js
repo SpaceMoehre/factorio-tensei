@@ -14,6 +14,8 @@ export class Grid {
     this.fluidPorts = new Set();
     // Machine fluid connections not used by the recipe: no pipe may sit there.
     this.pipeBlocked = new Set();
+    // Connections that must take a plain pipe, never a pipe-to-ground.
+    this.surfaceOnly = new Set();
     this.tunnels = [];
   }
 
@@ -31,6 +33,16 @@ export class Grid {
   tunnelFits(name, a, b) {
     const s = span(a, b);
     return !this.tunnels.some(t => t.name === name && spansOverlap(t, s));
+  }
+
+  // Routing may try an option and take it back: everything it changes is saved here.
+  snapshot() {
+    return { occupied: new Map(this.occupied), tunnels: this.tunnels.length };
+  }
+
+  restore({ occupied, tunnels }) {
+    this.occupied = occupied;
+    this.tunnels.length = tunnels;
   }
 
   inBounds(x, y) {

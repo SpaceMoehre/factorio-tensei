@@ -10,7 +10,7 @@
     "moduleResolution": "node",
     "allowSyntheticDefaultImports": true,
     "lib": ["ES2022", "DOM"],
-    "typeRoots": ["/usr/share/nodejs/@types"],
+    "typeRoots": ["./node_modules/@types"],
     "types": ["node"]
   },
   "include": ["js/**/*.js", "scripts/**/*.mjs", "tests/**/*.js"]

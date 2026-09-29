@@ -5,10 +5,36 @@ const MIN_SCALE = 2, MAX_SCALE = 64;
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {any} block
- * @param {{ onHover?: (entity: any, block: any) => void, starving?: Set<number> }} [options]
+ * @param {{ onHover?: (entity: any, block: any) => void, starving?: Set<number>, icon?: (name: string) => string | null }} [options]
  */
-export function createMap(canvas, block, { onHover = () => {}, starving = new Set() } = {}) {
+export function createMap(canvas, block, { onHover = () => {}, starving = new Set(), icon = () => null } = {}) {
   const ctx = canvas.getContext('2d');
+  // Icons load in the background; the map redraws as each arrives.
+  const images = new Map();
+  const image = name => {
+    if (!images.has(name)) {
+      const url = icon(name);
+      const img = url ? new Image() : null;
+      if (img) {
+        img.onload = () => draw();
+        img.src = url;
+      }
+      images.set(name, img);
+    }
+    const img = images.get(name);
+    return img?.complete && img.naturalWidth ? img : null;
+  };
+  // Draws an icon's first mipmap (the square at the left of the file) centred in a box.
+  const drawIcon = (name, cx, cy, size) => {
+    const img = image(name);
+    if (!img) return false;
+    // Half a pixel in from the edges, so smoothing never samples the next mipmap.
+    const h = img.naturalHeight;
+    ctx.drawImage(img, 0.5, 0.5, h - 1, h - 1, cx - size / 2, cy - size / 2, size, size);
+    return true;
+  };
+  const pieceIndex = new Map();
+  for (const r of block.routes) r.pieces.forEach((p, i) => pieceIndex.set(p, i));
   const view = { scale: 16, x: 0, y: 0 };
   const colors = palette(block);
   const byTile = new Map();
@@ -102,6 +128,10 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
           ctx.strokeStyle = t.machineEdge;
           ctx.lineWidth = 1;
           ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+          // What the machine makes, with the machine itself in the corner.
+          drawIcon(block.subBlocks[e.subBlock]?.item ?? e.recipe, x + w / 2, y + h / 2, Math.min(w, h) * 0.55);
+          const corner = Math.min(w, h) * 0.25;
+          if (corner >= 12) drawIcon(e.name, x + w - corner * 0.7, y + h - corner * 0.7, corner);
           if (s * e.w >= 40) {
             ctx.fillStyle = t.text;
             ctx.font = `${Math.min(12, s * 0.8)}px system-ui, sans-serif`;
@@ -118,6 +148,10 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
             ctx.strokeRect(x + s * 0.1, y + s * 0.1, s * 0.8, s * 0.8);
           }
           arrow(x, y, s, e.travel, t.bg);
+          // The items it carries, on every third tile, each merged item in turn.
+          const n = pieceIndex.get(e);
+          const items = block.routes[e.route].items;
+          if (s >= 14 && n % 3 === 0) drawIcon(items[(n / 3) % items.length].item, x + s / 2, y + s / 2, s * 0.55);
           break;
         }
         case 'pipe':
@@ -131,19 +165,36 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
             arrow(x, y, s, e.direction, t.bg);
           }
           pipeLinks(e, x, y, s);
+          if (s >= 14 && pieceIndex.get(e) % 4 === 0) drawIcon(e.fluid, x + s / 2, y + s / 2, s * 0.5);
           break;
         case 'inserter':
-          ctx.fillStyle = e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
+          if (s >= 20 && drawIcon(e.name, x + s / 2, y + s / 2, s * 0.8)) {
+            arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
+            break;
+          }
+          ctx.fillStyle = e.vectors ? '#9b6fe0' : e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
           ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
-          // Arrow points from pickup to drop.
-          arrow(x, y, s, (e.direction + 8) % 16, t.text);
+          // Arrow points toward the drop.
+          arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
           break;
         case 'pole':
+          if (s >= 20 && drawIcon(e.name, x + w / 2, y + h / 2, Math.min(w, h) * 0.9)) break;
           ctx.fillStyle = '#c9a227';
           ctx.fillRect(x + w * 0.25, y + h * 0.25, w * 0.5, h * 0.5);
           break;
       }
     }
+
+    // Copper wires between poles.
+    ctx.strokeStyle = 'rgba(214, 140, 70, 0.9)';
+    ctx.lineWidth = Math.max(1, s * 0.08);
+    ctx.beginPath();
+    for (const [a, b] of block.wires ?? []) {
+      const p = block.entities[a], q = block.entities[b];
+      ctx.moveTo(sx(p.x + p.w / 2), sy(p.y + p.h / 2));
+      ctx.lineTo(sx(q.x + q.w / 2), sy(q.y + q.h / 2));
+    }
+    ctx.stroke();
   }
 
   function pipeLinks(e, x, y, s) {
@@ -226,6 +277,12 @@ function palette(block) {
     route: id => hue(id),
     fluid: name => `hsl(${(fluids.indexOf(name) * 97 + 190) % 360} 70% 60%)`,
   };
+}
+
+// The main direction of a vector: 0 north, 4 east, 8 south, 12 west.
+function directionOf({ x, y }) {
+  if (Math.abs(x) > Math.abs(y)) return x > 0 ? 4 : 12;
+  return y > 0 ? 8 : 0;
 }
 
 function clamp(v, lo, hi) {

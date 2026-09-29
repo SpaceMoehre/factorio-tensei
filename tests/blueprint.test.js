@@ -37,3 +37,25 @@ test('poles are joined by copper wires into one network', async () => {
   const { wires } = JSON.parse(json).blueprint;
   assert.deepEqual(wires, [[4, 5, 5, 5], [5, 5, 6, 5]]);
 });
+
+// A 90° fast inserter south of nothing, west of its belt: it picks from the tile to its west and
+// drops 1.2 tiles south into the machine. Factorio 2.0 blueprints carry both as vectors relative
+// to the inserter (BlueprintEntity pickup_position / drop_position).
+test('custom pickup and drop vectors appear only on 90° inserters', async () => {
+  const { json } = await encodeBlueprint({
+    subBlocks: [{ item: 'iron-gear-wheel' }],
+    entities: [
+      { name: 'fast-inserter', kind: 'inserter', x: 4, y: 2, w: 1, h: 1, direction: 0 },
+      {
+        name: 'fast-inserter', kind: 'inserter', x: 5, y: 2, w: 1, h: 1, direction: 0,
+        vectors: { pickup: { x: -1, y: 0 }, drop: { x: 0, y: 1.2 } },
+      },
+    ],
+  }, catalog);
+  const [straight, rightAngle] = JSON.parse(json).blueprint.entities;
+  assert.deepEqual(straight, { entity_number: 1, name: 'fast-inserter', position: { x: 4.5, y: 2.5 } });
+  assert.deepEqual(rightAngle, {
+    entity_number: 2, name: 'fast-inserter', position: { x: 5.5, y: 2.5 },
+    pickup_position: { x: -1, y: 0 }, drop_position: { x: 0, y: 1.2 },
+  });
+});
