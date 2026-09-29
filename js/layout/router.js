@@ -2,6 +2,9 @@ import { VEC, E, W, turnLeft, turnRight, opposite, key, span, spansOverlap } fro
 
 const TURN_COST = 0.2;
 const TUNNEL_COST = 2;
+// How far back a growing leg checks itself for crossings; the whole leg is checked on arrival.
+const RECENT_STEPS = 32;
+const EXPANSIONS_PER_TILE = 12;
 
 export class RoutingError extends Error {}
 
@@ -144,13 +147,20 @@ function search(grid, starts, isGoal, heuristic, moves) {
     open.push({ ...s, reached: false, g: 0, prev: null, pieces: [] }, heuristic(s.x, s.y));
     best.set(stateKey(s), 0);
   }
-  while (open.size) {
+  // A leg that has not found its goal after exploring every tile many times over has none.
+  let budget = EXPANSIONS_PER_TILE * grid.area.w * grid.area.h;
+  while (open.size && budget-- > 0) {
     const node = open.pop();
     if (node.g > best.get(stateKey(node))) continue;
-    if (isGoal(node) && node.prev) return unwind(node);
+    if (isGoal(node) && node.prev) {
+      // Recent steps are checked as the leg grows; the whole leg once it arrives.
+      const leg = unwind(node);
+      if (!crossesItself(leg.pieces)) return leg;
+      continue;
+    }
     for (const next of moves(node)) {
       if (!grid.inBounds(next.x, next.y) && !isGoal(next)) continue;
-      if (conflictsWithOwnPath(node, next.pieces)) continue;
+      if (conflictsWithOwnPath(node, next.pieces, RECENT_STEPS)) continue;
       next.g = node.g + next.cost;
       next.prev = node;
       const k = stateKey(next);
@@ -164,10 +174,10 @@ function search(grid, starts, isGoal, heuristic, moves) {
 
 // Search states don't record the path that reached them, so a leg must not reuse its own
 // tiles or overlap its own tunnels on the same line.
-function conflictsWithOwnPath(node, pieces) {
+function conflictsWithOwnPath(node, pieces, steps = Infinity) {
   const tiles = new Set(pieces.map(p => key(p.x, p.y)));
   const tunnel = tunnelSpan(pieces);
-  for (let n = node; n.prev; n = n.prev) {
+  for (let n = node; n.prev && steps-- > 0; n = n.prev) {
     if (n.pieces.some(p => tiles.has(key(p.x, p.y)))) return true;
     const earlier = tunnelSpan(n.pieces);
     if (tunnel && earlier && spansOverlap(tunnel, earlier)) return true;
@@ -175,15 +185,23 @@ function conflictsWithOwnPath(node, pieces) {
   return false;
 }
 
+// A whole leg: no tile used twice, no two of its tunnels overlapping on one line.
+function crossesItself(pieces) {
+  if (new Set(pieces.map(p => key(p.x, p.y))).size !== pieces.length) return true;
+  const spans = [];
+  pieces.forEach((p, i) => { if (p.underground === 'input') spans.push(span(p, pieces[i + 1])); });
+  return spans.some((s, i) => spans.slice(i + 1).some(t => spansOverlap(s, t)));
+}
+
 function tunnelSpan(pieces) {
   return pieces.length === 2 && pieces[0].underground ? span(pieces[0], pieces[1]) : null;
 }
 
 function unwind(node) {
-  const pieces = [];
+  const steps = [];
   const state = { x: node.x, y: node.y, a: node.a, reached: node.reached };
-  for (let n = node; n.prev; n = n.prev) pieces.unshift(...n.pieces);
-  return { pieces, state };
+  for (let n = node; n.prev; n = n.prev) steps.push(n.pieces);
+  return { pieces: steps.reverse().flat(), state };
 }
 
 const stateKey = s => `${s.x},${s.y},${s.a}${s.reached ? '!' : ''}`;

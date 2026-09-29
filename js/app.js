@@ -298,14 +298,23 @@ function report(block, starvation, prefix) {
   $('status').style.whiteSpace = 'pre-line';
 }
 
+// One line per item and kind, with how many parallel belts carry it when a route was split.
 function fillFlows(list, routes, block) {
-  const rows = routes.flatMap(r => r.items.map(i => {
-    // Leftover on an output route is what the consumers along it do not take.
-    const taken = block ? r.consumers.reduce((sum, c) => sum + (block.subBlocks[c].inputs.find(x => x.name === i.item)?.rate ?? 0), 0) : 0;
-    const rate = block ? Math.max(0, i.rate - taken) : i.rate;
-    return el('li', {}, el('span', { textContent: `${i.item} (${r.kind})` }), el('span', { textContent: `${fmt(rate)}/min` }));
-  }));
-  list.replaceChildren(...rows);
+  const lines = new Map();
+  for (const r of routes) {
+    for (const i of r.items) {
+      // Leftover on an output route is what the consumers along it do not take (their share of
+      // it, when the route is one of several parallel belts).
+      const taken = block ? r.consumers.reduce((sum, c) => sum + (block.subBlocks[c].inputs.find(x => x.name === i.item)?.rate ?? 0) * (r.share?.[c] ?? 1), 0) : 0;
+      const k = `${i.item} (${r.kind})`;
+      const line = lines.get(k) ?? { rate: 0, belts: 0 };
+      line.rate += block ? Math.max(0, i.rate - taken) : i.rate;
+      line.belts++;
+      lines.set(k, line);
+    }
+  }
+  list.replaceChildren(...[...lines].map(([k, { rate, belts }]) => el('li', {},
+    el('span', { textContent: belts > 1 ? `${k} ×${belts}` : k }), el('span', { textContent: `${fmt(rate)}/min` }))));
 }
 
 function describe(entity, block) {

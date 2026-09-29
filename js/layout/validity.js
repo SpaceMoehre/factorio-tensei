@@ -266,6 +266,8 @@ function startsAtWestEdge(block, route) {
 // Every rule, for every route and machine of a Compound Block.
 export function validateBlock(block, catalog, logistics) {
   const machinesOf = i => block.entities.filter(e => e.kind === 'building' && e.subBlock === i);
+  // A route split into parallel belts serves only its part's machine rows.
+  const servedBy = (route, i) => machinesOf(i).filter(m => !route.servesRows?.[i] || route.servesRows[i].includes(m.row));
   const problems = [
     ...block.subBlocks.filter(sb => machinesOf(sb.index).length !== sb.count).map(sb => `${sb.item} does not have its ${sb.count} machines`),
     ...overlaps(block.entities),
@@ -281,10 +283,17 @@ export function validateBlock(block, catalog, logistics) {
       continue;
     }
     problems.push(...routeChain(route, catalog, logistics, block.entities));
-    if (typeof route.source === 'number') problems.push(...drainsEveryMachine(block, route, machinesOf(route.source), catalog));
+    if (typeof route.source === 'number') problems.push(...drainsEveryMachine(block, route, servedBy(route, route.source), catalog));
     else problems.push(...startsAtWestEdge(block, route));
-    problems.push(...feedsEveryMachine(block, route, route.consumers.flatMap(machinesOf), catalog));
+    problems.push(...feedsEveryMachine(block, route, route.consumers.flatMap(i => servedBy(route, i)), catalog));
     if (route.sink === 'side-output') problems.push(...endsAtEastEdge(block, route));
+  }
+  // Together, the parts of a split route serve every machine row.
+  for (const route of block.routes.filter(r => r.servesRows)) {
+    for (const [i, rows] of Object.entries(route.servesRows)) {
+      const covered = new Set(block.routes.filter(r => r.base === route.base).flatMap(r => r.servesRows?.[i] ?? []));
+      if (rows === route.servesRows[i] && machinesOf(+i).some(m => !covered.has(m.row))) problems.push(`route ${route.base} does not reach every row of ${block.subBlocks[i].item}`);
+    }
   }
   if (!problems.length) problems.push(...powerNetwork(block, catalog, logistics));
   return problems;

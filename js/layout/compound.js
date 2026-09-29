@@ -5,13 +5,16 @@ import { wirePairs } from './wires.js';
 
 export { RoutingError, PowerError };
 
+const REROUTES = 6;
+
 // Places every Sub-Block's core, routes every belt and pipe, and places poles: one candidate
 // Compound Block. Throws RoutingError or PowerError when the candidate cannot be built.
 // ctx: { plan, routes, catalog, logistics }
 // layout: { cores, placed: [{ x, y }], margin: { w, e, n, s }, routeOrder }
 export function buildCompound(ctx, layout) {
-  const { plan, routes, catalog, logistics } = ctx;
+  const { plan, catalog, logistics } = ctx;
   const { cores, placed, margin } = layout;
+  const { routes, idOf } = splitRoutes(ctx.routes, cores, plan);
   const width = Math.max(...cores.map((c, i) => placed[i].x + c.w));
   const height = Math.max(...cores.map((c, i) => placed[i].y + c.h));
   const area = { x: -margin.w, y: -margin.n, w: width + margin.w + margin.e, h: height + margin.n + margin.s };
@@ -26,8 +29,9 @@ export function buildCompound(ctx, layout) {
         entities.push(abs);
         grid.place(abs);
       }
-      for (const row of core.rows) for (const [x, y] of row.reserve) grid.reserve(x + ox, y + oy, row.routeId);
-      for (const port of core.ports) for (const [x, y] of port.tiles) grid.reserveFluidPort(x + ox, y + oy, port.routeId);
+      for (const row of core.rows) for (const [x, y] of row.reserve) grid.reserve(x + ox, y + oy, idOf(i, row.routeId, row.part));
+      for (const row of core.pipeRows) for (const [x, y] of row.reserve) grid.reserve(x + ox, y + oy, idOf(i, row.routeId));
+      for (const port of core.ports) for (const [x, y] of port.tiles) grid.reserveFluidPort(x + ox, y + oy, idOf(i, port.routeId));
       for (const [x, y] of core.pipeBlocked) grid.pipeBlocked.add(key(x + ox, y + oy));
       // Pole slots stay free while routing, so belts dive under them.
       for (const [x, y] of core.poleSlots) grid.reserve(x + ox, y + oy, -1);
@@ -38,9 +42,9 @@ export function buildCompound(ctx, layout) {
   const beltSpec = catalog.belts[logistics.belt];
   const beltNames = { belt: beltSpec.name, underground: beltSpec.underground.name, reach: beltSpec.underground.maxDistance };
   const pipeNames = { pipe: 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance };
-  const rowsOf = (i, routeId) => cores[i].rows.filter(r => r.routeId === routeId)
+  const rowsOf = (i, id) => cores[i].rows.filter(r => idOf(i, r.routeId, r.part) === id)
     .map(r => r.waypoints.map(([x, y]) => [x + placed[i].x, y + placed[i].y]));
-  const portTerminals = (i, routeId) => cores[i].ports.find(p => p.routeId === routeId).tiles
+  const portTerminals = (i, id) => cores[i].ports.find(p => idOf(i, p.routeId) === id).tiles
     .map(([x, y, outward]) => [x + placed[i].x, y + placed[i].y, outward]);
 
   const routeOne = (grid, route) => {
@@ -69,8 +73,10 @@ export function buildCompound(ctx, layout) {
 
   // Pipes are the most constrained (no fluid may touch another), so they route first unless the
   // layout says otherwise. When a route fails, everything is ripped up and rerouted with the
-  // failing route first.
-  let order = layout.routeOrder ?? [...routes.filter(r => r.kind === 'pipe'), ...routes.filter(r => r.kind === 'belt')].map(r => r.id);
+  // failing route first — a few times; beyond that the search's own routing orders take over.
+  let order = layout.routeOrder
+    ? layout.routeOrder.flatMap(base => routes.filter(r => r.base === base).map(r => r.id))
+    : [...routes.filter(r => r.kind === 'pipe'), ...routes.filter(r => r.kind === 'belt')].map(r => r.id);
   const tried = new Set();
   for (;;) {
     tried.add(order.join());
@@ -89,7 +95,7 @@ export function buildCompound(ctx, layout) {
     }
     if (!failed) return finish(grid, entities, result);
     order = [failed.id, ...order.filter(id => id !== failed.id)];
-    if (tried.has(order.join()) || tried.size > 2 * routes.length) throw failed.error;
+    if (tried.has(order.join()) || tried.size > REROUTES) throw failed.error;
   }
 
   function finish(grid, entities, result) {
@@ -100,6 +106,38 @@ export function buildCompound(ctx, layout) {
     }));
     return { subBlocks, entities, routes: result, bounds: extent(entities), wires: wirePairs(entities, catalog) };
   }
+}
+
+// A route a core splits into parts — parallel belts, each serving some of its machine rows —
+// becomes one route per part, carrying the part's share. Only a Side Input taken by that one
+// Sub-Block, or an output nothing else takes, is split. idOf(sub-block, base route, part) gives
+// the route id on the grid.
+function splitRoutes(baseRoutes, cores, plan) {
+  const routes = [];
+  const ids = new Map();
+  for (const base of baseRoutes) {
+    const owner = base.source === 'side-input' && base.consumers.length === 1 ? base.consumers[0]
+      : typeof base.source === 'number' && base.consumers.length === 0 ? base.source : null;
+    const parts = owner === null ? [] : cores[owner].parts.filter(p => p.routeId === base.id);
+    if (parts.length < 2) {
+      const id = routes.length;
+      routes.push({ ...base, id, base: base.id });
+      ids.set(`${base.id}`, id);
+      continue;
+    }
+    const isOutput = base.source === owner;
+    for (const part of parts) {
+      const share = part.machines / plan[owner].count;
+      const id = routes.length;
+      routes.push({
+        ...base, id, base: base.id, part: part.part, servesRows: { [owner]: part.rows }, share: { [owner]: share },
+        items: base.items.map(i => ({ ...i, rate: i.rate * share, ...(isOutput && { supply: i.supply * share }) })),
+      });
+      ids.set(`${base.id}:${owner}:${part.part}`, id);
+    }
+  }
+  const idOf = (i, baseId, part = 0) => ids.get(`${baseId}:${i}:${part}`) ?? ids.get(`${baseId}`);
+  return { routes, idOf };
 }
 
 // Each row's waypoints are visited in the direction that starts nearer to where the belt is,

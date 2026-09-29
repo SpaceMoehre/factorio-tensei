@@ -16,7 +16,8 @@ export function simulate(block) {
       };
       let consumed = 0;
       for (const sb of route.consumers) {
-        const demand = block.subBlocks[sb].inputs.find(x => x.name === item)?.rate ?? 0;
+        // A route split into parallel belts carries its part's share of each consumer's demand.
+        const demand = (block.subBlocks[sb].inputs.find(x => x.name === item)?.rate ?? 0) * (route.share?.[sb] ?? 1);
         take(sb, demand);
         consumed += demand;
       }

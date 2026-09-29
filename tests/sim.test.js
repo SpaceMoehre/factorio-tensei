@@ -67,21 +67,27 @@ test('solved block: output inserters fill only the far lane, so an output belt c
   assert.deepEqual([cable.demand, cable.available], [900, 450]);
 });
 
-test('solved block: a Goal output beyond one lane backs up before the Side Output', async () => {
+// 1000 cable/min is more than one far lane (450/min): the output leaves on parallel belts.
+test('solved block: a Goal output beyond one lane leaves on parallel belts, each within its lane', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
   const block = solve([asm2('copper-cable', 1000)], catalog, logistics);
-  assert.deepEqual(simulate(block).starvation.map(s => [s.subBlock, s.item, s.demand, s.available]), [[null, 'copper-cable', 1000, 450]]);
+  const parts = block.routes.filter(r => r.sink === 'side-output');
+  assert.ok(parts.length >= 3, `${parts.length} output belts`);
+  assert.ok(parts.every(r => r.items[0].rate <= 450 + 1e-9));
+  assert.ok(Math.abs(parts.reduce((sum, r) => sum + r.items[0].rate, 0) - 1000) < 1e-6);
+  assert.deepEqual(simulate(block).starvation, []);
 });
 
-test('solved block: a Byproduct shares the far lane with the Goal item', async () => {
+// Sand and gravel share the far lane (300 + 300 > 450), so the output splits and each belt
+// carries both.
+test('solved block: a Byproduct shares the far lane with the Goal item, on as many belts as that takes', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
   const block = solve([{ goal: { item: 'sand', rate: 300 }, selection: { recipe: 'ore-sifting', building: 'assembling-machine-2' } }], catalog, logistics);
-  assert.deepEqual(simulate(block).starvation.map(s => [s.subBlock, s.item, s.demand, s.available]), [
-    [null, 'sand', 300, 225],
-    [null, 'gravel', 300, 225],
-  ]);
+  const parts = block.routes.filter(r => r.sink === 'side-output');
+  assert.ok(parts.length >= 2 && parts.every(r => r.items.map(i => i.item).join() === 'sand,gravel'));
+  assert.deepEqual(simulate(block).starvation, []);
 });
 
 test('a producer that makes less than its consumer needs starves it, even on a roomy belt', () => {

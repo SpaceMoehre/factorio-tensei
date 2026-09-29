@@ -228,6 +228,18 @@ export const pyCatalog = {
       ],
       products: [{ type: 'item', name: 'small-parts-01', amount: 2 }],
     },
+    'py-science-pack-2': {
+      name: 'py-science-pack-2', category: 'research', time: 180,
+      ingredients: [
+        { type: 'item', name: 'moss', amount: 400 }, { type: 'item', name: 'zipir-eggs', amount: 15 },
+        { type: 'item', name: 'paragen', amount: 1 }, { type: 'item', name: 'solidified-sarcorus', amount: 2 },
+        { type: 'item', name: 'alien-sample-02', amount: 1 }, { type: 'item', name: 'casein', amount: 30 },
+        { type: 'fluid', name: 'arqad-honey', amount: 600 }, { type: 'fluid', name: 'flavonoids', amount: 100 },
+        { type: 'item', name: 'plastic-bar', amount: 36 }, { type: 'item', name: 'flask', amount: 18 },
+        { type: 'item', name: 'mechanical-parts-01', amount: 2 },
+      ],
+      products: [{ type: 'item', name: 'py-science-pack-2', amount: 18 }],
+    },
     bolts: {
       name: 'bolts', category: 'crafting', time: 0.2,
       ingredients: [{ type: 'item', name: 'iron-stick', amount: 2 }],
@@ -244,6 +256,18 @@ export const pyCatalog = {
     'chipshooter-mk01': {
       name: 'chipshooter-mk01', size: { w: 5, h: 5 }, craftingSpeed: 1, categories: ['chip'], energy: 'electric', fluidBoxes: [],
     },
+    'research-center-mk01': {
+      name: 'research-center-mk01', size: { w: 10, h: 10 }, craftingSpeed: 1, categories: ['research', 'research-handcrafting'],
+      energy: 'electric', energyUsage: 800000,
+      fluidBoxes: [
+        { production: 'input', connections: [{ x: 0.5, y: -4.5, direction: 0 }] },
+        { production: 'input', connections: [{ x: -1.5, y: -4.5, direction: 0 }] },
+        { production: 'input', connections: [{ x: 2.5, y: -4.5, direction: 0 }] },
+        { production: 'output', connections: [{ x: 0.5, y: 4.5, direction: 8 }] },
+        { production: 'output', connections: [{ x: -1.5, y: 4.5, direction: 8 }] },
+        { production: 'output', connections: [{ x: 2.5, y: 4.5, direction: 8 }] },
+      ],
+    },
     'automated-factory-mk01': {
       name: 'automated-factory-mk01', size: { w: 7, h: 7 }, craftingSpeed: 1, categories: ['crafting', 'crafting-with-fluid', 'advanced-crafting'],
       energy: 'electric',
@@ -254,4 +278,6 @@ export const pyCatalog = {
       ],
     },
   },
+  // Pyanodons' yellow belt: its underground reaches 9 tiles.
+  belts: { 'transport-belt': { name: 'transport-belt', itemsPerSecond: 15, underground: { name: 'underground-belt', maxDistance: 9 } } },
 };
