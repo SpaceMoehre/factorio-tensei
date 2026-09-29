@@ -136,6 +136,17 @@
   renderGoals();
   renderSprites();
 
+  function renderGoals() {
+    const list = document.getElementById('goals-list');
+    if (!list) return;
+    list.innerHTML = '';
+    goals.forEach((g,i) => {
+      const row = document.createElement('div'); row.className='recipe-row';
+      row.innerHTML = `<img src="sprites/${g.item}.png" style="width:28px;height:28px;object-fit:contain;border:1px solid #e0c097;border-radius:4px;cursor:pointer;" onclick="openRecipeModal(${i})" title="choose recipe"><div style="flex:1"><strong>${g.item}</strong> @ ${g.rate||30}/min <div style="font-size:0.75rem;color:#aaa;">recipe: ${g.recipe||'?'} · inputs: ${g.inputs||'?'}</div></div><button onclick="removeGoal(${i})">×</button>`;
+      list.appendChild(row);
+    });
+  }
+
   window.openItemList = () => {
     try {
     const d = document.getElementById('global-dropdown');
