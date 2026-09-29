@@ -62,11 +62,15 @@
   </div>
 </div>
 
-<script type="module">
-  import { Solver } from './js/solver.js';
-  import { Simulator } from './js/sim.js';
-  import { BlueprintEncoder } from './js/blueprint.js';
-  import { Renderer } from './js/render.js';
+<script>
+  // Load modules via dynamic import in regular script (global scope preserved)
+  let Solver, Simulator, BlueprintEncoder, Renderer;
+  Promise.all([
+    import('./js/solver.js').then(m=>Solver=m.Solver),
+    import('./js/sim.js').then(m=>Simulator=m.Simulator),
+    import('./js/blueprint.js').then(m=>BlueprintEncoder=m.BlueprintEncoder),
+    import('./js/render.js').then(m=>Renderer=m.Renderer)
+  ]).then(()=>{ window.modulesLoaded=true; renderGoals(); });
 
   const catalog = await fetch('data/catalog.json').then(r => r.json());
   const recipesFull = await fetch('data/recipes_full.json').then(r => r.json());
