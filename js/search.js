@@ -91,7 +91,7 @@ function variantPool(ctx, sb, index, rng) {
   const attempt = variant => {
     try {
       const core = buildCore(sb, building, links, variant, ctx.env);
-      const signature = JSON.stringify([core.w, core.h, core.entities, core.rows.map(r => r.y), core.poleSlots]);
+      const signature = JSON.stringify([core.w, core.h, core.entities, core.rows.map(r => [r.routeId, r.y]), core.poleSlots]);
       if (!seen.has(signature)) seen.set(signature, { variant, core });
     } catch (e) {
       if (!(e instanceof LayoutError)) throw e;
@@ -99,7 +99,10 @@ function variantPool(ctx, sb, index, rng) {
     }
   };
   for (const rotation of ROTATIONS) attempt(plainVariant(belts, depths, rotation));
-  for (let n = 0; n < VARIANT_TRIES; n++) attempt(randomVariant(belts, depths, rng));
+  for (let n = 0; n < VARIANT_TRIES; n++) {
+    const variant = randomVariant(belts, depths, sb.count, rng);
+    if (variant) attempt(variant);
+  }
   const pool = [...seen.values()].sort((a, b) => a.core.shortfall - b.core.shortfall || a.core.w * a.core.h - b.core.w * b.core.h);
   if (!pool.length) {
     const [reason] = [...errors].sort((a, b) => b[1] - a[1])[0] ?? ['no layout fits'];
@@ -111,29 +114,53 @@ function variantPool(ctx, sb, index, rng) {
 function plainVariant(belts, depths, rotation) {
   const top = Math.ceil(belts.length / 2);
   return {
-    rotation, gap: 0, columns: 'center', side: -1, poleSlot: null,
+    rotation, rows: 1, gap: 0, columns: 'center', poleSlot: null,
     belts: belts.map((routeId, i) => (i < top
-      ? { routeId, face: 'top', depth: depths[i] }
-      : { routeId, face: 'bottom', depth: depths[i - top] })),
+      ? { routeId, band: 'top', row: depths[i] }
+      : { routeId, band: 'bottom', row: depths[i - top] })),
   };
 }
 
-function randomVariant(belts, depths, rng) {
+// A random draw over every option: one machine row with belts on both faces, or two facing
+// rows sharing belts in the band between them (a route may instead run above the first row
+// and below the second).
+function randomVariant(belts, depths, count, rng) {
+  const common = {
+    rotation: choose(ROTATIONS, rng),
+    gap: rng() < 0.6 ? 0 : 1 + Math.floor(rng() * 2),
+    columns: choose(['center', 'left', 'right'], rng),
+  };
+  if (count > 1 && rng() < 0.35) return twoRows(belts, depths, common, rng);
   const shuffled = shuffle(belts, rng);
   const lo = Math.max(0, belts.length - depths.length), hi = Math.min(belts.length, depths.length);
   const top = lo + Math.floor(rng() * (hi - lo + 1));
-  const pick = n => (rng() < 0.6 ? depths.slice(0, n) : shuffle(depths, rng).slice(0, n).sort()).sort(() => rng() - 0.5);
-  const topDepths = pick(top), bottomDepths = pick(belts.length - top);
-  const faces = ['top', 'bottom'];
+  const pick = n => shuffle(rng() < 0.6 ? depths.slice(0, n) : shuffle(depths, rng).slice(0, n), rng);
+  const topRows = pick(top), bottomRows = pick(belts.length - top);
   return {
-    rotation: choose(ROTATIONS, rng),
-    gap: rng() < 0.7 ? 0 : 1 + Math.floor(rng() * 2),
-    columns: choose(['center', 'left', 'right'], rng),
-    side: rng() < 0.5 ? -1 : 1,
-    poleSlot: rng() < 0.5 ? null : { face: choose(faces, rng), row: 1 + Math.floor(rng() * 2) },
+    ...common, rows: 1,
+    poleSlot: rng() < 0.5 ? null : { band: choose(['top', 'bottom'], rng), row: 1 + Math.floor(rng() * 2) },
     belts: shuffled.map((routeId, i) => (i < top
-      ? { routeId, face: 'top', depth: topDepths[i] }
-      : { routeId, face: 'bottom', depth: bottomDepths[i - top] })),
+      ? { routeId, band: 'top', row: topRows[i] }
+      : { routeId, band: 'bottom', row: bottomRows[i - top] })),
+  };
+}
+
+function twoRows(belts, depths, common, rng) {
+  const middle = 1 + Math.floor(rng() * 6);
+  const reachable = d => depths.includes(d);
+  const shared = shuffle([...Array(middle).keys()].map(j => j + 1).filter(j => reachable(j) && reachable(middle + 1 - j)), rng);
+  const outer = { top: shuffle(depths, rng), bottom: shuffle(depths, rng) };
+  const placed = [];
+  for (const routeId of shuffle(belts, rng)) {
+    if (shared.length && (rng() < 0.75 || !outer.top.length || !outer.bottom.length)) placed.push({ routeId, band: 'middle', row: shared.pop() });
+    else if (outer.top.length && outer.bottom.length) {
+      placed.push({ routeId, band: 'top', row: outer.top.pop() }, { routeId, band: 'bottom', row: outer.bottom.pop() });
+    } else return null;
+  }
+  return {
+    ...common, rows: 2, middle, flip: rng() < 0.5,
+    poleSlot: rng() < 0.5 ? null : { band: choose(['top', 'middle', 'bottom'], rng), row: 1 + Math.floor(rng() * 2) },
+    belts: placed,
   };
 }
 

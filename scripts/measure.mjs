@@ -7,6 +7,24 @@ import { solve } from '../js/solve.js';
 const [samples = 300, seed = 1, budget] = process.argv.slice(2).map(Number);
 const catalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 
+// A catalog built before v2 lacks inserters, power draw and fuel. Measuring still works with
+// vanilla inserter prototypes (Inserter_Config allows their custom vectors), coal, and a
+// placeholder 1MW draw for burner machines — say so, since it only approximates the real game.
+if (!catalog.inserters) {
+  console.log('note: catalog has no inserter data; measuring with vanilla inserters, coal and 1MW burners');
+  const vanilla = (name, pickup, insert, rotationSpeed, extensionSpeed) => ({
+    name, pickup: { x: 0, y: -pickup }, insert: { x: 0, y: insert }, rotationSpeed, extensionSpeed, energy: 'electric', customVectors: true,
+  });
+  catalog.inserters = {
+    'fast-inserter': vanilla('fast-inserter', 1, 1.2, 0.04, 0.1),
+    'long-handed-inserter': vanilla('long-handed-inserter', 2, 2.2, 0.02, 0.05),
+  };
+  catalog.fuels = { coal: { name: 'coal', fuelValue: 4e6, categories: ['chemical'] } };
+  for (const b of Object.values(catalog.buildings)) {
+    if (b.energy === 'burner') Object.assign(b, { energyUsage: 1e6, effectivity: 1, fuelCategories: ['chemical'] });
+  }
+}
+
 let state = seed;
 const random = () => ((state = (state * 1103515245 + 12345) % 2 ** 31) / 2 ** 31);
 
