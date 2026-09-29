@@ -137,6 +137,7 @@
   renderSprites();
 
   window.openItemList = () => {
+    try {
     const d = document.getElementById('global-dropdown');
     const btn = document.getElementById('goal-item-btn');
     const rect = btn.getBoundingClientRect();
@@ -145,6 +146,7 @@
     d.style.left = (rect.left + window.scrollX) + 'px';
     const all = Object.keys(catalog.recipes||{});
     d.innerHTML = all.map(i => `<button onclick="document.getElementById('goal-item-btn').textContent='${i}';document.getElementById('goal-item-btn').dataset.item='${i}';document.getElementById('global-dropdown').style.display='none'" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:5px 8px;background:transparent;border:none;color:#eaeaea;cursor:pointer;font-size:0.85rem;border-bottom:1px solid rgba(224,192,151,0.15);"><img src="sprites/${i}.png" style="width:22px;height:22px;object-fit:contain;border:1px solid #e0c097;border-radius:3px;" onerror="this.style.display='none'"><span>${i}</span></button>`).join('');
+    } catch(e) { alert('openItemList error: '+e); }
   };
 
 </script>
