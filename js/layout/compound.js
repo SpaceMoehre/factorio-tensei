@@ -57,9 +57,10 @@ export function buildCompound(ctx, layout) {
       for (let ty = area.y; ty < area.y + area.h; ty++) tiles.push([area.x, ty]);
       start = { tiles, dir: E };
     } else {
-      const [first, ...own] = rowsOf(route.source, route.id).flat();
-      start = { tiles: [first], dir: E };
-      segments.unshift(own);
+      // The belt starts at its producer's first drop tile and visits the producer's rows first.
+      const [firstRow, ...otherRows] = rowsOf(route.source, route.id).filter(row => row.length);
+      start = { tiles: [firstRow[0]], dir: E };
+      segments.unshift(firstRow.slice(1), ...otherRows);
     }
     const end = route.sink === 'side-output' ? 'east' : 'dead';
     return routeBelt(grid, { id: route.id, start, waypoints: serpentine(start.tiles.length === 1 ? start.tiles[0][0] : area.x, segments), end }, beltNames);

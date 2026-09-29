@@ -121,8 +121,8 @@ export function buildCore(sb, building, links, variant, env) {
     };
   });
   const beltRows = variant.belts.map(b => ({ routeId: b.routeId, y: bandY(b.band, b.row) }));
+  if (variant.poleSlot && variant.poleSlot.row > bandHeight(variant.poleSlot.band)) throw new LayoutError('pole slot outside its band');
   const poleY = variant.poleSlot ? bandY(variant.poleSlot.band, variant.poleSlot.row) : null;
-  if (poleY !== null && (poleY < 0 || poleY >= height)) throw new LayoutError('pole slot outside the bands');
   const columns = placeInserters(slots, beltRows, period, {
     pitch, cyclic: counts[0] > 1, beltReach: env.beltReach, poleY,
     machineColumns: columnOrder(Wm, variant.columns).map(c => c + leftPad),

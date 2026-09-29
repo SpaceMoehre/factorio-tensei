@@ -42,7 +42,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     }
     const problems = validateBlock(block, catalog, logistics);
     if (problems.length) {
-      failure = new RoutingError(problems[0]);
+      failure = new Error(`invalid layout: ${problems[0]}`);
       continue;
     }
     const score = [layout.shortfall, block.bounds.w * block.bounds.h, block.entities.length];
@@ -240,10 +240,11 @@ function pack(candidate, pools, routes) {
   };
 }
 
-// No candidate can come out smaller than its cores' bounding box.
+// No candidate can come out smaller than the box around its machines and inserters.
 function boundOf({ cores, placed }) {
-  const w = Math.max(...cores.map((c, i) => placed[i].x + c.w)) - Math.min(...placed.map(p => p.x));
-  const h = Math.max(...cores.map((c, i) => placed[i].y + c.h)) - Math.min(...placed.map(p => p.y));
+  const all = cores.flatMap((c, i) => c.entities.map(e => ({ x: e.x + placed[i].x, y: e.y + placed[i].y, w: e.w, h: e.h })));
+  const w = Math.max(...all.map(e => e.x + e.w)) - Math.min(...all.map(e => e.x));
+  const h = Math.max(...all.map(e => e.y + e.h)) - Math.min(...all.map(e => e.y));
   return w * h;
 }
 

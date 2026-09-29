@@ -37,8 +37,12 @@ The preferred placement order of Sub-Blocks, derived by topologically sorting on
 _Avoid_: input order, list order
 
 **Compactness**:
-What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties.
+What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness.
 _Avoid_: size, footprint (ambiguous between area and entity count)
+
+**Band**:
+The rows of belts beside a row of machines, counted outward from the machines' face (row 1 against the machines). Inserters stand in rows 1 and 2 and reach belts up to row 4. Two facing machine rows share the band between them: both reach its belts.
+_Avoid_: lane (a Lane is one side of a belt), belt row index without saying which face it counts from
 
 **Packing**:
 Arranging Sub-Block rectangles into the Compound Block. The layout search chooses each position and the width of each gap (down to none where no path must pass), and neighbours may share a belt when one's output is the other's input.
@@ -69,7 +73,7 @@ Putting two items on one belt, one per Lane. Eligible only when both items alrea
 _Avoid_: merging belts that don't share a route
 
 **Service Row**:
-A free row between a Sub-Block's fluid connections and its single belt on the same side, left open so pipes can run between machines; long-handed inserters reach over it.
+A row of a Band with no belt in it, left open so pipes can run between machines; long-handed inserters reach over it. The layout search leaves one wherever that is more compact.
 _Avoid_: gap, spacer
 
 **Minimal Pole Placement**:
