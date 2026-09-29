@@ -74,6 +74,7 @@
   const recipeNames = recipesFull.recipe_names || Object.keys(recipesFull.recipes || {});
   const recipes = Object.keys(catalog.recipes);
   let config = [{recipe:recipeNames[0]||'advanced-circuit', count:2}];
+  let goals = [];
 
   function renderRecipeList() {
     const list = document.getElementById('recipe-list');
@@ -147,7 +148,6 @@
     });
   }
 
-  let goals = [];
   window.openItemList = () => {
     try {
     const d = document.getElementById('global-dropdown');
