@@ -23,9 +23,9 @@ test('Side Input route enters at the west edge and an inserter feeds every machi
   const block = solve([asm2('iron-gear-wheel', 180)], catalog, logistics);
   const route = block.routes.find(r => r.source === 'side-input');
   assert.deepEqual(route.items.map(i => i.item), ['iron-plate']);
-  assertRouteChain(route, catalog, logistics);
+  assertRouteChain(block, route, catalog, logistics);
   assert.equal(route.pieces[0].x, block.bounds.x);
-  assertFeedsEveryMachine(block, route, block.entities.filter(e => e.kind === 'building'));
+  assertFeedsEveryMachine(block, route, block.entities.filter(e => e.kind === 'building'), catalog);
   assertNoOverlaps(block.entities);
 });
 
@@ -35,9 +35,9 @@ test('Internal Path carries the producer output into every consumer machine', ()
   const block = solve([asm2('electronic-circuit', 300), asm2('copper-cable', 900)], catalog, logistics);
   const route = block.routes.find(r => r.items.some(i => i.item === 'copper-cable'));
   assert.equal(route.sink, null);
-  assertDrainsEveryMachine(block, route, machinesOf(block, 'copper-cable'));
-  assertFeedsEveryMachine(block, route, machinesOf(block, 'electronic-circuit'));
-  for (const r of block.routes) assertRouteChain(r, catalog, logistics);
+  assertDrainsEveryMachine(block, route, machinesOf(block, 'copper-cable'), catalog);
+  assertFeedsEveryMachine(block, route, machinesOf(block, 'electronic-circuit'), catalog);
+  for (const r of block.routes) assertRouteChain(block, r, catalog, logistics);
   assertNoOverlaps(block.entities);
 });
 
@@ -49,9 +49,9 @@ test('a route crossing another goes under it through a Tunnel spanning exactly t
   ], catalog, logistics);
   const tunnels = block.entities.filter(e => e.kind === 'underground-belt');
   assert.ok(tunnels.length >= 2, 'expected at least one tunnel');
-  for (const r of block.routes) assertRouteChain(r, catalog, logistics);
+  for (const r of block.routes) assertRouteChain(block, r, catalog, logistics);
   const iron = block.routes.find(r => r.items.some(i => i.item === 'iron-plate'));
-  assertFeedsEveryMachine(block, iron, [...machinesOf(block, 'electronic-circuit'), ...machinesOf(block, 'iron-gear-wheel')]);
+  assertFeedsEveryMachine(block, iron, [...machinesOf(block, 'electronic-circuit'), ...machinesOf(block, 'iron-gear-wheel')], catalog);
   assertNoOverlaps(block.entities);
 });
 
@@ -61,7 +61,7 @@ test('Belt Merge: two Side Input items for the same consumers share one belt whe
   const block = solve([asm2('electronic-circuit', 60)], catalog, logistics);
   assert.deepEqual(sideInputItems(block), [['iron-plate', 'copper-cable']]);
   const [route] = block.routes.filter(r => r.source === 'side-input');
-  assertFeedsEveryMachine(block, route, machinesOf(block, 'electronic-circuit'));
+  assertFeedsEveryMachine(block, route, machinesOf(block, 'electronic-circuit'), catalog);
 });
 
 test('Belt Merge: items stay on separate belts when one would overflow its lane', () => {
@@ -142,8 +142,8 @@ test('fluid connections on the sides of a machine are reached through gaps betwe
   assert.equal(machines.length, 2);
   for (const r of block.routes.filter(r => r.kind === 'pipe')) assertPipeNetwork(block, r, catalog, logistics, machines);
   const clay = block.routes.find(r => r.kind === 'belt');
-  assertRouteChain(clay, catalog, logistics);
-  assertDrainsEveryMachine(block, clay, machines);
+  assertRouteChain(block, clay, catalog, logistics);
+  assertDrainsEveryMachine(block, clay, machines, catalog);
   assertNoFluidMixing(block, catalog, logistics);
   assertPowerNetwork(block, catalog, logistics);
   assertNoOverlaps(block.entities);
@@ -194,8 +194,8 @@ test('Side Output route collects the Goal item from every machine and leaves at 
   const block = solve([asm2('iron-gear-wheel', 180)], catalog, logistics);
   const route = block.routes.find(r => r.sink === 'side-output');
   assert.deepEqual(route.items.map(i => i.item), ['iron-gear-wheel']);
-  assertRouteChain(route, catalog, logistics);
-  assertDrainsEveryMachine(block, route, block.entities.filter(e => e.kind === 'building'));
+  assertRouteChain(block, route, catalog, logistics);
+  assertDrainsEveryMachine(block, route, block.entities.filter(e => e.kind === 'building'), catalog);
   assertEndsAtEastEdge(block, route);
   assertNoOverlaps(block.entities);
 });
