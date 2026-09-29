@@ -13,6 +13,8 @@ export function buildCatalog(raw) {
       time: r.energy_required ?? 0.5,
       ingredients: list(r.ingredients).map(({ type, name, amount }) => ({ type, name, amount })),
       products: list(r.results).map(p => ({ type: p.type, name: p.name, amount: expectedAmount(p) })),
+      ...(r.allowed_module_categories && { allowedModuleCategories: list(r.allowed_module_categories) }),
+      ...(r.allow_productivity && { allowProductivity: true }),
     };
   }
   const buildings = {};
@@ -27,6 +29,15 @@ export function buildCatalog(raw) {
       ...(b.energy_source.type === 'burner' && {
         effectivity: b.energy_source.effectivity ?? 1,
         fuelCategories: fuelCategories(b.energy_source),
+      }),
+      // Modules: slots, which effects and categories fit, and the effect the machine has built in
+      // (Py farms: -100% speed, so they run only on their plant and animal modules).
+      ...(b.module_slots > 0 && {
+        moduleSlots: b.module_slots,
+        ...(b.allowed_effects && { allowedEffects: [b.allowed_effects].flat() }),
+        ...(b.allowed_module_categories && { allowedModuleCategories: list(b.allowed_module_categories) }),
+        ...(b.effect_receiver?.base_effect && { baseEffect: b.effect_receiver.base_effect }),
+        ...(b.effect_receiver?.speed_limits?.low !== undefined && { speedLow: b.effect_receiver.speed_limits.low }),
       }),
       fluidBoxes: (b.fluid_boxes ?? []).map(fb => ({
         production: fb.production_type,
@@ -60,6 +71,11 @@ export function buildCatalog(raw) {
     const ug = p.fluid_box.pipe_connections.find(c => c.connection_type === 'underground');
     pipes[p.name] = { name: p.name, maxDistance: ug.max_underground_distance };
   }
+  const plainPipes = Object.values(raw.pipe ?? {}).filter(p => !p.hidden).map(p => p.name).sort();
+  const modules = {};
+  for (const m of Object.values(raw.module ?? {})) {
+    if (!m.hidden) modules[m.name] = { name: m.name, category: m.category, tier: m.tier ?? 1, effect: m.effect ?? {} };
+  }
   const inserters = {};
   for (const i of Object.values(raw.inserter ?? {})) {
     inserters[i.name] = {
@@ -78,7 +94,7 @@ export function buildCatalog(raw) {
       if (p.fuel_value) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
     }
   }
-  return { recipes, buildings, poles, belts, pipes, inserters, fuels, icons: spriteIcons(raw) };
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, modules, icons: spriteIcons(raw) };
 }
 
 // Factorio 2.0 names one fuel category per item and a list per burner; mods may use either form.

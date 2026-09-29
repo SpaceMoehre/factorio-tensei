@@ -62,7 +62,7 @@ export function buildCompound(ctx, layout) {
 
   const beltSpec = catalog.belts[logistics.belt];
   const beltNames = { belt: beltSpec.name, underground: beltSpec.underground.name, reach: beltSpec.underground.maxDistance };
-  const pipeNames = { pipe: 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance };
+  const pipeNames = { pipe: logistics.plainPipe ?? 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance };
   const rowsOf = (i, id) => cores[i].rows.filter(r => idOf(i, r.routeIds[0], r.part) === id)
     .map(r => r.waypoints.map(([x, y]) => [x + placed[i].x, y + placed[i].y]));
   const portTerminals = (i, id) => cores[i].ports.find(p => idOf(i, p.routeId) === id).tiles

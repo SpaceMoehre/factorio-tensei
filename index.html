@@ -31,6 +31,11 @@
   [hidden] { display: none !important; }
   .goal-head input[type=text] { flex: 1; min-width: 0; }
   .goal-head input[type=number] { width: 80px; }
+  .modules { display: flex; flex-direction: column; gap: 4px; }
+  .module { display: flex; gap: 4px; align-items: center; }
+  .module select { flex: 1; min-width: 0; }
+  .module input[type=number] { width: 56px; }
+  .module .sprite { width: 20px; height: 20px; flex: none; }
   .selection { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
   input, select, button, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
   select { width: 100%; min-width: 0; }
@@ -88,6 +93,7 @@
     <h2>Logistics</h2>
     <div class="settings">
       <label for="belt">Belt</label><select id="belt"></select>
+      <label for="plainPipe">Pipe</label><select id="plainPipe"></select>
       <label for="pipe">Pipe-to-ground</label><select id="pipe"></select>
       <label for="pole">Pole</label><select id="pole"></select>
       <label for="inserter">Inserter</label><select id="inserter"></select>

@@ -1,10 +1,11 @@
 import { simulate } from './sim.js';
 import { expandChain, recipeOptions } from './chain.js';
+import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
 import { createMap } from './render.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
-const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
+const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
 const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop' };
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
@@ -15,6 +16,8 @@ if (outdated) Object.assign(catalog, { inserters: {}, fuels: {} });
 const index = recipeOptions(catalog);
 const choices = {
   belt: Object.keys(catalog.belts), pipe: Object.keys(catalog.pipes), pole: Object.keys(catalog.poles),
+  // A catalog built before plain pipes were recorded: the pipe named like each pipe-to-ground.
+  plainPipe: catalog.plainPipes ?? Object.keys(catalog.pipes).map(name => name.replace(/-to-ground$/, '')),
   inserter: inserterNames(1), longInserter: inserterNames(2), fuel: Object.keys(catalog.fuels).sort(),
 };
 const state = load() ?? { goals: [], logistics: {} };
@@ -35,6 +38,9 @@ for (const g of state.goals) {
 let chain = null;
 // The chain's rows by step, with the choices each was drawn for.
 const chainRows = new Map();
+// Redrawing the chain removes the focused field, whose blur can fire another change mid-redraw;
+// that redraw waits for this one to finish.
+let drawing = false;
 let map = null;
 let worker = null;
 // The best layout the running (or last) search has sent, and how many layouts it had tried.
@@ -81,6 +87,7 @@ function defaultLogistics() {
   const prefer = (list, name) => (list.includes(name) ? name : list[0]);
   return {
     belt: prefer(choices.belt, 'transport-belt'),
+    plainPipe: prefer(choices.plainPipe, 'pipe'),
     pipe: prefer(choices.pipe, 'pipe-to-ground'),
     pole: poles[0].name,
     inserter: prefer(choices.inserter, 'fast-inserter'),
@@ -121,6 +128,16 @@ function goalRow(goal, i) {
 // by train. Rows are kept while their choices stay the same, so a click on one is never lost to
 // a redraw.
 function renderChain() {
+  if (drawing) return void queueMicrotask(renderChain);
+  drawing = true;
+  try {
+    drawChain();
+  } finally {
+    drawing = false;
+  }
+}
+
+function drawChain() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
     chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, index }) : null;
@@ -143,7 +160,9 @@ function renderChain() {
     seen.add(`step:${goal.item}`);
     const building = catalog.buildings[selection.building];
     const recipe = catalog.recipes[selection.recipe];
-    const perMachine = building.craftingSpeed / recipe.time * recipe.products.find(p => p.name === goal.item).amount * 60;
+    const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
+    const perMachine = building.craftingSpeed * effect.speed / recipe.time
+      * recipe.products.find(p => p.name === goal.item).amount * (1 + effect.productivity) * 60;
     chainRows.get(`step:${goal.item}`).el.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${Math.ceil(goal.rate / perMachine - 1e-9)}×`;
   }
   for (const input of chain.trainInputs) {
@@ -170,15 +189,45 @@ function stepRow(item, recipes, buildings, selection) {
   const building = el('select', { ariaLabel: `Building for ${item}` });
   fillSelect(building, buildings, selection.building);
   const choose = changes => { state.selections[item] = { ...selection, ...changes }; renderChain(); save(); };
-  recipe.addEventListener('change', () => choose({ recipe: recipe.value, building: '' }));
-  building.addEventListener('change', () => choose({ building: building.value }));
+  // A new recipe or building starts from its own default modules.
+  recipe.addEventListener('change', () => choose({ recipe: recipe.value, building: '', modules: undefined }));
+  building.addEventListener('change', () => choose({ building: building.value, modules: undefined }));
   const isGoal = state.goals.some(g => g.item === item);
   const train = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Bring ${item} by train instead` });
   train.addEventListener('click', () => { state.made = state.made.filter(i => i !== item); renderChain(); save(); });
   train.hidden = isGoal;
   return el('div', { className: 'step' },
     el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), train),
-    el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building));
+    el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building,
+      ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : [])));
+}
+
+// A step's modules: a row per module type with its count, and a button to add another type while
+// slots are free. Farms start full of their first plant (js/modules.js).
+function modulesEditor(item, selection, choose) {
+  const slots = catalog.buildings[selection.building].moduleSlots;
+  const options = moduleOptions(catalog, selection.recipe, selection.building);
+  const modules = selection.modules;
+  const used = modules.reduce((sum, m) => sum + m.count, 0);
+  const set = list => choose({ modules: list.filter(m => m.count > 0) });
+  const rows = modules.map((m, i) => {
+    const name = el('select', { ariaLabel: `Module for ${item}` });
+    fillSelect(name, options, m.name);
+    name.addEventListener('change', () => set(modules.map((x, j) => (j === i ? { ...x, name: name.value } : x))));
+    const count = el('input', { type: 'number', min: '0', max: String(slots - used + m.count), step: '1', value: String(m.count), ariaLabel: `${m.name} modules for ${item}` });
+    count.addEventListener('change', () => {
+      const n = Math.max(0, Math.min(slots - used + m.count, Math.floor(Number(count.value) || 0)));
+      set(modules.map((x, j) => (j === i ? { ...x, count: n } : x)));
+    });
+    const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: `Remove ${m.name}` });
+    remove.addEventListener('click', () => set(modules.filter((_, j) => j !== i)));
+    return el('div', { className: 'module' }, iconOf(m.name), name, count, remove);
+  });
+  const add = el('button', { type: 'button', className: 'swap', textContent: '+ Module' });
+  add.addEventListener('click', () => set([...modules, { name: options[0], count: slots - used }]));
+  add.hidden = used >= slots || !options.length;
+  return el('div', { className: 'modules' }, ...rows,
+    el('div', { className: 'module' }, el('span', { className: 'hint', textContent: `${used} of ${slots} slots` }), add));
 }
 
 function trainRow(input) {

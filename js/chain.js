@@ -3,6 +3,8 @@
 // of a Goal's recipe, and also items no recipe makes and items a recipe would have to make from
 // themselves.
 
+import { defaultModules, moduleOptions } from './modules.js';
+
 const MAX_STEPS = 60;
 
 // Which recipes make each item (best first) and which buildings can run each recipe (slowest
@@ -35,7 +37,8 @@ function hasFluidBoxes(building, recipe) {
 
 // goals: [{ item, rate }] (per minute)
 // options: { made: [item] made in the block rather than brought by train (Goals always are),
-//            selections: { [item]: { recipe, building } }, index: recipeOptions(catalog) }
+//            selections: { [item]: { recipe, building, modules? } }, index: recipeOptions(catalog) }
+// A step's modules are the chosen ones its building takes, or else its building's default.
 // Returns the chain's steps as solve() entries — each item's rate is its Goal rate plus what its
 // consumers take — and the Train Inputs with the rate the chain needs and why each comes by train.
 export function expandChain(goals, catalog, { made = [], selections = {}, index = recipeOptions(catalog) } = {}) {
@@ -50,7 +53,19 @@ export function expandChain(goals, catalog, { made = [], selections = {}, index 
     const recipe = recipes.includes(wanted?.recipe) ? wanted.recipe : recipes[0];
     if (!recipe) return null;
     const buildings = index.buildingsFor.get(recipe);
-    return { recipe, building: buildings.includes(wanted?.building) ? wanted.building : buildings[0] };
+    const building = buildings.includes(wanted?.building) ? wanted.building : buildings[0];
+    if (!catalog.buildings[building].moduleSlots) return { recipe, building };
+    return { recipe, building, modules: wanted?.modules ? fitting(wanted.modules, recipe, building) : defaultModules(catalog, recipe, building) };
+  };
+  // The chosen modules this building takes, within its slots.
+  const fitting = (modules, recipe, building) => {
+    const options = moduleOptions(catalog, recipe, building);
+    let free = catalog.buildings[building].moduleSlots;
+    return modules.filter(m => options.includes(m.name)).flatMap(m => {
+      const count = Math.min(m.count, free);
+      free -= count;
+      return count > 0 ? [{ name: m.name, count }] : [];
+    });
   };
   const toTrain = (item, reason) => {
     if (!trainInputs.has(item)) trainInputs.set(item, { item, rate: 0, reason });

@@ -32,6 +32,10 @@ _Avoid_: treating byproducts as satisfying other Goals automatically
 The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric.
 _Avoid_: fuel for inserters (burner inserters are never used)
 
+**Modules**:
+The modules a step's buildings hold — speed, productivity and efficiency modules, and for Py farms the plants and animals that make them work. Chosen per step of the Production Chain; they set its Count and power draw, and the blueprint asks for them in every one of its machines.
+_Avoid_: beacons (not modelled)
+
 **Sub-Block**:
 The rectangular unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. The layout search chooses the arrangement.
 _Avoid_: block (ambiguous with Compound Block)

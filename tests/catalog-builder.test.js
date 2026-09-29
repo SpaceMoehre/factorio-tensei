@@ -194,3 +194,44 @@ test('energy: machine power draw in watts, burner effectivity and fuel categorie
     'solid-fuel': { name: 'solid-fuel', fuelValue: 12000000, categories: ['chemical'] },
   });
 });
+
+test('plain pipes: every pipe type, so the pipe can be chosen like its pipe-to-ground', () => {
+  const catalog = buildCatalog(dataRaw({
+    pipe: { pipe: { name: 'pipe' }, 'niobium-pipe': { name: 'niobium-pipe' }, 'hidden-pipe': { name: 'hidden-pipe', hidden: true } },
+  }));
+  assert.deepEqual(catalog.plainPipes, ['niobium-pipe', 'pipe']);
+});
+
+// Py's moss farm (pyalienlife prototypes/buildings/moss-farm.lua): 15 slots, speed 1/15, and a
+// base effect of -100% speed, so it runs only on its moss modules (+100% speed each).
+test('modules: module items with their effects; slots, allowed effects and categories and base effect per building; recipe limits', () => {
+  const catalog = buildCatalog(dataRaw({
+    'assembling-machine': {
+      'moss-farm-mk01': {
+        name: 'moss-farm-mk01', collision_box: [[-3.9, -3.9], [3.9, 3.9]], crafting_speed: 1 / 15, crafting_categories: ['moss'],
+        energy_usage: '100kW', energy_source: { type: 'electric' }, module_slots: 15,
+        allowed_effects: ['speed', 'productivity', 'consumption', 'pollution', 'quality'], allowed_module_categories: ['moss'],
+        effect_receiver: { base_effect: { speed: -1 }, speed_limits: { low: -0.9999 } },
+      },
+    },
+    module: {
+      moss: { name: 'moss', category: 'moss', tier: 1, effect: { pollution: 1, speed: 1 } },
+      'speed-module': { name: 'speed-module', category: 'speed', tier: 1, effect: { speed: 0.2, consumption: 0.5 } },
+    },
+    recipe: {
+      'moss-1': {
+        name: 'moss-1', category: 'moss', energy_required: 60, allowed_module_categories: ['moss'], allow_productivity: true,
+        ingredients: [{ type: 'fluid', name: 'water', amount: 100 }], results: [{ type: 'item', name: 'moss', amount: 10 }],
+      },
+    },
+  }));
+  assert.deepEqual(catalog.modules, {
+    moss: { name: 'moss', category: 'moss', tier: 1, effect: { pollution: 1, speed: 1 } },
+    'speed-module': { name: 'speed-module', category: 'speed', tier: 1, effect: { speed: 0.2, consumption: 0.5 } },
+  });
+  const farm = catalog.buildings['moss-farm-mk01'];
+  assert.deepEqual([farm.moduleSlots, farm.allowedEffects, farm.allowedModuleCategories, farm.baseEffect, farm.speedLow],
+    [15, ['speed', 'productivity', 'consumption', 'pollution', 'quality'], ['moss'], { speed: -1 }, -0.9999]);
+  const recipe = catalog.recipes['moss-1'];
+  assert.deepEqual([recipe.allowedModuleCategories, recipe.allowProductivity], [['moss'], true]);
+});

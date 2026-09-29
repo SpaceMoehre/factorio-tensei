@@ -250,9 +250,34 @@ export const pyCatalog = {
       ingredients: [{ type: 'item', name: 'iron-plate', amount: 1 }],
       products: [{ type: 'item', name: 'iron-stick', amount: 2 }],
     },
+    'Moss-1': {
+      name: 'Moss-1', category: 'moss', time: 100,
+      ingredients: [{ type: 'fluid', name: 'muddy-sludge', amount: 100 }, { type: 'fluid', name: 'carbon-dioxide', amount: 100 }],
+      products: [{ type: 'item', name: 'moss', amount: 8 }],
+    },
+  },
+  // Py farms run on plant and animal modules; module data as pyalienlife defines it
+  // (prototypes/items/items.lua, prototypes/buildings/moss-farm.lua), with the 16 slots that the
+  // catalog's crafting speed of 1/16 implies. Vanilla's speed module for comparison.
+  modules: {
+    moss: { name: 'moss', category: 'moss', tier: 1, effect: { pollution: 1, speed: 1 } },
+    'moss-mk02': { name: 'moss-mk02', category: 'moss', tier: 2, effect: { pollution: 1, speed: 2 } },
+    'speed-module': { name: 'speed-module', category: 'speed', tier: 1, effect: { speed: 0.2, consumption: 0.5 } },
+    'productivity-module': { name: 'productivity-module', category: 'productivity', tier: 1, effect: { productivity: 0.04, consumption: 0.4, speed: -0.05 } },
   },
   buildings: {
     ...catalog.buildings,
+    'moss-farm-mk01': {
+      name: 'moss-farm-mk01', size: { w: 6, h: 6 }, craftingSpeed: 0.0625, categories: ['moss'], energy: 'electric', energyUsage: 100000,
+      moduleSlots: 16, allowedEffects: ['speed', 'productivity', 'consumption', 'pollution', 'quality'], allowedModuleCategories: ['moss'],
+      baseEffect: { speed: -1 }, speedLow: -0.9999,
+      fluidBoxes: [
+        { production: 'input', connections: [{ x: 1.5, y: -2.5, direction: 0 }] },
+        { production: 'input', connections: [{ x: -1.5, y: -2.5, direction: 0 }] },
+        { production: 'output', connections: [{ x: 1.5, y: 2.5, direction: 8 }] },
+        { production: 'output', connections: [{ x: -1.5, y: 2.5, direction: 8 }] },
+      ],
+    },
     'chipshooter-mk01': {
       name: 'chipshooter-mk01', size: { w: 5, h: 5 }, craftingSpeed: 1, categories: ['chip'], energy: 'electric', fluidBoxes: [],
     },

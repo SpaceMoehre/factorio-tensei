@@ -220,3 +220,12 @@ test('the block carries the copper wires joining its poles, for the map to draw'
   }
   assert.deepEqual([...joined].sort(), [...poles].sort());
 });
+
+test('the plain pipe is a logistics setting, like the pipe-to-ground', () => {
+  const niobium = { ...logistics, plainPipe: 'niobium-pipe' };
+  const block = solve([{ goal: { item: 'petroleum-gas', rate: 1320 }, selection: { recipe: 'advanced-oil-processing', building: 'oil-refinery' } }], catalog, niobium);
+  const pipes = block.entities.filter(e => e.kind === 'pipe');
+  assert.ok(pipes.length > 0);
+  assert.deepEqual([...new Set(pipes.map(p => p.name))], ['niobium-pipe']);
+  assertValid(block, catalog, niobium);
+});
