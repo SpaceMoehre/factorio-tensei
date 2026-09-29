@@ -11,18 +11,18 @@ export class RoutingError extends Error {}
 export function routeBelt(grid, spec, names) {
   const pieces = [];
   const commit = leg => commitLeg(grid, spec, names.underground, leg, pieces);
-  let starts = spec.start.tiles.map(([x, y]) => ({ x, y, a: spec.start.dir, surfaceOnly: true }));
+  let starts = spec.start.tiles.map(([x, y]) => ({ x, y, a: spec.start.dir }));
   const pending = new Set(spec.waypoints.map(([x, y]) => key(x, y)));
   const moves = beltMoves(grid, spec, names, pending);
-  // Rows run west to east, so a waypoint is never entered heading west and a leg never
-  // crosses a later waypoint of its own route.
+  // A leg never crosses a later waypoint of its own route. The piece on a waypoint tile is a
+  // belt or a tunnel entrance: an inserter can reach either.
   for (const [wx, wy] of spec.waypoints) {
     pending.delete(key(wx, wy));
-    const isGoal = s => s.x === wx && s.y === wy && s.a !== W;
+    const isGoal = s => s.x === wx && s.y === wy;
     const leg = search(grid, starts, isGoal, (x, y) => Math.abs(x - wx) + Math.abs(y - wy), moves);
     if (!leg) throw new RoutingError(`belt ${spec.id}: no path to waypoint ${wx},${wy}`);
     commit(leg);
-    starts = [{ ...leg.state, surfaceOnly: true }];
+    starts = [leg.state];
   }
   if (spec.end === 'east') {
     const lastX = grid.area.x + grid.area.w - 1;
@@ -42,18 +42,33 @@ export function routeBelt(grid, spec, names) {
 // spec: { id, fluid, terminals: [[x, y, outwardDir]], source: boolean, sink: boolean }
 // names: { pipe, underground, reach }
 export function routePipe(grid, spec, names) {
+  const [[x0, y0, out0]] = spec.terminals;
+  let failure = new RoutingError(`${spec.fluid}: connection at ${x0},${y0} is blocked`);
+  for (const seed of seeds(grid, spec, names, x0, y0, out0)) {
+    const saved = grid.snapshot();
+    try {
+      return growTree(grid, spec, names, seed);
+    } catch (e) {
+      if (!(e instanceof RoutingError)) throw e;
+      failure = e;
+      grid.restore(saved);
+    }
+  }
+  throw failure;
+}
+
+function growTree(grid, spec, names, seedPieces) {
   const pieces = [];
   const tree = new Set();
   const commit = leg => {
     commitLeg(grid, spec, names.underground, leg, pieces);
     for (const p of leg.pieces) if (p.kind === 'pipe') tree.add(key(p.x, p.y));
   };
-  const pending = new Set(spec.terminals.map(([x, y]) => key(x, y)));
+  const [[x0, y0], ...rest] = spec.terminals;
+  const pending = new Set(rest.map(([x, y]) => key(x, y)));
   const moves = pipeMoves(grid, spec, names, pending);
   const toTree = { isGoal: s => tree.has(key(s.x, s.y)), heuristic: (x, y) => nearest(tree, x, y) };
-  const [[x0, y0, out0], ...rest] = spec.terminals;
-  pending.delete(key(x0, y0));
-  commit({ pieces: seed(grid, spec, names, x0, y0, out0) });
+  commit({ pieces: seedPieces });
   if (spec.source) {
     const leg = search(grid, edgeStarts(grid, grid.area.x, E), toTree.isGoal, toTree.heuristic, moves);
     if (!leg) throw new RoutingError(`${spec.fluid}: no path from the west edge`);
@@ -74,17 +89,18 @@ export function routePipe(grid, spec, names) {
   return pieces;
 }
 
-// The tree starts at its first machine connection: a pipe there if the pipe could continue
-// somewhere, otherwise a pipe-to-ground diving straight out under whatever encloses it.
-function seed(grid, spec, names, x, y, outward) {
+// Ways to start the tree at its first machine connection: a pipe there if the pipe could
+// continue somewhere, or a pipe-to-ground diving straight out under whatever encloses it, for
+// each hop length that surfaces on a free tile.
+function* seeds(grid, spec, names, x, y, outward) {
   const open = directions(outward).some(d => {
     const [nx, ny] = step(x, y, d);
     return grid.freeFor(nx, ny, spec.id) && !grid.pipeBlocked.has(key(nx, ny));
   });
-  if (open && canPipe(grid, spec, x, y)) return [pipePiece(spec, names, x, y, outward)];
-  const hop = pipeMoves(grid, spec, names, new Set())({ x, y, a: outward }).find(m => m.pieces.length === 2);
-  if (!hop || !canPipe(grid, spec, hop.x, hop.y)) throw new RoutingError(`${spec.fluid}: connection at ${x},${y} is blocked`);
-  return [...hop.pieces, pipePiece(spec, names, hop.x, hop.y, outward)];
+  if (open && canPipe(grid, spec, x, y)) yield [pipePiece(spec, names, x, y, outward)];
+  for (const hop of pipeMoves(grid, spec, names, new Set())({ x, y, a: outward })) {
+    if (hop.pieces.length === 2 && canPipe(grid, spec, hop.x, hop.y)) yield [...hop.pieces, pipePiece(spec, names, hop.x, hop.y, outward)];
+  }
 }
 
 function edgeStarts(grid, x, dir) {
@@ -169,11 +185,12 @@ function step(x, y, d, n = 1) {
   return [x + dx * n, y + dy * n];
 }
 
-// Tunnels always surface exactly `reach` tiles ahead (ADR 0002).
-function tunnelMove(node, names, pieces) {
-  const [ex, ey] = step(node.x, node.y, node.a, names.reach);
-  const [nx, ny] = step(ex, ey, node.a);
-  return { x: nx, y: ny, a: node.a, cost: names.reach + 1 + TUNNEL_COST, pieces };
+// A tunnel surfaces `hop` tiles ahead, anywhere up to the underground's reach (ADR 0003).
+const HOPS = reach => [...Array(reach - 1).keys()].map(i => i + 2);
+
+function tunnelMove(node, hop, pieces) {
+  const [nx, ny] = step(node.x, node.y, node.a, hop + 1);
+  return { x: nx, y: ny, a: node.a, cost: hop + 1 + TUNNEL_COST, pieces };
 }
 
 function beltMoves(grid, spec, names, pending) {
@@ -185,21 +202,18 @@ function beltMoves(grid, spec, names, pending) {
       const [nx, ny] = step(node.x, node.y, d);
       options.push({ x: nx, y: ny, a: d, cost: 1 + (d === node.a ? 0 : TURN_COST), pieces: [beltPiece(spec, names, node.x, node.y, d)] });
     }
-    // A waypoint or start tile stays on the surface so an inserter can reach it.
-    if (!node.surfaceOnly) {
-      const d = node.a;
-      const [qx, qy] = step(node.x, node.y, d, names.reach);
-      const clear = [...Array(names.reach + 1).keys()].every(i => !pending.has(key(...step(node.x, node.y, d, i))));
-      if (clear && grid.freeFor(node.x, node.y, spec.id) && grid.freeFor(qx, qy, spec.id)
-        && grid.tunnelFits(names.underground, node, { x: qx, y: qy })
-        && beltOutputAllowed(grid, spec, ...step(qx, qy, d))
-        && !fedByOther(grid, spec, node.x, node.y) && !fedByOther(grid, spec, qx, qy)) {
-        const base = { name: names.underground, kind: 'underground-belt', route: spec.id, w: 1, h: 1, direction: d, travel: d };
-        options.push(tunnelMove(node, names, [
-          { ...base, underground: 'input', x: node.x, y: node.y, out: null },
-          { ...base, underground: 'output', x: qx, y: qy, out: key(...step(qx, qy, d)) },
-        ]));
-      }
+    const d = node.a;
+    if (!grid.freeFor(node.x, node.y, spec.id) || fedByOther(grid, spec, node.x, node.y)) return options;
+    for (const hop of HOPS(names.reach)) {
+      const [qx, qy] = step(node.x, node.y, d, hop);
+      if (pending.has(key(qx, qy)) || [...Array(hop).keys()].some(i => i > 0 && pending.has(key(...step(node.x, node.y, d, i))))) break;
+      if (!grid.freeFor(qx, qy, spec.id) || !grid.tunnelFits(names.underground, node, { x: qx, y: qy })) continue;
+      if (!beltOutputAllowed(grid, spec, ...step(qx, qy, d)) || fedByOther(grid, spec, qx, qy)) continue;
+      const base = { name: names.underground, kind: 'underground-belt', route: spec.id, w: 1, h: 1, direction: d, travel: d };
+      options.push(tunnelMove(node, hop, [
+        { ...base, underground: 'input', x: node.x, y: node.y, out: null },
+        { ...base, underground: 'output', x: qx, y: qy, out: key(...step(qx, qy, d)) },
+      ]));
     }
     return options;
   };
@@ -215,12 +229,14 @@ function pipeMoves(grid, spec, names, pending) {
       }
     }
     const d = node.a;
-    const [qx, qy] = step(node.x, node.y, d, names.reach);
     const endOk = (x, y) => grid.freeFor(x, y, spec.id) && !grid.pipeBlocked.has(key(x, y)) && !pending.has(key(x, y));
-    if (endOk(node.x, node.y) && endOk(qx, qy) && grid.tunnelFits(names.underground, node, { x: qx, y: qy })) {
+    if (!endOk(node.x, node.y)) return options;
+    for (const hop of HOPS(names.reach)) {
+      const [qx, qy] = step(node.x, node.y, d, hop);
+      if (!endOk(qx, qy) || !grid.tunnelFits(names.underground, node, { x: qx, y: qy })) continue;
       // A pipe-to-ground's direction is its above-ground connection side.
       const base = { name: names.underground, kind: 'pipe-to-ground', route: spec.id, fluid: spec.fluid, w: 1, h: 1, travel: d, out: null };
-      options.push(tunnelMove(node, names, [
+      options.push(tunnelMove(node, hop, [
         { ...base, underground: 'input', x: node.x, y: node.y, direction: opposite(d) },
         { ...base, underground: 'output', x: qx, y: qy, direction: d },
       ]));

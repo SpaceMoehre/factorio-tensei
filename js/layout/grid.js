@@ -33,6 +33,16 @@ export class Grid {
     return !this.tunnels.some(t => t.name === name && spansOverlap(t, s));
   }
 
+  // Routing may try an option and take it back: everything it changes is saved here.
+  snapshot() {
+    return { occupied: new Map(this.occupied), tunnels: this.tunnels.length };
+  }
+
+  restore({ occupied, tunnels }) {
+    this.occupied = occupied;
+    this.tunnels.length = tunnels;
+  }
+
   inBounds(x, y) {
     const a = this.area;
     return x >= a.x && y >= a.y && x < a.x + a.w && y < a.y + a.h;

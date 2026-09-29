@@ -43,7 +43,7 @@ test('Internal Path carries the producer output into every consumer machine', ()
 
 // The wide gear Sub-Block lands on the shelf below the circuits, so the iron belt runs from the
 // circuit row down to the gear row and the circuit output has to cross it to leave eastward.
-test('a route crossing another goes under it through a Tunnel spanning exactly the underground max reach', () => {
+test('a route crossing another goes under it through a Tunnel within the underground reach', () => {
   const block = solve([
     asm2('electronic-circuit', 300), asm2('copper-cable', 900), asm2('iron-gear-wheel', 900),
   ], catalog, logistics);
