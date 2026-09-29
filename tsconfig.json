@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": false,
+    "noImplicitAny": false,
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "node",
+    "allowSyntheticDefaultImports": true,
+    "lib": ["ES2022", "DOM"],
+    "typeRoots": ["/usr/share/nodejs/@types"],
+    "types": ["node"]
+  },
+  "include": ["js/**/*.js", "scripts/**/*.mjs", "tests/**/*.js"]
+}

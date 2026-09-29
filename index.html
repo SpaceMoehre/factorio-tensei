@@ -1,170 +1,106 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<title>Factorio Factory Block Blueprint Tool</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Block Planner</title>
 <style>
-  body { font-family: system-ui,sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%); color: #eaeaea; margin: 0; padding: 2rem; min-height: 100vh; }
-  h1 { color: #e0c097; letter-spacing: 1px; }
-  ::selection { background: #e0c097; color: #1a1a2e; }
-  h1 { color: #89b4fa; }
-  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 2rem; }
-  .panel { background: rgba(26,26,46,0.85); backdrop-filter: blur(6px); padding: 1rem; border-radius: 12px; border: 1px solid rgba(224,192,151,0.25); box-shadow: 0 4px 20px rgba(0,0,0,0.35); overflow: visible !important; }
-  #recipe-list { overflow: visible !important; } backdrop-filter: blur(6px); padding: 1rem; border-radius: 12px; border: 1px solid rgba(224,192,151,0.25); box-shadow: 0 4px 20px rgba(0,0,0,0.35); }
-  input, select, button { padding: .5rem; font-size: 1rem; border: none; border-radius: 6px; }
-  button { background: linear-gradient(180deg, #e0c097, #bfa070); color: #1a1a2e; font-weight: bold; cursor: pointer; border: 1px solid #d4a86e; box-shadow: 0 2px 6px rgba(224,192,151,0.3); }
-  button:hover { background: linear-gradient(180deg, #f0d8b5, #d4b890); }
-  button:hover { background: #94e2d5; }
-  .recipe-row { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; }
-  .recipe-row input { width: 60px; }
-  pre { background: #181825; padding: .5rem; overflow: auto; border-radius: 6px; }
-  #preview { border: 2px solid #585b70; border-radius: 8px; overflow: hidden; }
+  :root {
+    --bg: #111318; --panel: #1a1d24; --panel-2: #22262f; --border: #343a46;
+    --text: #e6e6e6; --muted: #9aa3b2; --accent: #e0c097; --danger: #ff6b6b; --ok: #6fcf97;
+    --map-bg: #14161b; --map-grid: #20232b; --map-machine: #3b4658; --map-machine-edge: #8aa0c0;
+    --map-text: #e8e8e8; --map-starve: #ff5c5c; --map-subblock: #e0c097;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; height: 100vh; }
+  aside { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 16px; }
+  main { position: relative; min-width: 0; }
+  h1 { font-size: 18px; margin: 0 0 4px; color: var(--accent); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 8px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+  .goal { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .goal-head { display: flex; gap: 6px; align-items: center; }
+  .goal-head img { width: 28px; height: 28px; object-fit: contain; }
+  .goal-head input[type=text] { flex: 1; min-width: 0; }
+  .goal-head input[type=number] { width: 80px; }
+  .selection { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  input, select, button, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+  select { width: 100%; min-width: 0; }
+  button { cursor: pointer; background: var(--panel-2); }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #1b1b1b; border-color: var(--accent); font-weight: 600; width: 100%; padding: 8px; }
+  button.icon { padding: 4px 9px; }
+  .settings { display: grid; grid-template-columns: auto 1fr; gap: 6px 8px; align-items: center; }
+  .status { margin-top: 12px; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+  .status.error { background: rgba(255,107,107,.12); border: 1px solid var(--danger); color: var(--danger); }
+  .status.ok { background: rgba(111,207,151,.1); border: 1px solid var(--ok); color: var(--ok); }
+  .status.warn { background: rgba(255,107,107,.08); border: 1px solid var(--danger); }
+  ul.flows { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+  ul.flows li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-bottom: 1px dashed var(--border); }
+  textarea { width: 100%; height: 72px; font: 11px/1.3 ui-monospace, monospace; resize: vertical; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .row { display: flex; gap: 6px; margin-top: 6px; }
+  .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
+  .tooltip { position: absolute; left: 12px; bottom: 12px; background: rgba(17,19,24,.92); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; pointer-events: none; max-width: 60%; }
+  .tooltip:empty { display: none; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
+  .empty[hidden] { display: none; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  @media (max-width: 800px) {
+    .app { grid-template-columns: 1fr; grid-template-rows: auto 70vh; height: auto; }
+    aside { border-right: none; border-bottom: 1px solid var(--border); }
+  }
 </style>
 </head>
 <body>
-<h1>Factorio Factory Block Blueprint Tool</h1>
-<div class="grid">
-  <div>
-    <div class="panel">
-      <h3>Production Goals (items/min)</h3>
-      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-        <button onclick="openItemList()" id="goal-item-btn" style="flex:1;min-width:140px;text-align:left;padding:6px;border-radius:6px;border:1px solid #e0c097;background:#181825;color:#eaeaea;font-size:0.95rem;cursor:pointer;">Select item...</button>
-        <input id="goal-rate" type="number" value="30" min="1" style="width:80px;padding:6px;border-radius:6px;border:1px solid #e0c097;background:#181825;color:#eaeaea;" placeholder="/min">
-        <button onclick="addGoal()">Add Goal</button>
-      </div>
-      <div id="goals-list"></div>
+<div class="app">
+  <aside>
+    <h1>Factory Block Planner</h1>
+    <p class="hint">Set item-rate Goals, pick a recipe and building for each, then build a compact block with its blueprint.</p>
+
+    <h2>Goals</h2>
+    <div id="goals"></div>
+    <button id="add-goal" type="button">+ Add goal</button>
+    <datalist id="items"></datalist>
+
+    <h2>Logistics</h2>
+    <div class="settings">
+      <label for="belt">Belt</label><select id="belt"></select>
+      <label for="pipe">Pipe-to-ground</label><select id="pipe"></select>
+      <label for="pole">Pole</label><select id="pole"></select>
     </div>
-    <div id="recipe-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;background:#181825;border:2px solid #e0c097;border-radius:12px;padding:1.5rem;max-width:520px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
-      <h3 id="modal-title">Choose Recipe</h3>
-      <div id="modal-options"></div>
-      <button onclick="closeModal()" style="margin-top:10px;">Close</button>
+
+    <h2>Build</h2>
+    <button id="calculate" class="primary" type="button">Build factory block</button>
+    <div id="status"></div>
+    <div id="results" hidden>
+      <h2>Side Input (train in)</h2>
+      <ul class="flows" id="side-input"></ul>
+      <h2>Side Output (train out)</h2>
+      <ul class="flows" id="side-output"></ul>
+      <h2>Blueprint</h2>
+      <textarea id="bp-string" readonly aria-label="Blueprint string"></textarea>
+      <div class="row"><button id="copy-string" type="button">Copy blueprint string</button></div>
+      <details>
+        <summary>Blueprint JSON</summary>
+        <textarea id="bp-json" readonly aria-label="Blueprint JSON" style="height:160px"></textarea>
+        <div class="row"><button id="copy-json" type="button">Copy JSON</button></div>
+      </details>
     </div>
-    <div class="panel" style="margin-top:1rem">
-      <button onclick="runSolver()">Calculate Blueprint</button>
-      <button onclick="runSim()">Run Simulation</button>
-      <button onclick="exportBluePrint()">Export Blueprint JSON</button>
-      <div id="sim-result" style="margin-top:.5rem"></div>
+  </aside>
+  <main>
+    <canvas id="map" aria-label="Factory block map"></canvas>
+    <div class="toolbar">
+      <button class="icon" id="zoom-in" type="button" title="Zoom in">+</button>
+      <button class="icon" id="zoom-out" type="button" title="Zoom out">−</button>
+      <button id="fit" type="button" title="Fit to view">Fit</button>
     </div>
-  </div>
-  <div>
-    <div class="panel" style="margin-top:1rem">
-      <h3>Sprites (Factorio icons)</h3>
-      <div id="sprite-bar" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
-    </div>
-    <div class="panel">
-      <h3>Layout Preview</h3>
-      <div id="preview"></div>
-    </div>
-    <div class="panel" style="margin-top:1rem">
-      <h3>Blueprint / Data</h3>
-      <pre id="bp-output">Select recipes and calculate.</pre>
-    </div>
-  </div>
+    <div class="tooltip" id="tooltip"></div>
+    <div class="empty" id="empty">Loading catalog…</div>
+  </main>
 </div>
-
-<script type="module">
-  // Load modules via dynamic import in regular script (global scope preserved)
-  let Solver, Simulator, BlueprintEncoder, Renderer;
-  Promise.all([
-    import('./js/solver.js').then(m=>Solver=m.Solver),
-    import('./js/sim.js').then(m=>Simulator=m.Simulator),
-    import('./js/blueprint.js').then(m=>BlueprintEncoder=m.BlueprintEncoder),
-    import('./js/render.js').then(m=>Renderer=m.Renderer)
-  ]).then(()=>{ window.modulesLoaded=true; renderGoals(); });
-
-  const catalog = await fetch('data/catalog.json').then(r => r.json());
-  const recipesFull = await fetch('data/recipes_full.json').then(r => r.json());
-  const sprites = await fetch('data/sprites.json').then(r => r.json());
-  const recipeNames = recipesFull.recipe_names || Object.keys(recipesFull.recipes || {});
-  const recipes = Object.keys(catalog.recipes);
-  let config = [{recipe:recipeNames[0]||'advanced-circuit', count:2}];
-  let goals = [];
-
-  function renderRecipeList() {
-    const list = document.getElementById('recipe-list');
-    list.innerHTML = '';
-    config.forEach((c,i) => {
-      const row = document.createElement('div'); row.className = 'recipe-row';
-      const iconName = c.recipe.replace(/-/g,'_');
-      row.innerHTML = `<img src="sprites/${c.recipe}.png" style="width:28px;height:28px;object-fit:contain;border:1px solid #e0c097;border-radius:4px;" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block'" title="${c.recipe}"><span style="display:none;font-size:10px">${c.recipe}</span><div style="position:relative;display:inline-block;vertical-align:middle"><button onclick="openGlobalDropdown(${i},this)" style="width:140px;text-align:left;background:#2a2638;border:1px solid #e0c097;color:#eaeaea;padding:4px 6px;border-radius:6px;font-size:0.85rem;">${c.recipe}</button></div><input type="number" value="${c.count}" min="1" onchange="updateCount(${i},this.value)"><button onclick="removeRecipe(${i})">×</button>`;
-      list.appendChild(row);
-    });
-  }
-  window.updateRecipe = (i,v) => { config[i].recipe = v; renderGoals(); };
-  window.updateCount = (i,v) => { config[i].count = parseInt(v||1); };
-  window.removeRecipe = (i) => { config.splice(i,1); renderGoals(); };
-  window.addRecipeRow = () => { config.push({recipe:recipeNames[0]||'advanced-circuit', count:1}); renderGoals(); };
-
-  let lastResult = null;
-  window.openGlobalDropdown = (idx, btn) => {
-    const d = document.getElementById('global-dropdown');
-    const rect = btn.getBoundingClientRect();
-    d.style.display = 'block';
-    d.style.top = (rect.bottom + window.scrollY + 2) + 'px';
-    d.style.left = (rect.left + window.scrollX) + 'px';
-    const c = config[idx];
-    d.innerHTML = recipeNames.map(r => `<button onclick="updateRecipe(${idx},'${r}');document.getElementById('global-dropdown').style.display='none';document.querySelectorAll('.recipe-row button')[${idx}].textContent='${r}'" style="display:flex;align-items:center;gap:6px;width:100%;text-align:left;padding:5px 8px;background:transparent;border:none;color:#eaeaea;cursor:pointer;font-size:0.85rem;border-bottom:1px solid rgba(224,192,151,0.15);"><img src="sprites/${r}.png" style="width:20px;height:20px;object-fit:contain;border:1px solid #e0c097;border-radius:3px;" onerror="this.style.display='none'"><span>${r}</span></button>`).join('');
-  };
-  document.addEventListener('click', e => { if (!e.target.closest('#global-dropdown') && !e.target.closest('.recipe-row button')) document.getElementById('global-dropdown').style.display='none'; });
-  window.renderSprites = () => {
-    const bar = document.getElementById('sprite-bar');
-    if (!bar || !sprites) return;
-    const keys = Object.keys(sprites.icons || {}).slice(0,12);
-    bar.innerHTML = keys.map(k => {
-      const path = sprites.icons[k];
-      return `<div style="text-align:center"><img src="sprites/${k}.png" style="width:32px;height:32px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.textContent='${k}'" title="${k}"><div style="font-size:9px">${k}</div></div>`;
-    }).join('');
-  };
-  window.runSolver = () => {
-    const cfg = goals.filter(g=>g.recipe).map(g=>({recipe:g.recipe, count: Math.max(1,Math.round(g.rate/15))}));
-    if(cfg.length===0){alert('Add at least one completed goal'); return;}
-    const s = new Solver(catalog, cfg);
-    s.mergeBelts();
-    lastResult = s.solve();
-    document.getElementById('bp-output').textContent = JSON.stringify(lastResult, null, 2).slice(0,2000);
-    new Renderer().render(lastResult, 'preview');
-  };
-
-  window.runSim = () => {
-    if (!lastResult) { lastResult = new Solver(catalog, config).solve(); }
-    const sim = new Simulator(lastResult, catalog);
-    const res = sim.run();
-    document.getElementById('sim-result').innerHTML = `<strong>Simulation:</strong> ${res.ok ? 'OK' : 'STARVATION'}<br><pre>${JSON.stringify(res.starvation, null, 2)}</pre>`;
-  };
-
-  window.exportBluePrint = () => {
-    if (!lastResult) window.runSolver();
-    const enc = new BlueprintEncoder();
-    document.getElementById('bp-output').textContent = enc.encode(lastResult);
-  };
-
-  renderGoals();
-  renderSprites();
-
-  function renderGoals() {
-    const list = document.getElementById('goals-list');
-    if (!list) return;
-    list.innerHTML = '';
-    goals.forEach((g,i) => {
-      const row = document.createElement('div'); row.className='recipe-row';
-      row.innerHTML = `<img src="sprites/${g.item}.png" style="width:28px;height:28px;object-fit:contain;border:1px solid #e0c097;border-radius:4px;cursor:pointer;" onclick="openRecipeModal(${i})" title="choose recipe"><div style="flex:1"><strong>${g.item}</strong> @ ${g.rate||30}/min <div style="font-size:0.75rem;color:#aaa;">recipe: ${g.recipe||'?'} · inputs: ${g.inputs||'?'}</div></div><button onclick="removeGoal(${i})">×</button>`;
-      list.appendChild(row);
-    });
-  }
-
-  window.openItemList = () => {
-    try {
-    const d = document.getElementById('global-dropdown');
-    const btn = document.getElementById('goal-item-btn');
-    const rect = btn.getBoundingClientRect();
-    d.style.display = 'block';
-    d.style.top = (rect.bottom + window.scrollY + 2) + 'px';
-    d.style.left = (rect.left + window.scrollX) + 'px';
-    const all = Object.keys(catalog.recipes||{});
-    d.innerHTML = all.map(i => `<button onclick="document.getElementById('goal-item-btn').textContent='${i}';document.getElementById('goal-item-btn').dataset.item='${i}';document.getElementById('global-dropdown').style.display='none'" style="display:flex;align-items:center;gap:8px;width:100%;text-align:left;padding:5px 8px;background:transparent;border:none;color:#eaeaea;cursor:pointer;font-size:0.85rem;border-bottom:1px solid rgba(224,192,151,0.15);"><img src="sprites/${i}.png" style="width:22px;height:22px;object-fit:contain;border:1px solid #e0c097;border-radius:3px;" onerror="this.style.display='none'"><span>${i}</span></button>`).join('');
-    } catch(e) { alert('openItemList error: '+e); }
-  };
-
-</script>
-<div id="global-dropdown" style="display:none;position:fixed;z-index:9999;background:#181825;border:1px solid #e0c097;border-radius:8px;max-height:260px;overflow-y:auto;width:160px;box-shadow:0 12px 40px rgba(0,0,0,0.8);"></div></body>
+<script type="module" src="js/app.js"></script>
+</body>
 </html>

@@ -1,0 +1,3 @@
+# Starvation is checked per-edge in belt order, not as aggregate demand vs. supply
+
+Detecting starvation by comparing total demand to total supply per item would miss the real Factorio failure mode: on a lane feeding multiple inserters, consumers closer to the source pull first, so a downstream Sub-Block can starve even when aggregate capacity looks sufficient. We instead walk each edge's consumers in belt order (closest-to-source first), subtracting demand from remaining throughput, and flag starvation the moment remaining throughput drops below a consumer's need. This is deliberately more expensive than an aggregate sum — don't simplify it back without accounting for consumption order.

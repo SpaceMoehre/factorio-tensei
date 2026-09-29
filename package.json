@@ -1,1 +1,11 @@
-{"name":"factorio-blueprint-tool","type":"module","version":"0.1.0","description":"Factorio factory block blueprint generator"}
+{
+  "name": "factorio-blueprint-tool",
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Factorio factory block blueprint generator",
+  "scripts": {
+    "test": "node --test tests/",
+    "typecheck": "tsc -p .",
+    "build-catalog": "node scripts/build-catalog.mjs"
+  }
+}

@@ -1,40 +1,18 @@
-/** Numeric item-flow simulation to detect starvation */
-export class Simulator {
-  constructor(solverResult, catalog) {
-    this.sb = solverResult.subBlocks;
-    this.catalog = catalog;
-  }
+const EPSILON = 1e-9;
 
-  run() {
-    // Build flow graph from paths + sub-block inputs/outputs
-    const nodes = {}; // node -> rate
-    // Infinity sources / sinks
-    nodes['source_side'] = Infinity;
-    nodes['sink_train'] = Infinity;
-    // Sub-block consumption per item
-    const demands = {};
-    this.sb.forEach(sb => {
-      sb.buildings.forEach(b => {
-        const rec = this.catalog.recipes[sb.recipe];
-        if (rec && rec.inputs) {
-          for (const [k, v] of Object.entries(rec.inputs)) {
-            demands[k] = (demands[k] || 0) + (v * sb.count / (rec.time || 1));
-          }
-        }
-      });
-    });
-    // Check if any path can satisfy demand (simplified)
-    const starvation = [];
-    for (const [item, need] of Object.entries(demands)) {
-      const supply = 15; // one full belt for simplicity
-      if (supply < need) starvation.push({ item, need, supply, reason: 'belt capacity insufficient' });
-      else if (need > 0 && !this.hasPath(item)) starvation.push({ item, need, reason: 'no path to building' });
+// Starvation (ADR 0001): per route and item, walk consumers in belt order, each taking its
+// demand from what is left; a Sub-Block starves when less reaches it than it needs.
+export function simulate(block) {
+  const starvation = [];
+  for (const route of block.routes) {
+    for (const { item, supply, capacity } of route.items) {
+      let available = Math.min(supply, capacity);
+      for (const sb of route.consumers) {
+        const demand = block.subBlocks[sb].inputs.find(i => i.name === item)?.rate ?? 0;
+        if (demand > available + EPSILON) starvation.push({ route: route.id, subBlock: sb, item, demand, available });
+        available = Math.max(0, available - demand);
+      }
     }
-    return { ok: starvation.length === 0, starvation, demands };
   }
-
-  hasPath(item) {
-    // Check paths contain item
-    return true; // simplified for prototype
-  }
+  return { ok: starvation.length === 0, starvation };
 }

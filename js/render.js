@@ -1,65 +1,233 @@
-/** HTML/SVG grid viewport of the compound block */
-export class Renderer {
-  render(solverResult, containerId) {
-    const { subBlocks, poles, paths } = solverResult;
-    const svgNS = 'http://www.w3.org/2000/svg';
-    const svg = document.createElementNS(svgNS, 'svg');
-    svg.setAttribute('width', '800');
-    svg.setAttribute('height', '600');
-    svg.style.background = '#1e1e2e';
+// Pan/zoom map of a Compound Block on a <canvas>: drag to pan, wheel to zoom around the cursor.
+const ARROW = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
+const MIN_SCALE = 2, MAX_SCALE = 64;
 
-    // Background grid
-    for (let x = 0; x < 100; x += 2) {
-      const line = document.createElementNS(svgNS, 'line');
-      line.setAttribute('x1', x * 8); line.setAttribute('y1', 0);
-      line.setAttribute('x2', x * 8); line.setAttribute('y2', 600);
-      line.setAttribute('stroke', '#333'); line.setAttribute('stroke-width', '1');
-      svg.appendChild(line);
-    }
-    for (let y = 0; y < 100; y += 2) {
-      const line = document.createElementNS(svgNS, 'line');
-      line.setAttribute('x1', 0); line.setAttribute('y1', y * 6);
-      line.setAttribute('x2', 800); line.setAttribute('y2', y * 6);
-      line.setAttribute('stroke', '#333'); line.setAttribute('stroke-width', '1');
-      svg.appendChild(line);
-    }
-
-    // Sub-blocks
-    subBlocks.forEach(sb => {
-      const rect = document.createElementNS(svgNS, 'rect');
-      rect.setAttribute('x', sb.x * 8);
-      rect.setAttribute('y', sb.y * 6);
-      rect.setAttribute('width', 48); rect.setAttribute('height', 36);
-      rect.setAttribute('fill', '#5588aa'); rect.setAttribute('opacity', '0.7');
-      rect.setAttribute('rx', 4);
-      svg.appendChild(rect);
-      // Label
-      const text = document.createElementNS(svgNS, 'text');
-      text.setAttribute('x', sb.x * 8 + 4); text.setAttribute('y', sb.y * 6 + 14);
-      text.setAttribute('fill', '#fff'); text.setAttribute('font-size', '10');
-      text.textContent = sb.recipe;
-      svg.appendChild(text);
-    });
-
-    // Poles
-    poles.forEach(p => {
-      const circ = document.createElementNS(svgNS, 'circle');
-      circ.setAttribute('cx', p.x * 8 + 4); circ.setAttribute('cy', p.y * 6 + 3);
-      circ.setAttribute('r', 3); circ.setAttribute('fill', '#ffcc00');
-      svg.appendChild(circ);
-    });
-
-    // Paths (belts / pipes)
-    paths.forEach(path => {
-      const color = path.type === 'pipe' ? '#55aaff' : '#ffaa55';
-      const line = document.createElementNS(svgNS, 'line');
-      line.setAttribute('x1', path.from.x * 8 + 4); line.setAttribute('y1', path.from.y * 6 + 3);
-      line.setAttribute('x2', path.to.x * 8 + 4); line.setAttribute('y2', path.to.y * 6 + 3);
-      line.setAttribute('stroke', color); line.setAttribute('stroke-width', '3');
-      svg.appendChild(line);
-    });
-
-    const container = document.getElementById(containerId);
-    if (container) { container.innerHTML = ''; container.appendChild(svg); }
+/**
+ * @param {HTMLCanvasElement} canvas
+ * @param {any} block
+ * @param {{ onHover?: (entity: any, block: any) => void, starving?: Set<number> }} [options]
+ */
+export function createMap(canvas, block, { onHover = () => {}, starving = new Set() } = {}) {
+  const ctx = canvas.getContext('2d');
+  const view = { scale: 16, x: 0, y: 0 };
+  const colors = palette(block);
+  const byTile = new Map();
+  for (const e of block.entities) {
+    for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) byTile.set(`${e.x + dx},${e.y + dy}`, e);
   }
+
+  const theme = () => {
+    const css = getComputedStyle(canvas);
+    return {
+      bg: css.getPropertyValue('--map-bg').trim() || '#14161b',
+      grid: css.getPropertyValue('--map-grid').trim() || '#23262e',
+      machine: css.getPropertyValue('--map-machine').trim() || '#3b4658',
+      machineEdge: css.getPropertyValue('--map-machine-edge').trim() || '#8aa0c0',
+      text: css.getPropertyValue('--map-text').trim() || '#e8e8e8',
+      starve: css.getPropertyValue('--map-starve').trim() || '#ff5c5c',
+      subBlock: css.getPropertyValue('--map-subblock').trim() || '#e0c097',
+    };
+  };
+
+  function resize() {
+    const dpr = window.devicePixelRatio || 1;
+    const { width, height } = canvas.getBoundingClientRect();
+    canvas.width = Math.max(1, Math.round(width * dpr));
+    canvas.height = Math.max(1, Math.round(height * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    draw();
+  }
+
+  function fit() {
+    const { width, height } = canvas.getBoundingClientRect();
+    const b = block.bounds;
+    view.scale = clamp(Math.min(width / b.w, height / b.h) * 0.95, MIN_SCALE, MAX_SCALE);
+    view.x = b.x + b.w / 2 - width / 2 / view.scale;
+    view.y = b.y + b.h / 2 - height / 2 / view.scale;
+    draw();
+  }
+
+  function zoomAt(px, py, factor) {
+    const wx = view.x + px / view.scale, wy = view.y + py / view.scale;
+    view.scale = clamp(view.scale * factor, MIN_SCALE, MAX_SCALE);
+    view.x = wx - px / view.scale;
+    view.y = wy - py / view.scale;
+    draw();
+  }
+
+  function draw() {
+    const t = theme();
+    const { width, height } = canvas.getBoundingClientRect();
+    const s = view.scale;
+    const sx = x => (x - view.x) * s, sy = y => (y - view.y) * s;
+    ctx.fillStyle = t.bg;
+    ctx.fillRect(0, 0, width, height);
+
+    const b = block.bounds;
+    if (s >= 6) {
+      ctx.strokeStyle = t.grid;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let x = b.x; x <= b.x + b.w; x++) { ctx.moveTo(sx(x), sy(b.y)); ctx.lineTo(sx(x), sy(b.y + b.h)); }
+      for (let y = b.y; y <= b.y + b.h; y++) { ctx.moveTo(sx(b.x), sy(y)); ctx.lineTo(sx(b.x + b.w), sy(y)); }
+      ctx.stroke();
+    }
+
+    // Side Input enters on the west edge, Side Output leaves on the east edge.
+    ctx.fillStyle = 'rgba(120, 200, 140, 0.18)';
+    ctx.fillRect(sx(b.x), sy(b.y), s, b.h * s);
+    ctx.fillStyle = 'rgba(230, 160, 90, 0.18)';
+    ctx.fillRect(sx(b.x + b.w - 1), sy(b.y), s, b.h * s);
+
+    for (const sb of block.subBlocks) {
+      ctx.strokeStyle = starving.has(sb.index) ? t.starve : t.subBlock;
+      ctx.setLineDash([6, 4]);
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(sx(sb.x) - 3, sy(sb.y) - 3, sb.w * s + 6, sb.h * s + 6);
+      ctx.setLineDash([]);
+      if (s >= 3) {
+        ctx.fillStyle = starving.has(sb.index) ? t.starve : t.subBlock;
+        ctx.font = `${Math.max(10, Math.min(14, s))}px system-ui, sans-serif`;
+        ctx.fillText(`${sb.item} ×${sb.count}`, sx(sb.x), sy(sb.y) - 6);
+      }
+    }
+
+    for (const e of block.entities) {
+      const x = sx(e.x), y = sy(e.y), w = e.w * s, h = e.h * s;
+      if (x > width || y > height || x + w < 0 || y + h < 0) continue;
+      switch (e.kind) {
+        case 'building':
+          ctx.fillStyle = t.machine;
+          ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+          ctx.strokeStyle = t.machineEdge;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+          if (s * e.w >= 40) {
+            ctx.fillStyle = t.text;
+            ctx.font = `${Math.min(12, s * 0.8)}px system-ui, sans-serif`;
+            ctx.fillText(e.recipe, x + 4, y + 4 + Math.min(12, s * 0.8), w - 8);
+          }
+          break;
+        case 'belt':
+        case 'underground-belt': {
+          ctx.fillStyle = colors.route(e.route);
+          ctx.fillRect(x + s * 0.15, y + s * 0.15, s * 0.7, s * 0.7);
+          if (e.kind === 'underground-belt') {
+            ctx.strokeStyle = t.text;
+            ctx.lineWidth = Math.max(1, s * 0.08);
+            ctx.strokeRect(x + s * 0.1, y + s * 0.1, s * 0.8, s * 0.8);
+          }
+          arrow(x, y, s, e.travel, t.bg);
+          break;
+        }
+        case 'pipe':
+        case 'pipe-to-ground':
+          ctx.fillStyle = colors.fluid(e.fluid);
+          if (e.kind === 'pipe') ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
+          else {
+            ctx.beginPath();
+            ctx.arc(x + s / 2, y + s / 2, s * 0.38, 0, Math.PI * 2);
+            ctx.fill();
+            arrow(x, y, s, e.direction, t.bg);
+          }
+          pipeLinks(e, x, y, s);
+          break;
+        case 'inserter':
+          ctx.fillStyle = e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
+          ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
+          // Arrow points from pickup to drop.
+          arrow(x, y, s, (e.direction + 8) % 16, t.text);
+          break;
+        case 'pole':
+          ctx.fillStyle = '#c9a227';
+          ctx.fillRect(x + w * 0.25, y + h * 0.25, w * 0.5, h * 0.5);
+          break;
+      }
+    }
+  }
+
+  function pipeLinks(e, x, y, s) {
+    ctx.strokeStyle = colors.fluid(e.fluid);
+    ctx.lineWidth = s * 0.25;
+    ctx.beginPath();
+    for (const [d, [dx, dy]] of Object.entries(ARROW)) {
+      if (e.kind === 'pipe-to-ground' && +d !== e.direction) continue;
+      const n = byTile.get(`${e.x + dx},${e.y + dy}`);
+      if (!n || n.fluid !== e.fluid) continue;
+      ctx.moveTo(x + s / 2, y + s / 2);
+      ctx.lineTo(x + s / 2 + dx * s / 2, y + s / 2 + dy * s / 2);
+    }
+    ctx.stroke();
+  }
+
+  function arrow(x, y, s, dir, color) {
+    if (s < 8) return;
+    const [dx, dy] = ARROW[dir];
+    const cx = x + s / 2, cy = y + s / 2, r = s * 0.25;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(cx + dx * r, cy + dy * r);
+    ctx.lineTo(cx - dx * r - dy * r * 0.8, cy - dy * r + dx * r * 0.8);
+    ctx.lineTo(cx - dx * r + dy * r * 0.8, cy - dy * r - dx * r * 0.8);
+    ctx.fill();
+  }
+
+  let drag = null;
+  const onDown = e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); };
+  const onMove = e => {
+    const r = canvas.getBoundingClientRect();
+    if (drag) {
+      view.x -= (e.clientX - drag.x) / view.scale;
+      view.y -= (e.clientY - drag.y) / view.scale;
+      drag = { x: e.clientX, y: e.clientY };
+      draw();
+      return;
+    }
+    const tx = Math.floor(view.x + (e.clientX - r.left) / view.scale);
+    const ty = Math.floor(view.y + (e.clientY - r.top) / view.scale);
+    onHover(byTile.get(`${tx},${ty}`) ?? null, block);
+  };
+  const onUp = () => { drag = null; };
+  const onWheel = e => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
+  };
+  const observer = new ResizeObserver(resize);
+  canvas.addEventListener('pointerdown', onDown);
+  canvas.addEventListener('pointermove', onMove);
+  canvas.addEventListener('pointerup', onUp);
+  canvas.addEventListener('pointerleave', () => onHover(null, block));
+  canvas.addEventListener('wheel', onWheel, { passive: false });
+  observer.observe(canvas);
+  resize();
+  fit();
+
+  return {
+    fit,
+    zoom: factor => {
+      const { width, height } = canvas.getBoundingClientRect();
+      zoomAt(width / 2, height / 2, factor);
+    },
+    destroy() {
+      observer.disconnect();
+      canvas.removeEventListener('pointerdown', onDown);
+      canvas.removeEventListener('pointermove', onMove);
+      canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('wheel', onWheel);
+    },
+  };
+}
+
+function palette(block) {
+  const hue = i => `hsl(${(i * 137.5) % 360} 65% 55%)`;
+  const fluids = [...new Set(block.entities.filter(e => e.fluid).map(e => e.fluid))];
+  return {
+    route: id => hue(id),
+    fluid: name => `hsl(${(fluids.indexOf(name) * 97 + 190) % 360} 70% 60%)`,
+  };
+}
+
+function clamp(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
 }
