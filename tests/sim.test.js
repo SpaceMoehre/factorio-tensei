@@ -91,3 +91,42 @@ test('a producer that makes less than its consumer needs starves it, even on a r
   };
   assert.deepEqual(simulate(block).starvation, [{ route: 3, subBlock: 0, item: 'copper-cable', demand: 300, available: 200 }]);
 });
+
+test('an inserter that cannot keep up starves its machine: 2 machines, one fast inserter each (144/min), need 360/min', () => {
+  const block = {
+    subBlocks: [{
+      count: 2, inputs: [{ name: 'iron-plate', type: 'item', rate: 360 }],
+      inserters: [{ route: 0, items: ['iron-plate'], perMachine: [144, 144] }],
+    }],
+    routes: [{ id: 0, consumers: [0], items: [{ item: 'iron-plate', supply: 900, capacity: 900 }] }],
+  };
+  assert.deepEqual(simulate(block).starvation, [
+    { route: 0, subBlock: 0, item: 'iron-plate', demand: 360, available: 288, cause: 'inserters' },
+  ]);
+});
+
+test('merged items share their inserters: two lanes into one machine through one inserter', () => {
+  const block = {
+    subBlocks: [{
+      count: 1, inputs: [{ name: 'a', type: 'item', rate: 100 }, { name: 'b', type: 'item', rate: 100 }],
+      inserters: [{ route: 0, items: ['a', 'b'], perMachine: [144] }],
+    }],
+    routes: [{ id: 0, consumers: [0], items: [{ item: 'a', supply: 450, capacity: 450 }, { item: 'b', supply: 450, capacity: 450 }] }],
+  };
+  assert.deepEqual(simulate(block).starvation, [
+    { route: 0, subBlock: 0, item: 'a + b', demand: 200, available: 144, cause: 'inserters' },
+  ]);
+});
+
+test('output inserters that cannot empty the machines are reported too', () => {
+  const block = {
+    subBlocks: [{
+      count: 1, inputs: [], outputs: [{ name: 'gear', type: 'item', rate: 200 }],
+      inserters: [{ route: 0, role: 'output', items: ['gear'], perMachine: [72] }],
+    }],
+    routes: [],
+  };
+  assert.deepEqual(simulate(block).starvation, [
+    { route: 0, subBlock: 0, item: 'gear', demand: 200, available: 72, cause: 'inserters' },
+  ]);
+});

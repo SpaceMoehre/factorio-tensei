@@ -173,6 +173,21 @@ export const catalog = {
     coal: { name: 'coal', fuelValue: 4000000, categories: ['chemical'] },
     'nuclear-fuel-cell': { name: 'nuclear-fuel-cell', fuelValue: 8000000000, categories: ['nuclear'] },
   },
+  // Vanilla Factorio 2.0 prototypes; the owner's Inserter_Config mod allows custom vectors.
+  inserters: {
+    'fast-inserter': {
+      name: 'fast-inserter', pickup: { x: 0, y: -1 }, insert: { x: 0, y: 1.2 },
+      rotationSpeed: 0.04, extensionSpeed: 0.1, energy: 'electric', customVectors: true,
+    },
+    'long-handed-inserter': {
+      name: 'long-handed-inserter', pickup: { x: 0, y: -2 }, insert: { x: 0, y: 2.2 },
+      rotationSpeed: 0.02, extensionSpeed: 0.05, energy: 'electric', customVectors: true,
+    },
+    'burner-inserter': {
+      name: 'burner-inserter', pickup: { x: 0, y: -1 }, insert: { x: 0, y: 1.2 },
+      rotationSpeed: 0.013, extensionSpeed: 0.035, energy: 'burner', customVectors: true,
+    },
+  },
   poles: {
     'medium-electric-pole': { name: 'medium-electric-pole', size: { w: 1, h: 1 }, supplyRadius: 3.5, wireReach: 9 },
   },

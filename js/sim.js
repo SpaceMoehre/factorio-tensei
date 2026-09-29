@@ -23,7 +23,22 @@ export function simulate(block) {
       if (route.sink === 'side-output') take(null, Math.max(0, rate - consumed));
     });
   }
+  block.subBlocks.forEach((sb, i) => starvation.push(...inserterStarvation(sb, i)));
   return { ok: starvation.length === 0, starvation };
+}
+
+// A machine gets no more than its inserters for a route can move, however full the belt. Each
+// of the Count machines needs an equal share; items merged on one belt share its inserters.
+function inserterStarvation(sb, index) {
+  const found = [];
+  for (const { route, role = 'input', items, perMachine } of sb.inserters ?? []) {
+    const flows = role === 'input' ? sb.inputs : sb.outputs;
+    const demand = flows.filter(f => items.includes(f.name)).reduce((sum, f) => sum + f.rate, 0);
+    const share = demand / sb.count;
+    const available = perMachine.reduce((sum, rate) => sum + Math.min(rate, share), 0);
+    if (demand > available + EPSILON) found.push({ route, subBlock: index, item: items.join(' + '), demand, available, cause: 'inserters' });
+  }
+  return found;
 }
 
 // Items on the same lane share its capacity in proportion to what they supply.
