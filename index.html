@@ -34,6 +34,10 @@
     </div>
   </div>
   <div>
+    <div class="panel" style="margin-top:1rem">
+      <h3>Sprites (Factorio icons)</h3>
+      <div id="sprite-bar" style="display:flex;flex-wrap:wrap;gap:8px;"></div>
+    </div>
     <div class="panel">
       <h3>Layout Preview</h3>
       <div id="preview"></div>
@@ -51,25 +55,39 @@
   import { BlueprintEncoder } from './js/blueprint.js';
   import { Renderer } from './js/render.js';
 
-  const catalog = await fetch('data/catalog.json').then(r => r.json());
+  const catalog = await fetch('data/recipes_full.json').then(r => r.json());
+  const sprites = await fetch('data/sprites.json').then(r => r.json());
+  // Build selectable recipes from full list
+  const recipes = Object.keys(catalog.recipes || catalog.recipe_names || {}).filter(k => typeof k === 'string');
+  // Fallback if only names array
+  const recipeNames = (catalog.recipe_names || recipes || []);
   const recipes = Object.keys(catalog.recipes);
-  let config = [{recipe:'electronic-circuit', count:2}];
+  let config = [{recipe:recipeNames[0]||'advanced-circuit', count:2}];
 
   function renderRecipeList() {
     const list = document.getElementById('recipe-list');
     list.innerHTML = '';
     config.forEach((c,i) => {
       const row = document.createElement('div'); row.className = 'recipe-row';
-      row.innerHTML = `<select onchange="updateRecipe(${i},this.value)">${recipes.map(r=>`<option value="${r}" ${r===c.recipe?'selected':''}>${r}</option>`).join('')}</select><input type="number" value="${c.count}" min="1" onchange="updateCount(${i},this.value)"><button onclick="removeRecipe(${i})">×</button>`;
+      row.innerHTML = `<select onchange="updateRecipe(${i},this.value)">${recipeNames.map(r=>`<option value="${r}" ${r===c.recipe?'selected':''}>${r}</option>`).join('')}</select><input type="number" value="${c.count}" min="1" onchange="updateCount(${i},this.value)"><button onclick="removeRecipe(${i})">×</button>`;
       list.appendChild(row);
     });
   }
   window.updateRecipe = (i,v) => { config[i].recipe = v; renderRecipeList(); };
   window.updateCount = (i,v) => { config[i].count = parseInt(v||1); };
   window.removeRecipe = (i) => { config.splice(i,1); renderRecipeList(); };
-  window.addRecipeRow = () => { config.push({recipe:recipes[0], count:1}); renderRecipeList(); };
+  window.addRecipeRow = () => { config.push({recipe:recipeNames[0]||'advanced-circuit', count:1}); renderRecipeList(); };
 
   let lastResult = null;
+  window.renderSprites = () => {
+    const bar = document.getElementById('sprite-bar');
+    if (!bar || !sprites) return;
+    const keys = Object.keys(sprites.icons || {}).slice(0,12);
+    bar.innerHTML = keys.map(k => {
+      const path = sprites.icons[k];
+      return `<div style="text-align:center"><img src="sprites/${k}.png" style="width:32px;height:32px;object-fit:contain" onerror="this.style.display='none';this.nextElementSibling.textContent='${k}'" title="${k}"><div style="font-size:9px">${k}</div></div>`;
+    }).join('');
+  };
   window.runSolver = () => {
     const s = new Solver(catalog, config);
     s.mergeBelts();
@@ -92,6 +110,7 @@
   };
 
   renderRecipeList();
+  renderSprites();
 </script>
 </body>
 </html>

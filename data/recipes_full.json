@@ -1,0 +1,1507 @@
+{
+  "count": 320,
+  "recipe_names": [
+    "accumulator",
+    "acid-neutralisation",
+    "active-provider-chest",
+    "advanced-carbonic-asteroid-crushing",
+    "advanced-circuit",
+    "advanced-metallic-asteroid-crushing",
+    "advanced-oil-processing",
+    "advanced-oxide-asteroid-crushing",
+    "advanced-thruster-fuel",
+    "advanced-thruster-oxidizer",
+    "agricultural-science-pack",
+    "agricultural-tower",
+    "ammonia-rocket-fuel",
+    "ammoniacal-solution-separation",
+    "arithmetic-combinator",
+    "artificial-jellynut-soil",
+    "artificial-yumako-soil",
+    "artillery-shell",
+    "artillery-turret",
+    "artillery-wagon",
+    "assembling-machine-1",
+    "assembling-machine-2",
+    "assembling-machine-3",
+    "asteroid-collector",
+    "atomic-bomb",
+    "automation-science-pack",
+    "barrel",
+    "basic-oil-processing",
+    "battery",
+    "battery-equipment",
+    "battery-mk2-equipment",
+    "battery-mk3-equipment",
+    "beacon",
+    "belt-immunity-equipment",
+    "big-electric-pole",
+    "big-mining-drill",
+    "biochamber",
+    "bioflux",
+    "biolab",
+    "biolubricant",
+    "bioplastic",
+    "biosulfur",
+    "biter-egg",
+    "boiler",
+    "buffer-chest",
+    "bulk-inserter",
+    "burner-inserter",
+    "burner-mining-drill",
+    "burnt-spoilage",
+    "cannon-shell",
+    "captive-biter-spawner",
+    "capture-robot-rocket",
+    "car",
+    "carbon",
+    "carbon-fiber",
+    "carbonic-asteroid-crushing",
+    "carbonic-asteroid-reprocessing",
+    "cargo-bay",
+    "cargo-landing-pad",
+    "cargo-wagon",
+    "casting-copper",
+    "casting-copper-cable",
+    "casting-iron",
+    "casting-iron-gear-wheel",
+    "casting-iron-stick",
+    "casting-low-density-structure",
+    "casting-pipe",
+    "casting-pipe-to-ground",
+    "casting-steel",
+    "centrifuge",
+    "chemical-plant",
+    "chemical-science-pack",
+    "cliff-explosives",
+    "cluster-grenade",
+    "coal-liquefaction",
+    "coal-synthesis",
+    "combat-shotgun",
+    "concrete",
+    "concrete-from-molten-iron",
+    "constant-combinator",
+    "construction-robot",
+    "copper-bacteria",
+    "copper-bacteria-cultivation",
+    "copper-cable",
+    "copper-plate",
+    "crusher",
+    "cryogenic-plant",
+    "cryogenic-science-pack",
+    "decider-combinator",
+    "defender-capsule",
+    "destroyer-capsule",
+    "discharge-defense-equipment",
+    "display-panel",
+    "distractor-capsule",
+    "efficiency-module",
+    "efficiency-module-2",
+    "efficiency-module-3",
+    "electric-engine-unit",
+    "electric-furnace",
+    "electric-mining-drill",
+    "electrolyte",
+    "electromagnetic-plant",
+    "electromagnetic-science-pack",
+    "electronic-circuit",
+    "energy-shield-equipment",
+    "energy-shield-mk2-equipment",
+    "engine-unit",
+    "exoskeleton-equipment",
+    "explosive-cannon-shell",
+    "explosive-rocket",
+    "explosive-uranium-cannon-shell",
+    "explosives",
+    "express-loader",
+    "express-splitter",
+    "express-transport-belt",
+    "express-underground-belt",
+    "fast-inserter",
+    "fast-loader",
+    "fast-splitter",
+    "fast-transport-belt",
+    "fast-underground-belt",
+    "firearm-magazine",
+    "fish-breeding",
+    "fission-reactor-equipment",
+    "flamethrower",
+    "flamethrower-ammo",
+    "flamethrower-turret",
+    "fluid-wagon",
+    "fluoroketone",
+    "fluoroketone-cooling",
+    "flying-robot-frame",
+    "foundation",
+    "foundry",
+    "fusion-generator",
+    "fusion-power-cell",
+    "fusion-reactor",
+    "fusion-reactor-equipment",
+    "gate",
+    "grenade",
+    "gun-turret",
+    "hazard-concrete",
+    "heat-exchanger",
+    "heat-interface",
+    "heat-pipe",
+    "heating-tower",
+    "heavy-armor",
+    "heavy-oil-cracking",
+    "holmium-plate",
+    "holmium-solution",
+    "ice-melting",
+    "ice-platform",
+    "infinity-chest",
+    "infinity-pipe",
+    "inserter",
+    "iron-bacteria",
+    "iron-bacteria-cultivation",
+    "iron-chest",
+    "iron-gear-wheel",
+    "iron-plate",
+    "iron-stick",
+    "jellynut-processing",
+    "kovarex-enrichment-process",
+    "lab",
+    "land-mine",
+    "landfill",
+    "laser-turret",
+    "light-armor",
+    "light-oil-cracking",
+    "lightning-collector",
+    "lightning-rod",
+    "lithium",
+    "lithium-plate",
+    "loader",
+    "locomotive",
+    "logistic-robot",
+    "logistic-science-pack",
+    "long-handed-inserter",
+    "low-density-structure",
+    "lubricant",
+    "mech-armor",
+    "medium-electric-pole",
+    "metallic-asteroid-crushing",
+    "metallic-asteroid-reprocessing",
+    "metallurgic-science-pack",
+    "military-science-pack",
+    "modular-armor",
+    "molten-copper",
+    "molten-copper-from-lava",
+    "molten-iron",
+    "molten-iron-from-lava",
+    "night-vision-equipment",
+    "nuclear-fuel",
+    "nuclear-fuel-reprocessing",
+    "nuclear-reactor",
+    "nutrients-from-bioflux",
+    "nutrients-from-biter-egg",
+    "nutrients-from-fish",
+    "nutrients-from-spoilage",
+    "nutrients-from-yumako-mash",
+    "offshore-pump",
+    "oil-refinery",
+    "overgrowth-jellynut-soil",
+    "overgrowth-yumako-soil",
+    "oxide-asteroid-crushing",
+    "oxide-asteroid-reprocessing",
+    "parameter-",
+    "passive-provider-chest",
+    "pentapod-egg",
+    "personal-laser-defense-equipment",
+    "personal-roboport-equipment",
+    "personal-roboport-mk2-equipment",
+    "piercing-rounds-magazine",
+    "piercing-shotgun-shell",
+    "pipe",
+    "pipe-to-ground",
+    "pistol",
+    "plastic-bar",
+    "poison-capsule",
+    "power-armor",
+    "power-armor-mk2",
+    "power-switch",
+    "processing-unit",
+    "production-science-pack",
+    "productivity-module",
+    "productivity-module-2",
+    "productivity-module-3",
+    "programmable-speaker",
+    "promethium-science-pack",
+    "pump",
+    "pumpjack",
+    "quality-module",
+    "quality-module-2",
+    "quality-module-3",
+    "quantum-processor",
+    "radar",
+    "rail",
+    "rail-chain-signal",
+    "rail-signal",
+    "railgun",
+    "railgun-ammo",
+    "railgun-turret",
+    "recycler",
+    "refined-concrete",
+    "refined-hazard-concrete",
+    "repair-pack",
+    "requester-chest",
+    "roboport",
+    "rocket",
+    "rocket-fuel",
+    "rocket-fuel-from-jelly",
+    "rocket-launcher",
+    "rocket-part",
+    "rocket-silo",
+    "rocket-turret",
+    "satellite",
+    "scrap-recycling",
+    "selector-combinator",
+    "shotgun",
+    "shotgun-shell",
+    "simple-coal-liquefaction",
+    "slowdown-capsule",
+    "small-electric-pole",
+    "small-lamp",
+    "solar-panel",
+    "solar-panel-equipment",
+    "solid-fuel-from-ammonia",
+    "solid-fuel-from-heavy-oil",
+    "solid-fuel-from-light-oil",
+    "solid-fuel-from-petroleum-gas",
+    "space-platform-foundation",
+    "space-platform-starter-pack",
+    "space-science-pack",
+    "speed-module",
+    "speed-module-2",
+    "speed-module-3",
+    "spidertron",
+    "splitter",
+    "stack-inserter",
+    "steam-condensation",
+    "steam-engine",
+    "steam-turbine",
+    "steel-chest",
+    "steel-furnace",
+    "steel-plate",
+    "stone-brick",
+    "stone-furnace",
+    "stone-wall",
+    "storage-chest",
+    "storage-tank",
+    "submachine-gun",
+    "substation",
+    "sulfur",
+    "sulfuric-acid",
+    "supercapacitor",
+    "superconductor",
+    "tank",
+    "tesla-ammo",
+    "tesla-turret",
+    "teslagun",
+    "thruster"
+  ],
+  "recipes": {
+    "quality-module": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/quality/prototypes",
+      "has_icon": false
+    },
+    "quality-module-2": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/quality/prototypes",
+      "has_icon": false
+    },
+    "quality-module-3": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/quality/prototypes",
+      "has_icon": false
+    },
+    "recycler": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/quality/prototypes",
+      "has_icon": false
+    },
+    "parameter-": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "speed-module": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "speed-module-2": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "speed-module-3": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "productivity-module": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "productivity-module-2": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "productivity-module-3": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "efficiency-module": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "efficiency-module-2": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "efficiency-module-3": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "bulk-inserter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "basic-oil-processing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "advanced-oil-processing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "coal-liquefaction": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "heavy-oil-cracking": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "light-oil-cracking": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "sulfuric-acid": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "plastic-bar": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "solid-fuel-from-light-oil": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "solid-fuel-from-petroleum-gas": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "solid-fuel-from-heavy-oil": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "sulfur": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "lubricant": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "barrel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "night-vision-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "belt-immunity-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "energy-shield-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "energy-shield-mk2-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "battery-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "battery-mk2-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "solar-panel-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "fission-reactor-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "personal-laser-defense-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "discharge-defense-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "exoskeleton-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "personal-roboport-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "personal-roboport-mk2-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "laser-turret": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "flamethrower-turret": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "artillery-turret": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "gun-turret": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "wooden-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "display-panel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "iron-stick": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "stone-furnace": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "boiler": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "steam-engine": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "iron-gear-wheel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "electronic-circuit": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "transport-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "electric-mining-drill": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "burner-mining-drill": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "inserter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "fast-inserter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "long-handed-inserter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "burner-inserter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "pipe": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "offshore-pump": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "copper-cable": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "small-electric-pole": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "pistol": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "submachine-gun": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "firearm-magazine": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "light-armor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "radar": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "small-lamp": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "pipe-to-ground": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "assembling-machine-1": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "repair-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "automation-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "logistic-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "lab": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "stone-wall": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "assembling-machine-2": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "splitter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "underground-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "loader": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "car": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "engine-unit": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "iron-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "big-electric-pole": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "medium-electric-pole": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "shotgun": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "shotgun-shell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "piercing-rounds-magazine": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "grenade": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "steel-furnace": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "gate": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "heavy-armor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "steel-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "fast-underground-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "fast-splitter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "concrete": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "hazard-concrete": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "refined-concrete": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "refined-hazard-concrete": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "landfill": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "fast-transport-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "solar-panel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rail": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "locomotive": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "cargo-wagon": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rail-signal": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rail-chain-signal": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "train-stop": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "copper-plate": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "iron-plate": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "stone-brick": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "steel-plate": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "arithmetic-combinator": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "decider-combinator": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "constant-combinator": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "selector-combinator": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "power-switch": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "programmable-speaker": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "poison-capsule": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "slowdown-capsule": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "cluster-grenade": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "defender-capsule": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "distractor-capsule": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "destroyer-capsule": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "cliff-explosives": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "uranium-rounds-magazine": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rocket": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "explosive-rocket": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "atomic-bomb": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "piercing-shotgun-shell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "cannon-shell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "explosive-cannon-shell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "uranium-cannon-shell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "explosive-uranium-cannon-shell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "artillery-shell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "flamethrower-ammo": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "express-transport-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "assembling-machine-3": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "tank": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "spidertron": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "fluid-wagon": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "artillery-wagon": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "modular-armor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "power-armor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "power-armor-mk2": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "flamethrower": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "land-mine": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rocket-launcher": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "combat-shotgun": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "chemical-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "military-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "production-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "utility-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "express-underground-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "fast-loader": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "express-loader": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "express-splitter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "advanced-circuit": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "processing-unit": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "logistic-robot": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "construction-robot": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "passive-provider-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "active-provider-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "storage-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "buffer-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "requester-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rocket-silo": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "cargo-landing-pad": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "roboport": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "substation": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "accumulator": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "electric-furnace": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "beacon": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "pumpjack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "oil-refinery": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "electric-engine-unit": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "flying-robot-frame": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "explosives": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "battery": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "storage-tank": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "pump": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "chemical-plant": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "low-density-structure": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rocket-fuel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "rocket-part": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "satellite": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "nuclear-reactor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "centrifuge": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "uranium-processing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "kovarex-enrichment-process": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "nuclear-fuel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "nuclear-fuel-reprocessing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "uranium-fuel-cell": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "heat-exchanger": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "heat-pipe": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "steam-turbine": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/base/prototypes",
+      "has_icon": false
+    },
+    "simple-coal-liquefaction": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "yumako-processing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "jellynut-processing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "copper-bacteria": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "copper-bacteria-cultivation": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "iron-bacteria": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "iron-bacteria-cultivation": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "artificial-yumako-soil": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "overgrowth-yumako-soil": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "artificial-jellynut-soil": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "overgrowth-jellynut-soil": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "nutrients-from-spoilage": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "nutrients-from-yumako-mash": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "nutrients-from-bioflux": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "pentapod-egg": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "rocket-fuel-from-jelly": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "bioflux": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "bioplastic": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "biosulfur": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "biolubricant": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "carbon-fiber": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "toolbelt-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "battery-mk3-equipment": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "space-platform-foundation": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "stack-inserter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "rocket-turret": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "infinity-chest": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "infinity-pipe": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "heat-interface": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "space-platform-starter-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "cargo-bay": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "asteroid-collector": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "crusher": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "thruster": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "space-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "metallurgic-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "agricultural-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "electromagnetic-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "cryogenic-science-pack": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "metallic-asteroid-crushing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "carbonic-asteroid-crushing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "oxide-asteroid-crushing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "advanced-metallic-asteroid-crushing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "advanced-carbonic-asteroid-crushing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "advanced-oxide-asteroid-crushing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "metallic-asteroid-reprocessing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "carbonic-asteroid-reprocessing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "oxide-asteroid-reprocessing": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "thruster-fuel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "thruster-oxidizer": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "ice-melting": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "advanced-thruster-fuel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "advanced-thruster-oxidizer": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "acid-neutralisation": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "steam-condensation": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "carbon": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "tungsten-carbide": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "foundry": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "molten-iron-from-lava": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "molten-copper-from-lava": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "molten-iron": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "molten-copper": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-iron": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-steel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-copper": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-iron-gear-wheel": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-iron-stick": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-pipe": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-pipe-to-ground": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-low-density-structure": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "concrete-from-molten-iron": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "casting-copper-cable": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "tungsten-plate": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "turbo-transport-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "turbo-underground-belt": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "turbo-splitter": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "turbo-loader": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "big-mining-drill": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "mech-armor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "railgun": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "railgun-turret": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "railgun-ammo": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "agricultural-tower": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "biochamber": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "burnt-spoilage": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "coal-synthesis": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "capture-robot-rocket": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "biolab": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "captive-biter-spawner": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "biter-egg": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "fish-breeding": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "nutrients-from-fish": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "nutrients-from-biter-egg": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "scrap-recycling": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "lightning-rod": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "holmium-solution": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "holmium-plate": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "electromagnetic-plant": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "superconductor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "supercapacitor": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "electrolyte": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "lightning-collector": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    },
+    "teslagun": {
+      "source": "/home/user/.steam/debian-installation/steamapps/common/Factorio/data/space-age/prototypes",
+      "has_icon": false
+    }
+  }
+}
