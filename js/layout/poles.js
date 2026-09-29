@@ -7,15 +7,18 @@ const distance = (a, b) => {
 };
 
 // Minimal Pole Placement: greedy cover of every consumer's footprint by supply areas, then
-// bridge poles until the network is connected, then drop any pole that is redundant.
+// bridge poles until the network is connected, then drop any pole that is redundant. Poles may
+// also stand in the strips just north and south of the block (growing it), never west or east,
+// where the Side Input and Side Output edges are; a spot inside wins a tie.
 export function placePoles(grid, consumers, spec) {
   const candidates = [];
   const { x: ax, y: ay, w: aw, h: ah } = grid.area;
-  for (let y = ay; y + spec.size.h <= ay + ah; y++) {
+  for (let y = ay - spec.size.h; y <= ay + ah; y++) {
     for (let x = ax; x + spec.size.w <= ax + aw; x++) {
       const pole = { name: spec.name, kind: 'pole', x, y, w: spec.size.w, h: spec.size.h, direction: 0 };
       if (!fits(grid, pole)) continue;
       pole.covers = consumers.map((c, i) => (powers(pole, spec, c) ? i : -1)).filter(i => i >= 0);
+      pole.outside = y < ay || y + spec.size.h > ay + ah;
       candidates.push(pole);
     }
   }
@@ -28,7 +31,7 @@ export function placePoles(grid, consumers, spec) {
       if (poles.some(p => overlaps(p, c))) continue;
       const gain = c.covers.filter(i => !covered.has(i)).length;
       if (gain === 0) continue;
-      const dist = poles.length ? Math.min(...poles.map(p => distance(p, c))) : 0;
+      const dist = (poles.length ? Math.min(...poles.map(p => distance(p, c))) : 0) + (c.outside ? 1e6 : 0);
       if (gain > bestGain || (gain === bestGain && dist < bestDist)) { best = c; bestGain = gain; bestDist = dist; }
     }
     if (!best) {
@@ -43,6 +46,7 @@ export function placePoles(grid, consumers, spec) {
   prune(poles, consumers, spec);
   for (const p of poles) {
     delete p.covers;
+    delete p.outside;
     grid.place(p);
   }
   return poles;

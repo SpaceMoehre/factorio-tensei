@@ -13,23 +13,32 @@ export function routeBelt(grid, spec, names) {
   const commit = leg => commitLeg(grid, spec, names.underground, leg, pieces);
   let starts = spec.start.tiles.map(([x, y]) => ({ x, y, a: spec.start.dir }));
   const pending = new Set(spec.waypoints.map(([x, y]) => key(x, y)));
-  const moves = beltMoves(grid, spec, names, pending);
+  const target = { key: null };
+  const moves = beltMoves(grid, spec, names, pending, target);
   // A leg never crosses a later waypoint of its own route. The piece on a waypoint tile is a
-  // belt or a tunnel entrance: an inserter can reach either.
+  // belt, a tunnel entrance or a tunnel exit: an inserter can reach any of them.
+  let surfaced = false;
   for (const [wx, wy] of spec.waypoints) {
-    pending.delete(key(wx, wy));
-    const isGoal = s => s.x === wx && s.y === wy;
+    target.key = key(wx, wy);
+    pending.delete(target.key);
+    const isGoal = s => s.reached || (s.x === wx && s.y === wy);
+    // A tunnel that surfaced on the previous waypoint may already stand before this one.
+    if (starts.length === 1 && isGoal({ ...starts[0], reached: false })) {
+      surfaced = false;
+      continue;
+    }
     const leg = search(grid, starts, isGoal, (x, y) => Math.abs(x - wx) + Math.abs(y - wy), moves);
     if (!leg) throw new RoutingError(`belt ${spec.id}: no path to waypoint ${wx},${wy}`);
     commit(leg);
     starts = [leg.state];
+    surfaced = leg.state.reached;
   }
   if (spec.end === 'east') {
     const lastX = grid.area.x + grid.area.w - 1;
     const leg = search(grid, starts, s => s.x === lastX + 1 && s.a === E, x => lastX + 1 - x, moves);
     if (!leg) throw new RoutingError(`belt ${spec.id}: no path to the east edge`);
     commit(leg);
-  } else {
+  } else if (!surfaced) {
     const [s] = starts;
     if (!canBelt(grid, spec, s.x, s.y, s.a)) throw new RoutingError(`belt ${spec.id}: cannot end at ${s.x},${s.y}`);
     commit({ pieces: [beltPiece(spec, names, s.x, s.y, s.a)] });
@@ -132,7 +141,7 @@ function search(grid, starts, isGoal, heuristic, moves) {
   const open = new Heap();
   const best = new Map();
   for (const s of starts) {
-    open.push({ ...s, g: 0, prev: null, pieces: [] }, heuristic(s.x, s.y));
+    open.push({ ...s, reached: false, g: 0, prev: null, pieces: [] }, heuristic(s.x, s.y));
     best.set(stateKey(s), 0);
   }
   while (open.size) {
@@ -172,12 +181,12 @@ function tunnelSpan(pieces) {
 
 function unwind(node) {
   const pieces = [];
-  const state = { x: node.x, y: node.y, a: node.a };
+  const state = { x: node.x, y: node.y, a: node.a, reached: node.reached };
   for (let n = node; n.prev; n = n.prev) pieces.unshift(...n.pieces);
   return { pieces, state };
 }
 
-const stateKey = s => `${s.x},${s.y},${s.a}`;
+const stateKey = s => `${s.x},${s.y},${s.a}${s.reached ? '!' : ''}`;
 const directions = a => [a, turnLeft(a), turnRight(a)];
 
 function step(x, y, d, n = 1) {
@@ -193,7 +202,8 @@ function tunnelMove(node, hop, pieces) {
   return { x: nx, y: ny, a: node.a, cost: hop + 1 + TUNNEL_COST, pieces };
 }
 
-function beltMoves(grid, spec, names, pending) {
+// target.key: the waypoint the current leg heads for; a tunnel surfacing there reaches it.
+function beltMoves(grid, spec, names, pending, target) {
   return node => {
     const options = [];
     if (pending.has(key(node.x, node.y))) return options;
@@ -210,10 +220,12 @@ function beltMoves(grid, spec, names, pending) {
       if (!grid.freeFor(qx, qy, spec.id) || !grid.tunnelFits(names.underground, node, { x: qx, y: qy })) continue;
       if (!beltOutputAllowed(grid, spec, ...step(qx, qy, d)) || fedByOther(grid, spec, qx, qy)) continue;
       const base = { name: names.underground, kind: 'underground-belt', route: spec.id, w: 1, h: 1, direction: d, travel: d };
-      options.push(tunnelMove(node, hop, [
+      const move = tunnelMove(node, hop, [
         { ...base, underground: 'input', x: node.x, y: node.y, out: null },
         { ...base, underground: 'output', x: qx, y: qy, out: key(...step(qx, qy, d)) },
-      ]));
+      ]);
+      move.reached = key(qx, qy) === target.key;
+      options.push(move);
     }
     return options;
   };

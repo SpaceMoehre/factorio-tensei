@@ -133,10 +133,10 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
           pipeLinks(e, x, y, s);
           break;
         case 'inserter':
-          ctx.fillStyle = e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
+          ctx.fillStyle = e.vectors ? '#9b6fe0' : e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
           ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
-          // Arrow points from pickup to drop.
-          arrow(x, y, s, (e.direction + 8) % 16, t.text);
+          // Arrow points toward the drop.
+          arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
           break;
         case 'pole':
           ctx.fillStyle = '#c9a227';
@@ -226,6 +226,12 @@ function palette(block) {
     route: id => hue(id),
     fluid: name => `hsl(${(fluids.indexOf(name) * 97 + 190) % 360} 70% 60%)`,
   };
+}
+
+// The main direction of a vector: 0 north, 4 east, 8 south, 12 west.
+function directionOf({ x, y }) {
+  if (Math.abs(x) > Math.abs(y)) return x > 0 ? 4 : 12;
+  return y > 0 ? 8 : 0;
 }
 
 function clamp(v, lo, hi) {

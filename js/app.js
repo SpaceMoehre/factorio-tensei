@@ -1,32 +1,41 @@
-import { solve } from './solve.js';
 import { simulate } from './sim.js';
 import { encodeBlueprint } from './blueprint.js';
 import { createMap } from './render.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
+const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
 const catalog = await fetch('data/catalog.json').then(r => r.json());
+// A catalog built before v2 has no inserters, power draw or fuel; the search needs all three.
+const outdated = !catalog.inserters || !catalog.fuels;
+if (outdated) Object.assign(catalog, { inserters: {}, fuels: {} });
 const index = indexCatalog(catalog);
-const state = load() ?? {
-  goals: [],
-  logistics: defaultLogistics(catalog),
+const choices = {
+  belt: Object.keys(catalog.belts), pipe: Object.keys(catalog.pipes), pole: Object.keys(catalog.poles),
+  inserter: inserterNames(1), longInserter: inserterNames(2), fuel: Object.keys(catalog.fuels).sort(),
 };
+const state = load() ?? { goals: [], logistics: {} };
+state.logistics = { ...defaultLogistics(), ...state.logistics };
 let map = null;
+let worker = null;
 
 $('items').replaceChildren(...[...index.producers.keys()].sort().map(name => new Option(name)));
-fillSelect($('belt'), Object.keys(catalog.belts), state.logistics.belt);
-fillSelect($('pipe'), Object.keys(catalog.pipes), state.logistics.pipe);
-fillSelect($('pole'), Object.keys(catalog.poles), state.logistics.pole);
-for (const key of ['belt', 'pipe', 'pole']) {
+for (const key of SELECTS) {
+  fillSelect($(key), choices[key], state.logistics[key]);
   $(key).addEventListener('change', () => { state.logistics[key] = $(key).value; save(); });
 }
+$('right-angle').checked = state.logistics.rightAngle;
+$('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
+$('budget').value = String(state.logistics.budget);
+$('budget').addEventListener('change', () => { state.logistics.budget = Math.max(1, Number($('budget').value) || 10); save(); });
 $('add-goal').addEventListener('click', () => {
   state.goals.push({ item: '', rate: 60, recipe: '', building: '' });
   renderGoals();
   save();
 });
 $('calculate').addEventListener('click', build);
+$('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
 $('copy-json').addEventListener('click', () => copy($('bp-json').value, $('copy-json')));
 $('zoom-in').addEventListener('click', () => map?.zoom(1.4));
@@ -34,6 +43,10 @@ $('zoom-out').addEventListener('click', () => map?.zoom(1 / 1.4));
 $('fit').addEventListener('click', () => map?.fit());
 $('empty').textContent = 'Add goals and build a factory block to see its map here.';
 renderGoals();
+if (outdated) {
+  $('calculate').disabled = true;
+  showStatus('error', 'The catalog is missing inserter data — regenerate it (see PRD.md, Catalog).');
+}
 
 // Recipes that produce each item, restricted to those some building can actually run.
 function indexCatalog(catalog) {
@@ -69,12 +82,25 @@ function hasFluidBoxes(building, recipe) {
     && recipe.products.filter(p => p.type === 'fluid').length <= outputs;
 }
 
-function defaultLogistics(catalog) {
+// Electric inserters (never burner ones) that reach `reach` tiles.
+function inserterNames(reach) {
+  return Object.values(catalog.inserters)
+    .filter(i => i.energy === 'electric' && Math.round(Math.hypot(i.pickup.x, i.pickup.y)) === reach)
+    .map(i => i.name).sort();
+}
+
+function defaultLogistics() {
   const poles = Object.values(catalog.poles).sort((a, b) => b.supplyRadius - a.supplyRadius);
+  const prefer = (list, name) => (list.includes(name) ? name : list[0]);
   return {
-    belt: catalog.belts['transport-belt'] ? 'transport-belt' : Object.keys(catalog.belts)[0],
-    pipe: catalog.pipes['pipe-to-ground'] ? 'pipe-to-ground' : Object.keys(catalog.pipes)[0],
+    belt: prefer(choices.belt, 'transport-belt'),
+    pipe: prefer(choices.pipe, 'pipe-to-ground'),
     pole: poles[0].name,
+    inserter: prefer(choices.inserter, 'fast-inserter'),
+    longInserter: prefer(choices.longInserter, 'long-handed-inserter'),
+    fuel: prefer(choices.fuel, 'coal'),
+    rightAngle: true,
+    budget: 10,
   };
 }
 
@@ -113,45 +139,83 @@ function goalRow(goal, i) {
   return row;
 }
 
-async function build() {
-  const status = $('status');
+// Starts the layout search in a worker. Every better layout it finds replaces the map and the
+// blueprint; Stop, or the end of the budget, keeps the best one found.
+function build() {
   const goals = state.goals.filter(g => g.item);
   if (!goals.length) return showStatus('error', 'Add at least one goal.');
   const unknown = goals.find(g => !g.recipe || !g.building);
   if (unknown) return showStatus('error', `No recipe and building can produce “${unknown.item}”.`);
-  showStatus('', 'Building…');
-  await new Promise(r => setTimeout(r, 20));
-  let block;
-  try {
-    block = solve(goals.map(g => ({
-      goal: { item: g.item, rate: g.rate },
-      selection: { recipe: g.recipe, building: g.building },
-    })), catalog, state.logistics);
-  } catch (e) {
-    $('results').hidden = true;
-    return showStatus('error', e.message);
-  }
+  worker?.terminate();
+  best = null;
+  map?.destroy();
+  map = null;
+  $('area').hidden = true;
+  $('results').hidden = true;
+  $('bp-string').value = $('bp-json').value = '';
+  $('empty').hidden = false;
+  $('empty').textContent = 'Searching for a layout…';
+  showStatus('', 'Searching…');
+  $('stop').hidden = false;
+  worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+  worker.onmessage = ({ data }) => {
+    if (data.type === 'best') show(data.block, data.tried);
+    else if (data.type === 'done') finish('Done', data.tried, data.failure);
+    else finish('Stopped', 0, data.message);
+  };
+  worker.onerror = e => finish('Stopped', 0, e.message);
+  const { budget, ...logistics } = state.logistics;
+  worker.postMessage({
+    entries: goals.map(g => ({ goal: { item: g.item, rate: g.rate }, selection: { recipe: g.recipe, building: g.building } })),
+    logistics, budgetMs: budget * 1000, seed: 1,
+  });
+}
+
+let best = null;
+
+async function show(block, tried) {
+  best = { block, tried };
   const { starvation } = simulate(block);
   const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
   $('empty').hidden = true;
   map = createMap($('map'), block, { starving, onHover: describe });
-
-  const machines = block.entities.filter(e => e.kind === 'building').length;
-  if (starvation.length) {
-    const who = s => (s.subBlock === null ? 'Side Output' : block.subBlocks[s.subBlock].item);
-    const lines = starvation.map(s => `${who(s)} gets ${fmt(s.available)} of ${fmt(s.demand)} ${s.item}/min`);
-    showStatus('warn', `Starvation:\n• ${lines.join('\n• ')}`);
-  } else {
-    showStatus('ok', `${machines} machines, ${block.bounds.w}×${block.bounds.h} tiles. No starvation.`);
-  }
-  status.style.whiteSpace = 'pre-line';
+  $('area').textContent = `${block.bounds.w} × ${block.bounds.h} = ${block.bounds.w * block.bounds.h} tiles`;
+  $('area').hidden = false;
+  report(block, starvation, worker ? 'Searching…' : null);
   fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input'));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
   const { string, json } = await encodeBlueprint(block, catalog);
+  if (best?.block !== block) return;
   $('bp-string').value = string;
   $('bp-json').value = JSON.stringify(JSON.parse(json), null, 2);
   $('results').hidden = false;
+}
+
+function finish(how, tried = best?.tried ?? 0, error = null) {
+  worker?.terminate();
+  worker = null;
+  $('stop').hidden = true;
+  if (!best) {
+    $('results').hidden = true;
+    return showStatus('error', error ?? 'No layout found. Give the search more time.');
+  }
+  report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts.`);
+}
+
+function report(block, starvation, prefix) {
+  const machines = block.entities.filter(e => e.kind === 'building').length;
+  const size = `${machines} machines, ${block.bounds.w}×${block.bounds.h} tiles.`;
+  const head = prefix ? `${prefix} Best: ${size}` : size;
+  if (starvation.length) {
+    const who = s => (s.subBlock === null ? 'Side Output' : block.subBlocks[s.subBlock].item);
+    const why = s => (s.cause === 'inserters' ? ' (inserters too slow)' : '');
+    const lines = starvation.map(s => `${who(s)} gets ${fmt(s.available)} of ${fmt(s.demand)} ${s.item}/min${why(s)}`);
+    showStatus('warn', `${head}\nStarvation:\n• ${lines.join('\n• ')}`);
+  } else {
+    showStatus('ok', `${head} No starvation.`);
+  }
+  $('status').style.whiteSpace = 'pre-line';
 }
 
 function fillFlows(list, routes, block) {
@@ -174,6 +238,7 @@ function describe(entity, block) {
     parts.push(`carries: ${block.routes[entity.route].items.map(i => i.item).join(' + ')}`);
   }
   if (entity.underground) parts.push(`tunnel ${entity.underground === 'input' ? 'entrance' : 'exit'}`);
+  if (entity.vectors) parts.push('90° (Inserter_Config)');
   tip.textContent = parts.join(' · ');
 }
 
@@ -217,10 +282,8 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (!saved?.goals || !saved?.logistics) return null;
-    for (const key of ['belt', 'pipe', 'pole']) {
-      const pool = { belt: catalog.belts, pipe: catalog.pipes, pole: catalog.poles }[key];
-      if (!pool[saved.logistics[key]]) return null;
-    }
+    // Settings the catalog no longer offers fall back to their defaults.
+    for (const key of SELECTS) if (!choices[key].includes(saved.logistics[key])) delete saved.logistics[key];
     return saved;
   } catch {
     return null;

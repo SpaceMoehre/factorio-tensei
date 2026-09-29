@@ -42,3 +42,14 @@ test('a belt crossing another route goes under it through a tunnel', () => {
   assert.ok(entrance.x < 3 && exit.x > 3 && entrance.y === 1 && exit.y === 1, `tunnel ${entrance.x}→${exit.x}`);
   assert.ok(pieces.every(p => p.y === 1), 'the crossing belt stays on its row');
 });
+
+// Inserters stand at x=1..2; the tile an inserter reaches is x=3, right after them, so the belt
+// has to surface there: the tunnel exit is the waypoint.
+test('a tunnel may surface on a waypoint: inserters reach tunnel exits', () => {
+  const grid = new Grid({ x: 0, y: 0, w: 6, h: 1 });
+  wall(grid, 1, 0); wall(grid, 2, 0);
+  const pieces = routeBelt(grid, { id: 0, start: { tiles: [[0, 0]], dir: E }, waypoints: [[3, 0], [5, 0]], end: 'dead' }, belts);
+  const exit = pieces.find(p => p.underground === 'output');
+  assert.deepEqual([exit.x, exit.y], [3, 0]);
+  assert.ok(pieces.some(p => p.x === 5), 'the belt reaches the last waypoint');
+});
