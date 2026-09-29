@@ -85,10 +85,10 @@
       list.appendChild(row);
     });
   }
-  window.updateRecipe = (i,v) => { config[i].recipe = v; renderRecipeList(); };
+  window.updateRecipe = (i,v) => { config[i].recipe = v; renderGoals(); };
   window.updateCount = (i,v) => { config[i].count = parseInt(v||1); };
-  window.removeRecipe = (i) => { config.splice(i,1); renderRecipeList(); };
-  window.addRecipeRow = () => { config.push({recipe:recipeNames[0]||'advanced-circuit', count:1}); renderRecipeList(); };
+  window.removeRecipe = (i) => { config.splice(i,1); renderGoals(); };
+  window.addRecipeRow = () => { config.push({recipe:recipeNames[0]||'advanced-circuit', count:1}); renderGoals(); };
 
   let lastResult = null;
   window.openGlobalDropdown = (idx, btn) => {
@@ -133,7 +133,7 @@
     document.getElementById('bp-output').textContent = enc.encode(lastResult);
   };
 
-  renderRecipeList();
+  renderGoals();
   renderSprites();
 
   window.openItemList = () => {
