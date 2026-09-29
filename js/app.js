@@ -69,10 +69,11 @@ if (outdated) {
   showStatus('error', 'The catalog is missing inserter data — regenerate it (see PRD.md, Catalog).');
 }
 
-// Electric inserters (never burner ones) that reach `reach` tiles.
+// Electric inserters (never burner ones) that pick up straight ahead, `reach` tiles out. Py's
+// cranes reach diagonally and are not used.
 function inserterNames(reach) {
   return Object.values(catalog.inserters)
-    .filter(i => i.energy === 'electric' && Math.round(Math.hypot(i.pickup.x, i.pickup.y)) === reach)
+    .filter(i => i.energy === 'electric' && i.pickup.x === 0 && Math.abs(Math.abs(i.pickup.y) - reach) < 1e-6)
     .map(i => i.name).sort();
 }
 

@@ -61,6 +61,7 @@ function context(entries, catalog, logistics) {
   for (const [role, spec] of Object.entries(inserters)) {
     if (!spec) throw new Error(`choose a ${role === 'long' ? 'long-handed ' : ''}inserter`);
     if (spec.energy !== 'electric') throw new Error(`${spec.name} is not electric; only electric inserters are used`);
+    if (spec.pickup.x !== 0) throw new Error(`${spec.name} does not reach straight ahead; only straight inserters are used`);
   }
   const plan = planSubBlocks(entries, catalog, logistics);
   const flows = buildFlows(plan);
