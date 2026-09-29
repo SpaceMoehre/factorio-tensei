@@ -10,6 +10,11 @@ export async function encodeBlueprint(block, catalog) {
     if (e.direction) out.direction = e.direction;
     if (e.recipe) out.recipe = e.recipe;
     if (e.underground && e.kind === 'underground-belt') out.type = e.underground;
+    // 90° inserters (Inserter_Config): vectors relative to the inserter, in world axes.
+    if (e.vectors) {
+      out.pickup_position = { ...e.vectors.pickup };
+      out.drop_position = { ...e.vectors.drop };
+    }
     return out;
   });
   const icons = block.subBlocks.slice(0, 4).map((sb, i) => ({
