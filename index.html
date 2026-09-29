@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Factorio Factory Block Blueprint Tool</title>
+<style>
+  body { font-family: system-ui,sans-serif; background: #181825; color: #cdd6f4; margin: 0; padding: 2rem; }
+  h1 { color: #89b4fa; }
+  .grid { display: grid; grid-template-columns: 320px 1fr; gap: 2rem; }
+  .panel { background: #313244; padding: 1rem; border-radius: 12px; }
+  input, select, button { padding: .5rem; font-size: 1rem; border: none; border-radius: 6px; }
+  button { background: #a6e3a1; color: #181825; font-weight: bold; cursor: pointer; }
+  button:hover { background: #94e2d5; }
+  .recipe-row { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; }
+  .recipe-row input { width: 60px; }
+  pre { background: #181825; padding: .5rem; overflow: auto; border-radius: 6px; }
+  #preview { border: 2px solid #585b70; border-radius: 8px; overflow: hidden; }
+</style>
+</head>
+<body>
+<h1>Factorio Factory Block Blueprint Tool</h1>
+<div class="grid">
+  <div>
+    <div class="panel">
+      <h3>Recipe List</h3>
+      <div id="recipe-list"></div>
+      <button onclick="addRecipeRow()">+ Add Recipe</button>
+    </div>
+    <div class="panel" style="margin-top:1rem">
+      <button onclick="runSolver()">Calculate Blueprint</button>
+      <button onclick="runSim()">Run Simulation</button>
+      <button onclick="exportBluePrint()">Export Blueprint JSON</button>
+      <div id="sim-result" style="margin-top:.5rem"></div>
+    </div>
+  </div>
+  <div>
+    <div class="panel">
+      <h3>Layout Preview</h3>
+      <div id="preview"></div>
+    </div>
+    <div class="panel" style="margin-top:1rem">
+      <h3>Blueprint / Data</h3>
+      <pre id="bp-output">Select recipes and calculate.</pre>
+    </div>
+  </div>
+</div>
+
+<script type="module">
+  import { Solver } from './js/solver.js';
+  import { Simulator } from './js/sim.js';
+  import { BlueprintEncoder } from './js/blueprint.js';
+  import { Renderer } from './js/render.js';
+
+  const catalog = await fetch('data/catalog.json').then(r => r.json());
+  const recipes = Object.keys(catalog.recipes);
+  let config = [{recipe:'electronic-circuit', count:2}];
+
+  function renderRecipeList() {
+    const list = document.getElementById('recipe-list');
+    list.innerHTML = '';
+    config.forEach((c,i) => {
+      const row = document.createElement('div'); row.className = 'recipe-row';
+      row.innerHTML = `<select onchange="updateRecipe(${i},this.value)">${recipes.map(r=>`<option value="${r}" ${r===c.recipe?'selected':''}>${r}</option>`).join('')}</select><input type="number" value="${c.count}" min="1" onchange="updateCount(${i},this.value)"><button onclick="removeRecipe(${i})">×</button>`;
+      list.appendChild(row);
+    });
+  }
+  window.updateRecipe = (i,v) => { config[i].recipe = v; renderRecipeList(); };
+  window.updateCount = (i,v) => { config[i].count = parseInt(v||1); };
+  window.removeRecipe = (i) => { config.splice(i,1); renderRecipeList(); };
+  window.addRecipeRow = () => { config.push({recipe:recipes[0], count:1}); renderRecipeList(); };
+
+  let lastResult = null;
+  window.runSolver = () => {
+    const s = new Solver(catalog, config);
+    s.mergeBelts();
+    lastResult = s.solve();
+    document.getElementById('bp-output').textContent = JSON.stringify(lastResult, null, 2).slice(0,2000);
+    new Renderer().render(lastResult, 'preview');
+  };
+
+  window.runSim = () => {
+    if (!lastResult) { lastResult = new Solver(catalog, config).solve(); }
+    const sim = new Simulator(lastResult, catalog);
+    const res = sim.run();
+    document.getElementById('sim-result').innerHTML = `<strong>Simulation:</strong> ${res.ok ? 'OK' : 'STARVATION'}<br><pre>${JSON.stringify(res.starvation, null, 2)}</pre>`;
+  };
+
+  window.exportBluePrint = () => {
+    if (!lastResult) window.runSolver();
+    const enc = new BlueprintEncoder();
+    document.getElementById('bp-output').textContent = enc.encode(lastResult);
+  };
+
+  renderRecipeList();
+</script>
+</body>
+</html>
