@@ -36,6 +36,40 @@ export function buildSprites(icons, { game, mods, out }) {
   return { written, missing };
 }
 
+// For a catalog without icon paths: each name's icon, found as graphics/icons/**/<name>.png in
+// the newest version of each mod in mods/ (zips or folders). Where several mods draw one, the
+// first by mod name wins, and within a mod the shallowest path. Returns { name: '<mod>/<path>' }
+// for the names found.
+export function findIcons(names, mods) {
+  const wanted = new Set(names);
+  const found = {};
+  const newest = new Map();
+  for (const name of existsSync(mods) ? readdirSync(mods) : []) {
+    const match = /^(.+)_(\d+)\.(\d+)\.(\d+)(\.zip)?$/.exec(name);
+    if (match && (!newest.has(match[1]) || compareVersions(match.slice(1), newest.get(match[1]).match.slice(1)) > 0)) {
+      newest.set(match[1], { name, match });
+    }
+  }
+  for (const mod of [...newest.keys()].sort()) {
+    const { name, match } = newest.get(mod);
+    const zip = match[5] ? openZip(join(mods, name)) : null;
+    const paths = zip ? zip.paths() : filesUnder(join(mods, name), 'graphics/icons');
+    zip?.close();
+    const icons = paths.filter(p => p.startsWith('graphics/icons/') && p.endsWith('.png'))
+      .sort((a, b) => a.split('/').length - b.split('/').length || a.localeCompare(b));
+    for (const path of icons) {
+      const item = path.slice(path.lastIndexOf('/') + 1, -4);
+      if (wanted.has(item) && !found[item]) found[item] = `${mod}/${path}`;
+    }
+  }
+  return found;
+}
+
+function filesUnder(root, dir) {
+  if (!existsSync(join(root, dir))) return [];
+  return readdirSync(join(root, dir), { withFileTypes: true }).flatMap(e => (e.isDirectory() ? filesUnder(root, `${dir}/${e.name}`) : [`${dir}/${e.name}`]));
+}
+
 // A built-in mod's folder under data/, else the newest <mod>_<version> zip or folder in mods/.
 function modSource(mod, { game, mods }) {
   const builtIn = join(game, 'data', mod);
@@ -99,6 +133,7 @@ function openZip(file) {
   }
   return {
     has: path => entries.has(path),
+    paths: () => [...entries.keys()],
     read(path) {
       const { method, compressed, local } = entries.get(path);
       const header = read(local, 30);

@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateRawSync, crc32 } from 'node:zlib';
-import { buildSprites } from '../scripts/sprites.mjs';
+import { buildSprites, findIcons } from '../scripts/sprites.mjs';
 
 // A minimal zip archive (deflated entries), laid out the way Factorio mod zips are.
 function zip(files) {
@@ -49,4 +49,27 @@ test('icons come from the game data folder and from the newest version of each m
   assert.equal(readFileSync(join(out, 'pyhightechgraphics/graphics/icons/pcb1.png'), 'utf8'), 'PCB');
   assert.equal(existsSync(join(out, 'nomod/x.png')), false);
   assert.deepEqual(report, { written: 2, missing: ['nomod/x.png'] });
+});
+
+// A catalog without icon paths: each item's icon is found by its file name among the mods'
+// icons, newest mod version first; an item no mod draws has none.
+test('icons without a path are found by name in the mod zips', () => {
+  const root = mkdtempSync(join(tmpdir(), 'sprites-'));
+  const mods = join(root, 'mods');
+  mkdirSync(mods);
+  writeFileSync(join(mods, 'pyalienlifegraphics_3.0.0.zip'), zip({ 'pyalienlifegraphics_3.0.0/graphics/icons/moss.png': Buffer.from('OLD') }));
+  writeFileSync(join(mods, 'pyalienlifegraphics_3.1.0.zip'), zip({
+    'pyalienlifegraphics_3.1.0/graphics/icons/moss.png': Buffer.from('MOSS'),
+    'pyalienlifegraphics_3.1.0/graphics/icons/casein.png': Buffer.from('CASEIN'),
+    'pyalienlifegraphics_3.1.0/graphics/entity/moss.png': Buffer.from('NOT AN ICON'),
+  }));
+  writeFileSync(join(mods, 'pyrawores_3.1.0.zip'), zip({ 'pyrawores_3.1.0/graphics/icons/mip/iron-plate.png': Buffer.from('PLATE') }));
+  assert.deepEqual(findIcons(['moss', 'casein', 'iron-plate', 'unknown'], mods), {
+    moss: 'pyalienlifegraphics/graphics/icons/moss.png',
+    casein: 'pyalienlifegraphics/graphics/icons/casein.png',
+    'iron-plate': 'pyrawores/graphics/icons/mip/iron-plate.png',
+  });
+  const out = join(root, 'sprites');
+  buildSprites(findIcons(['moss'], mods), { game: join(root, 'no-game'), mods, out });
+  assert.equal(readFileSync(join(out, 'pyalienlifegraphics/graphics/icons/moss.png'), 'utf8'), 'MOSS');
 });

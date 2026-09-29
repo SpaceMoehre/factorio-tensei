@@ -1,6 +1,7 @@
-// Production Chain: the Goals plus a Sub-Block for every ingredient the block makes itself,
-// recursively, down to the Train Inputs — items the user brings by train, items no recipe
-// makes, and items a recipe would have to make from themselves.
+// Production Chain: the Goals plus a Sub-Block for every ingredient the user chose to make in the
+// block, recursively. Everything else a step needs is a Train Input: by default every ingredient
+// of a Goal's recipe, and also items no recipe makes and items a recipe would have to make from
+// themselves.
 
 const MAX_STEPS = 60;
 
@@ -33,12 +34,12 @@ function hasFluidBoxes(building, recipe) {
 }
 
 // goals: [{ item, rate }] (per minute)
-// options: { inputs: [item] brought by train, selections: { [item]: { recipe, building } },
-//            index: recipeOptions(catalog) }
+// options: { made: [item] made in the block rather than brought by train (Goals always are),
+//            selections: { [item]: { recipe, building } }, index: recipeOptions(catalog) }
 // Returns the chain's steps as solve() entries — each item's rate is its Goal rate plus what its
 // consumers take — and the Train Inputs with the rate the chain needs and why each comes by train.
-export function expandChain(goals, catalog, { inputs = [], selections = {}, index = recipeOptions(catalog) } = {}) {
-  const chosenInputs = new Set(inputs);
+export function expandChain(goals, catalog, { made = [], selections = {}, index = recipeOptions(catalog) } = {}) {
+  const makeHere = new Set([...made, ...goals.map(g => g.item)]);
   const steps = new Map();
   const trainInputs = new Map();
   const order = [];
@@ -60,8 +61,8 @@ export function expandChain(goals, catalog, { inputs = [], selections = {}, inde
   const visit = (item, isGoal) => {
     if (steps.has(item)) return false;
     if (onPath.has(item)) return toTrain(item, 'cycle');
-    if (!isGoal && chosenInputs.has(item)) return toTrain(item, 'chosen');
     const selection = selectionFor(item);
+    if (!isGoal && !makeHere.has(item)) return toTrain(item, selection ? 'import' : 'no recipe');
     if (!selection) {
       if (isGoal) throw new Error(`no recipe and building can produce “${item}”`);
       return toTrain(item, 'no recipe');
@@ -73,8 +74,6 @@ export function expandChain(goals, catalog, { inputs = [], selections = {}, inde
       if (name === item ? toTrain(item, 'cycle') : visit(name, false)) byTrain.add(name);
     }
     onPath.delete(item);
-    // A Goal met earlier as a chosen Train Input is made here after all.
-    if (trainInputs.get(item)?.reason === 'chosen') trainInputs.delete(item);
     steps.set(item, { selection, rate: 0, byTrain });
     order.push(item);
     return false;

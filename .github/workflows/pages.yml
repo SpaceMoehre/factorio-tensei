@@ -1,0 +1,65 @@
+# Publishes the planner to GitHub Pages: the page, its modules and the catalog, with icons
+# extracted from the zips attached to each Pyanodons repository's latest release. The site is
+# built on every push to master and to claude/ branches (to check it), and deployed from master.
+name: Pages
+
+on:
+  push:
+    branches: [master, 'claude/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      # Recent releases carry no zips, so each repository's newest release that has any is used
+      # (older Py packages bundled their graphics).
+      - name: Download the Pyanodons release zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir mods
+          for repo in $(gh repo list pyanodon --limit 200 --json name --jq '.[].name'); do
+            used=""
+            for tag in $(gh release list --repo "pyanodon/$repo" --limit 200 --json tagName --jq '.[].tagName'); do
+              if gh release download "$tag" --repo "pyanodon/$repo" --pattern '*.zip' --dir mods 2>/dev/null; then
+                used="$tag"
+                break
+              fi
+            done
+            echo "$repo: ${used:-no release zips}"
+          done
+          ls -la mods
+      - name: Collect the site
+        run: |
+          mkdir site
+          cp -r index.html js data site/
+          node scripts/site-sprites.mjs mods site
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
