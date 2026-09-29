@@ -29,7 +29,7 @@ export function* search(entries, catalog, logistics, options = {}) {
   while (tried < maxCandidates && now() < deadline) {
     const candidate = queue.length ? queue.shift() : mutate(best?.candidate ?? first, ctx, pools, rng);
     tried++;
-    const layout = pack(candidate, pools);
+    const layout = pack(candidate, pools, ctx.routes);
     const bound = boundOf(layout);
     if (best && (layout.shortfall > best.score[0] || (layout.shortfall === best.score[0] && bound >= best.score[1]))) continue;
     let block;
@@ -170,7 +170,7 @@ function initialCandidate(ctx, pools) {
   const n = ctx.plan.length;
   return {
     variants: pools.map(() => 0), order: [...ctx.flows.order], gaps: Array(n).fill(2), shelfGap: 2,
-    shelf: 0, margin: { w: 2, e: 2, n: 2, s: 2 }, routeOrder: null,
+    shelf: 0, margin: { w: 2, e: 2, n: 2, s: 2 }, routeOrder: null, share: Array(n).fill(false),
   };
 }
 
@@ -181,6 +181,7 @@ function sweep(first, pools) {
   const at = (v, g) => ({ ...first, variants: first.variants.map(() => v), gaps: first.gaps.map(() => g), shelfGap: g, margin: { w: g, e: g, n: g, s: g } });
   const list = [];
   for (let v = 0; v < longest; v++) list.push(at(v, 2), at(v, 1));
+  if (first.share.length > 1) list.push({ ...at(0, 2), share: first.share.map(() => true) }, { ...at(0, 1), share: first.share.map(() => true) });
   for (const g of [3, 4, 6]) list.push(at(0, g));
   return list.slice(1);
 }
@@ -191,7 +192,7 @@ function mutate(base, ctx, pools, rng) {
   const moves = 1 + Math.floor(rng() * 2);
   for (let m = 0; m < moves; m++) {
     const i = Math.floor(rng() * n);
-    switch (Math.floor(rng() * 7)) {
+    switch (Math.floor(rng() * 8)) {
       case 0: case 1: c.variants[i] = Math.floor(rng() ** 2 * pools[i].length); break;
       case 2: c.gaps[i] = clamp(c.gaps[i] + (rng() < 0.5 ? -1 : 1), 0, 8); break;
       case 3: c.shelfGap = clamp(c.shelfGap + (rng() < 0.5 ? -1 : 1), 0, 8); break;
@@ -207,6 +208,12 @@ function mutate(base, ctx, pools, rng) {
         c.shelf = clamp(c.shelf + (rng() < 0.5 ? -1 : 1), -n, n);
         break;
       }
+      case 6: {
+        // Neighbours share a belt: a consumer set level with its producer's output row.
+        c.share[i] = !c.share[i];
+        if (c.share[i]) c.gaps[c.order[Math.max(0, c.order.indexOf(i) - 1)]] = Math.floor(rng() * 2);
+        break;
+      }
       default: {
         const ids = ctx.routes.map(r => r.id);
         c.routeOrder = shuffle(ids, rng);
@@ -216,9 +223,17 @@ function mutate(base, ctx, pools, rng) {
   return c;
 }
 
-function pack(candidate, pools) {
+function pack(candidate, pools, routes) {
   const cores = candidate.variants.map((v, i) => pools[i][Math.min(v, pools[i].length - 1)].core);
-  const placed = shelfPack(cores, candidate.order, { gaps: candidate.gaps, shelfGap: candidate.shelfGap, shelf: candidate.shelf });
+  // Each Sub-Block that shares a belt with its producer: the rows of that belt in both cores.
+  const shares = cores.map((core, j) => {
+    if (!candidate.share[j]) return null;
+    const route = routes.find(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.includes(j));
+    if (!route) return null;
+    const rowOf = (c, id) => c.rows.find(r => r.routeId === id)?.y;
+    return { with: route.source, rows: [rowOf(cores[route.source], route.id), rowOf(core, route.id)] };
+  });
+  const placed = shelfPack(cores, candidate.order, { gaps: candidate.gaps, shelfGap: candidate.shelfGap, shelf: candidate.shelf, shares });
   return {
     cores, placed, margin: candidate.margin, routeOrder: candidate.routeOrder,
     shortfall: cores.reduce((sum, c) => sum + c.shortfall, 0),
