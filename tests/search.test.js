@@ -70,6 +70,21 @@ test('a burner machine gets a Fuel input at its power draw: 2 stone furnaces, 2.
   assertValid(block, catalog, logistics);
 });
 
+// Py science pack 2: 18 packs per 180 s craft; research-center-mk01 runs at speed 1, so each
+// makes 6/min and 450/min needs 75. That is 25 crafts/min, 400 moss each: 10,000 moss/min, or
+// 133⅓ per machine. A saturated yellow belt carries 900/min, enough for 6 machines, so moss
+// arrives on at least ceil(10000 / 900) = 12 parallel belts.
+test('Py science pack 2 at 450/min: 75 research centres, moss on parallel belts, nothing starves', () => {
+  const entries = [{ goal: { item: 'py-science-pack-2', rate: 450 }, selection: { recipe: 'py-science-pack-2', building: 'research-center-mk01' } }];
+  const block = solve(entries, pyCatalog, logistics, { maxCandidates: 16 });
+  assert.equal(machinesOf(block, 'py-science-pack-2').length, 75);
+  const moss = block.routes.filter(r => r.items.some(i => i.item === 'moss'));
+  assert.ok(moss.length >= 12, `${moss.length} moss belts`);
+  assert.ok(moss.every(r => r.items[0].rate <= 900 + 1e-9));
+  assert.deepEqual(simulate(block).starvation, []);
+  assertValid(block, pyCatalog, logistics);
+});
+
 // Areas v1's template reached on the same scenarios (bounds including its routing margin).
 const V1_AREA = {
   gears: 210, circuits: 621, three: 1444, oil: 1085, concrete: 990, distil: 540, mustard: 1344, compost: 943,

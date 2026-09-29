@@ -289,10 +289,13 @@ export function validateBlock(block, catalog, logistics) {
     if (route.sink === 'side-output') problems.push(...endsAtEastEdge(block, route));
   }
   // Together, the parts of a split route serve every machine row.
+  const basesOf = r => r.bases ?? [r.base];
   for (const route of block.routes.filter(r => r.servesRows)) {
-    for (const [i, rows] of Object.entries(route.servesRows)) {
-      const covered = new Set(block.routes.filter(r => r.base === route.base).flatMap(r => r.servesRows?.[i] ?? []));
-      if (rows === route.servesRows[i] && machinesOf(+i).some(m => !covered.has(m.row))) problems.push(`route ${route.base} does not reach every row of ${block.subBlocks[i].item}`);
+    for (const i of Object.keys(route.servesRows)) {
+      for (const base of basesOf(route)) {
+        const covered = new Set(block.routes.filter(r => basesOf(r).includes(base)).flatMap(r => r.servesRows?.[i] ?? []));
+        if (machinesOf(+i).some(m => !covered.has(m.row))) problems.push(`route ${base} does not reach every row of ${block.subBlocks[i].item}`);
+      }
     }
   }
   if (!problems.length) problems.push(...powerNetwork(block, catalog, logistics));

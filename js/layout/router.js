@@ -16,13 +16,14 @@ export function routeBelt(grid, spec, names) {
   const commit = leg => commitLeg(grid, spec, names.underground, leg, pieces);
   let starts = spec.start.tiles.map(([x, y]) => ({ x, y, a: spec.start.dir }));
   const pending = new Set(spec.waypoints.map(([x, y]) => key(x, y)));
-  const target = { key: null };
+  const target = { key: null, last: false };
   const moves = beltMoves(grid, spec, names, pending, target);
   // A leg never crosses a later waypoint of its own route. The piece on a waypoint tile is a
   // belt, a tunnel entrance or a tunnel exit: an inserter can reach any of them.
   let surfaced = false;
-  for (const [wx, wy] of spec.waypoints) {
+  for (const [i, [wx, wy]] of spec.waypoints.entries()) {
     target.key = key(wx, wy);
+    target.last = i === spec.waypoints.length - 1 && spec.end === 'dead';
     pending.delete(target.key);
     const isGoal = s => s.reached || (s.x === wx && s.y === wy);
     // A tunnel that surfaced on the previous waypoint may already stand before this one.
@@ -244,7 +245,8 @@ function beltMoves(grid, spec, names, pending, target) {
         { ...base, underground: 'input', x: node.x, y: node.y, out: null },
         { ...base, underground: 'output', x: qx, y: qy, out: key(...step(qx, qy, d)) },
       ]);
-      move.reached = key(qx, qy) === target.key;
+      // A tunnel surfacing on a waypoint must leave the belt a tile to go on to.
+      move.reached = key(qx, qy) === target.key && (target.last || grid.freeFor(...step(qx, qy, d), spec.id));
       options.push(move);
     }
     return options;
@@ -261,9 +263,13 @@ function pipeMoves(grid, spec, names, pending) {
       }
     }
     const d = node.a;
-    const endOk = (x, y) => grid.freeFor(x, y, spec.id) && !grid.pipeBlocked.has(key(x, y)) && !pending.has(key(x, y));
+    const endOk = (x, y) => grid.freeFor(x, y, spec.id) && !grid.pipeBlocked.has(key(x, y)) && !pending.has(key(x, y))
+      && !grid.surfaceOnly.has(key(x, y));
     if (!endOk(node.x, node.y)) return options;
     for (const hop of HOPS(names.reach)) {
+      // A pipe tunnel may not pass under a tile that must carry a surface pipe: a join or a port.
+      const under = key(...step(node.x, node.y, d, hop - 1));
+      if (hop > 1 && (grid.surfaceOnly.has(under) || pending.has(under))) break;
       const [qx, qy] = step(node.x, node.y, d, hop);
       if (!endOk(qx, qy) || !grid.tunnelFits(names.underground, node, { x: qx, y: qy })) continue;
       // A pipe-to-ground's direction is its above-ground connection side.

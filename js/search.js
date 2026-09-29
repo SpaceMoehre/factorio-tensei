@@ -79,6 +79,7 @@ function context(entries, catalog, logistics) {
     rightAngle: logistics.rightAngle !== false && inserters.short.customVectors,
     beltReach: belt.underground.maxDistance,
     pipeReach: catalog.pipes[logistics.pipe].maxDistance,
+    laneCapacity: belt.itemsPerSecond * 30,
   };
   return { plan, flows, routes, catalog, logistics, env };
 }
@@ -96,7 +97,7 @@ function variantPool(ctx, sb, index, rng) {
     if (!variant) return;
     try {
       const core = buildCore(sb, building, links, variant, ctx.env);
-      const signature = JSON.stringify([core.w, core.h, core.entities, core.rows.map(r => [r.routeId, r.part, r.y]), core.pipeRows.map(r => r.y), core.poleSlots]);
+      const signature = JSON.stringify([core.w, core.h, core.entities, core.rows.map(r => [r.routeIds, r.part, r.y]), core.pipeRows.map(r => r.y), core.poleSlots]);
       if (!seen.has(signature)) seen.set(signature, { variant, core });
     } catch (e) {
       if (!(e instanceof LayoutError)) throw e;
@@ -105,16 +106,23 @@ function variantPool(ctx, sb, index, rng) {
   };
   for (const rotation of ROTATIONS) {
     attempt(stackVariant(shape, { rotation, rowLength: sb.count, plain: true }, rng));
-    if (shape.rowCap < sb.count) {
+    for (const { merge, cap } of [{ merge: false, cap: shape.rowCap }, { merge: true, cap: shape.mergeCap }]) {
+      if (cap >= sb.count) continue;
       for (const middle of [4, 5, 6]) {
-        for (const pipes of [false, true]) attempt(stackVariant(shape, { rotation, rowLength: shape.rowCap, flip: true, plain: true, pipes, middle }, rng));
+        for (const pipes of [false, true]) {
+          for (const shift of pipes ? [0, -1, 1, -2, 2, -3, 3, -4, 4] : [0]) {
+            attempt(stackVariant(shape, { rotation, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng));
+          }
+        }
       }
     }
   }
   for (let n = 0; n < VARIANT_TRIES; n++) {
-    const lengths = [sb.count, Math.ceil(sb.count / 2), shape.rowCap, Math.max(1, shape.rowCap - 1), 1 + Math.floor(rng() * sb.count)];
+    const merge = rng() < 0.3;
+    const cap = merge ? shape.mergeCap : shape.rowCap;
+    const lengths = [sb.count, Math.ceil(sb.count / 2), cap, Math.max(1, cap - 1), 1 + Math.floor(rng() * sb.count)];
     const variant = stackVariant(shape, {
-      rotation: choose(ROTATIONS, rng), rowLength: choose(lengths, rng), flip: rng() < 0.5, pipes: rng() < 0.5,
+      rotation: choose(ROTATIONS, rng), rowLength: choose(lengths, rng), flip: rng() < 0.5, pipes: rng() < 0.5, merge,
     }, rng);
     // Which connection each fluid uses, where its box has several.
     if (variant && rng() < 0.5) variant.ports = links.fluids.map(() => Math.floor(rng() * 8));
@@ -128,7 +136,7 @@ function variantPool(ctx, sb, index, rng) {
   }
   // The best of each kind of layout (row length, with or without pipe rows) first, so a bigger
   // kind that routes where the smallest cannot still gets tried; then the next most compact.
-  const kind = ({ variant }) => `${variant.rowLength}|${variant.pipes.length > 0}`;
+  const kind = ({ variant }) => `${variant.rowLength}|${variant.pipes.length > 0}|${variant.belts.some(b => b.routeIds.length > 1)}`;
   const leaders = ranked.filter((v, i) => ranked.findIndex(w => kind(w) === kind(v)) === i);
   return [...leaders, ...ranked.filter(v => !leaders.includes(v))].slice(0, Math.max(POOL, leaders.length));
 }
@@ -145,14 +153,31 @@ function shapeOf(ctx, sb, index, links) {
       ? route.items[0].capacity / (items.reduce((sum, i) => sum + i.rate, 0) / sb.count)
       : Math.min(...items.map(i => route.items.find(x => x.item === i.name).capacity / (i.rate / sb.count)));
     const splittable = isOutput ? route.consumers.length === 0 : route.source === 'side-input' && route.consumers.length === 1;
-    return { routeId, perBelt: Math.max(1, Math.floor(perBelt + 1e-9)), splittable };
+    // A single-item input that may split can share parallel belts with another: one lane each.
+    const perLane = !isOutput && splittable && items.length === 1 ? Math.floor(ctx.env.laneCapacity / (items[0].rate / sb.count) + 1e-9) : 0;
+    return { routeIds: [routeId], perBelt: Math.max(1, Math.floor(perBelt + 1e-9)), splittable, perLane };
   });
   const depths = ctx.env.rightAngle ? [1, 2, 3, 4] : [2, 3, 4];
   if (belts.length > 2 * depths.length) {
     throw new LayoutError(`${sb.recipe} needs ${belts.length} belts; ${2 * depths.length} fit around a row of machines`);
   }
   const rowCap = Math.min(sb.count, ...belts.filter(b => b.splittable).map(b => b.perBelt));
-  return { sb, links, belts, depths, rowCap, building: ctx.catalog.buildings[sb.building] };
+  // With merged pairs, rows as long as the busiest unmerged belt or merged lane allows.
+  const mergeCap = Math.min(sb.count, ...pairUp(belts).filter(b => b.splittable).map(b => b.perBelt));
+  return { sb, links, belts, depths, rowCap, mergeCap, building: ctx.catalog.buildings[sb.building] };
+}
+
+// Belt Merge per part: single-item inputs that may split pair up, those whose lanes feed the
+// most machines together; a pair feeds as many machines as the weaker lane allows, as long as
+// a row still gets at least one machine's worth.
+function pairUp(belts) {
+  const single = belts.filter(b => b.perLane >= 1).sort((a, b) => b.perLane - a.perLane);
+  const out = belts.filter(b => !single.includes(b));
+  for (let i = 0; i + 1 < single.length; i += 2) {
+    out.push({ routeIds: [...single[i].routeIds, ...single[i + 1].routeIds], perBelt: Math.min(single[i].perLane, single[i + 1].perLane), splittable: true, perLane: 0 });
+  }
+  if (single.length % 2) out.push(single.at(-1));
+  return out;
 }
 
 // A stack of machine rows. Each route shares bands between pairs of rows — pairs start at row 0
@@ -161,8 +186,9 @@ function shapeOf(ctx, sb, index, links) {
 // route that may split, one belt per group of rows it can feed. Belt rows go nearest the
 // machines first (plain) or at random, a single row's belt into the emptier of its two bands.
 // With `pipes`, each fluid first gets a pipe row beside its connections in every band they face.
-function stackVariant(shape, { rotation, rowLength, flip = false, plain = false, pipes = false, middle: height = null }, rng) {
-  const { sb, belts, depths } = shape;
+function stackVariant(shape, { rotation, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null }, rng) {
+  const { sb, depths } = shape;
+  const belts = merge ? pairUp(shape.belts) : shape.belts;
   const rows = Math.ceil(sb.count / rowLength);
   const counts = [...Array(rows).keys()].map(r => Math.min(rowLength, sb.count - r * rowLength));
   // A middle band of 4 rows (5 without 90° inserters) has the most rows both machine rows reach.
@@ -208,7 +234,7 @@ function stackVariant(shape, { rotation, rowLength, flip = false, plain = false,
       // As many whole rows as one belt can feed.
       let last = first, machines = counts[first];
       while (last + 1 < rows && machines + counts[last + 1] <= machinesPerPart) machines += counts[++last];
-      for (const serves of groupsOf(first, last, offset)) wanted.push({ routeId: b.routeId, part, serves });
+      for (const serves of groupsOf(first, last, offset)) wanted.push({ routeIds: b.routeIds, part, serves });
       part++;
       first = last + 1;
     }
@@ -226,8 +252,10 @@ function stackVariant(shape, { rotation, rowLength, flip = false, plain = false,
         // the connections on a band row no shared belt could use.
         const outer = band === 0 || band === rows;
         const h = bandHeight(band);
-        const fromPorts = outer ? [5, 6, 7, 8] : side === 'bottom' ? [...Array(h).keys()].map(j => j + 1) : [...Array(h).keys()].map(j => h - j);
-        const row = fromPorts.filter(j => !taken.has(`${band},${j}`)).sort((a, b) => shareable([band, a]) - shareable([band, b]))[0];
+        const fromPorts = outer ? [5, 7, 6, 8] : side === 'bottom' ? [...Array(h).keys()].map(j => j + 1) : [...Array(h).keys()].map(j => h - j);
+        // Pipes of two fluids side by side would join, so pipe rows keep a row between them.
+        const row = fromPorts.filter(j => !taken.has(`${band},${j}`) && !pipeRows.some(p => p.band === band && Math.abs(p.row - j) === 1))
+          .sort((a, b) => shareable([band, a]) - shareable([band, b]))[0];
         if (row === undefined) continue;
         taken.add(`${band},${row}`);
         used.set(band, (used.get(band) ?? 0) + 1);
@@ -246,9 +274,11 @@ function stackVariant(shape, { rotation, rowLength, flip = false, plain = false,
     used.set(band, (used.get(band) ?? 0) + 1);
     placed.push({ ...w, band, row });
   }
+  // Every second row may sit to the side, within the gap after each machine.
+  const sideways = shift ?? (rows > 1 && !plain && rng() < 0.3 ? choose([-4, -3, -2, -1, 1, 2, 3, 4], rng) : 0);
+  const gap = Math.max(Math.abs(sideways), plain || rng() < 0.6 ? 0 : 1 + Math.floor(rng() * 2));
   return {
-    rotation, rowLength, flip, middle, belts: placed, pipes: pipeRows,
-    gap: plain || rng() < 0.6 ? 0 : 1 + Math.floor(rng() * 2),
+    rotation, rowLength, flip, middle, belts: placed, pipes: pipeRows, shift: sideways, gap,
     columns: plain ? 'center' : choose(['center', 'left', 'right'], rng),
     poleSlot: plain || rng() < 0.5 ? null : { band: Math.floor(rng() * (rows + 1)), row: 1 + Math.floor(rng() * 2) },
   };
@@ -264,16 +294,44 @@ function initialCandidate(ctx, pools) {
   };
 }
 
-// First, each Sub-Block's most compact variants in turn, with roomy and tight packing; then
-// wider gaps and margins, in case routing needs the room.
+// First, each Sub-Block's most compact variants in turn, with roomy and tight packing, then
+// with wide margins; then wider gaps and margins for the most compact.
 function sweep(first, pools) {
   const longest = Math.max(...pools.map(p => p.length));
   const at = (v, g) => ({ ...first, variants: first.variants.map(() => v), gaps: first.gaps.map(() => g), shelfGap: g, margin: { w: g, e: g, n: g, s: g } });
+  // Stacked rows need room beside them to route around; try each variant with it early.
+  const roomy = v => {
+    const room = pools.map(p => sideRoom(p[Math.min(v, p.length - 1)].core));
+    const w = Math.max(...room.map(r => r.w)), e = Math.max(...room.map(r => r.e));
+    return w > 2 || e > 2 ? [{ ...at(v, 2), margin: { w: Math.max(w, 2), e: Math.max(e, 2), n: 2, s: 2 } }] : [];
+  };
   const list = [];
-  for (let v = 0; v < longest; v++) list.push(at(v, 2), at(v, 1));
+  for (let v = 0; v < longest; v++) list.push(at(v, 2), ...roomy(v), at(v, 1));
+  // Room for pipes and belts to reach every band from outside the machines.
+  for (let v = 0; v < longest; v++) list.push(at(v, 4));
   if (first.share.length > 1) list.push({ ...at(0, 2), share: first.share.map(() => true) }, { ...at(0, 1), share: first.share.map(() => true) });
   for (const g of [3, 4, 6]) list.push(at(0, g));
   return list.slice(1);
+}
+
+// Columns beside a core that routing needs: belts visiting several rows turn between them beside
+// it, alternately east and west (compound.js visits a belt's rows in turn), one lane for each
+// turn that overlaps another; a fluid with pipe rows in several bands has a riser there, which
+// belts cross underground; and a column at the edge.
+function sideRoom(core) {
+  const parts = new Map();
+  for (const row of core.rows) {
+    const k = `${row.routeIds.join('+')}|${row.part}`;
+    parts.set(k, [...(parts.get(k) ?? []), row.y]);
+  }
+  const turns = [[], []];
+  for (const ys of parts.values()) {
+    for (let i = 1; i < ys.length; i++) turns[i % 2].push([Math.min(ys[i - 1], ys[i]), Math.max(ys[i - 1], ys[i])]);
+  }
+  const lanes = turns.map(list => Math.max(0, ...list.map(([y]) => list.filter(([lo, hi]) => lo <= y && y < hi).length)));
+  const fluids = [...new Set(core.pipeRows.map(p => p.routeId))].filter(id => core.pipeRows.filter(p => p.routeId === id).length > 1);
+  const risers = [Math.floor(fluids.length / 2), Math.ceil(fluids.length / 2)];
+  return { e: 1 + lanes[1] + 2 * risers[0], w: 1 + lanes[0] + 2 * risers[1] };
 }
 
 function mutate(base, ctx, pools, rng) {

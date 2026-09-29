@@ -14,6 +14,8 @@ export class Grid {
     this.fluidPorts = new Set();
     // Machine fluid connections not used by the recipe: no pipe may sit there.
     this.pipeBlocked = new Set();
+    // Connections that must take a plain pipe, never a pipe-to-ground.
+    this.surfaceOnly = new Set();
     this.tunnels = [];
   }
 

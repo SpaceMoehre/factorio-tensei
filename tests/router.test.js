@@ -53,3 +53,29 @@ test('a tunnel may surface on a waypoint: inserters reach tunnel exits', () => {
   assert.deepEqual([exit.x, exit.y], [3, 0]);
   assert.ok(pieces.some(p => p.x === 5), 'the belt reaches the last waypoint');
 });
+
+// Walls at x=2..3, and x=5 is where another pipe joins from below: it must carry a plain pipe.
+// The cheapest way from the connection at x=6 dives under x=5 as well as the walls; the pipe
+// surfaces on x=5 instead and dives from x=4.
+test('a pipe does not dive under a tile that must take a plain pipe', () => {
+  const grid = new Grid({ x: 0, y: 0, w: 7, h: 1 });
+  wall(grid, 2, 0); wall(grid, 3, 0);
+  grid.reserveFluidPort(0, 0, 0);
+  grid.reserveFluidPort(6, 0, 0);
+  grid.surfaceOnly.add('5,0');
+  const pieces = routePipe(grid, { id: 0, fluid: 'water', terminals: [[0, 0, E], [6, 0, W]], source: false, sink: false }, pipes);
+  assert.ok(pieces.some(p => p.kind === 'pipe' && p.x === 5), 'a plain pipe on the joining tile');
+  const ends = pieces.filter(p => p.kind === 'pipe-to-ground').map(p => p.x);
+  for (let i = 0; i < ends.length; i += 2) assert.ok(Math.min(ends[i], ends[i + 1]) > 5 || Math.max(ends[i], ends[i + 1]) < 5, `pipe-to-ground ${ends}`);
+});
+
+// The belt starts south at (2,0) and must pass (2,2), then reach (0,2). A tunnel under the wall
+// at (2,1) would surface on (2,2) facing the wall at (2,3): a dead end, though the cheapest way
+// to (2,2). The belt goes round by column 4 instead and passes (2,2) on its way on.
+test('a tunnel surfacing on a waypoint must leave the belt somewhere to go', () => {
+  const grid = new Grid({ x: 0, y: 0, w: 5, h: 4 });
+  wall(grid, 1, 0); wall(grid, 2, 1); wall(grid, 3, 1); wall(grid, 2, 3);
+  const pieces = routeBelt(grid, { id: 0, start: { tiles: [[2, 0]], dir: S }, waypoints: [[2, 2], [0, 2]], end: 'dead' }, belts);
+  assert.ok(pieces.some(p => p.x === 2 && p.y === 2 && p.underground !== 'output'), 'the belt passes (2,2)');
+  assert.ok(pieces.some(p => p.x === 0 && p.y === 2), 'the belt reaches the last waypoint');
+});
