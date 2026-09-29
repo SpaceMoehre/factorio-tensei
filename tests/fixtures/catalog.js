@@ -77,6 +77,11 @@ export const catalog = {
       ingredients: [{ type: 'item', name: 'moss', amount: 1 }],
       products: [{ type: 'item', name: 'biomass', amount: 1 }],
     },
+    'iron-plate': {
+      name: 'iron-plate', category: 'smelting', time: 3.2,
+      ingredients: [{ type: 'item', name: 'iron-ore', amount: 1 }],
+      products: [{ type: 'item', name: 'iron-plate', amount: 1 }],
+    },
     'advanced-oil-processing': {
       name: 'advanced-oil-processing', category: 'oil-processing', time: 5,
       ingredients: [
@@ -158,6 +163,15 @@ export const catalog = {
         { production: 'output', connections: [{ x: 3.5, y: 3.5, direction: 4 }] },
       ],
     },
+    // Burns chemical fuel at 90kW (effectivity 1).
+    'stone-furnace': {
+      name: 'stone-furnace', size: { w: 2, h: 2 }, craftingSpeed: 1, categories: ['smelting'], energy: 'burner',
+      energyUsage: 90000, effectivity: 1, fuelCategories: ['chemical'], fluidBoxes: [],
+    },
+  },
+  fuels: {
+    coal: { name: 'coal', fuelValue: 4000000, categories: ['chemical'] },
+    'nuclear-fuel-cell': { name: 'nuclear-fuel-cell', fuelValue: 8000000000, categories: ['nuclear'] },
   },
   poles: {
     'medium-electric-pole': { name: 'medium-electric-pole', size: { w: 1, h: 1 }, supplyRadius: 3.5, wireReach: 9 },
@@ -170,4 +184,4 @@ export const catalog = {
   },
 };
 
-export const logistics = { belt: 'transport-belt', pipe: 'pipe-to-ground', pole: 'medium-electric-pole' };
+export const logistics = { belt: 'transport-belt', pipe: 'pipe-to-ground', pole: 'medium-electric-pole', fuel: 'coal' };

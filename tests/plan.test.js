@@ -49,3 +49,28 @@ test('multi-output recipe: non-Goal outputs are Byproducts at the same craft rat
     { name: 'light-oil', type: 'fluid', rate: 90 },
   ]);
 });
+
+// Stone furnace: 90kW at effectivity 1 on 4MJ coal burns 90e3 / 4e6 = 0.0225 coal/s, 1.35/min.
+// Iron plates take 3.2s, so 37.5/min keeps exactly 2 furnaces busy: 2.7 coal/min.
+test('Fuel: a burner machine takes its Fuel as one more input, at the rate its power draw needs', () => {
+  const [sb] = planSubBlocks([{
+    goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' },
+  }], catalog, { fuel: 'coal' });
+  assert.equal(sb.count, 2);
+  assert.deepEqual(sb.inputs.map(i => [i.name, i.type]), [['iron-ore', 'item'], ['coal', 'item']]);
+  assert.equal(sb.inputs[0].rate, 37.5);
+  assert.ok(Math.abs(sb.inputs[1].rate - 2.7) < 1e-9, `coal at ${sb.inputs[1].rate}/min`);
+});
+
+test('Fuel must suit the burner: a furnace cannot burn a nuclear fuel cell', () => {
+  assert.throws(() => planSubBlocks([{
+    goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' },
+  }], catalog, { fuel: 'nuclear-fuel-cell' }), /stone-furnace burns chemical fuel, not nuclear-fuel-cell/);
+});
+
+test('electric machines take no Fuel', () => {
+  const [sb] = planSubBlocks([{
+    goal: { item: 'iron-gear-wheel', rate: 90 }, selection: { recipe: 'iron-gear-wheel', building: 'assembling-machine-2' },
+  }], catalog, { fuel: 'coal' });
+  assert.deepEqual(sb.inputs.map(i => i.name), ['iron-plate']);
+});

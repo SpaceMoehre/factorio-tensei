@@ -12,7 +12,7 @@ const PIPE_CAPACITY = 6000 * 60;
 
 // Goals + Recipe Selections → Compound Block: machines, inserters, belts, pipes, tunnels, poles.
 export function solve(entries, catalog, logistics) {
-  const plan = planSubBlocks(entries, catalog);
+  const plan = planSubBlocks(entries, catalog, logistics);
   const flows = buildFlows(plan);
   const belt = catalog.belts[logistics.belt];
   const routes = buildRoutes(plan, flows, belt.itemsPerSecond * 60 / 2);
