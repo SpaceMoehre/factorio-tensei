@@ -55,12 +55,10 @@
   import { BlueprintEncoder } from './js/blueprint.js';
   import { Renderer } from './js/render.js';
 
-  const catalog = await fetch('data/recipes_full.json').then(r => r.json());
+  const catalog = await fetch('data/catalog.json').then(r => r.json());
+  const recipesFull = await fetch('data/recipes_full.json').then(r => r.json());
   const sprites = await fetch('data/sprites.json').then(r => r.json());
-  // Build selectable recipes from full list
-  const recipes = Object.keys(catalog.recipes || catalog.recipe_names || {}).filter(k => typeof k === 'string');
-  // Fallback if only names array
-  const recipeNames = (catalog.recipe_names || recipes || []);
+  const recipeNames = recipesFull.recipe_names || Object.keys(recipesFull.recipes || {});
   const recipes = Object.keys(catalog.recipes);
   let config = [{recipe:recipeNames[0]||'advanced-circuit', count:2}];
 
