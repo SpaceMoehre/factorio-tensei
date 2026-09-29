@@ -20,8 +20,12 @@ _Avoid_: assembler count as a user input (it's derived, not entered)
 An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow.
 _Avoid_: treating byproducts as satisfying other Goals automatically
 
+**Fuel**:
+The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric.
+_Avoid_: fuel for inserters (burner inserters are never used)
+
 **Sub-Block**:
-The rectangular unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection.
+The rectangular unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. The layout search chooses the arrangement.
 _Avoid_: block (ambiguous with Compound Block)
 
 **Compound Block**:
@@ -29,12 +33,16 @@ The full packed layout combining every Sub-Block for the current set of Goals, p
 _Avoid_: factory, blueprint (Blueprint is the exported artifact, not the layout)
 
 **Dependency Order**:
-The placement order of Sub-Blocks, derived by topologically sorting on item overlap (Sub-Block A precedes B if A's recipe output is one of B's recipe inputs), so belts generally flow one direction. Sub-Blocks with no dependency relationship to each other pack independently, in no required relative order.
+The preferred placement order of Sub-Blocks, derived by topologically sorting on item overlap (Sub-Block A precedes B if A's recipe output is one of B's recipe inputs), so belts generally flow one direction. It is a preference the layout search usually follows, not a rule: a more compact layout may place a consumer beside its producer instead.
 _Avoid_: input order, list order
 
+**Compactness**:
+What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties.
+_Avoid_: size, footprint (ambiguous between area and entity count)
+
 **Packing**:
-Arranging Sub-Blocks into the Compound Block using each Sub-Block's real computed width/height (shelf packing, respecting Dependency Order), not a uniform fixed-size grid cell.
-_Avoid_: grid layout (implies uniform cells)
+Arranging Sub-Block rectangles into the Compound Block. The layout search chooses each position and the width of each gap (down to none where no path must pass), and neighbours may share a belt when one's output is the other's input.
+_Avoid_: grid layout (implies uniform cells), fixed margins
 
 **Internal Path**:
 A belt or pipe between two Sub-Blocks A→B, carrying whichever item(s) A's Recipe Selection outputs that B's Recipe Selection also needs as input. Items travel on belts, fluids in pipes. When several Sub-Blocks consume A's output, one path visits them in Dependency Order.
@@ -49,8 +57,8 @@ The train-bound path carrying every Goal's target item not consumed internally b
 _Avoid_: hardcoded output item list
 
 **Tunnel**:
-An underground belt (or pipe-to-ground) segment, used (1) reactively, whenever a path's straight route would cross a tile occupied by something it isn't connecting to, and (2) proactively as a compaction primitive — an inserter can sit directly adjacent to its assembler with a pole on the same line, because the feeding belt or pipe tunnels underneath both. Tunnels always take the underground entity's maximum reach in one hop, not the minimal distance needed to clear the obstacle.
-_Avoid_: tunnel as purely a crossing-avoidance fallback (it's also a compaction tool)
+An underground belt (or pipe-to-ground) segment, used (1) reactively, whenever a path's straight route would cross a tile occupied by something it isn't connecting to, and (2) proactively as a compaction primitive — an inserter can sit directly adjacent to its assembler with a pole on the same line, because the feeding belt or pipe tunnels underneath both. Each hop's length, up to the underground entity's maximum reach, is chosen by the layout search for compactness.
+_Avoid_: tunnel as purely a crossing-avoidance fallback (it's also a compaction tool); a fixed hop length
 
 **Lane**:
 One of a belt's two sides, each carrying half the belt's throughput. Output inserters drop only onto the far lane, so a Sub-Block's output belt carries at most half a belt.
@@ -69,7 +77,7 @@ The fewest poles of the chosen pole type (by default the one with the largest su
 _Avoid_: fixed-step pole grid
 
 **Starvation**:
-A Sub-Block's demand isn't met because, walking an edge's consumers in belt order (closest to source first), remaining Lane throughput — or the producer's output, if lower — drops below that Sub-Block's demand before reaching it, even if the edge's total capacity ≥ total demand summed naively. Checked per edge (Internal Path / Side Input / Side Output, including Belt Merge lanes), not as one global demand-vs-supply sum.
+A Sub-Block's demand isn't met because, walking an edge's consumers in belt order (closest to source first), remaining Lane throughput — or the producer's output, if lower — drops below that Sub-Block's demand before reaching it, even if the edge's total capacity ≥ total demand summed naively. Checked per edge (Internal Path / Side Input / Side Output, including Belt Merge lanes), not as one global demand-vs-supply sum. A machine also starves when its inserters for an item cannot move as much as it needs.
 _Avoid_: aggregate demand ≤ aggregate supply (ignores belt order and per-edge capacity)
 
 **Blueprint**:
