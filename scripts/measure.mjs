@@ -1,6 +1,6 @@
 // Samples recipes from data/catalog.json, solves each at 2–4 machines and reports how many
 // solve, why the rest fail, and how long it takes.
-//   node scripts/measure.mjs [samples=300] [seed=1] [budgetMs]
+//   node scripts/measure.mjs [samples=300] [seed=1] [budgetMs]   (VERBOSE=1 lists each failure)
 import { readFileSync } from 'node:fs';
 import { solve } from '../js/solve.js';
 
@@ -56,6 +56,7 @@ for (let n = 0; n < samples; n++) {
   } catch (e) {
     const reason = e.message.replace(/^\S+(?=: | needs | is too| has no| burns)/, '<name>').replace(/-?\d+(\.\d+)?/g, '#');
     reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
+    if (process.env.VERBOSE) console.log(`${recipe.name} in ${building.name} ×${count}: ${e.message}`);
   }
   time += performance.now() - start;
   total++;
