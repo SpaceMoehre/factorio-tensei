@@ -28,8 +28,7 @@
     <div class="panel">
       <h3>Production Goals (items/min)</h3>
       <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
-        <input id="goal-item" list="item-list" placeholder="item name" style="flex:1;min-width:120px;padding:6px;border-radius:6px;border:1px solid #e0c097;background:#181825;color:#eaeaea;">
-        <datalist id="item-list">${Object.keys(catalog.recipes||{}).slice(0,20).map(i=>`<option value="${i}">`).join('')}</datalist>
+        <button onclick="openItemList()" id="goal-item-btn" style="flex:1;min-width:140px;text-align:left;padding:6px;border-radius:6px;border:1px solid #e0c097;background:#181825;color:#eaeaea;font-size:0.95rem;cursor:pointer;">Select item...</button>
         <input id="goal-rate" type="number" value="30" min="1" style="width:80px;padding:6px;border-radius:6px;border:1px solid #e0c097;background:#181825;color:#eaeaea;" placeholder="/min">
         <button onclick="addGoal()">Add Goal</button>
       </div>
