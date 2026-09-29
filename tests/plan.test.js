@@ -30,6 +30,14 @@ test('a Goal needs a positive rate', () => {
   }], catalog), /electronic-circuit: the rate must be above 0/);
 });
 
+test('an item can be a Goal only once', () => {
+  const circuits = {
+    goal: { item: 'electronic-circuit', rate: 60 },
+    selection: { recipe: 'electronic-circuit', building: 'assembling-machine-2' },
+  };
+  assert.throws(() => planSubBlocks([circuits, circuits], catalog), /electronic-circuit is a Goal more than once/);
+});
+
 test('multi-output recipe: non-Goal outputs are Byproducts at the same craft rate', () => {
   const [sb] = planSubBlocks([{
     goal: { item: 'petroleum-gas', rate: 110 },

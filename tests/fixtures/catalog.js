@@ -67,6 +67,11 @@ export const catalog = {
         { type: 'fluid', name: 'molten-salt', amount: 50 },
       ],
     },
+    'ore-sifting': {
+      name: 'ore-sifting', category: 'crafting', time: 1,
+      ingredients: [{ type: 'item', name: 'ore', amount: 2 }],
+      products: [{ type: 'item', name: 'sand', amount: 1 }, { type: 'item', name: 'gravel', amount: 1 }],
+    },
     biomass: {
       name: 'biomass', category: 'compost', time: 1,
       ingredients: [{ type: 'item', name: 'moss', amount: 1 }],

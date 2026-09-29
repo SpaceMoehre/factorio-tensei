@@ -180,6 +180,16 @@ test('a fluid both consumed and produced keeps its Side Input and Side Output ne
   assertSeparateNetworks(block, catalog, logistics);
 });
 
+test('a recipe consuming its own Goal item is fed by Side Input and drained by Side Output', () => {
+  const block = solve([{
+    goal: { item: 'coke-oven-gas', rate: 1425 }, selection: { recipe: 'reheat-coke-gas', building: 'py-heat-exchanger' },
+  }], catalog, logistics);
+  const gas = block.routes.filter(r => r.fluid === 'coke-oven-gas');
+  assert.deepEqual(gas.map(r => [r.source, r.sink]), [['side-input', null], [0, 'side-output']]);
+  for (const r of block.routes) assertPipeNetwork(block, r, catalog, logistics, machinesOf(block, 'reheat-coke-gas'));
+  assertSeparateNetworks(block, catalog, logistics);
+});
+
 test('Side Output route collects the Goal item from every machine and leaves at the east edge', () => {
   const block = solve([asm2('iron-gear-wheel', 180)], catalog, logistics);
   const route = block.routes.find(r => r.sink === 'side-output');

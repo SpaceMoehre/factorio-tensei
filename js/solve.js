@@ -36,7 +36,7 @@ function buildRoutes(plan, flows, laneCapacity) {
   const byOrder = (a, b) => rank.get(a) - rank.get(b);
   const consumersOf = item => plan.map((_, i) => i).filter(i => plan[i].inputs.some(x => x.name === item)).sort(byOrder);
   const routes = [];
-  const add = r => routes.push({ id: routes.length, pieces: [], ...r });
+  const add = r => routes.push({ id: routes.length, ...r });
   const saturated = (item, rate, capacity) => ({ item, rate, supply: capacity, capacity });
 
   const solids = flows.sideInput.filter(i => i.type === 'item');
@@ -56,10 +56,10 @@ function buildRoutes(plan, flows, laneCapacity) {
     const leavesBlock = item => flows.sideOutput.some(o => o.item === item);
     const solidOut = sb.outputs.filter(o => o.type === 'item');
     if (solidOut.length) {
-      // Output inserters drop onto the far lane only.
+      // Output inserters drop every product onto the far lane, so the products share it.
       add({
         kind: 'belt', source: i, sink: solidOut.some(o => leavesBlock(o.name)) ? 'side-output' : null,
-        items: solidOut.map(o => ({ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity })),
+        items: solidOut.map(o => ({ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' })),
         consumers: internalConsumers(sb.item),
       });
     }
@@ -126,7 +126,7 @@ function layout(plan, flows, routes, cores, catalog, logistics, margin) {
         for (let x = 0; x < core.w; x++) grid.reserve(x + ox, row.y + oy, row.routeId);
       }
       for (const port of core.ports) {
-        for (const [x, py] of port.tiles) grid.reserveFluid(x + ox, py + oy, port.routeId, port.fluid);
+        for (const [x, py] of port.tiles) grid.reserveFluidPort(x + ox, py + oy, port.routeId);
       }
       for (const [x, py] of core.pipeBlocked) grid.pipeBlocked.add(`${x + ox},${py + oy}`);
     });
@@ -163,7 +163,7 @@ function layout(plan, flows, routes, cores, catalog, logistics, margin) {
       waypoints = [...own, ...waypoints];
     }
     const end = route.sink === 'side-output' ? 'east' : 'dead';
-    return routeBelt(grid, { id: route.id, kind: 'belt', start, waypoints, end }, beltNames);
+    return routeBelt(grid, { id: route.id, start, waypoints, end }, beltNames);
   };
 
   // Pipes are the most constrained (no fluid may touch another), so they route first. When a

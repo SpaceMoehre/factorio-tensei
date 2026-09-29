@@ -23,12 +23,28 @@ test('Internal Path carries what the producer outputs and the consumer needs, at
 
 test('Side Input carries inputs no Sub-Block produces, summed across consumers', () => {
   const plan = planSubBlocks([
-    asm2('electronic-circuit', 300), asm2('copper-cable', 900), asm2('electronic-circuit', 60),
+    asm2('electronic-circuit', 300), asm2('copper-cable', 900), asm2('iron-gear-wheel', 60),
   ], catalog);
   const { sideInput } = buildFlows(plan);
   assert.deepEqual(sideInput, [
-    { item: 'iron-plate', type: 'item', rate: 360 },
+    { item: 'iron-plate', type: 'item', rate: 420 },
     { item: 'copper-plate', type: 'item', rate: 450 },
+  ]);
+});
+
+test('a recipe consuming its own Goal item takes that input from Side Input', () => {
+  const plan = planSubBlocks([{
+    goal: { item: 'coke-oven-gas', rate: 1425 }, selection: { recipe: 'reheat-coke-gas', building: 'py-heat-exchanger' },
+  }], catalog);
+  const { sideInput, sideOutput, internal } = buildFlows(plan);
+  assert.deepEqual(internal, []);
+  assert.deepEqual(sideInput, [
+    { item: 'coke-oven-gas', type: 'fluid', rate: 1500 },
+    { item: 'hot-molten-salt', type: 'fluid', rate: 750 },
+  ]);
+  assert.deepEqual(sideOutput, [
+    { item: 'coke-oven-gas', type: 'fluid', rate: 1425 },
+    { item: 'molten-salt', type: 'fluid', rate: 750 },
   ]);
 });
 

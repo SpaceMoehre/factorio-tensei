@@ -9,11 +9,13 @@ export function buildFlows(plan) {
   });
   const sideInput = [];
   const sideOutput = [];
-  for (const sb of plan) {
+  // An input no other Sub-Block makes arrives by train — including a recipe's own Goal item.
+  plan.forEach((sb, i) => {
     for (const input of sb.inputs) {
-      if (!producerOf.has(input.name)) addRate(sideInput, input.name, input.type, input.rate);
+      const from = producerOf.get(input.name);
+      if (from === undefined || from === i) addRate(sideInput, input.name, input.type, input.rate);
     }
-  }
+  });
   for (const sb of plan) {
     const main = sb.outputs.find(o => o.name === sb.item);
     const consumed = internal.filter(e => e.item === sb.item).reduce((sum, e) => sum + e.rate, 0);

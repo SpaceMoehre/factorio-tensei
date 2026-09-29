@@ -19,7 +19,7 @@ See `CONTEXT.md` for the domain glossary (Goal, Sub-Block, Compound Block, Tunne
 - Assembler `count` per Sub-Block derived from real recipe/building throughput: `ceil(targetRate / ((building.craftingSpeed / recipe.time) * recipe.outputs[item] * 60))`. Multi-output recipes produce untracked Byproducts on other outputs.
 - Internal/Side Input/Side Output belt & pipe paths carry the actual items implied by the configured Goals and Recipe Selections (not hardcoded item lists); solid vs. fluid chosen per item.
 - Auto tunnel placement: reactive (crossing an occupied tile) and proactive (compaction — inserter placed directly against its assembler, pole on the same line, belt tunnels underneath). Tunnels always take the underground entity's maximum reach per hop (see ADR 0002).
-- Belt merging: only for items that already share a route (same edge), when their real combined flow rate fits the belt tier's throughput.
+- Belt merging: only for items that already share a route (same edge), one item per Lane, when each item's real flow rate fits within one Lane.
 - Minimal electricity pole placement: fewest poles (preferring largest-coverage type) that cover every building's footprint and stay wire-connected, computed from real footprint + real pole data — not a fixed step/canvas size. Scales to huge (modded) buildings.
 - Client-side JS simulation that detects Starvation per edge, walking consumers in belt order so a downstream Sub-Block can starve even when aggregate capacity looks sufficient (see ADR 0001).
 - Factorio blueprint export: real importable blueprint string (`"0" + base64(zlib_deflate(JSON))`), with the underlying raw JSON also available.
@@ -49,6 +49,7 @@ See `CONTEXT.md` for the domain glossary (Goal, Sub-Block, Compound Block, Tunne
 ## Known limitations
 - A Sub-Block has at most 4 belt rows (near and far rows on each side, the reach of vanilla inserters). About 16–18% of Pyanodons recipes need more and are rejected with an error.
 - Dense multi-fluid machines (several fluids entering side by side, boxed in by belts) sometimes cannot be routed, because every tunnel must use the full underground reach (ADR 0002). About 6% of sampled Pyanodons recipes.
+- Pole placement is locally minimal (no pole can be removed), not a proven global minimum.
 - Inserter throughput and burner fuel supply are not modelled.
 - Icons for mod items are not shown.
 - Custom/mod entity definitions are deferred (see Requirements).

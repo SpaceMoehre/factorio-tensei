@@ -13,7 +13,7 @@ const SIDE = { [N]: 'top', [S]: 'bottom', [W]: 'left', [E]: 'right' };
 //   inserter / fluid-connection row
 //   near belt, far belt
 // fluids: [{ routeId, fluid, role: 'input' | 'output', index }] (index among that role's fluids)
-export function buildCore(sb, building, { inputs, output, fluids = [] }) {
+export function buildCore(sb, building, { inputs, output, fluids }) {
   const { rotation, connections } = chooseRotation(sb, building, fluids);
   const { w: Wm, h: Hm } = rotatedSize(building.size, rotation);
   const used = connections.filter(c => c.routeId !== undefined);
@@ -76,7 +76,7 @@ export function buildCore(sb, building, { inputs, output, fluids = [] }) {
       entities.push({ name: INSERTER[slot.depth], kind: 'inserter', x, y: insY, w: 1, h: 1, direction: slot.isOutput ? towardMachine : towardBelt });
       waypoints.push([x, beltY]);
     }
-    rows.push({ routeId: slot.routeId, y: beltY, waypoints, isOutput: slot.isOutput });
+    rows.push({ routeId: slot.routeId, y: beltY, waypoints });
   }
 
   const ports = [];

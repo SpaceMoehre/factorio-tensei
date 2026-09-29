@@ -1,4 +1,4 @@
-import { VEC, E, W, turnLeft, turnRight, opposite, key } from './grid.js';
+import { VEC, E, W, turnLeft, turnRight, opposite, key, span, spansOverlap } from './grid.js';
 
 const TURN_COST = 0.2;
 const TUNNEL_COST = 2;
@@ -141,22 +141,17 @@ function search(grid, starts, isGoal, heuristic, moves) {
 // tiles or overlap its own tunnels on the same line.
 function conflictsWithOwnPath(node, pieces) {
   const tiles = new Set(pieces.map(p => key(p.x, p.y)));
-  const spans = tunnelSpans(pieces);
+  const tunnel = tunnelSpan(pieces);
   for (let n = node; n.prev; n = n.prev) {
     if (n.pieces.some(p => tiles.has(key(p.x, p.y)))) return true;
-    for (const a of tunnelSpans(n.pieces)) {
-      if (spans.some(b => a.axis === b.axis && a.line === b.line && !(a.hi < b.lo || a.lo > b.hi))) return true;
-    }
+    const earlier = tunnelSpan(n.pieces);
+    if (tunnel && earlier && spansOverlap(tunnel, earlier)) return true;
   }
   return false;
 }
 
-function tunnelSpans(pieces) {
-  if (pieces.length !== 2 || !pieces[0].underground) return [];
-  const [a, b] = pieces;
-  return [a.y === b.y
-    ? { axis: 'h', line: a.y, lo: Math.min(a.x, b.x), hi: Math.max(a.x, b.x) }
-    : { axis: 'v', line: a.x, lo: Math.min(a.y, b.y), hi: Math.max(a.y, b.y) }];
+function tunnelSpan(pieces) {
+  return pieces.length === 2 && pieces[0].underground ? span(pieces[0], pieces[1]) : null;
 }
 
 function unwind(node) {
@@ -183,12 +178,12 @@ function tunnelMove(node, names, pieces) {
 
 function beltMoves(grid, spec, names, pending) {
   return node => {
-    const out = [];
-    if (pending.has(key(node.x, node.y))) return out;
+    const options = [];
+    if (pending.has(key(node.x, node.y))) return options;
     for (const d of directions(node.a)) {
       if (!canBelt(grid, spec, node.x, node.y, d)) continue;
       const [nx, ny] = step(node.x, node.y, d);
-      out.push({ x: nx, y: ny, a: d, cost: 1 + (d === node.a ? 0 : TURN_COST), pieces: [beltPiece(spec, names, node.x, node.y, d)] });
+      options.push({ x: nx, y: ny, a: d, cost: 1 + (d === node.a ? 0 : TURN_COST), pieces: [beltPiece(spec, names, node.x, node.y, d)] });
     }
     // A waypoint or start tile stays on the surface so an inserter can reach it.
     if (!node.surfaceOnly) {
@@ -196,41 +191,41 @@ function beltMoves(grid, spec, names, pending) {
       const [qx, qy] = step(node.x, node.y, d, names.reach);
       const clear = [...Array(names.reach + 1).keys()].every(i => !pending.has(key(...step(node.x, node.y, d, i))));
       if (clear && grid.freeFor(node.x, node.y, spec.id) && grid.freeFor(qx, qy, spec.id)
-        && grid.tunnelFits(names.underground, node.x, node.y, qx, qy)
+        && grid.tunnelFits(names.underground, node, { x: qx, y: qy })
         && beltOutputAllowed(grid, spec, ...step(qx, qy, d))
         && !fedByOther(grid, spec, node.x, node.y) && !fedByOther(grid, spec, qx, qy)) {
         const base = { name: names.underground, kind: 'underground-belt', route: spec.id, w: 1, h: 1, direction: d, travel: d };
-        out.push(tunnelMove(node, names, [
+        options.push(tunnelMove(node, names, [
           { ...base, underground: 'input', x: node.x, y: node.y, out: null },
           { ...base, underground: 'output', x: qx, y: qy, out: key(...step(qx, qy, d)) },
         ]));
       }
     }
-    return out;
+    return options;
   };
 }
 
 function pipeMoves(grid, spec, names, pending) {
   return node => {
-    const out = [];
+    const options = [];
     if (canPipe(grid, spec, node.x, node.y)) {
       for (const d of directions(node.a)) {
         const [nx, ny] = step(node.x, node.y, d);
-        out.push({ x: nx, y: ny, a: d, cost: 1 + (d === node.a ? 0 : TURN_COST), pieces: [pipePiece(spec, names, node.x, node.y, d)] });
+        options.push({ x: nx, y: ny, a: d, cost: 1 + (d === node.a ? 0 : TURN_COST), pieces: [pipePiece(spec, names, node.x, node.y, d)] });
       }
     }
     const d = node.a;
     const [qx, qy] = step(node.x, node.y, d, names.reach);
     const endOk = (x, y) => grid.freeFor(x, y, spec.id) && !grid.pipeBlocked.has(key(x, y)) && !pending.has(key(x, y));
-    if (endOk(node.x, node.y) && endOk(qx, qy) && grid.tunnelFits(names.underground, node.x, node.y, qx, qy)) {
+    if (endOk(node.x, node.y) && endOk(qx, qy) && grid.tunnelFits(names.underground, node, { x: qx, y: qy })) {
       // A pipe-to-ground's direction is its above-ground connection side.
       const base = { name: names.underground, kind: 'pipe-to-ground', route: spec.id, fluid: spec.fluid, w: 1, h: 1, travel: d, out: null };
-      out.push(tunnelMove(node, names, [
+      options.push(tunnelMove(node, names, [
         { ...base, underground: 'input', x: node.x, y: node.y, direction: opposite(d) },
         { ...base, underground: 'output', x: qx, y: qy, direction: d },
       ]));
     }
-    return out;
+    return options;
   };
 }
 
@@ -252,7 +247,7 @@ function beltOutputAllowed(grid, spec, ox, oy) {
   if (target && target.route !== spec.id && (target.kind === 'belt' || target.kind === 'underground-belt')) return false;
   const k = key(ox, oy);
   const held = grid.reserved.get(k);
-  return held === undefined || held === spec.id || grid.reservedFluid.has(k);
+  return held === undefined || held === spec.id || grid.fluidPorts.has(k);
 }
 
 function fedByOther(grid, spec, x, y) {
@@ -272,7 +267,7 @@ function canPipe(grid, spec, x, y) {
     if (n?.kind === 'pipe' && n.route !== spec.id) return false;
     if (n?.kind === 'pipe-to-ground' && n.route !== spec.id && n.direction === opposite(+d)) return false;
     const k = key(x + dx, y + dy);
-    if (grid.reservedFluid.has(k) && grid.reserved.get(k) !== spec.id) return false;
+    if (grid.fluidPorts.has(k) && grid.reserved.get(k) !== spec.id) return false;
   }
   return true;
 }

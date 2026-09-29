@@ -1,4 +1,4 @@
-export class PowerError extends Error {}
+class PowerError extends Error {}
 
 const center = e => [e.x + e.w / 2, e.y + e.h / 2];
 const distance = (a, b) => {
@@ -53,7 +53,7 @@ export function placePoles(grid, consumers, spec) {
 // other pole, even when the link has to go around machines.
 function connect(poles, candidates, spec) {
   for (;;) {
-    const main = component(poles, spec, 0);
+    const main = component(poles, spec);
     if (main.size === poles.length) return;
     const free = candidates.filter(c => !poles.some(p => overlaps(p, c)));
     const buckets = bucketize(free, spec.wireReach);
@@ -67,7 +67,7 @@ function connect(poles, candidates, spec) {
       for (const node of frontier) {
         const other = [...outside].find(p => distance(node, p) <= spec.wireReach);
         if (other) { reached = node; break; }
-        for (const c of nearby(buckets, node, spec.wireReach)) {
+        for (const c of nearby(buckets, node)) {
           if (parent.has(c) || overlaps(c, node) || distance(node, c) > spec.wireReach) continue;
           parent.set(c, node);
           next.push(c);
@@ -90,8 +90,9 @@ function bucketize(items, size) {
   return { buckets, size };
 }
 
-function* nearby({ buckets, size }, node, reach) {
-  const span = Math.ceil(reach / size) + 1;
+function* nearby({ buckets, size }, node) {
+  // Buckets are one wire reach wide, so everything in reach lies within two buckets.
+  const span = 2;
   const bx = Math.floor(node.x / size), by = Math.floor(node.y / size);
   for (let dx = -span; dx <= span; dx++) {
     for (let dy = -span; dy <= span; dy++) yield* buckets.get(`${bx + dx},${by + dy}`) ?? [];
@@ -102,15 +103,16 @@ function prune(poles, consumers, spec) {
   for (let i = poles.length - 1; i >= 0; i--) {
     const rest = poles.filter((_, j) => j !== i);
     const allPowered = consumers.every(c => rest.some(p => powers(p, spec, c)));
-    if (allPowered && component(rest, spec, 0).size === rest.length) poles.splice(i, 1);
+    if (allPowered && component(rest, spec).size === rest.length) poles.splice(i, 1);
   }
 }
 
-function component(poles, spec, start) {
+// The poles wired, directly or through others, to the first pole.
+function component(poles, spec) {
   const seen = new Set();
   if (!poles.length) return seen;
-  const stack = [start];
-  seen.add(start);
+  const stack = [0];
+  seen.add(0);
   while (stack.length) {
     const a = poles[stack.pop()];
     poles.forEach((b, j) => {

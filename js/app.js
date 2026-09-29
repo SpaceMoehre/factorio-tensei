@@ -132,14 +132,15 @@ async function build() {
     return showStatus('error', e.message);
   }
   const { starvation } = simulate(block);
-  const starving = new Set(starvation.map(s => s.subBlock));
+  const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
   $('empty').hidden = true;
   map = createMap($('map'), block, { starving, onHover: describe });
 
   const machines = block.entities.filter(e => e.kind === 'building').length;
   if (starvation.length) {
-    const lines = starvation.map(s => `${block.subBlocks[s.subBlock].item} gets ${fmt(s.available)} of ${fmt(s.demand)} ${s.item}/min`);
+    const who = s => (s.subBlock === null ? 'Side Output' : block.subBlocks[s.subBlock].item);
+    const lines = starvation.map(s => `${who(s)} gets ${fmt(s.available)} of ${fmt(s.demand)} ${s.item}/min`);
     showStatus('warn', `Starvation:\n• ${lines.join('\n• ')}`);
   } else {
     showStatus('ok', `${machines} machines, ${block.bounds.w}×${block.bounds.h} tiles. No starvation.`);

@@ -1,6 +1,9 @@
 export function planSubBlocks(entries, catalog) {
+  const seen = new Set();
   return entries.map(({ goal, selection }) => {
     if (!(goal.rate > 0)) throw new Error(`${goal.item}: the rate must be above 0`);
+    if (seen.has(goal.item)) throw new Error(`${goal.item} is a Goal more than once; combine them into one Goal`);
+    seen.add(goal.item);
     const recipe = catalog.recipes[selection.recipe];
     const building = catalog.buildings[selection.building];
     const perCraft = recipe.products.find(p => p.name === goal.item).amount;

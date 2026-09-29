@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 
-export const DIR = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
+const DIR = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
 const INSERTER_REACH = { 'fast-inserter': 1, 'long-handed-inserter': 2 };
 
 const tilesOf = e => {
@@ -38,17 +38,17 @@ export function assertRouteChain(route, catalog, logistics) {
   }
 }
 
-export function routeTiles(route) {
+function routeTiles(route) {
   return new Set(route.pieces.map(p => key(p.x, p.y)));
 }
 
-export function inserterTiles(ins) {
+function inserterTiles(ins) {
   const [dx, dy] = DIR[ins.direction];
   const r = INSERTER_REACH[ins.name];
   return { pickup: key(ins.x + dx * r, ins.y + dy * r), drop: key(ins.x - dx * r, ins.y - dy * r) };
 }
 
-export function insideEntity(tile, e) {
+function insideEntity(tile, e) {
   const [x, y] = tile.split(',').map(Number);
   return x >= e.x && x < e.x + e.w && y >= e.y && y < e.y + e.h;
 }
@@ -128,27 +128,22 @@ function pipeNeighbors(pieces, a, reach) {
     const b = at.get(key(a.x + dx, a.y + dy));
     if (b && connectsToward(a, +d) && connectsToward(b, OPPOSITE[d])) out.push(b);
   }
-  if (a.kind === 'pipe-to-ground') {
-    const [dx, dy] = DIR[OPPOSITE[a.direction]];
-    for (let i = 1; i <= reach; i++) {
-      const b = at.get(key(a.x + dx * i, a.y + dy * i));
-      if (b?.kind === 'pipe-to-ground' && b.direction === OPPOSITE[a.direction]) { out.push(b); break; }
-    }
-  }
+  const partner = a.kind === 'pipe-to-ground' ? tunnelPartner(at, a, reach) : null;
+  if (partner) out.push(partner.piece);
   return out;
 }
 
-function tunnelPartnerDistance(pieces, a, reach) {
-  const at = new Map(pieces.map(p => [key(p.x, p.y), p]));
+// A pipe-to-ground pairs with the nearest pipe-to-ground facing it within reach.
+function tunnelPartner(at, a, reach) {
   const [dx, dy] = DIR[OPPOSITE[a.direction]];
   for (let i = 1; i <= reach; i++) {
     const b = at.get(key(a.x + dx * i, a.y + dy * i));
-    if (b?.kind === 'pipe-to-ground' && b.direction === OPPOSITE[a.direction]) return i;
+    if (b?.kind === 'pipe-to-ground' && b.direction === OPPOSITE[a.direction]) return { piece: b, distance: i };
   }
   return null;
 }
 
-export function portTiles(machine, catalog, fluid, role) {
+function portTiles(machine, catalog, fluid, role) {
   const building = catalog.buildings[machine.name];
   const recipe = catalog.recipes[machine.recipe];
   const isInput = role === 'input';
@@ -173,9 +168,10 @@ export function assertPipeNetwork(block, route, catalog, logistics, machines) {
   const stack = [pieces[0]];
   while (stack.length) for (const n of pipeNeighbors(pieces, stack.pop(), reach)) if (!seen.has(n)) { seen.add(n); stack.push(n); }
   assert.equal(seen.size, pieces.length, `fluid route ${route.id} (${route.fluid}) is not one connected network`);
-  const allFluid = block.entities.filter(e => e.kind === 'pipe-to-ground');
+  // Partners are searched among every pipe-to-ground, so interleaved tunnels are caught.
+  const allTunnels = new Map(block.entities.filter(e => e.kind === 'pipe-to-ground').map(q => [key(q.x, q.y), q]));
   for (const p of pieces.filter(p => p.kind === 'pipe-to-ground')) {
-    assert.equal(tunnelPartnerDistance(allFluid, p, reach), reach,
+    assert.equal(tunnelPartner(allTunnels, p, reach)?.distance, reach,
       `pipe-to-ground at ${p.x},${p.y} is not paired exactly ${reach} tiles away`);
   }
   const at = new Map(pieces.map(p => [key(p.x, p.y), p]));
