@@ -220,11 +220,38 @@ export const pyCatalog = {
       ],
       products: [{ type: 'item', name: 'electronic-circuit', amount: 3 }],
     },
+    'small-parts-01': {
+      name: 'small-parts-01', category: 'crafting', time: 0.2,
+      ingredients: [
+        { type: 'item', name: 'iron-gear-wheel', amount: 1 }, { type: 'item', name: 'copper-cable', amount: 3 },
+        { type: 'item', name: 'bolts', amount: 3 },
+      ],
+      products: [{ type: 'item', name: 'small-parts-01', amount: 2 }],
+    },
+    bolts: {
+      name: 'bolts', category: 'crafting', time: 0.2,
+      ingredients: [{ type: 'item', name: 'iron-stick', amount: 2 }],
+      products: [{ type: 'item', name: 'bolts', amount: 2 }],
+    },
+    'iron-stick': {
+      name: 'iron-stick', category: 'crafting', time: 0.5,
+      ingredients: [{ type: 'item', name: 'iron-plate', amount: 1 }],
+      products: [{ type: 'item', name: 'iron-stick', amount: 2 }],
+    },
   },
   buildings: {
     ...catalog.buildings,
     'chipshooter-mk01': {
       name: 'chipshooter-mk01', size: { w: 5, h: 5 }, craftingSpeed: 1, categories: ['chip'], energy: 'electric', fluidBoxes: [],
+    },
+    'automated-factory-mk01': {
+      name: 'automated-factory-mk01', size: { w: 7, h: 7 }, craftingSpeed: 1, categories: ['crafting', 'crafting-with-fluid', 'advanced-crafting'],
+      energy: 'electric',
+      fluidBoxes: [
+        { production: 'input', connections: [{ x: 0, y: 3, direction: 8 }] },
+        { production: 'input', connections: [{ x: 0, y: -3, direction: 0 }] },
+        { production: 'output', connections: [{ x: 2, y: 3, direction: 8 }] },
+      ],
     },
   },
 };
