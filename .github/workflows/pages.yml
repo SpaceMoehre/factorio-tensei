@@ -1,6 +1,7 @@
 # Publishes the planner to GitHub Pages: the page, its modules and the catalog, with icons
-# extracted from the zips attached to each Pyanodons repository's latest release. The site is
-# built on every push to master and to claude/ branches (to check it), and deployed from master.
+# extracted from the zips attached to the Pyanodons repositories' releases. The site is built on
+# every push to master and to claude/ branches (to check it); master's goes to the gh-pages branch,
+# which Pages serves.
 name: Pages
 
 on:
@@ -9,7 +10,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: pages-${{ github.ref }}
@@ -46,20 +47,14 @@ jobs:
           mkdir site
           cp -r index.html js data site/
           node scripts/site-sprites.mjs mods site
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
-
-  deploy:
-    if: github.ref == 'refs/heads/master'
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      pages: write
-      id-token: write
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - id: deployment
-        uses: actions/deploy-pages@v4
+      # Pages serves the gh-pages branch: master's site replaces it, as one commit.
+      - name: Publish to gh-pages
+        if: github.ref == 'refs/heads/master'
+        run: |
+          cd site
+          touch .nojekyll
+          git init -q -b gh-pages
+          git add -A
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -q -m "Site from ${GITHUB_SHA}"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${GITHUB_REPOSITORY}.git" gh-pages
