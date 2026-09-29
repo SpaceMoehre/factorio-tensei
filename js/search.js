@@ -101,6 +101,8 @@ function variantPool(ctx, sb, index, rng) {
   for (const rotation of ROTATIONS) attempt(plainVariant(belts, depths, rotation));
   for (let n = 0; n < VARIANT_TRIES; n++) {
     const variant = randomVariant(belts, depths, sb.count, rng);
+    // Which connection each fluid uses, where its box has several.
+    if (variant && rng() < 0.5) variant.ports = links.fluids.map(() => Math.floor(rng() * 8));
     if (variant) attempt(variant);
   }
   const pool = [...seen.values()].sort((a, b) => a.core.shortfall - b.core.shortfall || a.core.w * a.core.h - b.core.w * b.core.h);

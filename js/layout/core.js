@@ -31,6 +31,8 @@ export class LayoutError extends Error {}
 //   gap       extra columns between neighbouring machines
 //   columns   'center' | 'left' | 'right': which inserter columns are tried first
 //   poleSlot  null or { band, row }: a tile per machine kept free for a pole
+//   ports     for each fluid, which of its box's connections to use (index, wrapping); when
+//             absent, the one on the face with fewest belts
 // Every machine gets enough inserters for its share of each belt, from real swing rates; where
 // fewer fit, the core records the shortfall (items/min its machines cannot get), which the
 // search ranks below any layout that fits and Starvation reports.
@@ -54,7 +56,7 @@ export function buildCore(sb, building, links, variant, env) {
     return { side, machineRow, band, depth };
   }
 
-  const connections = rotations.slice(0, rows).map(r => pickConnections(sb, building, links.fluids, r, variant.belts));
+  const connections = rotations.slice(0, rows).map(r => pickConnections(sb, building, links.fluids, r, variant));
   const ported = (r, side) => connections[r].some(c => c.routeId !== undefined && c.side === side);
 
   // Each machine row reaches each route through the nearest of the route's belts it can.
@@ -329,7 +331,7 @@ function routeItems(sb, route, isOutput) {
 }
 
 // Inserter columns in front of a machine, in the order they are tried.
-export function columnOrder(Wm, mode) {
+function columnOrder(Wm, mode) {
   const all = [...Array(Wm).keys()];
   if (mode === 'left') return all;
   if (mode === 'right') return all.reverse();
@@ -342,17 +344,17 @@ export function columnOrder(Wm, mode) {
   return order;
 }
 
-// One connection per used fluid box (preferring faces with fewer belts, so pipes cross fewer
-// of them), plus every connection the recipe leaves unused.
-function pickConnections(sb, building, fluids, rotation, belts) {
+// One connection per used fluid box, as the variant picks it (by default the one on the face
+// with fewest belts, so its pipe crosses fewest), plus every connection the recipe leaves unused.
+function pickConnections(sb, building, fluids, rotation, variant) {
   const boxesFor = role => building.fluidBoxes.filter(b => (role === 'input' ? b.production !== 'output' : b.production !== 'input'));
-  const crowding = c => belts.filter(b => (c.side === 'top' ? b.band === 'top' : c.side === 'bottom' && b.band !== 'top')).length;
-  const picks = fluids.map(f => {
+  const crowding = c => variant.belts.filter(b => (c.side === 'top' ? b.band === 'top' : c.side === 'bottom' && b.band !== 'top')).length;
+  const picks = fluids.map((f, i) => {
     const box = boxesFor(f.role)[f.index];
     if (!box) throw new Error(`${sb.building} has no ${f.role} fluid box for ${f.fluid}`);
     const options = box.connections.map(c => placeConnection(c, rotation, building));
-    const best = options.reduce((a, b) => (crowding(b) < crowding(a) ? b : a));
-    return { ...best, routeId: f.routeId, fluid: f.fluid };
+    const pick = variant.ports ? options[variant.ports[i] % options.length] : options.reduce((a, b) => (crowding(b) < crowding(a) ? b : a));
+    return { ...pick, routeId: f.routeId, fluid: f.fluid };
   });
   const taken = new Set(picks.map(c => `${c.tileX},${c.tileY}`));
   const unused = building.fluidBoxes.flatMap(b => b.connections.map(c => placeConnection(c, rotation, building)))
@@ -360,13 +362,13 @@ function pickConnections(sb, building, fluids, rotation, belts) {
   return [...picks, ...unused];
 }
 
-export function rotatedSize({ w, h }, rotation) {
+function rotatedSize({ w, h }, rotation) {
   return rotation === 4 || rotation === 12 ? { w: h, h: w } : { w, h };
 }
 
 // Where a connection's pipe tile lies relative to the machine's top-left corner once rotated.
 // Rotating clockwise by a quarter turn maps (x, y) to (-y, x).
-export function placeConnection(c, rotation, building) {
+function placeConnection(c, rotation, building) {
   let [x, y] = [c.x, c.y];
   for (let r = 0; r < rotation; r += 4) [x, y] = [-y, x];
   const dir = (c.direction + rotation) % 16;

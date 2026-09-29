@@ -58,7 +58,7 @@ export function routeChain(route, catalog, logistics, entities) {
 
 // Where an inserter picks up and drops, as tiles: custom vectors when it has them, otherwise its
 // prototype's vectors turned to face its direction (the side it picks up from).
-export function inserterTiles(ins, catalog) {
+function inserterTiles(ins, catalog) {
   const cx = ins.x + 0.5, cy = ins.y + 0.5;
   const tile = v => key(Math.floor(cx + v.x), Math.floor(cy + v.y));
   if (ins.vectors) return { pickup: tile(ins.vectors.pickup), drop: tile(ins.vectors.drop) };
@@ -259,7 +259,7 @@ export function endsAtEastEdge(block, route) {
   return [];
 }
 
-export function startsAtWestEdge(block, route) {
+function startsAtWestEdge(block, route) {
   return route.pieces[0].x === block.bounds.x ? [] : [`route ${route.id} does not start at the west edge`];
 }
 
