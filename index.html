@@ -26,9 +26,19 @@
 <div class="grid">
   <div>
     <div class="panel">
-      <h3>Recipe List</h3>
-      <div id="recipe-list"></div>
-      <button onclick="addRecipeRow()">+ Add Recipe</button>
+      <h3>Production Goals (items/min)</h3>
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+        <input id="goal-item" list="item-list" placeholder="item name" style="flex:1;min-width:120px;padding:6px;border-radius:6px;border:1px solid #e0c097;background:#181825;color:#eaeaea;">
+        <datalist id="item-list">${Object.keys(catalog.recipes||{}).slice(0,20).map(i=>`<option value="${i}">`).join('')}</datalist>
+        <input id="goal-rate" type="number" value="30" min="1" style="width:80px;padding:6px;border-radius:6px;border:1px solid #e0c097;background:#181825;color:#eaeaea;" placeholder="/min">
+        <button onclick="addGoal()">Add Goal</button>
+      </div>
+      <div id="goals-list"></div>
+    </div>
+    <div id="recipe-modal" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:10000;background:#181825;border:2px solid #e0c097;border-radius:12px;padding:1.5rem;max-width:520px;width:90%;box-shadow:0 20px 60px rgba(0,0,0,0.8);">
+      <h3 id="modal-title">Choose Recipe</h3>
+      <div id="modal-options"></div>
+      <button onclick="closeModal()" style="margin-top:10px;">Close</button>
     </div>
     <div class="panel" style="margin-top:1rem">
       <button onclick="runSolver()">Calculate Blueprint</button>
@@ -102,7 +112,9 @@
     }).join('');
   };
   window.runSolver = () => {
-    const s = new Solver(catalog, config);
+    const cfg = goals.filter(g=>g.recipe).map(g=>({recipe:g.recipe, count: Math.max(1,Math.round(g.rate/15))}));
+    if(cfg.length===0){alert('Add at least one completed goal'); return;}
+    const s = new Solver(catalog, cfg);
     s.mergeBelts();
     lastResult = s.solve();
     document.getElementById('bp-output').textContent = JSON.stringify(lastResult, null, 2).slice(0,2000);
