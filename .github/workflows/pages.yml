@@ -1,37 +1,60 @@
-# Publishes the planner to GitHub Pages on every push to master: the page, its modules and the
-# catalog, plus sprites/ when the repository carries it (it is generated locally from the game).
+# Publishes the planner to GitHub Pages: the page, its modules and the catalog, with icons
+# extracted from the zips attached to each Pyanodons repository's latest release. The site is
+# built on every push to master and to claude/ branches (to check it), and deployed from master.
 name: Pages
 
 on:
   push:
-    branches: [master]
+    branches: [master, 'claude/**']
   workflow_dispatch:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: pages
+  group: pages-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  deploy:
+  build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Download the Pyanodons release zips
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir mods
+          for repo in $(gh repo list pyanodon --limit 200 --no-archived --json name --jq '.[].name'); do
+            if gh release download --repo "pyanodon/$repo" --pattern '*.zip' --dir mods 2>/dev/null; then
+              echo "$repo: downloaded"
+            else
+              echo "$repo: no release zips"
+            fi
+          done
+          ls -la mods
       - name: Collect the site
         run: |
           mkdir site
           cp -r index.html js data site/
-          if [ -d sprites ]; then cp -r sprites site/; fi
-      - uses: actions/configure-pages@v5
+          node scripts/site-sprites.mjs mods site
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
+
+  deploy:
+    if: github.ref == 'refs/heads/master'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
       - id: deployment
         uses: actions/deploy-pages@v4

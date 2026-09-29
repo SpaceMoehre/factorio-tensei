@@ -77,6 +77,9 @@ npm run build-sprites -- <Factorio install folder, the one holding data/> [~/.fa
 
 `build-sprites` extracts every item and fluid icon the catalog names — base-game ones from the install, mod ones from the newest zip of each mod — into the git-ignored `sprites/` folder.
 
+## Hosting
+`.github/workflows/pages.yml` publishes the planner to GitHub Pages (https://spacemoehre.github.io/factorio-tensei/) on every push to master; pushes to `claude/` branches build the site without deploying it. The site is `index.html`, `js/` and `data/`, plus icons: the workflow downloads the zips attached to every Pyanodons repository's latest release and `scripts/site-sprites.mjs` extracts from them the icons the catalog names by path, finding the rest by name (`graphics/icons/**/<item>.png`). It rewrites only the published copy of the catalog. One-time setup: Settings → Pages → Source: GitHub Actions.
+
 ## Implementation
 - `index.html` + `js/app.js`: Goals (item + rate) and the Production Chain overview: every step with its rate, machine count and Recipe Selection (recipe + building, filtered to buildings that can run the recipe), and every Train Input with its rate. A Goal's ingredients come by train; "Make here" on a Train Input makes it a step (its own ingredients then come by train), and "By train" turns a step back into a Train Input; logistics settings (belt, pipe-to-ground, pole, inserter and long-handed inserter — electric only —, Fuel, the 90° inserters toggle, search time), build and Stop, starvation report, Side Input/Output lists, blueprint string and JSON. The map redraws with every better layout and shows its area.
 - `js/render.js`: pan/zoom canvas map (drag, wheel, fit) with hover details, item icons on machines, belts and pipes, and the copper wires between poles (`js/layout/wires.js`, shared with the blueprint).
