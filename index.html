@@ -21,7 +21,19 @@
   .hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
   .goal { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
   .goal-head { display: flex; gap: 6px; align-items: center; }
-  .goal-head img { width: 28px; height: 28px; object-fit: contain; }
+  .sprite { flex: none; width: 28px; height: 28px; background: left center / auto 100% no-repeat; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 4px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 14px; padding: 2px 4px 2px 6px; font-size: 12px; }
+  .chip .sprite { width: 20px; height: 20px; }
+  .chip .icon { padding: 0 6px; border: none; }
+  #new-input { flex: 1; min-width: 0; }
+  .step { border-bottom: 1px dashed var(--border); padding: 6px 0; }
+  .step-head { display: flex; gap: 6px; align-items: center; }
+  .step-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step-head .rate { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .step-head .sprite { width: 24px; height: 24px; }
+  .step.train .hint { margin: 2px 0 0 30px; }
+  [hidden] { display: none !important; }
   .goal-head input[type=text] { flex: 1; min-width: 0; }
   .goal-head input[type=number] { width: 80px; }
   .selection { display: grid; grid-template-columns: auto 1fr; gap: 4px 8px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
@@ -66,12 +78,23 @@
 <div class="app">
   <aside>
     <h1>Factory Block Planner</h1>
-    <p class="hint">Set item-rate Goals, pick a recipe and building for each, then build a compact block with its blueprint.</p>
+    <p class="hint">Set item-rate Goals and what arrives by train; the tool works out every step in between, then builds a compact block with its blueprint.</p>
 
     <h2>Goals</h2>
     <div id="goals"></div>
     <button id="add-goal" type="button">+ Add goal</button>
     <datalist id="items"></datalist>
+
+    <h2>Train inputs</h2>
+    <div id="inputs" class="chips"></div>
+    <div class="row">
+      <input id="new-input" type="text" list="all-items" placeholder="Item or fluid brought by train…" aria-label="Train input">
+      <button id="add-input" type="button">Add</button>
+    </div>
+    <datalist id="all-items"></datalist>
+
+    <h2>Production chain</h2>
+    <div id="chain"></div>
 
     <h2>Logistics</h2>
     <div class="settings">

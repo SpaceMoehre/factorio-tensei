@@ -78,7 +78,7 @@ export function buildCatalog(raw) {
       if (p.fuel_value) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
     }
   }
-  return { recipes, buildings, poles, belts, pipes, inserters, fuels, icons: baseIcons(raw) };
+  return { recipes, buildings, poles, belts, pipes, inserters, fuels, icons: spriteIcons(raw) };
 }
 
 // Factorio 2.0 names one fuel category per item and a list per burner; mods may use either form.
@@ -105,15 +105,16 @@ const ITEM_TYPES = [
   'item', 'fluid', 'tool', 'module', 'ammo', 'capsule', 'armor', 'gun', 'item-with-entity-data',
   'rail-planner', 'repair-tool', 'space-platform-starter-pack',
 ];
-const BASE_ICONS = '__base__/graphics/icons/';
-
-// sprites/ links to the base game's icon folder, so only base-game icons can be shown.
-function baseIcons(raw) {
+// Icons as files under sprites/: "__pyhightechgraphics__/graphics/icons/pcb1.png" becomes
+// "pyhightechgraphics/graphics/icons/pcb1.png" (scripts/build-sprites.mjs extracts them from the
+// game and the mod zips). Layered icons show their first layer.
+function spriteIcons(raw) {
   const icons = {};
   for (const type of ITEM_TYPES) {
     for (const p of Object.values(raw[type] ?? {})) {
       const path = p.icon ?? p.icons?.[0]?.icon;
-      if (path?.startsWith(BASE_ICONS)) icons[p.name] = path.slice(BASE_ICONS.length);
+      const match = /^__([^/]+)__\/(.+)$/.exec(path ?? '');
+      if (match) icons[p.name] = `${match[1]}/${match[2]}`;
     }
   }
   return icons;

@@ -1,6 +1,7 @@
 import { Grid, E, key } from './grid.js';
 import { routeBelt, routePipe, RoutingError } from './router.js';
 import { placePoles, PowerError } from './poles.js';
+import { wirePairs } from './wires.js';
 
 export { RoutingError, PowerError };
 
@@ -97,7 +98,7 @@ export function buildCompound(ctx, layout) {
     const subBlocks = plan.map((sb, i) => ({
       ...sb, index: i, ...placed[i], w: cores[i].w, h: cores[i].h, inserters: cores[i].supply,
     }));
-    return { subBlocks, entities, routes: result, bounds: extent(entities) };
+    return { subBlocks, entities, routes: result, bounds: extent(entities), wires: wirePairs(entities, catalog) };
   }
 }
 

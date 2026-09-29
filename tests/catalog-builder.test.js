@@ -104,19 +104,23 @@ test('recipe: Lua empty tables dumped as {} are treated as empty lists', () => {
   assert.deepEqual([recipes.void.ingredients, recipes.void.products], [[], []]);
 });
 
-test('icons: items and fluids with base-game icons map to their file under sprites/', () => {
+test('icons: every item and fluid maps to its icon file under sprites/<mod>/, from the first icon layer', () => {
   const { icons } = buildCatalog(dataRaw({
     item: {
       'iron-gear-wheel': { name: 'iron-gear-wheel', icon: '__base__/graphics/icons/iron-gear-wheel.png' },
       pcb1: { name: 'pcb1', icon: '__pyhightechgraphics__/graphics/icons/pcb1.png' },
+      blank: { name: 'blank' },
     },
     fluid: { water: { name: 'water', icon: '__base__/graphics/icons/fluid/water.png' } },
     tool: {
-      'automation-science-pack': { name: 'automation-science-pack', icons: [{ icon: '__base__/graphics/icons/automation-science-pack.png' }] },
+      'automation-science-pack': { name: 'automation-science-pack', icons: [{ icon: '__base__/graphics/icons/automation-science-pack.png' }, { icon: '__core__/x.png' }] },
     },
   }));
   assert.deepEqual(icons, {
-    'iron-gear-wheel': 'iron-gear-wheel.png', water: 'fluid/water.png', 'automation-science-pack': 'automation-science-pack.png',
+    'iron-gear-wheel': 'base/graphics/icons/iron-gear-wheel.png',
+    pcb1: 'pyhightechgraphics/graphics/icons/pcb1.png',
+    water: 'base/graphics/icons/fluid/water.png',
+    'automation-science-pack': 'base/graphics/icons/automation-science-pack.png',
   });
 });
 

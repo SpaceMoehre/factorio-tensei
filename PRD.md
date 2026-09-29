@@ -69,13 +69,18 @@ v1 stamps a fixed template per Sub-Block. v2 replaces that with a search over la
 ```
 factorio --dump-data
 npm run build-catalog -- ~/.factorio/script-output/data-raw-dump.json
+npm run build-sprites -- <Factorio install folder, the one holding data/> [~/.factorio/mods]
 ```
 
+`build-sprites` extracts every item and fluid icon the catalog names — base-game ones from the install, mod ones from the newest zip of each mod — into the git-ignored `sprites/` folder.
+
 ## Implementation
-- `index.html` + `js/app.js`: Goals (item + rate) with a separate Recipe Selection (recipe + building, filtered to buildings that can run the recipe), logistics settings (belt, pipe-to-ground, pole, inserter and long-handed inserter — electric only —, Fuel, the 90° inserters toggle, search time), build and Stop, starvation report, Side Input/Output lists, blueprint string and JSON. The map redraws with every better layout and shows its area.
+- `index.html` + `js/app.js`: Goals (item + rate), Train Inputs, and the Production Chain overview: every step with its rate, machine count, Recipe Selection (recipe + building, filtered to buildings that can run the recipe) and a switch to bring it by train instead; logistics settings (belt, pipe-to-ground, pole, inserter and long-handed inserter — electric only —, Fuel, the 90° inserters toggle, search time), build and Stop, starvation report, Side Input/Output lists, blueprint string and JSON. The map redraws with every better layout and shows its area.
+- `js/render.js`: pan/zoom canvas map (drag, wheel, fit) with hover details, item icons on machines, belts and pipes, and the copper wires between poles (`js/layout/wires.js`, shared with the blueprint).
 - `js/worker.js`: runs the search in a module Web Worker and posts each better layout; Stop terminates it and the page keeps the best one.
 - `js/search.js`: the anytime layout search (ADR 0004). It builds a pool of locally valid variants per Sub-Block, then tries Compound Blocks — a sweep of each pool's most compact variants, then random changes to the best so far: variant, packing order, gaps, shelf width, margins, belt sharing between neighbours, routing order. Each candidate is fully routed, powered and checked by `validateBlock`; the best by inserter shortfall, then area, then entity count is kept. Deterministic for a seed and candidate count.
 - `js/solve.js`: `solve()` runs the search for a candidate or time budget and returns the best Compound Block.
+- `js/chain.js`: Goals + Train Inputs + Recipe Selections → the Production Chain (every step's rate, down to the Train Inputs), and the recipe and building options for each item.
 - `js/plan.js`: Goals → Sub-Blocks (Count, rates, Byproducts, Fuel). `js/flows.js`: Dependency Order, Internal Paths, Side Input, Side Output. `js/routes.js`: routes with Belt Merge.
 - `js/layout/core.js`: one Sub-Block from a variant — rotation, one row or two facing rows with a shared middle band, which band and row each belt takes (up to 4 per face), gaps, pole slots. A small depth-first search picks inserter columns for one machine period (repeated for every machine) so every machine gets its share of each belt and every belt row stays passable.
 - `js/layout/compound.js`: places cores, routes belts and pipes (rip-up and reroute on failure), places poles.
@@ -85,13 +90,13 @@ npm run build-catalog -- ~/.factorio/script-output/data-raw-dump.json
 - `js/sim.js`: Starvation per route in belt order, plus machines whose inserters cannot move their share.
 - `js/blueprint.js`: importable blueprint string + JSON, with pole wires and `pickup_position` / `drop_position` vectors on 90° inserters.
 - `js/catalog-builder.js` + `scripts/build-catalog.mjs`: data dump → catalog. `scripts/measure.mjs`: samples recipes from the catalog and reports how many solve.
-- `sprites/`: symlink to Factorio `base/graphics/icons/`; only base-game icons are shown.
+- `scripts/build-sprites.mjs` + `scripts/sprites.mjs`: extract the catalog's icons from the game and the mod zips into `sprites/`.
 
 ## Testing
-- `npm test`: Node test suite at the agreed seams — `planSubBlocks` (incl. Fuel), `buildFlows`, `solve` (every layout passes `validateBlock`: no overlaps, belt chains with tunnels within reach at their nearest partner, feeding and draining inserters, connected pipe networks, no fluid mixing, separate networks, powered and connected poles, no custom vectors when 90° inserters are off), the search's capabilities (a 5-belt Py recipe, Py nitrogen-mustard at 4 machines, inserter counts that scale with throughput, burner Fuel, Compactness never worse than v1 on fixed scenarios, determinism under a seed), the router, packing, poles, `simulate` (incl. inserter throughput), `inserterRate`, `encodeBlueprint`, `buildCatalog`.
+- `npm test`: Node test suite at the agreed seams — `expandChain`, `planSubBlocks` (incl. Fuel), `buildFlows`, `solve` (every layout passes `validateBlock`: no overlaps, belt chains with tunnels within reach at their nearest partner, feeding and draining inserters, connected pipe networks, no fluid mixing, separate networks, powered and connected poles, no custom vectors when 90° inserters are off), the search's capabilities (a 5-belt Py recipe, Py nitrogen-mustard at 4 machines, inserter counts that scale with throughput, burner Fuel, Compactness never worse than v1 on fixed scenarios, determinism under a seed), the router, packing, poles and their wires, sprite extraction from mod zips, `simulate` (incl. inserter throughput), `inserterRate`, `encodeBlueprint`, `buildCatalog`.
 - `npm run typecheck`: `tsc --checkJs` over all modules.
 - `node scripts/measure.mjs [samples] [seed] [budgetMs]`: success rate, failure reasons and time on sampled catalog recipes at 2–4 machines.
-- UI checked in headless Chromium (Playwright): build, progressive map updates with area, Stop, settings (inserters, Fuel, 90° toggle, search time), blueprint vectors, persistence, phone width.
+- UI checked in headless Chromium (Playwright): Production Chain (small-parts-01 from iron and copper plates), recipe and building per step, Train Inputs, build, progressive map updates with area, icons, pole wires, Stop, settings (inserters, Fuel, 90° toggle, search time), blueprint vectors, persistence, phone width.
 
 ## Known limitations
 Measured with `scripts/measure.mjs` (300 sampled Pyanodons recipes at 2–4 machines, 3 s search each, vanilla inserter data standing in until the catalog is regenerated): 90.7% solve (v1: 79.3%).
@@ -102,6 +107,7 @@ Measured with `scripts/measure.mjs` (300 sampled Pyanodons recipes at 2–4 mach
 - Output inserters, 90° ones included, are assumed to fill only the far lane.
 - The search is a randomised local search: it finds good layouts, not proven optimal ones, and harder blocks need more search time.
 - Only burner machines take Fuel; machines burning fluids are not fed.
+- In a recipe loop the Production Chain brings the looping item by train, but the layout still feeds it from its own Sub-Block when one makes it.
+- Icons with several layers (tinted, overlaid) show only their first layer.
 - Pole placement is locally minimal (no pole can be removed), not a proven global minimum.
-- Icons for mod items are not shown.
 - Custom/mod entity definitions are deferred (see Requirements).

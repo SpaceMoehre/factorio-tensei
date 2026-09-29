@@ -1,28 +1,44 @@
 import { simulate } from './sim.js';
+import { expandChain, recipeOptions } from './chain.js';
 import { encodeBlueprint } from './blueprint.js';
 import { createMap } from './render.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
+const TRAIN_REASON = { chosen: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop' };
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
 const catalog = await fetch('data/catalog.json').then(r => r.json());
 // A catalog built before v2 has no inserters, power draw or fuel; the search needs all three.
 const outdated = !catalog.inserters || !catalog.fuels;
 if (outdated) Object.assign(catalog, { inserters: {}, fuels: {} });
-const index = indexCatalog(catalog);
+const index = recipeOptions(catalog);
 const choices = {
   belt: Object.keys(catalog.belts), pipe: Object.keys(catalog.pipes), pole: Object.keys(catalog.poles),
   inserter: inserterNames(1), longInserter: inserterNames(2), fuel: Object.keys(catalog.fuels).sort(),
 };
 const state = load() ?? { goals: [], logistics: {} };
 state.logistics = { ...defaultLogistics(), ...state.logistics };
+state.inputs ??= [];
+state.selections ??= {};
+// Goals used to carry their own recipe and building; they are now the chain's selections.
+for (const g of state.goals) {
+  if (g.recipe && !state.selections[g.item]) state.selections[g.item] = { recipe: g.recipe, building: g.building };
+  delete g.recipe;
+  delete g.building;
+}
+// The Production Chain for the current Goals, Train Inputs and selections, or why there is none.
+/** @type {any} */
+let chain = null;
+// The chain's rows by step, with the choices each was drawn for.
+const chainRows = new Map();
 let map = null;
 let worker = null;
 // The best layout the running (or last) search has sent, and how many layouts it had tried.
 let best = null;
 
 $('items').replaceChildren(...[...index.producers.keys()].sort().map(name => new Option(name)));
+$('all-items').replaceChildren(...allItems().map(name => new Option(name)));
 for (const key of SELECTS) {
   fillSelect($(key), choices[key], state.logistics[key]);
   $(key).addEventListener('change', () => { state.logistics[key] = $(key).value; save(); });
@@ -32,10 +48,12 @@ $('right-angle').addEventListener('change', () => { state.logistics.rightAngle =
 $('budget').value = String(state.logistics.budget);
 $('budget').addEventListener('change', () => { state.logistics.budget = Math.max(1, Number($('budget').value) || 10); save(); });
 $('add-goal').addEventListener('click', () => {
-  state.goals.push({ item: '', rate: 60, recipe: '', building: '' });
+  state.goals.push({ item: '', rate: 60 });
   renderGoals();
   save();
 });
+$('add-input').addEventListener('click', addInput);
+$('new-input').addEventListener('keydown', e => { if (e.key === 'Enter') addInput(); });
 $('calculate').addEventListener('click', build);
 $('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
@@ -45,43 +63,10 @@ $('zoom-out').addEventListener('click', () => map?.zoom(1 / 1.4));
 $('fit').addEventListener('click', () => map?.fit());
 $('empty').textContent = 'Add goals and build a factory block to see its map here.';
 renderGoals();
+renderInputs();
 if (outdated) {
   $('calculate').disabled = true;
   showStatus('error', 'The catalog is missing inserter data — regenerate it (see PRD.md, Catalog).');
-}
-
-// Recipes that produce each item, restricted to those some building can actually run.
-function indexCatalog(catalog) {
-  const buildingsFor = new Map();
-  const producers = new Map();
-  for (const recipe of Object.values(catalog.recipes)) {
-    const buildings = Object.values(catalog.buildings)
-      .filter(b => b.categories.includes(recipe.category) && hasFluidBoxes(b, recipe))
-      .sort((a, b) => a.craftingSpeed - b.craftingSpeed || a.name.localeCompare(b.name));
-    if (!buildings.length || !recipe.products.length) continue;
-    buildingsFor.set(recipe.name, buildings.map(b => b.name));
-    for (const p of recipe.products) {
-      if (!producers.has(p.name)) producers.set(p.name, []);
-      producers.get(p.name).push(recipe.name);
-    }
-  }
-  for (const [item, recipes] of producers) {
-    // Prefer the recipe named after the item, then recipes where it is the first product.
-    recipes.sort((a, b) => rank(item, a) - rank(item, b) || a.localeCompare(b));
-  }
-  return { producers, buildingsFor };
-
-  function rank(item, recipe) {
-    if (recipe === item) return 0;
-    return catalog.recipes[recipe].products[0].name === item ? 1 : 2;
-  }
-}
-
-function hasFluidBoxes(building, recipe) {
-  const inputs = building.fluidBoxes.filter(b => b.production !== 'output').length;
-  const outputs = building.fluidBoxes.filter(b => b.production !== 'input').length;
-  return recipe.ingredients.filter(i => i.type === 'fluid').length <= inputs
-    && recipe.products.filter(p => p.type === 'fluid').length <= outputs;
 }
 
 // Electric inserters (never burner ones) that reach `reach` tiles.
@@ -108,46 +93,139 @@ function defaultLogistics() {
 
 function renderGoals() {
   $('goals').replaceChildren(...state.goals.map((goal, i) => goalRow(goal, i)));
+  renderChain();
 }
 
+// A Goal is an item and a rate; how it is made is chosen in the Production Chain. Editing a Goal
+// only redraws the chain, so the field being edited keeps its focus.
 function goalRow(goal, i) {
   const row = el('div', { className: 'goal' });
-  const icon = el('img', { alt: '' });
-  if (catalog.icons[goal.item]) icon.src = `sprites/${catalog.icons[goal.item]}`;
-  else icon.style.visibility = 'hidden';
+  const icon = iconOf(goal.item);
   const item = el('input', { type: 'text', value: goal.item, placeholder: 'Item or fluid…', ariaLabel: 'Goal item' });
   item.setAttribute('list', 'items');
   const rate = el('input', { type: 'number', min: '0', step: 'any', value: String(goal.rate), title: 'Target rate per minute', ariaLabel: 'Goal rate per minute' });
   const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: 'Remove goal' });
-  const head = el('div', { className: 'goal-head' }, icon, item, rate, el('span', { textContent: '/min', className: 'hint' }), remove);
-
-  const recipes = index.producers.get(goal.item) ?? [];
-  if (!recipes.includes(goal.recipe)) goal.recipe = recipes[0] ?? '';
-  const buildings = index.buildingsFor.get(goal.recipe) ?? [];
-  if (!buildings.includes(goal.building)) goal.building = buildings[0] ?? '';
-  const recipe = el('select', { ariaLabel: 'Recipe' });
-  fillSelect(recipe, recipes, goal.recipe);
-  const building = el('select', { ariaLabel: 'Building' });
-  fillSelect(building, buildings, goal.building);
-  const selection = el('div', { className: 'selection' },
-    el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building);
-
-  item.addEventListener('change', () => { goal.item = item.value.trim(); goal.recipe = ''; goal.building = ''; renderGoals(); save(); });
-  rate.addEventListener('change', () => { goal.rate = Number(rate.value); save(); });
-  recipe.addEventListener('change', () => { goal.recipe = recipe.value; goal.building = ''; renderGoals(); save(); });
-  building.addEventListener('change', () => { goal.building = building.value; save(); });
+  item.addEventListener('change', () => {
+    goal.item = item.value.trim();
+    icon.replaceWith(iconOf(goal.item));
+    renderChain();
+    save();
+  });
+  rate.addEventListener('change', () => { goal.rate = Number(rate.value); renderChain(); save(); });
   remove.addEventListener('click', () => { state.goals.splice(i, 1); renderGoals(); save(); });
-  row.append(head, selection);
+  row.append(el('div', { className: 'goal-head' }, icon, item, rate, el('span', { textContent: '/min', className: 'hint' }), remove));
   return row;
+}
+
+function addInput() {
+  const item = $('new-input').value.trim();
+  if (item && !state.inputs.includes(item)) state.inputs.push(item);
+  $('new-input').value = '';
+  renderInputs();
+  save();
+}
+
+function renderInputs() {
+  $('inputs').replaceChildren(...state.inputs.map(item => {
+    const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: `Make ${item} in the block` });
+    remove.addEventListener('click', () => { state.inputs = state.inputs.filter(i => i !== item); renderInputs(); save(); });
+    return el('span', { className: 'chip' }, iconOf(item), el('span', { textContent: item }), remove);
+  }));
+  renderChain();
+}
+
+// The Production Chain: every step with its rate, machines, recipe and building, and what comes
+// by train. Rows are kept while their choices stay the same, so a click on one is never lost to
+// a redraw.
+function renderChain() {
+  const goals = state.goals.filter(g => g.item && g.rate > 0);
+  try {
+    chain = goals.length ? expandChain(goals, catalog, { inputs: state.inputs, selections: state.selections, index }) : null;
+  } catch (e) {
+    chain = { error: e.message };
+  }
+  const list = $('chain');
+  if (!chain || chain.error) {
+    chainRows.clear();
+    list.replaceChildren(el('p', { className: 'hint', textContent: chain?.error ?? 'Add a goal to see how it is made.' }));
+    return;
+  }
+  const rows = [];
+  const seen = new Set();
+  for (const { goal, selection } of chain.entries) {
+    const recipes = index.producers.get(goal.item);
+    const buildings = index.buildingsFor.get(selection.recipe);
+    const key = JSON.stringify(['step', goal.item, recipes, selection, buildings]);
+    rows.push(reuse(`step:${goal.item}`, key, () => stepRow(goal.item, recipes, buildings, selection)));
+    seen.add(`step:${goal.item}`);
+    const building = catalog.buildings[selection.building];
+    const recipe = catalog.recipes[selection.recipe];
+    const perMachine = building.craftingSpeed / recipe.time * recipe.products.find(p => p.name === goal.item).amount * 60;
+    chainRows.get(`step:${goal.item}`).el.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${Math.ceil(goal.rate / perMachine - 1e-9)}×`;
+  }
+  for (const input of chain.trainInputs) {
+    const key = JSON.stringify(['train', input.item, input.reason]);
+    rows.push(reuse(`train:${input.item}`, key, () => trainRow(input)));
+    seen.add(`train:${input.item}`);
+    chainRows.get(`train:${input.item}`).el.querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
+  }
+  for (const k of [...chainRows.keys()]) if (!seen.has(k)) chainRows.delete(k);
+  if (rows.some((row, i) => list.children[i] !== row) || list.children.length !== rows.length) list.replaceChildren(...rows);
+}
+
+function reuse(id, key, make) {
+  const cached = chainRows.get(id);
+  if (cached?.key === key) return cached.el;
+  const row = make();
+  chainRows.set(id, { key, el: row });
+  return row;
+}
+
+function stepRow(item, recipes, buildings, selection) {
+  const recipe = el('select', { ariaLabel: `Recipe for ${item}` });
+  fillSelect(recipe, recipes, selection.recipe);
+  const building = el('select', { ariaLabel: `Building for ${item}` });
+  fillSelect(building, buildings, selection.building);
+  const choose = changes => { state.selections[item] = { ...selection, ...changes }; renderChain(); save(); };
+  recipe.addEventListener('change', () => choose({ recipe: recipe.value, building: '' }));
+  building.addEventListener('change', () => choose({ building: building.value }));
+  const isGoal = state.goals.some(g => g.item === item);
+  const train = el('button', { type: 'button', className: 'icon', textContent: '⇠', title: `Bring ${item} by train instead` });
+  train.addEventListener('click', () => { state.inputs.push(item); renderInputs(); save(); });
+  train.hidden = isGoal;
+  return el('div', { className: 'step' },
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), train),
+    el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building));
+}
+
+function trainRow(input) {
+  const make = el('button', { type: 'button', className: 'icon', textContent: '⇢', title: `Make ${input.item} in the block` });
+  make.addEventListener('click', () => { state.inputs = state.inputs.filter(i => i !== input.item); renderInputs(); save(); });
+  make.hidden = input.reason !== 'chosen';
+  return el('div', { className: 'step train' },
+    el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: input.item }), el('span', { className: 'rate' }), make),
+    el('div', { className: 'hint', textContent: TRAIN_REASON[input.reason] }));
+}
+
+// Every item and fluid any recipe uses or makes.
+function allItems() {
+  const names = new Set();
+  for (const r of Object.values(catalog.recipes)) for (const x of [...r.ingredients, ...r.products]) names.add(x.name);
+  return [...names].sort();
+}
+
+// An item's icon from sprites/ (only its first mipmap is shown), or an empty square.
+function iconOf(item) {
+  const icon = el('span', { className: 'sprite', title: item });
+  if (catalog.icons[item]) icon.style.backgroundImage = `url("sprites/${catalog.icons[item]}")`;
+  return icon;
 }
 
 // Starts the layout search in a worker. Every better layout it finds replaces the map and the
 // blueprint; Stop, or the end of the budget, keeps the best one found.
 function build() {
-  const goals = state.goals.filter(g => g.item);
-  if (!goals.length) return showStatus('error', 'Add at least one goal.');
-  const unknown = goals.find(g => !g.recipe || !g.building);
-  if (unknown) return showStatus('error', `No recipe and building can produce “${unknown.item}”.`);
+  if (!chain) return showStatus('error', 'Add at least one goal.');
+  if (chain.error) return showStatus('error', chain.error);
   worker?.terminate();
   best = null;
   map?.destroy();
@@ -168,7 +246,7 @@ function build() {
   worker.onerror = e => finish('Stopped', undefined, e.message);
   const { budget, ...logistics } = state.logistics;
   worker.postMessage({
-    entries: goals.map(g => ({ goal: { item: g.item, rate: g.rate }, selection: { recipe: g.recipe, building: g.building } })),
+    entries: chain.entries,
     logistics, budgetMs: budget * 1000, seed: 1,
   });
 }
@@ -179,7 +257,7 @@ async function show(block, tried) {
   const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
   $('empty').hidden = true;
-  map = createMap($('map'), block, { starving, onHover: describe });
+  map = createMap($('map'), block, { starving, onHover: describe, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null) });
   $('area').textContent = `${block.bounds.w} × ${block.bounds.h} = ${block.bounds.w * block.bounds.h} tiles`;
   $('area').hidden = false;
   report(block, starvation, worker ? 'Searching…' : null);

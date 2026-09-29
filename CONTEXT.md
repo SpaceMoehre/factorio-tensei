@@ -9,8 +9,16 @@ An item and a target production rate (items/minute), independent of how it is pr
 _Avoid_: recipe rate, item goal (when a recipe is implied)
 
 **Recipe Selection**:
-The recipe (and building tier) currently chosen to fulfill a Goal. Re-choosable without changing the Goal itself — a Goal has exactly one active Recipe Selection at a time. Multiple recipes may be able to produce the same item; picking among them is a separate concern from stating the Goal.
+The recipe (and building tier) currently chosen to make an item of the Production Chain — a Goal or an ingredient made in the block. Re-choosable without changing the Goal itself — each step has exactly one active Recipe Selection at a time. Multiple recipes may be able to produce the same item; picking among them is a separate concern from stating the Goal.
 _Avoid_: baking a fixed recipe into Goal identity
+
+**Production Chain**:
+The Goals plus a Sub-Block for every ingredient the block makes itself, found by following each Recipe Selection's ingredients down to the Train Inputs. Each step's rate is its Goal rate (if any) plus what its consumers take.
+_Avoid_: recipe tree (it is not always a tree: steps share ingredients)
+
+**Train Input**:
+An item the Production Chain does not make but receives by train: one the user chooses to bring in, one no recipe makes, or one a recipe loop would have to make from itself. Train Inputs are what the Side Input carries.
+_Avoid_: raw material (a Train Input can be any intermediate the user chooses to import)
 
 **Count**:
 The number of assembler buildings a Sub-Block needs to meet its Goal's target rate: `ceil(targetRate / ((building.craftingSpeed / recipe.time) * recipe.outputs[item] * 60))`.

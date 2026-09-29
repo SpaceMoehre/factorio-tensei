@@ -205,3 +205,18 @@ test('Side Output route collects the Goal item from every machine and leaves at 
   assertNoOverlaps(block.entities);
   assertValid(block, catalog, logistics);
 });
+
+test('the block carries the copper wires joining its poles, for the map to draw', () => {
+  const block = solve([{ goal: { item: 'biomass', rate: 150 }, selection: { recipe: 'biomass', building: 'compost-plant-mk01' } }], catalog, logistics);
+  const poles = block.entities.map((e, i) => [e, i]).filter(([e]) => e.kind === 'pole').map(([, i]) => i);
+  assert.ok(poles.length >= 2, `${poles.length} poles`);
+  assert.equal(block.wires.length, poles.length - 1);
+  const joined = new Set([poles[0]]);
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const [a, b] of block.wires) {
+      if (joined.has(a) !== joined.has(b)) { joined.add(a); joined.add(b); grew = true; }
+    }
+  }
+  assert.deepEqual([...joined].sort(), [...poles].sort());
+});
