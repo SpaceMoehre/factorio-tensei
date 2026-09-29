@@ -214,9 +214,11 @@ function beltMoves(grid, spec, names, pending, target) {
     }
     const d = node.a;
     if (!grid.freeFor(node.x, node.y, spec.id) || fedByOther(grid, spec, node.x, node.y)) return options;
+    // A tunnel may not pass under a later waypoint of its own route, nor surface on one.
+    if (pending.has(key(...step(node.x, node.y, d, 1)))) return options;
     for (const hop of HOPS(names.reach)) {
       const [qx, qy] = step(node.x, node.y, d, hop);
-      if (pending.has(key(qx, qy)) || [...Array(hop).keys()].some(i => i > 0 && pending.has(key(...step(node.x, node.y, d, i))))) break;
+      if (pending.has(key(qx, qy))) break;
       if (!grid.freeFor(qx, qy, spec.id) || !grid.tunnelFits(names.underground, node, { x: qx, y: qy })) continue;
       if (!beltOutputAllowed(grid, spec, ...step(qx, qy, d)) || fedByOther(grid, spec, qx, qy)) continue;
       const base = { name: names.underground, kind: 'underground-belt', route: spec.id, w: 1, h: 1, direction: d, travel: d };
