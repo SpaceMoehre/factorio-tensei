@@ -4,12 +4,15 @@
 <meta charset="UTF-8">
 <title>Factorio Factory Block Blueprint Tool</title>
 <style>
-  body { font-family: system-ui,sans-serif; background: #181825; color: #cdd6f4; margin: 0; padding: 2rem; }
+  body { font-family: system-ui,sans-serif; background: linear-gradient(135deg, #1a1a2e 0%, #16213e 60%, #0f3460 100%); color: #eaeaea; margin: 0; padding: 2rem; min-height: 100vh; }
+  h1 { color: #e0c097; letter-spacing: 1px; }
+  ::selection { background: #e0c097; color: #1a1a2e; }
   h1 { color: #89b4fa; }
   .grid { display: grid; grid-template-columns: 320px 1fr; gap: 2rem; }
-  .panel { background: #313244; padding: 1rem; border-radius: 12px; }
+  .panel { background: rgba(26,26,46,0.85); backdrop-filter: blur(6px); padding: 1rem; border-radius: 12px; border: 1px solid rgba(224,192,151,0.25); box-shadow: 0 4px 20px rgba(0,0,0,0.35); }
   input, select, button { padding: .5rem; font-size: 1rem; border: none; border-radius: 6px; }
-  button { background: #a6e3a1; color: #181825; font-weight: bold; cursor: pointer; }
+  button { background: linear-gradient(180deg, #e0c097, #bfa070); color: #1a1a2e; font-weight: bold; cursor: pointer; border: 1px solid #d4a86e; box-shadow: 0 2px 6px rgba(224,192,151,0.3); }
+  button:hover { background: linear-gradient(180deg, #f0d8b5, #d4b890); }
   button:hover { background: #94e2d5; }
   .recipe-row { display: flex; gap: .5rem; align-items: center; margin: .3rem 0; }
   .recipe-row input { width: 60px; }
@@ -67,7 +70,8 @@
     list.innerHTML = '';
     config.forEach((c,i) => {
       const row = document.createElement('div'); row.className = 'recipe-row';
-      row.innerHTML = `<select onchange="updateRecipe(${i},this.value)">${recipeNames.map(r=>`<option value="${r}" ${r===c.recipe?'selected':''}>${r}</option>`).join('')}</select><input type="number" value="${c.count}" min="1" onchange="updateCount(${i},this.value)"><button onclick="removeRecipe(${i})">×</button>`;
+      const iconName = c.recipe.replace(/-/g,'_');
+      row.innerHTML = `<img src="sprites/${c.recipe}.png" style="width:28px;height:28px;object-fit:contain;border:1px solid #e0c097;border-radius:4px;" onerror="this.style.display='none';this.nextElementSibling.style.display='inline-block'" title="${c.recipe}"><span style="display:none;font-size:10px">${c.recipe}</span><select onchange="updateRecipe(${i},this.value)">${recipeNames.map(r=>`<option value="${r}" ${r===c.recipe?'selected':''}>${r}</option>`).join('')}</select><input type="number" value="${c.count}" min="1" onchange="updateCount(${i},this.value)"><button onclick="removeRecipe(${i})">×</button>`;
       list.appendChild(row);
     });
   }
