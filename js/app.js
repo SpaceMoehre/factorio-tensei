@@ -5,7 +5,7 @@ import { createMap } from './render.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
-const TRAIN_REASON = { chosen: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop' };
+const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop' };
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
 const catalog = await fetch('data/catalog.json').then(r => r.json());
@@ -19,7 +19,10 @@ const choices = {
 };
 const state = load() ?? { goals: [], logistics: {} };
 state.logistics = { ...defaultLogistics(), ...state.logistics };
-state.inputs ??= [];
+// What comes by train follows from the Goals' recipes; `made` lists the imports the user chose to
+// make in the block instead. (Saves from before listed Train Inputs instead; that list is dropped.)
+state.made ??= [];
+delete state.inputs;
 state.selections ??= {};
 // Goals used to carry their own recipe and building; they are now the chain's selections.
 for (const g of state.goals) {
@@ -27,7 +30,7 @@ for (const g of state.goals) {
   delete g.recipe;
   delete g.building;
 }
-// The Production Chain for the current Goals, Train Inputs and selections, or why there is none.
+// The Production Chain for the current Goals, made items and selections, or why there is none.
 /** @type {any} */
 let chain = null;
 // The chain's rows by step, with the choices each was drawn for.
@@ -38,7 +41,6 @@ let worker = null;
 let best = null;
 
 $('items').replaceChildren(...[...index.producers.keys()].sort().map(name => new Option(name)));
-$('all-items').replaceChildren(...allItems().map(name => new Option(name)));
 for (const key of SELECTS) {
   fillSelect($(key), choices[key], state.logistics[key]);
   $(key).addEventListener('change', () => { state.logistics[key] = $(key).value; save(); });
@@ -52,8 +54,6 @@ $('add-goal').addEventListener('click', () => {
   renderGoals();
   save();
 });
-$('add-input').addEventListener('click', addInput);
-$('new-input').addEventListener('keydown', e => { if (e.key === 'Enter') addInput(); });
 $('calculate').addEventListener('click', build);
 $('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
@@ -63,7 +63,6 @@ $('zoom-out').addEventListener('click', () => map?.zoom(1 / 1.4));
 $('fit').addEventListener('click', () => map?.fit());
 $('empty').textContent = 'Add goals and build a factory block to see its map here.';
 renderGoals();
-renderInputs();
 if (outdated) {
   $('calculate').disabled = true;
   showStatus('error', 'The catalog is missing inserter data — regenerate it (see PRD.md, Catalog).');
@@ -118,30 +117,13 @@ function goalRow(goal, i) {
   return row;
 }
 
-function addInput() {
-  const item = $('new-input').value.trim();
-  if (item && !state.inputs.includes(item)) state.inputs.push(item);
-  $('new-input').value = '';
-  renderInputs();
-  save();
-}
-
-function renderInputs() {
-  $('inputs').replaceChildren(...state.inputs.map(item => {
-    const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: `Make ${item} in the block` });
-    remove.addEventListener('click', () => { state.inputs = state.inputs.filter(i => i !== item); renderInputs(); save(); });
-    return el('span', { className: 'chip' }, iconOf(item), el('span', { textContent: item }), remove);
-  }));
-  renderChain();
-}
-
 // The Production Chain: every step with its rate, machines, recipe and building, and what comes
 // by train. Rows are kept while their choices stay the same, so a click on one is never lost to
 // a redraw.
 function renderChain() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
-    chain = goals.length ? expandChain(goals, catalog, { inputs: state.inputs, selections: state.selections, index }) : null;
+    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, index }) : null;
   } catch (e) {
     chain = { error: e.message };
   }
@@ -191,8 +173,8 @@ function stepRow(item, recipes, buildings, selection) {
   recipe.addEventListener('change', () => choose({ recipe: recipe.value, building: '' }));
   building.addEventListener('change', () => choose({ building: building.value }));
   const isGoal = state.goals.some(g => g.item === item);
-  const train = el('button', { type: 'button', className: 'icon', textContent: '⇠', title: `Bring ${item} by train instead` });
-  train.addEventListener('click', () => { state.inputs.push(item); renderInputs(); save(); });
+  const train = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Bring ${item} by train instead` });
+  train.addEventListener('click', () => { state.made = state.made.filter(i => i !== item); renderChain(); save(); });
   train.hidden = isGoal;
   return el('div', { className: 'step' },
     el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), train),
@@ -200,19 +182,12 @@ function stepRow(item, recipes, buildings, selection) {
 }
 
 function trainRow(input) {
-  const make = el('button', { type: 'button', className: 'icon', textContent: '⇢', title: `Make ${input.item} in the block` });
-  make.addEventListener('click', () => { state.inputs = state.inputs.filter(i => i !== input.item); renderInputs(); save(); });
-  make.hidden = input.reason !== 'chosen';
+  const make = el('button', { type: 'button', className: 'swap', textContent: 'Make here', title: `Make ${input.item} in the block` });
+  make.addEventListener('click', () => { state.made.push(input.item); renderChain(); save(); });
+  make.hidden = input.reason !== 'import';
   return el('div', { className: 'step train' },
     el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: input.item }), el('span', { className: 'rate' }), make),
     el('div', { className: 'hint', textContent: TRAIN_REASON[input.reason] }));
-}
-
-// Every item and fluid any recipe uses or makes.
-function allItems() {
-  const names = new Set();
-  for (const r of Object.values(catalog.recipes)) for (const x of [...r.ingredients, ...r.products]) names.add(x.name);
-  return [...names].sort();
 }
 
 // An item's icon from sprites/ (only its first mipmap is shown), or an empty square.

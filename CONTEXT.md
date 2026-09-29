@@ -13,12 +13,12 @@ The recipe (and building tier) currently chosen to make an item of the Productio
 _Avoid_: baking a fixed recipe into Goal identity
 
 **Production Chain**:
-The Goals plus a Sub-Block for every ingredient the block makes itself, found by following each Recipe Selection's ingredients down to the Train Inputs. Each step's rate is its Goal rate (if any) plus what its consumers take.
+The Goals plus a Sub-Block for every ingredient the user chose to make in the block, each with its Recipe Selection. By default a Goal's ingredients are Train Inputs; making one here adds its step, and its own ingredients become Train Inputs in turn. Each step's rate is its Goal rate (if any) plus what its consumers take.
 _Avoid_: recipe tree (it is not always a tree: steps share ingredients)
 
 **Train Input**:
-An item the Production Chain does not make but receives by train: one the user chooses to bring in, one no recipe makes, or one a recipe loop would have to make from itself. Train Inputs are what the Side Input carries.
-_Avoid_: raw material (a Train Input can be any intermediate the user chooses to import)
+An item the Production Chain does not make but receives by train: an ingredient of a step that the user has not chosen to make here (the default), one no recipe makes, or one a recipe loop would have to make from itself. Train Inputs are what the Side Input carries.
+_Avoid_: raw material (a Train Input can be any intermediate)
 
 **Count**:
 The number of assembler buildings a Sub-Block needs to meet its Goal's target rate: `ceil(targetRate / ((building.craftingSpeed / recipe.time) * recipe.outputs[item] * 60))`.
