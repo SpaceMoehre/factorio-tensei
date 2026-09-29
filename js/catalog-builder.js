@@ -23,6 +23,11 @@ export function buildCatalog(raw) {
       craftingSpeed: b.crafting_speed,
       categories: b.crafting_categories,
       energy: b.energy_source.type,
+      energyUsage: energy(b.energy_usage),
+      ...(b.energy_source.type === 'burner' && {
+        effectivity: b.energy_source.effectivity ?? 1,
+        fuelCategories: fuelCategories(b.energy_source),
+      }),
       fluidBoxes: (b.fluid_boxes ?? []).map(fb => ({
         production: fb.production_type,
         connections: fb.pipe_connections
@@ -55,7 +60,45 @@ export function buildCatalog(raw) {
     const ug = p.fluid_box.pipe_connections.find(c => c.connection_type === 'underground');
     pipes[p.name] = { name: p.name, maxDistance: ug.max_underground_distance };
   }
-  return { recipes, buildings, poles, belts, pipes, icons: baseIcons(raw) };
+  const inserters = {};
+  for (const i of Object.values(raw.inserter ?? {})) {
+    inserters[i.name] = {
+      name: i.name,
+      pickup: vector(i.pickup_position ?? [0, -1]),
+      insert: vector(i.insert_position ?? [0, 1.2]),
+      rotationSpeed: i.rotation_speed,
+      extensionSpeed: i.extension_speed,
+      energy: i.energy_source.type,
+      customVectors: i.allow_custom_vectors ?? false,
+    };
+  }
+  const fuels = {};
+  for (const type of ITEM_TYPES) {
+    for (const p of Object.values(raw[type] ?? {})) {
+      if (p.fuel_value) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
+    }
+  }
+  return { recipes, buildings, poles, belts, pipes, inserters, fuels, icons: baseIcons(raw) };
+}
+
+// Factorio 2.0 names one fuel category per item and a list per burner; mods may use either form.
+function fuelCategories(p) {
+  return p.fuel_categories ?? [p.fuel_category ?? 'chemical'];
+}
+
+// Vectors are dumped as [x, y] or { x, y }.
+function vector(v) {
+  return Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
+}
+
+const SI = { '': 1, k: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 };
+
+// "150kW" → 150000 (watts), "4MJ" → 4000000 (joules).
+function energy(text) {
+  if (text === undefined) return undefined;
+  const [, value, prefix] = /^([\d.]+)\s*([kMGTP]?)[WJ]$/.exec(text) ?? [];
+  if (value === undefined) throw new Error(`unreadable energy value "${text}"`);
+  return Math.round(Number(value) * SI[prefix]);
 }
 
 const ITEM_TYPES = [
