@@ -13,8 +13,14 @@ export function buildRoutes(plan, flows, laneCapacity) {
   const add = r => routes.push({ id: routes.length, ...r });
   const saturated = (item, rate, capacity) => ({ item, rate, supply: capacity, capacity });
 
-  const solids = flows.sideInput.filter(i => i.type === 'item');
-  for (const { consumers, items } of mergeGroups(solids, consumersOf, laneCapacity)) {
+  // A Side Input one belt cannot carry to all its consumers comes as its own route to each, so
+  // each consumer can split it into parallel belts of its own.
+  const solids = flows.sideInput.filter(i => i.type === 'item').flatMap(input => {
+    const consumers = consumersOf(input.item);
+    if (consumers.length < 2 || input.rate <= 2 * laneCapacity) return [{ ...input, consumers }];
+    return consumers.map(c => ({ ...input, rate: plan[c].inputs.find(x => x.name === input.item).rate, consumers: [c] }));
+  });
+  for (const { consumers, items } of mergeGroups(solids, laneCapacity)) {
     // A merged belt gives each item one lane; a lone item fills both.
     const capacity = items.length === 2 ? laneCapacity : 2 * laneCapacity;
     add({ kind: 'belt', source: 'side-input', sink: null, consumers, items: items.map(i => saturated(i.item, i.rate, capacity)) });
@@ -50,10 +56,10 @@ export function buildRoutes(plan, flows, laneCapacity) {
 
 // Belt Merge: Side Input items share a belt (one per lane) only when they travel the same
 // route — the same consumers in the same order — and each fits within a single lane.
-function mergeGroups(inputs, consumersOf, laneCapacity) {
+function mergeGroups(inputs, laneCapacity) {
   const byConsumers = new Map();
   for (const input of inputs) {
-    const consumers = consumersOf(input.item);
+    const { consumers } = input;
     const k = consumers.join(',');
     if (!byConsumers.has(k)) byConsumers.set(k, { consumers, items: [] });
     byConsumers.get(k).items.push({ item: input.item, rate: input.rate });

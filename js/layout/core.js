@@ -44,7 +44,7 @@ export class LayoutError extends Error {}
 // fewer fit, the core records the shortfall (items/min its machines cannot get), which the
 // search ranks below any layout that fits and Starvation reports.
 // links: { inputs: [routeId], output: routeId | null, fluids: [{ routeId, fluid, role, index }] }
-// env: { routes, inserters: { short, long }, rightAngle, beltReach, pipeReach, laneCapacity }
+// env: { routes, inserters: { short, long }, rightAngle, beltReach, pipeReach, laneCapacity, handSize }
 export function buildCore(sb, building, links, variant, env) {
   const belts = variant.belts.map(b => ({ ...b, routeIds: b.routeIds ?? [b.routeId] }));
   const rowLength = Math.min(variant.rowLength ?? sb.count, sb.count);
@@ -140,7 +140,7 @@ export function buildCore(sb, building, links, variant, env) {
   const slots = access.map(a => {
     const reach = REACH[a.depth];
     const spec = reach.long ? env.inserters.long : env.inserters.short;
-    const rate = inserterRate(spec, reach.turn);
+    const rate = inserterRate(spec, reach.turn, env.handSize);
     const isOutput = a.belt.routeIds.includes(links.output);
     const items = a.belt.routeIds.flatMap(id => routeItems(sb, env.routes[id], isOutput));
     const demand = items.reduce((sum, i) => sum + i.rate, 0) / sb.count;
@@ -296,8 +296,11 @@ export function buildCore(sb, building, links, variant, env) {
   const parts = [];
   for (const b of belts) {
     let part = parts.find(p => p.routeIds.join() === b.routeIds.join() && p.part === b.part);
-    if (!part) parts.push(part = { routeIds: b.routeIds, part: b.part, rows: [], machines: 0 });
+    if (!part) parts.push(part = { routeIds: b.routeIds, part: b.part, rows: [], machines: 0, lanes: 2 });
     for (const r of b.serves) if (!part.rows.includes(r)) { part.rows.push(r); part.machines += counts[r]; }
+    // Inserters drop onto the lane farther from them: a belt between two rows gets both lanes
+    // filled, a belt beside one row only one.
+    if (b.serves.length < 2) part.lanes = 1;
   }
   // Every connection needs a way out for its pipe: a pipe row of its fluid in its band, a free
   // tile beside it, or a free tile straight out within a pipe-to-ground's reach.
@@ -329,13 +332,16 @@ export function buildCore(sb, building, links, variant, env) {
       const route = env.routes[routeId];
       const items = routeItems(sb, route, routeId === links.output);
       if (routeId === links.output) {
-        // Output inserters fill the far lane, which the products share.
+        // Output inserters fill the far lane, which the products share: one lane, or both where
+        // rows on either side drop onto the belt.
         const load = items.reduce((sum, i) => sum + i.rate, 0) * part.machines / sb.count;
-        overload += Math.max(0, load - route.items[0].capacity);
+        overload += Math.max(0, load - route.items[0].capacity * part.lanes);
       } else {
         for (const i of items) {
-          // Merged, each item has one lane.
-          const capacity = part.routeIds.length > 1 ? env.laneCapacity : route.items.find(x => x.item === i.name).capacity;
+          // Merged, each item has one lane. An Internal Path gets both lanes where its producer's
+          // rows drop onto it from both sides; the simulation checks that it does.
+          const lanes = typeof route.source === 'number' ? 2 : 1;
+          const capacity = part.routeIds.length > 1 ? env.laneCapacity : lanes * route.items.find(x => x.item === i.name).capacity;
           overload += Math.max(0, i.rate * part.machines / sb.count - capacity);
         }
       }
@@ -413,11 +419,26 @@ function placeInserters(slots, passRows, period, { pitch, cyclic, poleY, machine
   // Row-2 inserters first (the row-1 belt has to dive under them), then nearest belts first.
   const sorted = [...slots].sort((a, b) => REACH[b.depth].row - REACH[a.depth].row || a.depth - b.depth);
   const targets = sorted.map(s => s.needed);
+  // No more inserters than a row has free columns: trim the busiest belts on an overfull row
+  // first, so the search below starts from what can fit.
+  for (const y of new Set(sorted.map(s => s.insY))) {
+    const onRow = sorted.map((s, i) => i).filter(i => sorted[i].insY === y);
+    const free = new Set(onRow.flatMap(i => sorted[i].columns).filter(c => !taken(c, y))).size;
+    let total = onRow.reduce((sum, i) => sum + targets[i], 0);
+    while (total > free) {
+      const most = onRow.reduce((m, i) => (targets[i] > targets[m] ? i : m), onRow[0]);
+      if (targets[most] <= 1) break;
+      targets[most]--;
+      total--;
+    }
+  }
+  // Once the whole demand has failed to fit, each smaller try gets a shorter search.
+  let limit = SEARCH_NODES;
   for (;;) {
     let nodes = 0;
     const chosen = sorted.map(() => []);
     const place = (si, n) => {
-      if (++nodes > SEARCH_NODES) return false;
+      if (++nodes > limit) return false;
       if (si === sorted.length) return passRows.every(passable);
       if (n === targets[si]) return place(si + 1, 0);
       const s = sorted[si];
@@ -447,6 +468,7 @@ function placeInserters(slots, passRows, period, { pitch, cyclic, poleY, machine
     const most = targets.indexOf(Math.max(...targets));
     if (most < 0 || targets[most] <= 1) throw new LayoutError('no room for the inserters its belts need');
     targets[most]--;
+    limit = SEARCH_NODES / 5;
   }
 }
 

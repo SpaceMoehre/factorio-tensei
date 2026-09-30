@@ -16,3 +16,9 @@ test('straight swings are within 5% of the measured chest-to-chest rates', () =>
 test('a 90° swing is a quarter turn each way', () => {
   assert.equal(inserterRate(catalog.inserters['fast-inserter'], 90), 4.8 * 60);
 });
+
+// With inserter capacity research a hand carries several items per swing: a fast inserter with
+// hand size 3 moves 3 × 4.8 = 14.4 items/s at 90°.
+test('the hand size multiplies what a swing moves', () => {
+  assert.ok(Math.abs(inserterRate(catalog.inserters['fast-inserter'], 90, 3) - 864) < 1e-9);
+});

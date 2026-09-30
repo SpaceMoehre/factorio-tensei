@@ -86,3 +86,14 @@ test('in a loop of two recipes, the inner one takes the outer product by train',
   assert.deepEqual(byItem(entries), { a: 10, b: 10 });
   assert.deepEqual(trainInputs, [{ item: 'a', rate: 20, reason: 'cycle' }]);
 });
+
+test('each step carries its modules: the default for its building, or the ones chosen for it that fit', () => {
+  const goal = [{ item: 'moss', rate: 48 }];
+  const selectionOf = selections => expandChain(goal, pyCatalog, { selections }).entries[0].selection;
+  assert.deepEqual(selectionOf({}), { recipe: 'Moss-1', building: 'moss-farm-mk01', modules: [{ name: 'moss', count: 16 }] });
+  const mk02 = [{ name: 'moss-mk02', count: 10 }, { name: 'moss', count: 6 }];
+  assert.deepEqual(selectionOf({ moss: { recipe: 'Moss-1', building: 'moss-farm-mk01', modules: mk02 } }).modules, mk02);
+  // A module this building cannot take is dropped.
+  assert.deepEqual(selectionOf({ moss: { recipe: 'Moss-1', building: 'moss-farm-mk01', modules: [{ name: 'speed-module', count: 2 }, { name: 'moss', count: 4 }] } }).modules,
+    [{ name: 'moss', count: 4 }]);
+});

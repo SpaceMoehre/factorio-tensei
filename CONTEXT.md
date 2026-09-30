@@ -32,6 +32,10 @@ _Avoid_: treating byproducts as satisfying other Goals automatically
 The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric.
 _Avoid_: fuel for inserters (burner inserters are never used)
 
+**Modules**:
+The modules a step's buildings hold — speed, productivity and efficiency modules, and for Py farms the plants and animals that make them work. Chosen per step of the Production Chain; they set its Count and power draw, and the blueprint asks for them in every one of its machines.
+_Avoid_: beacons (not modelled)
+
 **Sub-Block**:
 The rectangular unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. The layout search chooses the arrangement.
 _Avoid_: block (ambiguous with Compound Block)
@@ -73,7 +77,7 @@ An underground belt (or pipe-to-ground) segment, used (1) reactively, whenever a
 _Avoid_: tunnel as purely a crossing-avoidance fallback (it's also a compaction tool); a fixed hop length
 
 **Lane**:
-One of a belt's two sides, each carrying half the belt's throughput. Output inserters drop only onto the far lane, so a Sub-Block's output belt carries at most half a belt.
+One of a belt's two sides, each carrying half the belt's throughput. Output inserters drop only onto the lane farther from them, so a belt fed from one side carries at most half a belt; machine rows on both sides of it fill both lanes.
 _Avoid_: treating a belt as one undivided stream
 
 **Belt Merge**:
@@ -81,7 +85,7 @@ Putting two items on one belt, one per Lane. Eligible only when both items alrea
 _Avoid_: merging belts that don't share a route
 
 **Parallel Belts**:
-One item on several belts from (or to) the train, each serving some of a Sub-Block's machine rows with its share of the rate — when one belt cannot carry it all. Only a Side Input taken by one Sub-Block, or an output nothing else takes, splits.
+One item on several belts, each serving some of a Sub-Block's machine rows with its share of the rate — when one belt cannot carry it all. A Side Input taken by one Sub-Block and an output nothing else takes split between the train and that Sub-Block; an Internal Path from one Sub-Block to one other splits into belts that each take a group of the producer's rows to a group of the consumer's, balanced by machines. A Side Input one belt cannot carry to all its consumers comes as its own route to each.
 _Avoid_: belt balancing, splitters (the parts never join)
 
 **Pipe Row**:

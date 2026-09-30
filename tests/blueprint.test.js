@@ -59,3 +59,46 @@ test('custom pickup and drop vectors appear only on 90° inserters', async () =>
     pickup_position: { x: -1, y: 0 }, drop_position: { x: 0, y: 1.2 },
   });
 });
+
+// Where each train route enters and leaves: a display panel with the item's icon and name just
+// outside the block, west of a Side Input's first tile and east of a Side Output's last one.
+test('display panels mark which item every Side Input and Side Output carries', async () => {
+  const belt = (route, x, y) => ({ name: 'transport-belt', kind: 'belt', route, x, y, w: 1, h: 1, direction: 4 });
+  const pipe = (route, x, y) => ({ name: 'pipe', kind: 'pipe', route, x, y, w: 1, h: 1, direction: 0 });
+  const routes = [
+    { id: 0, kind: 'belt', source: 'side-input', sink: null, items: [{ item: 'moss', rate: 800 }], pieces: [belt(0, 0, 2), belt(0, 1, 2)] },
+    { id: 1, kind: 'belt', source: 'side-input', sink: null, items: [{ item: 'casein', rate: 360 }, { item: 'plastic-bar', rate: 432 }], pieces: [belt(1, 0, 4)] },
+    { id: 2, kind: 'pipe', source: 'side-input', sink: null, fluid: 'water', items: [{ item: 'water', rate: 1200.4 }], pieces: [pipe(2, 3, 6), pipe(2, 0, 7), pipe(2, 1, 7)] },
+    { id: 3, kind: 'belt', source: 0, sink: 'side-output', items: [{ item: 'py-science-pack-2', rate: 450 }], pieces: [belt(3, 5, 9), belt(3, 6, 9)] },
+    { id: 4, kind: 'belt', source: 'side-input', sink: null, items: [{ item: 'iron-plate', rate: 30 }], pieces: [belt(4, 2, 0)], consumers: [0] },
+  ];
+  const { json } = await encodeBlueprint({ subBlocks: [{ item: 'py-science-pack-2' }], entities: routes.flatMap(r => r.pieces), routes }, catalog);
+  const panels = JSON.parse(json).blueprint.entities.filter(e => e.name === 'display-panel')
+    .map(({ position, icon, text, always_show, show_in_chart }) => ({ position, icon, text, always_show, show_in_chart }));
+  const at = (x, y) => ({ x: x + 0.5, y: y + 0.5 });
+  assert.deepEqual(panels, [
+    { position: at(-1, 2), icon: { type: 'item', name: 'moss' }, text: 'moss 800/min', always_show: true, show_in_chart: true },
+    { position: at(-1, 4), icon: { type: 'item', name: 'casein' }, text: 'casein 360/min + plastic-bar 432/min', always_show: true, show_in_chart: true },
+    { position: at(-1, 7), icon: { type: 'fluid', name: 'water' }, text: 'water 1200/min', always_show: true, show_in_chart: true },
+    { position: at(7, 9), icon: { type: 'item', name: 'py-science-pack-2' }, text: 'py-science-pack-2 450/min', always_show: true, show_in_chart: true },
+    { position: at(1, 0), icon: { type: 'item', name: 'iron-plate' }, text: 'iron-plate 30/min', always_show: true, show_in_chart: true },
+  ]);
+});
+
+// Module requests fill the machine's module inventory (4 in Factorio 2.0), one slot each, so
+// construction robots bring the plants along with the farm.
+test("every building requests its Sub-Block's modules, slot by slot", async () => {
+  const { json } = await encodeBlueprint({
+    subBlocks: [{ item: 'moss', modules: [{ name: 'moss-mk02', count: 2 }, { name: 'moss', count: 1 }] }, { item: 'iron-gear-wheel', modules: [] }],
+    entities: [
+      { name: 'moss-farm-mk01', kind: 'building', recipe: 'Moss-1', subBlock: 0, x: 0, y: 0, w: 6, h: 6, direction: 0 },
+      { name: 'assembling-machine-2', kind: 'building', recipe: 'iron-gear-wheel', subBlock: 1, x: 8, y: 0, w: 3, h: 3, direction: 0 },
+    ],
+  }, catalog);
+  const [farm, assembler] = JSON.parse(json).blueprint.entities;
+  assert.deepEqual(farm.items, [
+    { id: { name: 'moss-mk02' }, items: { in_inventory: [{ inventory: 4, stack: 0 }, { inventory: 4, stack: 1 }] } },
+    { id: { name: 'moss' }, items: { in_inventory: [{ inventory: 4, stack: 2 }] } },
+  ]);
+  assert.equal(assembler.items, undefined);
+});

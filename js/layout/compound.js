@@ -5,7 +5,7 @@ import { wirePairs } from './wires.js';
 
 export { RoutingError, PowerError };
 
-const REROUTES = 6;
+const REROUTES = 3;
 
 // Places every Sub-Block's core, routes every belt and pipe, and places poles: one candidate
 // Compound Block. Throws RoutingError or PowerError when the candidate cannot be built.
@@ -62,7 +62,7 @@ export function buildCompound(ctx, layout) {
 
   const beltSpec = catalog.belts[logistics.belt];
   const beltNames = { belt: beltSpec.name, underground: beltSpec.underground.name, reach: beltSpec.underground.maxDistance };
-  const pipeNames = { pipe: 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance };
+  const pipeNames = { pipe: logistics.plainPipe ?? 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance };
   const rowsOf = (i, id) => cores[i].rows.filter(r => idOf(i, r.routeIds[0], r.part) === id)
     .map(r => r.waypoints.map(([x, y]) => [x + placed[i].x, y + placed[i].y]));
   const portTerminals = (i, id) => cores[i].ports.find(p => idOf(i, p.routeId) === id).tiles
@@ -137,13 +137,45 @@ export function buildCompound(ctx, layout) {
 function splitRoutes(baseRoutes, cores, plan, laneCapacity) {
   const routes = [];
   const ids = new Map();
+  // An output part whose rows all drop onto its belt from both sides fills both lanes.
+  const lanesOf = parts => Math.min(...parts.map(p => p.lanes ?? 1));
+  const outputCapacity = (base, parts) => (i => (typeof base.source === 'number' && base.kind === 'belt' && parts.length
+    ? { capacity: i.capacity * lanesOf(parts) } : {}));
   for (const base of baseRoutes) {
+    // An Internal Path from one producer to one consumer splits into parallel belts, each taking
+    // a group of the producer's parts to a group of the consumer's, balanced by machines.
+    const internal = base.kind === 'belt' && typeof base.source === 'number' && base.consumers.length === 1 && base.sink !== 'side-output';
+    if (internal) {
+      const [from, to] = [base.source, base.consumers[0]];
+      const fromParts = cores[from].parts.filter(p => p.routeIds.includes(base.id));
+      const toParts = cores[to].parts.filter(p => p.routeIds.includes(base.id));
+      const groups = Math.min(fromParts.length, toParts.length);
+      if (groups >= 2) {
+        const fromGroups = balanced(fromParts, groups), toGroups = balanced(toParts, groups);
+        for (let j = 0; j < groups; j++) {
+          const machines = parts => parts.reduce((sum, p) => sum + p.machines, 0);
+          const share = { [from]: machines(fromGroups[j]) / plan[from].count, [to]: machines(toGroups[j]) / plan[to].count };
+          const id = routes.length;
+          routes.push({
+            ...base, id, base: base.id, part: j,
+            servesRows: { [from]: fromGroups[j].flatMap(p => p.rows), [to]: toGroups[j].flatMap(p => p.rows) }, share,
+            items: base.items.map(i => ({
+              ...i, rate: i.rate * share[from], supply: i.supply * share[from], ...outputCapacity(base, fromGroups[j])(i),
+            })),
+          });
+          for (const p of fromGroups[j]) ids.set(`${base.id}:${from}:${p.part}`, id);
+          for (const p of toGroups[j]) ids.set(`${base.id}:${to}:${p.part}`, id);
+        }
+        continue;
+      }
+    }
     const owner = base.source === 'side-input' && base.consumers.length === 1 ? base.consumers[0]
       : typeof base.source === 'number' && base.consumers.length === 0 ? base.source : null;
     const parts = owner === null ? [] : cores[owner].parts.filter(p => p.routeIds.includes(base.id));
     if (parts.length < 2 && !parts.some(p => p.routeIds.length > 1)) {
       const id = routes.length;
-      routes.push({ ...base, id, base: base.id });
+      const producerParts = typeof base.source === 'number' ? cores[base.source].parts.filter(p => p.routeIds.includes(base.id)) : [];
+      routes.push({ ...base, id, base: base.id, items: base.items.map(i => ({ ...i, ...outputCapacity(base, producerParts)(i) })) });
       ids.set(`${base.id}`, id);
       continue;
     }
@@ -154,7 +186,7 @@ function splitRoutes(baseRoutes, cores, plan, laneCapacity) {
       const share = part.machines / plan[owner].count;
       const merged = part.routeIds.length > 1;
       const items = part.routeIds.flatMap(id => baseRoutes[id].items.map(i => ({
-        ...i, rate: i.rate * share, ...(isOutput && { supply: i.supply * share }),
+        ...i, rate: i.rate * share, ...(isOutput && { supply: i.supply * share, ...outputCapacity(base, [part])(i) }),
         ...(merged && { capacity: laneCapacity, supply: laneCapacity }),
       })));
       const id = routes.length;
@@ -180,6 +212,23 @@ function serpentine(fromX, segments) {
     const ordered = Math.abs(sorted[0][0] - x) <= Math.abs(sorted.at(-1)[0] - x) ? sorted : sorted.reverse();
     out.push(...ordered);
     x = ordered.at(-1)[0];
+  }
+  return out;
+}
+
+// Parts split into `groups` runs of neighbours with about equal machines each.
+function balanced(parts, groups) {
+  const total = parts.reduce((sum, p) => sum + p.machines, 0);
+  const out = [];
+  let taken = 0;
+  for (let j = 0, k = 0; j < groups; j++) {
+    const group = [];
+    // Leave at least one part for each group still to come.
+    while (k < parts.length - (groups - 1 - j) && (!group.length || taken + parts[k].machines / 2 <= total * (j + 1) / groups)) {
+      taken += parts[k].machines;
+      group.push(parts[k++]);
+    }
+    out.push(group);
   }
   return out;
 }
