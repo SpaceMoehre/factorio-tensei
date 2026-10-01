@@ -1,14 +1,18 @@
-// Py farm data from the Pyanodons Alien Life source, for a catalog that lacks it (one built
-// before module data was recorded) or to correct its farm speeds: every plant and animal module
-// (category, tier, effect) and every farm building (module slots, which modules it takes, its
-// built-in -100% speed and its crafting speed, from py.farm_speed). It runs the mod's building,
-// item and module-restriction prototypes in a Lua VM with Factorio's data stage stubbed out.
-//   git clone https://github.com/pyanodon/pyalienlife
+// Py farm data from the Pyanodons source, for a catalog that lacks it (one built before module
+// data was recorded) or to correct its farm speeds: every plant and animal module (category,
+// tier, effect) and every farm building (module slots, which modules it takes, its built-in -100%
+// speed and its crafting speed, from py.farm_speed). It runs the mods' building, item and
+// module-restriction prototypes, and Alien Life's updates to the other Py mods' farms, in a Lua VM
+// with Factorio's data stage stubbed out. Farms of other Py mods (the moondrop greenhouse of Py
+// High Tech, the guar gum plantation of Py Petroleum Handling, the numal reef of Py Alternative
+// Energy, ...) come from those mods cloned beside pyalienlife:
+//   for m in pyalienlife pyhightech pypetroleumhandling pyalternativeenergy pycoalprocessing \
+//     pyindustry pyfusionenergy pyrawores; do git clone https://github.com/pyanodon/$m; done
 //   node scripts/py-farms.mjs <pyalienlife folder> [catalog.json]
 // A catalog built from the game's own data dump (npm run build-catalog) already has all of this,
 // for the mod versions actually installed.
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import fengari from 'fengari';
 
 const { lua, lauxlib, lualib, to_luastring, to_jsstring } = fengari;
@@ -17,6 +21,11 @@ if (!root || !existsSync(join(root, 'data.lua'))) {
   console.error('usage: node scripts/py-farms.mjs <pyalienlife folder> [catalog.json]');
   process.exit(1);
 }
+// The Py mods in the order the game loads them (dependencies first); those not cloned beside
+// pyalienlife are left out.
+const ORDER = ['pycoalprocessing', 'pyindustry', 'pyfusionenergy', 'pyrawores', 'pyhightech', 'pypetroleumhandling', 'pyalienlife', 'pyalternativeenergy'];
+const folders = Object.fromEntries(ORDER.map(m => [m, m === 'pyalienlife' ? root : join(dirname(root), m)])
+  .filter(([, dir]) => existsSync(join(dir, 'data.lua'))));
 
 // Factorio's data stage, as much of it as the prototypes need: data.raw and data:extend, the Py
 // prototype constructors (whose chained helpers do nothing here), py.farm_speed and
@@ -25,25 +34,40 @@ if (!root || !existsSync(join(root, 'data.lua'))) {
 const PRELUDE = String.raw`
 local P = {}
 setmetatable(P, {
-  __index = function() return P end, __call = function() return P end,
+  __index = function() return P end, __newindex = function() end, __call = function() return P end,
   __add = function() return P end, __sub = function() return P end, __mul = function() return P end,
   __div = function() return P end, __unm = function() return P end, __concat = function() return "" end,
   __len = function() return 0 end, __lt = function() return false end, __le = function() return false end,
 })
 __P = P
-local function vivify() return setmetatable({}, { __index = function(t, k) local v = {} rawset(t, k, v) return v end }) end
+-- A prototype's missing field reads as P too, so code touching fields another mod would have set
+-- goes on.
+local loose = { __index = function() return P end }
+-- P stands for any list too: a loop over it ends at once.
+function ipairs(t)
+  if t == P then return function() return nil end, t, 0 end
+  return function(list, i)
+    local v = list[i + 1]
+    if v == nil or v == P then return nil end
+    return i + 1, v
+  end, t, 0
+end
+local function vivify() return setmetatable({}, { __index = function(t, k) local v = setmetatable({}, loose) rawset(t, k, v) return v end }) end
 data = { raw = setmetatable({}, { __index = function(t, k) local v = vivify() rawset(t, k, v) return v end }) }
 function data.extend(self, list)
   if list == nil then list = self end
   for _, p in ipairs(list) do if type(p) == "table" and p.type and p.name then data.raw[p.type][p.name] = p end end
 end
-local chain = { __index = function(t, k) return function(self) return self end end }
+local chain = loose
 local function register(p)
-  if type(p) == "string" then return P end
+  if type(p) == "string" or p == P then return P end
   if type(p) == "table" and rawget(p, "type") and rawget(p, "name") then data.raw[p.type][p.name] = p end
   return setmetatable(p, chain)
 end
-for _, name in ipairs({ "ITEM", "ENTITY", "RECIPE", "FLUID", "TECHNOLOGY", "TILE", "RESOURCE", "ITEMGROUP", "ITEMSUBGROUP" }) do _G[name] = register end
+-- RECIPE("name"):... and RECIPE.helper(...) alike.
+for _, name in ipairs({ "ITEM", "ENTITY", "RECIPE", "FLUID", "TECHNOLOGY", "TILE", "RESOURCE", "ITEMGROUP", "ITEMSUBGROUP" }) do
+  _G[name] = setmetatable({}, { __call = function(_, p) return register(p) end, __index = function() return P end })
+end
 py = setmetatable({}, { __index = function() return P end })
 function py.farm_speed(num_slots, desired_speed, module_bonus)
   module_bonus = module_bonus or 1
@@ -73,20 +97,26 @@ mods = { base = "2.0", pyalienlife = "3.0", pycoalprocessing = "3.0", pyfusionen
   pyhightech = "3.0", pyrawores = "3.0", pypetroleumhandling = "3.0", pyalternativeenergy = "3.0", pypostprocessing = "3.0" }
 settings = { startup = setmetatable({}, { __index = function() return { value = false } end }) }
 feature_flags = setmetatable({}, { __index = function() return false end })
+-- A path is relative to the mod whose file requires it, or names its mod: __pyhightech__/...
 local loaded = {}
+__mod = "pyalienlife"
 function require(path)
   local mod, rest = path:match("^__([%w%-_]+)__[/.](.*)$")
-  if mod and mod ~= "pyalienlife" then return P end
+  mod = mod or __mod
   rest = (rest or path):gsub("%.lua$", ""):gsub("%.", "/")
-  if loaded[rest] ~= nil then return loaded[rest] end
-  local src = __readfile(rest .. ".lua")
-  if not src then loaded[rest] = P return P end
-  local chunk, err = load(src, "@" .. rest, "t", _ENV)
-  if not chunk then __log("cannot load " .. rest .. ": " .. tostring(err)) loaded[rest] = P return P end
+  local id = mod .. "/" .. rest
+  if loaded[id] ~= nil then return loaded[id] end
+  local src = __readfile(mod, rest .. ".lua")
+  if not src then loaded[id] = P return P end
+  local chunk, err = load(src, "@" .. id, "t", _ENV)
+  if not chunk then __log("cannot load " .. id .. ": " .. tostring(err)) loaded[id] = P return P end
+  local outer = __mod
+  __mod = mod
   local ok, result = pcall(chunk)
-  if not ok then __log("failed in " .. rest .. ": " .. tostring(result)) result = P end
+  __mod = outer
+  if not ok then __log("failed in " .. id .. ": " .. tostring(result)) result = P end
   if result == nil then result = true end
-  loaded[rest] = result
+  loaded[id] = result
   return result
 end
 setmetatable(_G, { __index = function(t, k) return P end })
@@ -124,17 +154,19 @@ for _, m in pairs(rawget(data.raw, "module") or {}) do
     out.modules[#out.modules + 1] = { name = rawget(m, "name"), category = rawget(m, "category"), tier = rawget(m, "tier"), effect = rawget(m, "effect") }
   end
 end
--- A farm another Py mod defines and Alien Life changes has only the fields it changed: its key
--- is its name.
+-- A farm: a machine that cannot run without modules (-100% speed of its own), or one that takes
+-- plants or animals (module-restrictions). One another Py mod defines and Alien Life changes,
+-- with that mod missing, has only the fields Alien Life sets: its key is its name.
 for key, b in pairs(rawget(data.raw, "assembling-machine") or {}) do
   local receiver = type(b) == "table" and rawget(b, "effect_receiver")
   local base = type(receiver) == "table" and rawget(receiver, "base_effect")
-  if type(base) == "table" and rawget(base, "speed") == -1 then
-    local limits = rawget(receiver, "speed_limits")
+  base = type(base) == "table" and base or nil
+  if (base and rawget(base, "speed") == -1) or (type(b) == "table" and type(rawget(b, "allowed_module_categories")) == "table") then
+    local limits = type(receiver) == "table" and rawget(receiver, "speed_limits") or nil
     out.farms[#out.farms + 1] = {
       name = rawget(b, "name") or key, module_slots = rawget(b, "module_slots"), crafting_speed = rawget(b, "crafting_speed"),
       allowed_effects = rawget(b, "allowed_effects"), allowed_module_categories = rawget(b, "allowed_module_categories"),
-      base_effect = base, speed_low = type(limits) == "table" and rawget(limits, "low") or nil,
+      base_effect = base, speed_low = type(receiver) == "table" and type(limits) == "table" and rawget(limits, "low") or nil,
     }
   end
 end
@@ -149,8 +181,9 @@ const jsFunction = (name, fn) => {
   lua.lua_setglobal(L, to_luastring(name));
 };
 jsFunction('__readfile', state => {
-  const path = join(root, to_jsstring(lauxlib.luaL_checkstring(state, 1)));
-  if (existsSync(path)) lua.lua_pushstring(state, to_luastring(readFileSync(path, 'utf8')));
+  const dir = folders[to_jsstring(lauxlib.luaL_checkstring(state, 1))];
+  const path = dir && join(dir, to_jsstring(lauxlib.luaL_checkstring(state, 2)));
+  if (path && existsSync(path)) lua.lua_pushstring(state, to_luastring(readFileSync(path, 'utf8')));
   else lua.lua_pushnil(state);
   return 1;
 });
@@ -169,16 +202,27 @@ const run = (source, name) => {
 };
 run(PRELUDE, 'prelude');
 
-// The prototypes that make farms and their modules, in the order the mod loads them.
-const required = file => [...readFileSync(join(root, file), 'utf8').matchAll(/require\s*\(?\s*"([^"]+)"/g)].map(m => m[1]);
-const wanted = path => /prototypes[/.](buildings|items)[/.]|module-categories|module-restrictions/.test(path) && !path.startsWith('__');
-const files = [...required('data.lua'), ...(existsSync(join(root, 'data-updates.lua')) ? required('data-updates.lua') : [])].filter(wanted);
-for (const items of ['items/items', 'items/items2', 'items/pyhightech-items', 'items/pyalternativeenergy-items']) {
-  if (files.some(f => f.endsWith(items))) continue;
-  const restrictions = files.findIndex(f => f.includes('module-restrictions'));
-  files.splice(restrictions < 0 ? files.length : restrictions, 0, `prototypes/${items}`);
+// The prototypes that make farms and their modules, in the order the game loads them: every
+// mod's data stage, then every mod's updates — Alien Life's updates to the other Py mods give
+// their farms (moondrop greenhouse, guar gum plantation, ...) slots and speeds.
+const required = (dir, file) => (existsSync(join(dir, file)) ? [...readFileSync(join(dir, file), 'utf8').matchAll(/require\s*\(?\s*"([^"]+)"/g)].map(m => m[1]) : []);
+const wanted = path => /prototypes[/.](buildings|items|updates)[/.]|module-categories|module-restrictions/.test(path) && !path.startsWith('__');
+for (const stage of ['data.lua', 'data-updates.lua']) {
+  for (const [mod, dir] of Object.entries(folders)) {
+    const files = required(dir, stage).filter(wanted);
+    // Alien Life's plants and animals: their item files are required from elsewhere.
+    if (mod === 'pyalienlife' && stage === 'data.lua') {
+      for (const items of ['items/items', 'items/items2', 'items/pyhightech-items', 'items/pyalternativeenergy-items']) {
+        if (files.some(f => f.endsWith(items))) continue;
+        const restrictions = files.findIndex(f => f.includes('module-restrictions'));
+        files.splice(restrictions < 0 ? files.length : restrictions, 0, `prototypes/${items}`);
+      }
+    }
+    for (const file of files) run(`require(${JSON.stringify(`__${mod}__/${file}`)})`, `${mod}/${file}`);
+  }
 }
-for (const file of files) run(`require(${JSON.stringify(file)})`, file);
+const absent = ORDER.filter(m => !folders[m]);
+if (absent.length) console.log(`not beside pyalienlife, so their farms are left as they are: ${absent.join(', ')}`);
 const { modules, farms } = JSON.parse(run(EXTRACT, 'extract'));
 
 const catalog = JSON.parse(readFileSync(catalogPath, 'utf8'));
@@ -198,9 +242,11 @@ for (const f of farms) {
     moduleSlots: f.module_slots,
     ...(f.allowed_effects && { allowedEffects: [f.allowed_effects].flat() }),
     ...(f.allowed_module_categories && { allowedModuleCategories: [f.allowed_module_categories].flat() }),
-    baseEffect: f.base_effect,
     ...(f.speed_low !== undefined && f.speed_low !== null && { speedLow: f.speed_low }),
   });
+  // A farm that runs without modules (Py's own guar gum plantation mk03) has no base effect.
+  if (f.base_effect) b.baseEffect = f.base_effect;
+  else delete b.baseEffect;
   patched++;
 }
 writeFileSync(catalogPath, JSON.stringify(catalog));
