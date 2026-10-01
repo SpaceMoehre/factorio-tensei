@@ -53,7 +53,16 @@ export function* search(entries, catalog, logistics, options = {}) {
     let block;
     try {
       const positions = placeBlocks(ctx, ready, candidate);
-      block = finishBlock(compose(ctx, ready, positions, { margin: { w: 0, e: 0, n: 1, s: 1 } }), catalog, logistics);
+      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 } };
+      let composed;
+      try {
+        composed = compose(ctx, ready, positions, layout);
+      } catch (e) {
+        // Splitters took the room a link needed: the same layout without them.
+        if (!(e instanceof RoutingError) || !ready.routes.some(r => r.splitter)) throw e;
+        composed = compose(ctx, ready, positions, { ...layout, plain: true });
+      }
+      block = finishBlock(composed, catalog, logistics);
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
       failure = e;

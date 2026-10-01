@@ -5,6 +5,9 @@ const TUNNEL_COST = 2;
 // How far back a growing leg checks itself for crossings; the whole leg is checked on arrival.
 const RECENT_STEPS = 8;
 const EXPANSIONS_PER_TILE = 12;
+// Links weigh the distance left a little above the cost so far (weighted A*): a leg goes
+// straight for its goal instead of trying every equally short detour first.
+const GREED = 1.5;
 // However large the area, a leg gives up after this many expansions plus a few hundred for each
 // tile it has to cover: a path that exists is found long before.
 const EXPANSIONS_MAX = 20000;
@@ -73,7 +76,7 @@ export function routeLink(grid, spec, names) {
   const moves = beltMoves(grid, spec, names, new Set(), { key: null, last: false });
   const { goal } = spec;
   const [isGoal, heuristic] = typeof goal === 'string' ? edgeGoal(grid, goal)
-    : [s => s.x === goal.x && s.y === goal.y && s.a === goal.a, (x, y) => Math.abs(x - goal.x) + Math.abs(y - goal.y)];
+    : [s => s.x === goal.x && s.y === goal.y && s.a === goal.a, (x, y) => GREED * (Math.abs(x - goal.x) + Math.abs(y - goal.y))];
   if (spec.starts.some(s => isGoal(s))) return pieces;
   const leg = search(grid, spec.starts, isGoal, heuristic, moves,
     typeof goal === 'string' ? undefined : () => !reachable(grid, spec.id, spec.starts, goal.x, goal.y, names.reach, new Set()));

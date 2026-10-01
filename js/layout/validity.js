@@ -48,6 +48,16 @@ export function routeChain(route, catalog, logistics, entities) {
           .find(e => e !== a && e !== b && (dx ? (e.x - a.x) / dx > 0 && (e.x - a.x) / dx < hop : (e.y - a.y) / dy > 0 && (e.y - a.y) / dy < hop));
         if (between) problems.push(`route ${route.id}: tunnel at ${a.x},${a.y} is interleaved with ${between.name} at ${between.x},${between.y}`);
       }
+    } else if (a.kind === 'splitter' || b.kind === 'splitter') {
+      // A splitter spans two tiles across its travel: the belt meets it, and leaves it, in line.
+      const s = a.kind === 'splitter' ? a : b, other = s === a ? b : a;
+      const [sx, sy] = DIR[s.direction];
+      const lane = sx ? other.y - s.y : other.x - s.x;
+      const ahead = s === a ? 1 : -1;
+      const along = sx ? (other.x - s.x) * sx : (other.y - s.y) * sy;
+      if (lane < 0 || lane > 1 || along !== ahead || (s === b && a.travel !== s.direction)) {
+        problems.push(`route ${route.id}: piece ${i} at ${a.x},${a.y} does not feed piece ${i + 1} at ${b.x},${b.y}`);
+      }
     } else if (b.x !== a.x + dx || b.y !== a.y + dy) {
       problems.push(`route ${route.id}: piece ${i} at ${a.x},${a.y} does not feed piece ${i + 1} at ${b.x},${b.y}`);
     }

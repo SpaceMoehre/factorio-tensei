@@ -73,7 +73,7 @@ What the layout search minimizes when comparing valid Compound Blocks: the bound
 _Avoid_: size, footprint (ambiguous between area and entity count)
 
 **Band**:
-The rows of belts beside a row of machines, counted outward from the machines' face (row 1 against the machines). Inserters stand in rows 1 and 2 and reach belts up to row 4. Two facing machine rows share the band between them: both reach its belts.
+The rows of belts beside a row of machines, counted outward from the machines' face (row 1 against the machines). Inserters stand in rows 1 and 2 and reach belts up to row 4. A long-handed inserter reaches no further than it must (custom vectors): its belt, and the machine's nearest tile. Two facing machine rows share the band between them: both reach its belts.
 _Avoid_: lane (a Lane is one side of a belt), belt row index without saying which face it counts from
 
 **Placement**:
@@ -101,7 +101,7 @@ An underground belt (or pipe-to-ground) segment, used (1) reactively, whenever a
 _Avoid_: tunnel as purely a crossing-avoidance fallback (it's also a compaction tool); a fixed hop length
 
 **Lane**:
-One of a belt's two sides, each carrying half the belt's throughput. Straight output inserters drop only onto the lane farther from them, so a machine fills one lane and a belt fed from one side carries at most half a belt; machine rows on both sides of it fill both lanes, as do the inserters either side of a Head-on Belt, and 90° inserters dropping along the belt, each onto the lane its drop point chooses. A belt takes as many machines as fit a lane on each side of it: five machines making 180/min each cannot fill one 900/min belt (three of them share a lane).
+One of a belt's two sides, each carrying half the belt's throughput. Straight output inserters drop onto the lane farther from them, so a machine fills one lane and a belt fed from one side carries at most half a belt — unless they carry custom vectors (90° inserters switched on): then every output drops on the belt's middle and the module picks each drop's lane; machine rows on both sides of it fill both lanes, as do the inserters either side of a Head-on Belt, and 90° inserters dropping along the belt, each onto the lane its drop point chooses. A belt takes as many machines as fit a lane on each side of it: five machines making 180/min each cannot fill one 900/min belt (three of them share a lane).
 _Avoid_: treating a belt as one undivided stream
 
 **Belt Merge**:
@@ -110,7 +110,12 @@ _Avoid_: merging belts that don't share a route
 
 **Parallel Belts**:
 One item on several belts, each serving some of a Sub-Block's machine rows with its share of the rate — when one belt cannot carry it all. A Side Input taken by one Sub-Block and an output nothing else takes split between the train and that Sub-Block, one belt chaining as many Copies' parts as it can carry; an Internal Path from one Sub-Block to one other runs on as many belts as its rate and its producer's lanes need (no more than either end has machines), each taking a run of the producer's parts to a run of the consumer's: the consumer's runs about equal by machines, the producer's making about what each takes. A Side Input one belt cannot carry to all its consumers comes as its own route to each.
-_Avoid_: belt balancing, splitters (the parts never join)
+Two belts of one Internal Path that bring their consumers too little and too much pass through a Splitter on the way.
+_Avoid_: merging parts on one belt (a part's belt carries one run of producers)
+
+**Splitter**:
+Two belts of one Internal Path side by side through a splitter between the producers and the consumers: each consumer run gets what it takes from both belts' supply, so a belt of three producers' parts and a belt of one no longer starve the run fed by the one. Paired greedily, the belt short the most with the one to spare the most. Where no splitter fits, the belts go straight on.
+_Avoid_: balancer (only pairs are joined)
 
 **Pipe Row**:
 A row of a Band kept for one fluid's pipe, joining every connection of that fluid in the Band. A connection elsewhere in the Band dives under the belts to a tap just before the Pipe Row. Pipe Rows of one fluid in different Bands join in a riser beside the Sub-Block.

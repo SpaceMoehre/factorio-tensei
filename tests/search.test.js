@@ -147,6 +147,20 @@ test('Py small parts at 600/min, hand size 1: every machine fed, both output lan
   assertValid(block, pyCatalog, logistics);
 });
 
+// Py small parts at 900/min: three bolt factories make 1350 a minute for two small parts
+// factories, more than one belt carries. Two belts bring 900 and 450; a splitter between them
+// gives each consumer its 675. Output inserters pick their lane (custom vectors), so one row of
+// machines fills both lanes.
+test('Py small parts at 900/min: a splitter balances two belts, nothing starves', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 900 }], pyCatalog, { made: items.slice(1), selections });
+  const block = solve(entries, pyCatalog, logistics, { maxCandidates: 40 });
+  assert.ok(block.entities.some(e => e.kind === 'splitter'));
+  assert.deepEqual(simulate(block).starvation, []);
+  assertValid(block, pyCatalog, logistics);
+});
+
 // Py small parts at 1200/min: 26 automated factories. Each Internal Path runs on as many belts as
 // both ends split into (iron sticks from copies of a module snaking through them, bolts and
 // cable part to part), so every belt links a run of producers to a run of consumers.

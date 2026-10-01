@@ -5,7 +5,8 @@ import { trim } from './module.js';
 
 export { RoutingError, PowerError };
 
-const REROUTES = 3;
+const REROUTES = 1;
+const SPLITTER_TRIES = 3;
 
 // The copies of every Sub-Block's modules and the global routes between them, before any of
 // them is placed. designs: per Sub-Block { kinds: [{ module, count }] }; columns: per Sub-Block,
@@ -23,7 +24,7 @@ export function prepare(ctx, designs, columns = []) {
 // Belts of one route chain through as many copies as one belt can carry; pipes join every copy's
 // stub of a fluid into one network. Poles are placed later, over the whole block (compact.js).
 // prepared: from prepare(); positions: each copy's top-left corner (its module's area)
-// layout: { margin, routeOrder }
+// layout: { margin, routeOrder, plain (no splitters: paired belts go straight on) }
 // Throws RoutingError or PowerError when the layout cannot be built.
 export function compose(ctx, prepared, positions, layout) {
   const { plan, catalog, logistics } = ctx;
@@ -137,6 +138,11 @@ export function compose(ctx, prepared, positions, layout) {
     for (const route of routes.filter(r => r.kind === 'belt')) {
       route.slots.forEach((slot, k) => {
         if (k === 0 && route.source !== 'side-input') return;
+        // A pair of belts through a splitter is routed as one task, by the first of the pair.
+        if (route.splitter && k === route.splitter.at && !layout.plain) {
+          if (route.id < route.splitter.with) tasks.push({ route, slot: k, split: true });
+          return;
+        }
         tasks.push({ route, slot: k });
       });
       if (route.sink === 'side-output') tasks.push({ route, slot: route.slots.length });
@@ -205,6 +211,8 @@ export function compose(ctx, prepared, positions, layout) {
   const keyOf = t => (t.pipe !== undefined ? `p${t.pipe}` : `${t.route.id}:${t.slot}`);
   let order = null;
   const tried = new Set();
+  let balanced = new Set();
+  const splitterName = beltSpec.splitter ?? beltSpec.name.replace(/transport-belt$/, 'splitter');
   for (;;) {
     const { grid, entities, pieces } = placeAll();
     // Slot pieces exist once placed: rank the links now (the first time).
@@ -217,11 +225,20 @@ export function compose(ctx, prepared, positions, layout) {
     }
     tried.add(order.map(keyOf).join());
     const links = new Map();
+    balanced = new Set();
     let failed = null;
     for (const task of order) {
       try {
         if (task.pipe !== undefined) {
           pieces[task.pipe].push(...routeFluid(grid, routes[task.pipe]));
+          continue;
+        }
+        if (task.split) {
+          const legs = routeSplit(grid, task.route, routes[task.route.splitter.with]);
+          for (const [id, leg] of legs) {
+            if (!links.has(id)) links.set(id, new Map());
+            links.get(id).set(routes[id].splitter.at, leg);
+          }
           continue;
         }
         const ends = endsOf(task);
@@ -243,12 +260,66 @@ export function compose(ctx, prepared, positions, layout) {
     if (tried.has(order.map(keyOf).join()) || tried.size > REROUTES) throw failed.error;
   }
 
+  // Two belts of one Internal Path through a splitter, each in its own lane of it and out the
+  // same lane: the splitter stands where both belts reach it with the least belt, between where
+  // they leave their producers and reach their consumers. Without room for one, each goes
+  // straight on (unbalanced). Returns [routeId, pieces] for both.
+  function routeSplit(grid, a, b) {
+    const ea = endsOf({ route: a, slot: a.splitter.at }), eb = endsOf({ route: b, slot: b.splitter.at });
+    const plain = () => [[a.id, routeLink(grid, { id: a.id, starts: ea.starts, goal: ea.goal }, belts)],
+      [b.id, routeLink(grid, { id: b.id, starts: eb.starts, goal: eb.goal }, belts)]];
+    const [pa, pb] = [ea.starts[0], eb.starts[0]];
+    const [ca, cb] = [/** @type {any} */ (ea.goal), /** @type {any} */ (eb.goal)];
+    const xs = [pa.x, pb.x, ca.x, cb.x], ys = [pa.y, pb.y, ca.y, cb.y];
+    const dist = (p, x, y) => Math.abs(p.x - x) + Math.abs(p.y - y);
+    const open = (x, y) => grid.inBounds(x, y) && !grid.at(x, y) && grid.holder(x, y) === undefined;
+    const openFor = (x, y, id) => grid.inBounds(x, y) && grid.freeFor(x, y, id);
+    const options = [];
+    for (let x = Math.min(...xs) + 1; x <= Math.max(...xs) - 1; x++) {
+      for (let y = Math.min(...ys) - 3; y <= Math.max(...ys) + 2; y++) {
+        if (!open(x, y) || !open(x, y + 1)) continue;
+        for (const [top, bottom, pt, pbo, ct, cbo] of [[a, b, pa, pb, ca, cb], [b, a, pb, pa, cb, ca]]) {
+          if (!openFor(x - 1, y, top.id) || !openFor(x - 1, y + 1, bottom.id) || !openFor(x + 1, y, top.id) || !openFor(x + 1, y + 1, bottom.id)) continue;
+          const cost = dist(pt, x - 1, y) + dist(pbo, x - 1, y + 1) + dist(ct, x + 1, y) + dist(cbo, x + 1, y + 1);
+          options.push({ x, y, top, bottom, pt, pbo, ct, cbo, cost });
+        }
+      }
+    }
+    options.sort((p, q) => p.cost - q.cost);
+    for (const o of options.slice(0, SPLITTER_TRIES)) {
+      const saved = grid.snapshot();
+      const held = [[o.x - 1, o.y], [o.x - 1, o.y + 1], [o.x + 1, o.y], [o.x + 1, o.y + 1]];
+      const before = held.map(([x, y]) => grid.holder(x, y));
+      held.forEach(([x, y], i) => grid.reserve(x, y, (i % 2 ? o.bottom : o.top).id));
+      const splitter = { name: splitterName, kind: 'splitter', x: o.x, y: o.y, w: 1, h: 2, direction: E, travel: E };
+      grid.place(splitter);
+      try {
+        const leg = (id, starts, goal) => routeLink(grid, { id, starts, goal }, belts);
+        const inTop = leg(o.top.id, [o.pt], { x: o.x, y: o.y, a: E });
+        const inBottom = leg(o.bottom.id, [o.pbo], { x: o.x, y: o.y + 1, a: E });
+        const outTop = leg(o.top.id, [{ x: o.x + 1, y: o.y, a: E }], o.ct);
+        const outBottom = leg(o.bottom.id, [{ x: o.x + 1, y: o.y + 1, a: E }], o.cbo);
+        balanced.add(a.id).add(b.id);
+        return [[o.top.id, [...inTop, splitter, ...outTop]], [o.bottom.id, [...inBottom, splitter, ...outBottom]]];
+      } catch (e) {
+        if (!(e instanceof RoutingError)) throw e;
+        grid.restore(saved);
+        held.forEach(([x, y], i) => {
+          if (before[i] === undefined) grid.unreserve(x, y);
+          else grid.reserve(x, y, before[i]);
+        });
+      }
+    }
+    return plain();
+  }
+
   function finish(grid, entities, pieces) {
     const result = routes.map(r => {
-      const { slots, stubs, ...rest } = r;
-      return { ...rest, pieces: pieces[r.id] };
+      const { slots, stubs, splitter, ...rest } = r;
+      return { ...rest, ...(balanced.has(r.id) ? { items: splitter.items, balancedWith: splitter.with } : {}), pieces: pieces[r.id] };
     });
-    for (const r of result) for (const p of r.pieces) entities.push(p);
+    const seen = new Set();
+    for (const r of result) for (const p of r.pieces) if (!seen.has(p)) { seen.add(p); entities.push(p); }
     const subBlocks = plan.map((sb, i) => {
       const mine = instances.filter(inst => inst.step === i);
       const box = extentOf(mine.map(inst => placed[inst.index]), { w: 0, e: 0, n: 0, s: 0 });
@@ -401,6 +472,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const making = prefix(producers, production);
       let fallback = null;
       groups = null;
+      const supplied = g => Math.min(made(g.producers), carries(g.producers));
       for (let count = 1; count <= most && !groups; count++) {
         const cs = consumerRuns(count);
         if (!cs) continue;
@@ -408,9 +480,12 @@ function groupRoutes(ctx, instances, laneCapacity) {
         const ps = splits(producers, count, chainable, () => true, endsEast, (k, i, j) => (making(i, j) - targets[k]) ** 2)(count);
         if (!ps) continue;
         const option = ps.map((run, j) => ({ producers: run, consumers: cs[j] }));
-        const short = option.reduce((sum, g) => sum + Math.max(0, wants(g.consumers) - Math.min(made(g.producers), carries(g.producers))), 0);
-        if (short < 1e-6) groups = option;
-        else if (!fallback || short < fallback.short - 1e-6) fallback = { option, short };
+        const short = option.reduce((sum, g) => sum + Math.max(0, wants(g.consumers) - supplied(g)), 0);
+        // Belts that bring too little pair up with belts that bring too much: a splitter between
+        // them gives each what its consumers take (balanced if it fails to route).
+        const paired = short < 1e-6 ? 0 : balance(option, supplied, g => wants(g.consumers), 2 * laneCapacity);
+        if (short < 1e-6 || paired < 1e-6) groups = option;
+        else if (!fallback || Math.min(short, paired) < fallback.short - 1e-6) fallback = { option, short: Math.min(short, paired) };
       }
       groups ??= fallback?.option;
       if (!groups) throw new RoutingError(`${base.items[0].item}: no belts chain ${plan[base.source].recipe}'s machines to ${plan[base.consumers[0]].recipe}'s`);
@@ -420,16 +495,49 @@ function groupRoutes(ctx, instances, laneCapacity) {
       if (all.some((s, k) => k > 0 && !chainable(all[k - 1], s))) throw new RoutingError(`${base.items[0].item}: one belt cannot chain every machine that makes or takes it`);
       groups = [{ producers, consumers }];
     }
+    const total = products.reduce((sum, o) => sum + o.rate, 0);
+    const itemsOf = (made, capacity) => base.items.map(i => ({ ...i, rate: i.rate * made / total, supply: i.supply * made / total, capacity, lane: 'out' }));
+    const first = routes.length;
     for (const g of groups) {
       const slots = [...g.producers, ...g.consumers];
       const made = g.producers.reduce((sum, s) => sum + production(s), 0);
-      const capacity = carries(g.producers);
-      const share = made / products.reduce((sum, o) => sum + o.rate, 0);
-      const its = base.items.map(i => ({ ...i, rate: i.rate * share, supply: i.supply * share, capacity, lane: 'out' }));
-      routes.push(beltRoute(routes.length, base, [base.id], its, slots, plan));
+      routes.push(beltRoute(routes.length, base, [base.id], itemsOf(made, carries(g.producers)), slots, plan));
     }
+    // Paired belts: after the splitter each carries a share of both belts' supply, in proportion
+    // to what its consumers take.
+    groups.forEach((/** @type {any} */ g, j) => {
+      if (g.pair === undefined || g.pair < j) return;
+      const h = /** @type {any} */ (groups[g.pair]);
+      const [a, b] = [routes[first + j], routes[first + g.pair]];
+      const made = [g, h].map(x => x.producers.reduce((sum, s) => sum + production(s), 0));
+      const carried = [g, h].map(x => carries(x.producers));
+      const want = [g, h].map(x => x.consumers.reduce((sum, s) => sum + base.items.reduce((t, i) => t + flowOf(s.inst.step, i.item, 'input') * shareOf(s), 0), 0));
+      const frac = want[0] / (want[0] + want[1]);
+      const sum = (list, f) => list[0] * f + list[1] * f;
+      a.splitter = { with: b.id, at: g.producers.length, items: itemsOf(sum(made, frac), sum(carried, frac)) };
+      b.splitter = { with: a.id, at: h.producers.length, items: itemsOf(sum(made, 1 - frac), sum(carried, 1 - frac)) };
+    });
   }
   return routes;
+}
+
+// Pairs belts of one Internal Path so a splitter between each pair makes up their shortfall:
+// greedily, the belt short the most with the one to spare the most (its consumers taking at most
+// `belt`). Marks each pair (g.pair) and returns what is still short.
+function balance(groups, supplied, wants, belt) {
+  const spare = groups.map((g, j) => ({ j, s: supplied(g) - wants(g) }));
+  const short = spare.filter(x => x.s < -1e-6).sort((a, b) => a.s - b.s);
+  const extra = spare.filter(x => x.s > 1e-6).sort((a, b) => b.s - a.s);
+  let left = 0;
+  for (const x of short) {
+    const y = wants(groups[x.j]) <= belt + 1e-6 ? extra.shift() : undefined;
+    if (y) {
+      groups[x.j].pair = y.j;
+      groups[y.j].pair = x.j;
+    }
+    left += Math.max(0, -(x.s + (y?.s ?? 0)));
+  }
+  return left;
 }
 
 function beltRoute(id, base, bases, items, slots, plan) {

@@ -175,12 +175,15 @@ export function buildCore(sb, building, links, variant, env) {
   const slots = access.map(a => {
     const reach = REACH[a.depth];
     const spec = reach.long ? env.inserters.long : env.inserters.short;
-    const rate = inserterRate(spec, reach.turn, env.handSize);
+    // A long-handed inserter reaches no further than it must (custom vectors): its belt `depth -
+    // row` tiles out, the machine's first tile `row` tiles in.
+    const short = reach.long && env.rightAngle && spec.customVectors ? { pickup: a.depth - reach.row, insert: reach.row } : null;
+    const rate = inserterRate(spec, reach.turn, env.handSize, short);
     const isOutput = a.belt.routeIds.includes(links.output);
     const items = a.belt.routeIds.flatMap(id => routeItems(sb, env.routes[id], isOutput));
     const demand = items.reduce((sum, i) => sum + i.rate, 0) / sb.count;
     return {
-      ...a, spec, rate, isOutput, items, demand, id: belts.indexOf(a.belt),
+      ...a, spec, rate, short, free: env.rightAngle && spec.customVectors, isOutput, items, demand, id: belts.indexOf(a.belt),
       needed: Math.max(1, Math.ceil(demand / rate - 1e-9)),
       insY: faceY(a.r, a.side, reach.row), beltY: faceY(a.r, a.side, a.depth), columns: [],
     };
@@ -362,7 +365,9 @@ export function buildCore(sb, building, links, variant, env) {
     // Inserters drop onto the lane farther from them: a belt between two rows gets both lanes
     // filled, a belt beside one row only one. A 90° inserter drops along its belt, on a lane
     // nothing decides.
-    if (b.serves.length < 2 || access.some(a => a.belt === b && a.depth === 1 && b.routeIds.includes(links.output))) part.lanes = 1;
+    // With custom vectors every output drop chooses its lane.
+    const free = env.rightAngle && b.routeIds.includes(links.output) && access.some(a => a.belt === b && a.depth >= 2);
+    if (!free && (b.serves.length < 2 || access.some(a => a.belt === b && a.depth === 1 && b.routeIds.includes(links.output)))) part.lanes = 1;
   }
   // A Side Belt fills one lane; a Head-on Belt both, from inserters either side of it. Nothing
   // feeds a head-on output from behind (the machine is there), and a head-on input ends against
@@ -471,7 +476,12 @@ export function buildCore(sb, building, links, variant, env) {
       for (const k of order) {
         if (fits()) break;
         if (!free(column, y0 + k)) continue;
-        add(column, y0 + k, spec, 180, null, { direction: isOutput ? toward : away });
+        // A long-handed one reaches the machine against it, no further (custom vectors).
+        const near = line.slot === 2 && env.rightAngle && spec.customVectors;
+        const vectors = near && (isOutput
+          ? { pickup: { x: -out, y: 0 }, drop: { x: out * 2.2, y: 0 } }
+          : { pickup: { x: out * 2, y: 0 }, drop: { x: -out, y: 0 } });
+        add(column, y0 + k, spec, 180, near ? { pickup: 2, insert: 1 } : null, { direction: isOutput ? toward : away, ...(near ? { vectors } : {}) });
         inserters.at(-1).pick = [x, y0 + k];
       }
       if (!inserters.length) throw new LayoutError('no room for a side belt\'s inserters');
@@ -523,6 +533,14 @@ export function buildCore(sb, building, links, variant, env) {
       e.vectors = s.isOutput
         ? { pickup: { x: tx * pick, y: ty * pick }, drop: { x: side * drop, y: 0 } }
         : { pickup: { x: side * pick, y: 0 }, drop: { x: tx * drop, y: ty * drop } };
+    } else if (s.short || (s.isOutput && s.free)) {
+      const [tx, ty] = VEC[toward], [ax, ay] = VEC[away];
+      const [machine, belt] = s.short ? [s.short.insert, s.short.pickup] : [s.depth - 1, 1];
+      // An output drops on the belt's middle: the module picks its lane (module.js chooseLanes),
+      // so one row of machines fills both lanes.
+      e.vectors = s.isOutput
+        ? { pickup: { x: tx * machine, y: ty * machine }, drop: { x: ax * belt, y: ay * belt } }
+        : { pickup: { x: ax * belt, y: ay * belt }, drop: { x: tx * machine, y: ty * machine } };
     }
     return e;
   }

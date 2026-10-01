@@ -87,6 +87,12 @@ export class Grid {
     if (i >= 0) this.held[i] = routeId;
   }
 
+  unreserve(x, y) {
+    this.reserved.delete(key(x, y));
+    const i = this.index(x, y);
+    if (i >= 0) this.held[i] = FREE;
+  }
+
   // The route a tile is held for (undefined when none).
   holder(x, y) {
     const i = this.index(x, y);
