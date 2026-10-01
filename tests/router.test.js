@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Grid, E, S, W } from '../js/layout/grid.js';
+import { Grid, N, E, S, W } from '../js/layout/grid.js';
 import { routeBelt, routePipe } from '../js/layout/router.js';
 
 const belts = { belt: 'transport-belt', underground: 'underground-belt', reach: 5 };
@@ -78,4 +78,18 @@ test('a tunnel surfacing on a waypoint must leave the belt somewhere to go', () 
   const pieces = routeBelt(grid, { id: 0, start: { tiles: [[2, 0]], dir: S }, waypoints: [[2, 2], [0, 2]], end: 'dead' }, belts);
   assert.ok(pieces.some(p => p.x === 2 && p.y === 2 && p.underground !== 'output'), 'the belt passes (2,2)');
   assert.ok(pieces.some(p => p.x === 0 && p.y === 2), 'the belt reaches the last waypoint');
+});
+
+// A connection at (2,4) facing north, inserters either side of it and another route's belt row
+// in front (y=3): the pipe dives out under the belt through a pipe-to-ground and surfaces beyond.
+test('an enclosed fluid connection dives out under the inserters and belts through a pipe-to-ground', () => {
+  const grid = new Grid({ x: 0, y: 0, w: 5, h: 5 });
+  wall(grid, 1, 4); wall(grid, 3, 4);
+  for (let x = 0; x < 5; x++) grid.reserve(x, 3, 9);
+  grid.reserveFluidPort(2, 4, 0);
+  const pieces = routePipe(grid, { id: 0, fluid: 'water', terminals: [[2, 4, N]], source: true, sink: false }, pipes);
+  const [entrance, exit] = pieces.filter(p => p.kind === 'pipe-to-ground');
+  assert.deepEqual([entrance.x, entrance.y], [2, 4]);
+  assert.ok(exit.x === 2 && exit.y < 3, `surfaces at ${exit.x},${exit.y}`);
+  assert.ok(pieces.some(p => p.x === 0), 'the pipe reaches the west edge');
 });

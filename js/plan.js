@@ -1,4 +1,4 @@
-import { machineEffect } from './modules.js';
+import { machineEffect, defaultModules } from './modules.js';
 
 // logistics.fuel: the Fuel item burner machines burn.
 export function planSubBlocks(entries, catalog, logistics = {}) {
@@ -9,7 +9,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
     seen.add(goal.item);
     const recipe = catalog.recipes[selection.recipe];
     const building = catalog.buildings[selection.building];
-    const modules = selection.modules ?? [];
+    // A selection that names no modules gets the step's default (a Py farm full of its first plant).
+    const modules = selection.modules ?? defaultModules(catalog, selection.recipe, selection.building);
     const effect = machineEffect(catalog, selection.recipe, selection.building, modules);
     // Productivity adds to every product of a craft.
     const perCraft = recipe.products.find(p => p.name === goal.item).amount * (1 + effect.productivity);

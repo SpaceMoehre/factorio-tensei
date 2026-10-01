@@ -3,6 +3,7 @@
 //   node scripts/measure.mjs [samples=300] [seed=1] [budgetMs]   (VERBOSE=1 lists each failure)
 import { readFileSync } from 'node:fs';
 import { solve } from '../js/solve.js';
+import { machineEffect, defaultModules } from '../js/modules.js';
 
 const [samples = 300, seed = 1, budget] = process.argv.slice(2).map(Number);
 const catalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
@@ -47,7 +48,9 @@ let solved = 0, total = 0, time = 0;
 for (let n = 0; n < samples; n++) {
   const { recipe, building, product } = runnable[Math.floor(random() * runnable.length)];
   const count = 2 + Math.floor(random() * 3);
-  const perMachine = building.craftingSpeed / recipe.time * product.amount * 60;
+  // With the step's default modules: a Py farm runs full of its first plant or animal.
+  const speed = machineEffect(catalog, recipe.name, building.name, defaultModules(catalog, recipe.name, building.name)).speed;
+  const perMachine = building.craftingSpeed * speed / recipe.time * product.amount * 60;
   const entry = { goal: { item: product.name, rate: perMachine * (count - 0.5) }, selection: { recipe: recipe.name, building: building.name } };
   const start = performance.now();
   try {

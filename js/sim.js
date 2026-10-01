@@ -29,13 +29,15 @@ export function simulate(block) {
 }
 
 // A machine gets no more than its inserters for a route can move, however full the belt. Each
-// of the Count machines needs an equal share; items merged on one belt share its inserters.
+// of the Count machines needs an equal share; items merged on one belt share its inserters. Each
+// set of inserters answers for the machines it serves (a Sub-Block's copies may take items merged
+// where its leftover module takes them apart).
 function inserterStarvation(sb, index) {
   const found = [];
   for (const { route, role = 'input', items, perMachine } of sb.inserters ?? []) {
     const flows = role === 'input' ? sb.inputs : sb.outputs;
-    const demand = flows.filter(f => items.includes(f.name)).reduce((sum, f) => sum + f.rate, 0);
-    const share = demand / sb.count;
+    const share = flows.filter(f => items.includes(f.name)).reduce((sum, f) => sum + f.rate, 0) / sb.count;
+    const demand = share * perMachine.length;
     const available = perMachine.reduce((sum, rate) => sum + Math.min(rate, share), 0);
     if (demand > available + EPSILON) found.push({ route, subBlock: index, item: items.join(' + '), demand, available, cause: 'inserters' });
   }

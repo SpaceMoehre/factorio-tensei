@@ -33,12 +33,15 @@ test('Side Input route enters at the west edge and an inserter feeds every machi
 
 const machinesOf = (block, recipe) => block.entities.filter(e => e.kind === 'building' && e.recipe === recipe);
 
+// The cable may run on parallel belts: together they drain every cable machine and feed every
+// circuit machine.
 test('Internal Path carries the producer output into every consumer machine', () => {
   const block = solve([asm2('electronic-circuit', 300), asm2('copper-cable', 900)], catalog, logistics);
-  const route = block.routes.find(r => r.items.some(i => i.item === 'copper-cable'));
-  assert.equal(route.sink, null);
-  assertDrainsEveryMachine(block, route, machinesOf(block, 'copper-cable'), catalog);
-  assertFeedsEveryMachine(block, route, machinesOf(block, 'electronic-circuit'), catalog);
+  const routes = block.routes.filter(r => r.items.some(i => i.item === 'copper-cable'));
+  assert.ok(routes.every(r => r.sink === null));
+  const cable = { id: 'copper-cable', pieces: routes.flatMap(r => r.pieces) };
+  assertDrainsEveryMachine(block, cable, machinesOf(block, 'copper-cable'), catalog);
+  assertFeedsEveryMachine(block, cable, machinesOf(block, 'electronic-circuit'), catalog);
   for (const r of block.routes) assertRouteChain(block, r, catalog, logistics);
   assertNoOverlaps(block.entities);
   assertValid(block, catalog, logistics);
@@ -130,10 +133,11 @@ test('fluids: each fluid is one pipe network reaching every machine, with no mix
   assertValid(block, catalog, logistics);
 });
 
-test('an enclosed fluid connection dives out under the inserters and belts through a pipe-to-ground', () => {
+// Three solid inputs and water: the water reaches both machines past their inserters and belts
+// (diving under them where they box a connection in: router.test.js).
+test('a fluid input reaches every machine past its inserters and belts', () => {
   const block = solve([asm2('concrete', 600)], catalog, logistics);
   const water = block.routes.find(r => r.fluid === 'water');
-  assert.ok(water.pieces.some(p => p.kind === 'pipe-to-ground'), 'expected a pipe-to-ground');
   assertPipeNetwork(block, water, catalog, logistics, machinesOf(block, 'concrete'));
   assertNoFluidMixing(block, catalog, logistics);
   assertNoOverlaps(block.entities);

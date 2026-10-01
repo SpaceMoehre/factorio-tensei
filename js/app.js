@@ -170,7 +170,11 @@ function drawChain() {
     const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
     const perMachine = building.craftingSpeed * effect.speed / recipe.time
       * recipe.products.find(p => p.name === goal.item).amount * (1 + effect.productivity) * 60;
+    // The Count, and the machine's speed with its modules (Py farms: their plants and animals).
     chainRows.get(`step:${goal.item}`).el.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${Math.ceil(goal.rate / perMachine - 1e-9)}×`;
+    const machineSpeed = chainRows.get(`step:${goal.item}`).el.querySelector('.speed');
+    machineSpeed.textContent = `${speed(building.craftingSpeed * effect.speed)}`
+      + (effect.speed !== 1 ? ` (${speed(building.craftingSpeed)} × ${speed(effect.speed)} with modules)` : '') + ` · ${fmt(perMachine)}/min a machine`;
   }
   for (const input of chain.trainInputs) {
     const key = JSON.stringify(['train', input.item, input.reason]);
@@ -206,7 +210,8 @@ function stepRow(item, recipes, buildings, selection) {
   return el('div', { className: 'step' },
     el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), train),
     el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building,
-      ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : [])));
+      ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : []),
+      el('span', { textContent: 'Speed' }), el('span', { className: 'speed hint' })));
 }
 
 // A step's modules: a row per module type with its count, and a button to add another type while
@@ -396,6 +401,10 @@ function el(tag, props = {}, ...children) {
 
 function fmt(n) {
   return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function speed(n) {
+  return Number.isInteger(n) ? String(n) : String(Number(n.toPrecision(3)));
 }
 
 function load() {

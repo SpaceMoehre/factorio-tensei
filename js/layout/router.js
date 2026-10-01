@@ -5,6 +5,10 @@ const TUNNEL_COST = 2;
 // How far back a growing leg checks itself for crossings; the whole leg is checked on arrival.
 const RECENT_STEPS = 8;
 const EXPANSIONS_PER_TILE = 12;
+// However large the area, a leg gives up after this many expansions plus a few hundred for each
+// tile it has to cover: a path that exists is found long before.
+const EXPANSIONS_MAX = 20000;
+const EXPANSIONS_PER_STEP = 100;
 
 export class RoutingError extends Error {}
 
@@ -38,16 +42,43 @@ export function routeBelt(grid, spec, names) {
     starts = [leg.state];
     surfaced = leg.state.reached;
   }
-  if (spec.end === 'east') {
-    const lastX = grid.area.x + grid.area.w - 1;
-    const leg = search(grid, starts, s => s.x === lastX + 1 && s.a === E, x => lastX + 1 - x, moves);
-    if (!leg) throw new RoutingError(`belt ${spec.id}: no path to the east edge`);
+  if (spec.end === 'east' || spec.end === 'west') {
+    const leg = search(grid, starts, ...edgeGoal(grid, spec.end), moves);
+    if (!leg) throw new RoutingError(`belt ${spec.id}: no path to the ${spec.end} edge`);
     commit(leg);
   } else if (!surfaced) {
     const [s] = starts;
     if (!canBelt(grid, spec, s.x, s.y, s.a)) throw new RoutingError(`belt ${spec.id}: cannot end at ${s.x},${s.y}`);
     commit({ pieces: [beltPiece(spec, names, s.x, s.y, s.a)] });
   }
+  return pieces;
+}
+
+// Leaving the area across its east (or west) edge: the goal and the distance to it.
+function edgeGoal(grid, side) {
+  if (side === 'east') {
+    const lastX = grid.area.x + grid.area.w - 1;
+    return [s => s.x === lastX + 1 && s.a === E, x => lastX + 1 - x];
+  }
+  const firstX = grid.area.x;
+  return [s => s.x === firstX - 1 && s.a === W, x => x - (firstX - 1)];
+}
+
+// A belt in one leg from any of the start states to the goal: a tile reached with a heading
+// (where the next piece, already placed, carries on), or off the east or west edge. Joins the
+// routed pieces of two modules, or a module and the train.
+// spec: { id, starts: [{ x, y, a }], goal: { x, y, a } | 'east' | 'west' }
+export function routeLink(grid, spec, names) {
+  const pieces = [];
+  const moves = beltMoves(grid, spec, names, new Set(), { key: null, last: false });
+  const { goal } = spec;
+  const [isGoal, heuristic] = typeof goal === 'string' ? edgeGoal(grid, goal)
+    : [s => s.x === goal.x && s.y === goal.y && s.a === goal.a, (x, y) => Math.abs(x - goal.x) + Math.abs(y - goal.y)];
+  if (spec.starts.some(s => isGoal(s))) return pieces;
+  const leg = search(grid, spec.starts, isGoal, heuristic, moves,
+    typeof goal === 'string' ? undefined : () => !reachable(grid, spec.id, spec.starts, goal.x, goal.y, names.reach, new Set()));
+  if (!leg) throw new RoutingError(`belt ${spec.id}: no path from ${spec.starts[0].x},${spec.starts[0].y} to ${typeof goal === 'string' ? `the ${goal} edge` : `${goal.x},${goal.y}`}`);
+  commitLeg(grid, spec, names.underground, leg, pieces);
   return pieces;
 }
 
@@ -74,14 +105,23 @@ export function routePipe(grid, spec, names) {
 function growTree(grid, spec, names, seedPieces) {
   const pieces = [];
   const tree = new Set();
-  const commit = leg => {
-    commitLeg(grid, spec, names.underground, leg, pieces);
-    for (const p of leg.pieces) if (p.kind === 'pipe') tree.add(key(p.x, p.y));
-  };
   const [[x0, y0], ...rest] = spec.terminals;
   const pending = new Set(rest.map(([x, y]) => key(x, y)));
   const moves = pipeMoves(grid, spec, names, pending);
-  const toTree = { isGoal: s => tree.has(key(s.x, s.y)), heuristic: (x, y) => nearest(tree, x, y) };
+  // The distance to the tree, recomputed once per leg as the tree grows.
+  let field = null;
+  const toTree = {
+    isGoal: s => tree.has(key(s.x, s.y)),
+    heuristic: (x, y) => {
+      field ??= distanceField(grid.area, tree);
+      return field(x, y);
+    },
+  };
+  const commit = leg => {
+    commitLeg(grid, spec, names.underground, leg, pieces);
+    for (const p of leg.pieces) if (p.kind === 'pipe') tree.add(key(p.x, p.y));
+    field = null;
+  };
   commit({ pieces: seedPieces });
   if (spec.source) {
     const leg = search(grid, edgeStarts(grid, grid.area.x, E), toTree.isGoal, toTree.heuristic, moves);
@@ -91,7 +131,8 @@ function growTree(grid, spec, names, seedPieces) {
   for (const [x, y, outward] of rest) {
     pending.delete(key(x, y));
     if (tree.has(key(x, y))) continue;
-    const leg = search(grid, [{ x, y, a: outward }], toTree.isGoal, toTree.heuristic, moves);
+    const leg = search(grid, [{ x, y, a: outward }], toTree.isGoal, toTree.heuristic, moves,
+      () => !pipeReaches(grid, spec.id, x, y, tree, names.reach));
     if (!leg) throw new RoutingError(`${spec.fluid}: cannot connect ${x},${y}`);
     commit(leg);
   }
@@ -132,6 +173,47 @@ function nearest(tiles, x, y) {
   return best;
 }
 
+// Manhattan distance from every tile of the area to the nearest of `tiles` (two raster passes),
+// and the plain scan for points outside the area.
+function distanceField(area, tiles) {
+  const { x: ax, y: ay, w, h } = area;
+  const d = new Float64Array(w * h).fill(Infinity);
+  for (const t of tiles) {
+    const [tx, ty] = t.split(',').map(Number);
+    if (tx >= ax && ty >= ay && tx < ax + w && ty < ay + h) d[(ty - ay) * w + (tx - ax)] = 0;
+  }
+  // Tiles outside the area still count: seed the border with their distance.
+  const outside = [...tiles].filter(t => {
+    const [tx, ty] = t.split(',').map(Number);
+    return !(tx >= ax && ty >= ay && tx < ax + w && ty < ay + h);
+  });
+  if (outside.length) {
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (x === 0 || y === 0 || x === w - 1 || y === h - 1) d[y * w + x] = Math.min(d[y * w + x], nearest(outside, ax + x, ay + y));
+      }
+    }
+  }
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      if (x > 0) d[i] = Math.min(d[i], d[i - 1] + 1);
+      if (y > 0) d[i] = Math.min(d[i], d[i - w] + 1);
+    }
+  }
+  for (let y = h - 1; y >= 0; y--) {
+    for (let x = w - 1; x >= 0; x--) {
+      const i = y * w + x;
+      if (x < w - 1) d[i] = Math.min(d[i], d[i + 1] + 1);
+      if (y < h - 1) d[i] = Math.min(d[i], d[i + w] + 1);
+    }
+  }
+  return (x, y) => {
+    if (x >= ax && y >= ay && x < ax + w && y < ay + h) return d[(y - ay) * w + (x - ax)];
+    return nearest(tiles, x, y);
+  };
+}
+
 function commitLeg(grid, spec, undergroundName, leg, pieces) {
   const tiles = new Set(leg.pieces.map(p => key(p.x, p.y)));
   if (tiles.size !== leg.pieces.length) throw new RoutingError(`route ${spec.id}: path crosses itself`);
@@ -153,8 +235,9 @@ function search(grid, starts, isGoal, heuristic, moves, hopeless = () => false) 
     best.set(s, 0);
   }
   // A leg that has not found its goal after exploring every tile many times over has none.
-  let budget = EXPANSIONS_PER_TILE * grid.area.w * grid.area.h;
-  let check = 200 + 20 * Math.min(...starts.map(s => heuristic(s.x, s.y)));
+  const distance = Math.min(...starts.map(s => heuristic(s.x, s.y)));
+  let budget = Math.min(EXPANSIONS_PER_TILE * grid.area.w * grid.area.h, EXPANSIONS_MAX + EXPANSIONS_PER_STEP * distance);
+  let check = 200 + 20 * distance;
   while (open.size && budget-- > 0) {
     if (check-- === 0 && hopeless()) return null;
     const node = open.pop();
@@ -181,11 +264,18 @@ function search(grid, starts, isGoal, heuristic, moves, hopeless = () => false) 
 // Whether a belt could reach (wx, wy) from the starts at all: a flood over tiles free for it,
 // stepping to a neighbour or tunnelling up to its reach over anything but its own later
 // waypoints. It ignores headings and every finer rule, so it only ever says no when no path
-// exists.
+// exists. Tiles nearer the goal are flooded first, so a goal it can reach ends it early.
 function reachable(grid, id, starts, wx, wy, reach, pending) {
   const { x: ax, y: ay, w, h } = grid.area;
   const seen = new Uint8Array(w * h);
-  const queue = [];
+  // A bucket per Manhattan distance to the goal.
+  const buckets = [];
+  let lowest = Infinity;
+  const push = (x, y) => {
+    const d = Math.abs(x - wx) + Math.abs(y - wy);
+    (buckets[d] ??= []).push(x, y);
+    if (d < lowest) lowest = d;
+  };
   const visit = (x, y) => {
     if (x < ax || y < ay || x >= ax + w || y >= ay + h) return false;
     const i = (y - ay) * w + (x - ax);
@@ -193,19 +283,47 @@ function reachable(grid, id, starts, wx, wy, reach, pending) {
     seen[i] = 1;
     if (x === wx && y === wy) return true;
     if (!grid.freeFor(x, y, id) || pending.has(key(x, y))) return false;
-    queue.push(x, y);
+    push(x, y);
     return false;
   };
   // A leg starts where its next piece goes, whatever holds that tile.
   for (const s of starts) {
     if (s.x === wx && s.y === wy) return true;
     if (s.x >= ax && s.y >= ay && s.x < ax + w && s.y < ay + h) seen[(s.y - ay) * w + (s.x - ax)] = 1;
-    queue.push(s.x, s.y);
+    push(s.x, s.y);
   }
+  while (lowest < buckets.length) {
+    const bucket = buckets[lowest];
+    if (!bucket?.length) { lowest++; continue; }
+    const y = bucket.pop(), x = bucket.pop();
+    for (const [dx, dy] of Object.values(VEC)) {
+      for (let n = 1; n <= reach && !pending.has(key(x + dx * n, y + dy * n)); n++) if (visit(x + dx * n, y + dy * n)) return true;
+    }
+  }
+  return false;
+}
+
+// Whether a pipe could reach the tree from (x, y) at all: a flood over tiles free for it,
+// stepping to a neighbour or diving up to its reach under anything. It ignores every finer rule,
+// so it only ever says no when no path exists.
+function pipeReaches(grid, id, x0, y0, tree, reach) {
+  const { x: ax, y: ay, w, h } = grid.area;
+  const seen = new Uint8Array(w * h);
+  const queue = [x0, y0];
+  if (x0 >= ax && y0 >= ay && x0 < ax + w && y0 < ay + h) seen[(y0 - ay) * w + (x0 - ax)] = 1;
   for (let q = 0; q < queue.length; q += 2) {
     const x = queue[q], y = queue[q + 1];
     for (const [dx, dy] of Object.values(VEC)) {
-      for (let n = 1; n <= reach && !pending.has(key(x + dx * n, y + dy * n)); n++) if (visit(x + dx * n, y + dy * n)) return true;
+      for (let n = 1; n <= reach; n++) {
+        const nx = x + dx * n, ny = y + dy * n;
+        if (nx < ax || ny < ay || nx >= ax + w || ny >= ay + h) break;
+        const i = (ny - ay) * w + (nx - ax);
+        if (seen[i]) continue;
+        if (tree.has(key(nx, ny))) return true;
+        if (!grid.freeFor(nx, ny, id) || grid.pipeBlocked.has(key(nx, ny))) continue;
+        seen[i] = 1;
+        queue.push(nx, ny);
+      }
     }
   }
   return false;
@@ -306,7 +424,10 @@ function beltMoves(grid, spec, names, pending, target) {
     const d = node.a;
     if (!grid.freeFor(node.x, node.y, spec.id) || fedByOther(grid, spec, node.x, node.y)) return options;
     // A tunnel may not pass under a later waypoint of its own route, nor surface on one.
-    if (pending.has(key(...step(node.x, node.y, d, 1)))) return options;
+    const [ax, ay] = step(node.x, node.y, d, 1);
+    if (pending.has(key(ax, ay))) return options;
+    // Where the tile ahead takes a belt, the belt walks on and dives at the obstacle instead.
+    if (grid.freeFor(ax, ay, spec.id) && !fedByOther(grid, spec, ax, ay) && key(ax, ay) !== target.key) return options;
     for (const hop of HOPS(names.reach)) {
       const [qx, qy] = step(node.x, node.y, d, hop);
       if (pending.has(key(qx, qy))) break;
@@ -338,6 +459,9 @@ function pipeMoves(grid, spec, names, pending) {
     const endOk = (x, y) => grid.freeFor(x, y, spec.id) && !grid.pipeBlocked.has(key(x, y)) && !pending.has(key(x, y))
       && !grid.surfaceOnly.has(key(x, y));
     if (!endOk(node.x, node.y)) return options;
+    // Where the tile ahead takes a pipe, the pipe walks on and dives at the obstacle instead.
+    const [ax, ay] = step(node.x, node.y, d, 1);
+    if (canPipe(grid, spec, ax, ay) && !pending.has(key(ax, ay)) && !grid.surfaceOnly.has(key(ax, ay))) return options;
     for (const hop of HOPS(names.reach)) {
       // A pipe tunnel may not pass under a tile that must carry a surface pipe: a join or a port.
       const under = key(...step(node.x, node.y, d, hop - 1));
@@ -372,7 +496,7 @@ function beltOutputAllowed(grid, spec, ox, oy) {
   const target = grid.at(ox, oy);
   if (target && target.route !== spec.id && (target.kind === 'belt' || target.kind === 'underground-belt')) return false;
   const k = key(ox, oy);
-  const held = grid.reserved.get(k);
+  const held = grid.holder(ox, oy);
   return held === undefined || held === spec.id || grid.fluidPorts.has(k);
 }
 
@@ -393,7 +517,7 @@ function canPipe(grid, spec, x, y) {
     if (n?.kind === 'pipe' && n.route !== spec.id) return false;
     if (n?.kind === 'pipe-to-ground' && n.route !== spec.id && n.direction === opposite(+d)) return false;
     const k = key(x + dx, y + dy);
-    if (grid.fluidPorts.has(k) && grid.reserved.get(k) !== spec.id) return false;
+    if (grid.fluidPorts.has(k) && grid.holder(x + dx, y + dy) !== spec.id) return false;
   }
   return true;
 }

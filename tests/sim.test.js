@@ -64,12 +64,13 @@ test('solved block: an import beyond one belt comes on its own belts to each con
 });
 
 // Output inserters fill the far lane: one lane (450/min) from one side of a belt, both lanes
-// where rows on both sides drop onto it. 900 cable/min for the circuits runs on both lanes or
-// on parallel belts, and arrives whole.
+// where rows on both sides drop onto it. A machine fills one lane, so a lane takes two cable
+// machines (180/min each): 720 cable/min for the circuits, from 4 machines, runs on both lanes
+// (or on parallel belts) and arrives whole.
 test('solved block: an Internal Path beyond one lane fills both lanes or runs on parallel belts', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
-  const block = solve([asm2('electronic-circuit', 300), asm2('copper-cable', 900)], catalog, logistics);
+  const block = solve([asm2('electronic-circuit', 240), asm2('copper-cable', 720)], catalog, logistics);
   const cable = block.routes.filter(r => r.items.some(i => i.item === 'copper-cable'));
   assert.ok(cable.every(r => r.items[0].rate <= r.items[0].capacity + 1e-9), 'every cable belt within its capacity');
   assert.deepEqual(simulate(block).starvation.filter(s => s.item === 'copper-cable'), []);
@@ -131,6 +132,24 @@ test('merged items share their inserters: two lanes into one machine through one
   };
   assert.deepEqual(simulate(block).starvation, [
     { route: 0, subBlock: 0, item: 'a + b', demand: 200, available: 144, cause: 'inserters' },
+  ]);
+});
+
+// Copies of a module take a and b merged; the leftover module's machine takes them apart. Each set
+// of inserters answers for its own machines: 3 machines need 300 of a + b, 1 machine 50 of a.
+test('inserters answer for the machines they serve: merged in the copies, apart in the leftover', () => {
+  const block = {
+    subBlocks: [{
+      count: 4, inputs: [{ name: 'a', type: 'item', rate: 200 }, { name: 'b', type: 'item', rate: 200 }],
+      inserters: [
+        { route: 0, items: ['a', 'b'], perMachine: [144, 144, 144] },
+        { route: 1, items: ['a'], perMachine: [144] }, { route: 2, items: ['b'], perMachine: [30] },
+      ],
+    }],
+    routes: [],
+  };
+  assert.deepEqual(simulate(block).starvation, [
+    { route: 2, subBlock: 0, item: 'b', demand: 50, available: 30, cause: 'inserters' },
   ]);
 });
 

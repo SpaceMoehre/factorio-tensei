@@ -37,15 +37,35 @@ The modules a step's buildings hold — speed, productivity and efficiency modul
 _Avoid_: beacons (not modelled)
 
 **Sub-Block**:
-The rectangular unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. The layout search chooses the arrangement.
+The rectangular unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. It is built from one Module, or from Copies of one Module (and a smaller Module for the machines left over). The layout search chooses the arrangement.
 _Avoid_: block (ambiguous with Compound Block)
+
+**Module**:
+A Sub-Block's machines — all of them, or a share that is repeated — with their inserters, belts and pipes, laid out and routed on their own: every belt enters on its west edge and leaves on its east edge, every fluid reaches its west edge (an input) or its east edge (an output). Each Sub-Block is designed as Modules first, from the leaves of the Production Chain up; the Compound Block only places them and links them. A huge Sub-Block repeats one Module, sized so its busiest belt is used up and the stack of its Copies comes out about square: pairs of short rows facing the belt between them rather than one long row.
+_Avoid_: chunk, tile (a tile is one grid square)
+
+**Copy**:
+One placement of a Module in the Compound Block. A Sub-Block's Copies stack; every second one is the Module routed the other way round, so a belt the Module does not use up snakes from Copy to Copy, turning beside the stack. A Copy drops the belt it does not need: before its first inserter where nothing feeds it, after its last where nothing takes it on.
+_Avoid_: instance (code word), clone
+
+**Link**:
+A belt (or pipe) routed in the Compound Block between Modules: from a Copy's exit to the next Copy's entry along one route, from the train's edge to a Copy, or from a Copy to the train. Only Links are routed when Modules are placed.
+_Avoid_: connector, wire (wires join poles)
+
+**Side Belt**:
+A belt along the west or east side of a machine standing alone in its row, one or two tiles out, its inserters against the machine; one Side Belt runs down as many machines of a stack as it can feed, crossing the bands between them underground. Machines whose belts above and below cannot bring them enough take more from Side Belts; the machine stands apart from the next to make room.
+_Avoid_: side input (that is the train's)
+
+**Head-on Belt**:
+A belt meeting a machine's west or east side square on: an input arrives from the west and ends against the machine, an output starts against it and leaves east. 90° fast inserters stand either side of its end tile and long-handed ones beside the next tile, reaching the machine two tiles away and the belt beside them, so an output fills both lanes. Since it ends (or starts) its belt, a machine has one only where it gets a belt of its own.
+_Avoid_: dead-end belt
 
 **Compound Block**:
 The full packed layout combining every Sub-Block for the current set of Goals, plus poles, inter-block belts/pipes, and side input/output paths.
 _Avoid_: factory, blueprint (Blueprint is the exported artifact, not the layout)
 
 **Dependency Order**:
-The preferred placement order of Sub-Blocks, derived by topologically sorting on item overlap (Sub-Block A precedes B if A's recipe output is one of B's recipe inputs), so belts generally flow one direction. It is a preference the layout search usually follows, not a rule: a more compact layout may place a consumer beside its producer instead.
+The order of Sub-Blocks derived by topologically sorting on item overlap (Sub-Block A precedes B if A's recipe output is one of B's recipe inputs): the order they are designed in (the leaves of the Production Chain first) and the order a belt visits its consumers in. Placement follows the same direction — producers west of what they feed — so belts flow one way.
 _Avoid_: input order, list order
 
 **Compactness**:
@@ -56,12 +76,16 @@ _Avoid_: size, footprint (ambiguous between area and entity count)
 The rows of belts beside a row of machines, counted outward from the machines' face (row 1 against the machines). Inserters stand in rows 1 and 2 and reach belts up to row 4. Two facing machine rows share the band between them: both reach its belts.
 _Avoid_: lane (a Lane is one side of a belt), belt row index without saying which face it counts from
 
-**Packing**:
-Arranging Sub-Block rectangles into the Compound Block. The layout search chooses each position and the width of each gap (down to none where no path must pass), and neighbours may share a belt when one's output is the other's input.
+**Placement**:
+Arranging the Copies of every Module into the Compound Block. Belts run west to east through Modules, so each Sub-Block stands west of the ones it feeds, the Goals furthest east; each sits level with the entries it feeds, as far east as its consumers allow, sliding west, up or down around those already placed, keeping clear of the rows other Sub-Blocks' Side Inputs arrive on. Beside a stack of Copies stays room for the belts turning between them and the pipes joining them. The layout search chooses the corridors and gaps.
 _Avoid_: grid layout (implies uniform cells), fixed margins
 
+**Squeeze**:
+Taking out a row or column of the routed Compound Block that holds nothing but belts or pipes running straight across it and empty tiles; everything beyond moves in by one, belts and tunnels get shorter. Placement leaves room generously; squeezing takes back what the Links did not use. Poles are placed after.
+_Avoid_: compaction (ambiguous with Compactness)
+
 **Internal Path**:
-A belt or pipe between two Sub-Blocks A→B, carrying whichever item(s) A's Recipe Selection outputs that B's Recipe Selection also needs as input. Items travel on belts, fluids in pipes. When several Sub-Blocks consume A's output, one path visits them in Dependency Order.
+A belt or pipe between two Sub-Blocks A→B, carrying whichever item(s) A's Recipe Selection outputs that B's Recipe Selection also needs as input. Items travel on belts, fluids in pipes. When several Sub-Blocks consume A's output, one path visits them in Dependency Order. Between two Sub-Blocks it runs on as many Parallel Belts as both ends split into, decided from the plan alone: each belt links a run of A's machines to a run of B's.
 _Avoid_: hardcoded path items unrelated to the configured Goals
 
 **Side Input**:
@@ -77,7 +101,7 @@ An underground belt (or pipe-to-ground) segment, used (1) reactively, whenever a
 _Avoid_: tunnel as purely a crossing-avoidance fallback (it's also a compaction tool); a fixed hop length
 
 **Lane**:
-One of a belt's two sides, each carrying half the belt's throughput. Output inserters drop only onto the lane farther from them, so a belt fed from one side carries at most half a belt; machine rows on both sides of it fill both lanes.
+One of a belt's two sides, each carrying half the belt's throughput. Straight output inserters drop only onto the lane farther from them, so a machine fills one lane and a belt fed from one side carries at most half a belt; machine rows on both sides of it fill both lanes, as do the inserters either side of a Head-on Belt, and 90° inserters dropping along the belt, each onto the lane its drop point chooses. A belt takes as many machines as fit a lane on each side of it: five machines making 180/min each cannot fill one 900/min belt (three of them share a lane).
 _Avoid_: treating a belt as one undivided stream
 
 **Belt Merge**:
@@ -85,7 +109,7 @@ Putting two items on one belt, one per Lane. Eligible only when both items alrea
 _Avoid_: merging belts that don't share a route
 
 **Parallel Belts**:
-One item on several belts, each serving some of a Sub-Block's machine rows with its share of the rate — when one belt cannot carry it all. A Side Input taken by one Sub-Block and an output nothing else takes split between the train and that Sub-Block; an Internal Path from one Sub-Block to one other splits into belts that each take a group of the producer's rows to a group of the consumer's, balanced by machines. A Side Input one belt cannot carry to all its consumers comes as its own route to each.
+One item on several belts, each serving some of a Sub-Block's machine rows with its share of the rate — when one belt cannot carry it all. A Side Input taken by one Sub-Block and an output nothing else takes split between the train and that Sub-Block, one belt chaining as many Copies' parts as it can carry; an Internal Path from one Sub-Block to one other runs on as many belts as its rate and its producer's lanes need (no more than either end has machines), each taking a run of the producer's parts to a run of the consumer's: the consumer's runs about equal by machines, the producer's making about what each takes. A Side Input one belt cannot carry to all its consumers comes as its own route to each.
 _Avoid_: belt balancing, splitters (the parts never join)
 
 **Pipe Row**:
@@ -101,7 +125,7 @@ The fewest poles of the chosen pole type (by default the one with the largest su
 _Avoid_: fixed-step pole grid
 
 **Starvation**:
-A Sub-Block's demand isn't met because, walking an edge's consumers in belt order (closest to source first), remaining Lane throughput — or the producer's output, if lower — drops below that Sub-Block's demand before reaching it, even if the edge's total capacity ≥ total demand summed naively. Checked per edge (Internal Path / Side Input / Side Output, including Belt Merge lanes), not as one global demand-vs-supply sum. A machine also starves when its inserters for an item cannot move as much as it needs.
+A Sub-Block's demand isn't met because, walking an edge's consumers in belt order (closest to source first), remaining Lane throughput — or the producer's output, if lower — drops below that Sub-Block's demand before reaching it, even if the edge's total capacity ≥ total demand summed naively. Checked per edge (Internal Path / Side Input / Side Output, including Belt Merge lanes), not as one global demand-vs-supply sum. What a producer can put on a belt is counted per lane: each machine drops on the lanes its inserters reach, each lane carries half a belt. A machine also starves when its inserters for an item cannot move as much as it needs.
 _Avoid_: aggregate demand ≤ aggregate supply (ignores belt order and per-edge capacity)
 
 **Blueprint**:

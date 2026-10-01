@@ -132,3 +132,45 @@ test('the search is deterministic under a seed', () => {
   const run = () => solve(SCENARIOS.circuits, catalog, logistics, { seed: 7 });
   assert.deepEqual(run(), run());
 });
+
+// The Py small parts chain at 600/min with hand size 1 (one item per swing): the small parts
+// factory takes 900 bolts and 900 cable a minute, more than its top and bottom faces' inserters
+// move, and makes 600/min, more than one lane holds. Belts on its sides and a head-on output
+// that fills both lanes feed it in full.
+test('Py small parts at 600/min, hand size 1: every machine fed, both output lanes filled', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 600 }], pyCatalog, { made: items.slice(1), selections });
+  const block = solve(entries, pyCatalog, logistics, { maxCandidates: 8 });
+  assert.equal(block.entities.filter(e => e.kind === 'building').length, 14);
+  assert.deepEqual(simulate(block).starvation, []);
+  assertValid(block, pyCatalog, logistics);
+});
+
+// Py small parts at 1200/min: 26 automated factories. Each Internal Path runs on as many belts as
+// both ends split into (iron sticks from copies of a module snaking through them, bolts and
+// cable part to part), so every belt links a run of producers to a run of consumers.
+test('Py small parts at 1200/min: the chain\'s belts pair producers with consumers and lay out', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 1200 }], pyCatalog, { made: items.slice(1), selections });
+  const block = solve(entries, pyCatalog, { ...logistics, handSize: 3 }, { maxCandidates: 6 });
+  assert.equal(block.entities.filter(e => e.kind === 'building').length, 26);
+  assertValid(block, pyCatalog, logistics);
+});
+
+// 2400 moss/min: 500 moss farms (4.8/min each on sixteen moss). The Sub-Block repeats one module
+// (pairs of farm rows facing their moss belt) rather than routing all 500, and the stack of copies
+// comes out about square.
+test('a huge Sub-Block repeats one module: 500 moss farms, about square, nothing starves', () => {
+  const { entries } = expandChain([{ item: 'moss', rate: 2400 }], pyCatalog, { selections: { moss: { recipe: 'Moss-1', building: 'moss-farm-mk01' } } });
+  const started = Date.now();
+  const block = solve(entries, pyCatalog, logistics, { maxCandidates: 1 });
+  assert.ok(Date.now() - started < 60000, `${Date.now() - started} ms`);
+  assert.equal(machinesOf(block, 'Moss-1').length, 500);
+  assert.ok(block.subBlocks[0].copies >= 2, `${block.subBlocks[0].copies} copies`);
+  const { w, h } = block.bounds;
+  assert.ok(Math.max(w / h, h / w) <= 2, `${w}×${h}`);
+  assert.deepEqual(simulate(block).starvation, []);
+  assertValid(block, pyCatalog, logistics);
+});

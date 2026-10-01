@@ -27,6 +27,15 @@ test('modules set the machine speed and so the Count: moss farms on moss and mos
   assert.equal(planSubBlocks(moss([{ name: 'moss', count: 8 }]), pyCatalog)[0].count, 20);
 });
 
+// A selection that names no modules plans with the step's default ones, as the app starts it:
+// without moss a moss farm would hardly run (speed limit -99.99%) and need thousands.
+test('a selection naming no modules plans with the default ones', () => {
+  const [sb] = planSubBlocks(moss(undefined), pyCatalog);
+  assert.deepEqual(sb.modules, [{ name: 'moss', count: 16 }]);
+  assert.equal(sb.count, 10);
+  assert.deepEqual(planSubBlocks(moss([]), pyCatalog)[0].modules, []);
+});
+
 test('a Sub-Block carries its modules for the blueprint', () => {
   assert.deepEqual(planSubBlocks(moss([{ name: 'moss', count: 16 }]), pyCatalog)[0].modules, [{ name: 'moss', count: 16 }]);
 });

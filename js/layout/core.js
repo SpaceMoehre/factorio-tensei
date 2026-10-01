@@ -40,6 +40,15 @@ export class LayoutError extends Error {}
 //   poleSlot   null or { band, row }: a tile per machine kept free for a pole
 //   ports      for each fluid, which of its box's connections to use (index, wrapping; the
 //              first when absent)
+//   sides      [{ routeIds, part, face: 'W' | 'E', slot: 1 | 2, serves: [row] }]: a Side Belt,
+//              running along the machine's west or east side `slot` tiles out, its inserters
+//              (fast for slot 1, long-handed for slot 2) standing against the machine. Only with
+//              one machine per row; the machines of a row stand apart to make room.
+//   heads      [{ routeIds, part, face: 'W' | 'E', at, serves: [row] }]: a Head-on Belt, meeting
+//              the machine's side square on at its row `at`: an input arrives from the west and
+//              ends against the machine, an output starts against it and leaves east. 90°
+//              inserters stand either side of its last (first) tile, long-handed ones beside the
+//              next tile, so both lanes fill. Only with one machine per row.
 // Every machine gets enough inserters for its share of each belt, from real swing rates; where
 // fewer fit, the core records the shortfall (items/min its machines cannot get), which the
 // search ranks below any layout that fits and Starvation reports.
@@ -66,13 +75,26 @@ export function buildCore(sb, building, links, variant, env) {
   };
   const allowed = d => d !== null && d >= (env.rightAngle ? 1 : 2) && d <= 4;
 
-  // Each machine row takes each route from exactly one belt row.
+  // Side Belts and Head-on Belts beside single machines; their ids follow the band belts'.
+  const lines = [
+    ...(variant.sides ?? []).map(l => ({ ...l, kind: 'side', routeIds: l.routeIds ?? [l.routeId] })),
+    ...(variant.heads ?? []).map(l => ({ ...l, kind: 'head', routeIds: l.routeIds ?? [l.routeId] })),
+  ];
+  if (lines.length && rowLength !== 1) throw new LayoutError('side belts need one machine per row');
+  if (lines.some(l => l.kind === 'head') && !env.rightAngle) throw new LayoutError('head-on belts need 90° inserters');
+
+  // Each machine row takes each route from exactly one belt row (or side or head-on belt).
   const access = [];
+  const lineAccess = [];
   for (let r = 0; r < rowCount; r++) {
-    for (const routeId of new Set(belts.flatMap(b => b.routeIds))) {
-      const serving = belts.filter(b => b.routeIds.includes(routeId) && b.serves.includes(r));
+    for (const routeId of new Set([...belts, ...lines].flatMap(b => b.routeIds))) {
+      const serving = [...belts, ...lines].filter(b => b.routeIds.includes(routeId) && b.serves.includes(r));
       if (serving.length !== 1) throw new LayoutError('a machine row needs exactly one belt for each route');
       const [belt] = serving;
+      if (belt.kind) {
+        if (!lineAccess.some(a => a.r === r && a.line === belt)) lineAccess.push({ r, line: belt });
+        continue;
+      }
       if (access.some(a => a.r === r && a.belt === belt)) continue;
       const depth = depthIn(belt.band, belt.row, r);
       if (!allowed(depth)) throw new LayoutError(depth === 1 ? 'a belt against the machine needs 90° inserters' : 'a machine row cannot reach its belt');
@@ -108,7 +130,20 @@ export function buildCore(sb, building, links, variant, env) {
   // side connections and the gap after it.
   const anySide = side => counts.some((_, r) => ported(r, side));
   const leftPad = anySide('left') ? 1 : 0, rightPad = anySide('right') ? 1 : 0;
-  const pitch = leftPad + Wm + rightPad + variant.gap;
+  // Side and Head-on Belts lie in a lead gap before the machine (its west side) and a trailing
+  // gap after it (its east side): a column of inserters against the machine, then the belts.
+  const gapWidth = face => {
+    const list = lines.filter(l => l.face === face);
+    if (!list.length) return 0;
+    if (face === 'W' ? leftPad : rightPad) throw new LayoutError('side belts need the machine side free of fluid connections');
+    const head = list.filter(l => l.kind === 'head');
+    if (head.length && head.length < list.length) throw new LayoutError('a machine side takes side belts or a head-on belt, not both');
+    return head.length ? 2 : 1 + Math.max(...list.map(l => l.slot));
+  };
+  const leadW = gapWidth('W'), trailW = gapWidth('E');
+  // The machine's offset in its period.
+  const mxOff = leadW + leftPad;
+  const pitch = mxOff + Wm + rightPad + (trailW || variant.gap);
   // Every second row may sit a column or two to the side (within the gap), so the connections
   // of facing rows do not interleave.
   const shift = variant.shift ?? 0;
@@ -127,7 +162,7 @@ export function buildCore(sb, building, links, variant, env) {
   for (let r = 0; r < rowCount; r++) {
     for (const c of connections[r]) {
       if (c.side !== 'top' && c.side !== 'bottom') continue;
-      const [x, y] = [leftPad + off(r) + c.tileX, machineY[r] + c.tileY];
+      const [x, y] = [mxOff + off(r) + c.tileX, machineY[r] + c.tileY];
       // An unused connection takes no pipe; belts and inserters may still use its tile.
       if (c.routeId === undefined) {
         if (x >= 0 && x < pitch && !period.get(x, y)) period.set(x, y, { type: 'unused' });
@@ -169,7 +204,7 @@ export function buildCore(sb, building, links, variant, env) {
   for (let r = 0; r < rowCount; r++) {
     for (const c of connections[r]) {
       if (c.routeId === undefined || (c.side !== 'top' && c.side !== 'bottom')) continue;
-      const [x, y] = [leftPad + off(r) + c.tileX, machineY[r] + c.tileY];
+      const [x, y] = [mxOff + off(r) + c.tileX, machineY[r] + c.tileY];
       const band = c.side === 'top' ? r : r + 1;
       for (const p of pipeRows.filter(p => p.band === band && p.y === y)) {
         if (p.routeId === c.routeId) surfaceAt(x, p.y, p.routeId);
@@ -198,7 +233,7 @@ export function buildCore(sb, building, links, variant, env) {
   }
   const poleY = variant.poleSlot ? bandY(variant.poleSlot.band, variant.poleSlot.row) : null;
   // Bands do not share tiles, so each band's inserters are placed on their own.
-  const machineColumns = columnOrder(Wm, variant.columns).map(c => c + leftPad);
+  const machineColumns = columnOrder(Wm, variant.columns).map(c => c + mxOff);
   for (const s of slots) s.columns = machineColumns.map(c => c + off(s.r));
   const columns = new Map();
   for (let band = 0; band <= rowCount; band++) {
@@ -214,9 +249,10 @@ export function buildCore(sb, building, links, variant, env) {
     });
     for (const [s, c] of placed) columns.set(s, c);
   }
+  const lineSlots = new Map(lineAccess.map(a => [a, placeLine(a)]));
 
   // Stamp the period onto every machine. The core is as wide as its last period's used columns.
-  const lastColumn = Math.max(leftPad + Math.max(off(0), off(1)) + Wm + rightPad - 1, period.lastColumn());
+  const lastColumn = Math.max(mxOff + Math.max(off(0), off(1)) + Wm + rightPad - 1, period.lastColumn());
   const width = (counts[0] - 1) * pitch + lastColumn + 1;
   const entities = [];
   const stamped = new Map();
@@ -227,7 +263,7 @@ export function buildCore(sb, building, links, variant, env) {
   for (let r = 0; r < rowCount; r++) {
     for (let i = 0; i < counts[r]; i++) {
       const x0 = i * pitch;
-      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + leftPad + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r });
+      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r });
       for (const s of slots.filter(s => s.r === r)) {
         const placed = columns.get(s);
         for (const { column, side } of placed) {
@@ -239,6 +275,20 @@ export function buildCore(sb, building, links, variant, env) {
         shortfall += Math.max(0, s.demand - moved);
         const supplyKey = s.belt.routeIds.join('+');
         if (!supply.has(supplyKey)) supply.set(supplyKey, { route: s.belt.routeIds[0], role: s.isOutput ? 'output' : 'input', items: s.items.map(i => i.name), perMachine: [] });
+        supply.get(supplyKey).perMachine.push(moved);
+      }
+      for (const a of lineAccess.filter(a => a.r === r)) {
+        const l = lineSlots.get(a);
+        for (const ins of l.inserters) {
+          entities.push({ ...ins.entity, x: x0 + ins.entity.x });
+          stamped.set(key(x0 + ins.entity.x, ins.entity.y), 'inserter');
+          stamped.set(key(x0 + ins.pick[0], ins.pick[1]), { waypoint: l.id });
+        }
+        for (const [x, y] of l.tiles) if (!stamped.has(key(x0 + x, y))) stamped.set(key(x0 + x, y), { line: l.id });
+        const moved = l.inserters.reduce((sum, ins) => sum + ins.rate, 0);
+        shortfall += Math.max(0, l.demand - moved);
+        const supplyKey = a.line.routeIds.join('+');
+        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: a.line.routeIds[0], role: l.isOutput ? 'output' : 'input', items: l.items.map(i => i.name), perMachine: [] });
         supply.get(supplyKey).perMachine.push(moved);
       }
       for (const [c, y] of period.all(v => v.type === 'tap' && v.row === r)) {
@@ -259,7 +309,7 @@ export function buildCore(sb, building, links, variant, env) {
   for (let r = 0; r < rowCount; r++) {
     for (let i = 0; i < counts[r]; i++) {
       for (const c of connections[r]) {
-        const [x, y] = [i * pitch + leftPad + off(r) + c.tileX, machineY[r] + c.tileY];
+        const [x, y] = [i * pitch + mxOff + off(r) + c.tileX, machineY[r] + c.tileY];
         if (c.routeId === undefined) { pipeBlocked.push([x, y]); continue; }
         let port = ports.find(p => p.routeId === c.routeId);
         if (!port) ports.push(port = { routeId: c.routeId, fluid: c.fluid, tiles: [] });
@@ -291,6 +341,17 @@ export function buildCore(sb, building, links, variant, env) {
     waypoints: held(b.y).filter(x => stamped.get(key(x, b.y))?.waypoint === b.id).map(x => [x, b.y]),
   }));
   const pipeRowsOut = pipeRows.map(p => ({ routeId: p.routeId, y: p.y, reserve: held(p.y).map(x => [x, p.y]) }));
+  // Side and Head-on Belts: their tiles held for them, the ones their inserters reach in order
+  // along the belt (down a side belt, toward the machine or away from it along a head-on one).
+  for (const a of lineAccess) {
+    const l = lineSlots.get(a);
+    const along = p => (l.axis === 'v' ? p[1] : p[0]);
+    const waypoints = l.tiles.filter(([x, y]) => stamped.get(key(x, y))?.waypoint === l.id).sort((p, q) => along(p) - along(q));
+    rowsOut.push({
+      routeIds: a.line.routeIds, part: a.line.part, kind: a.line.kind, face: a.line.face, axis: l.axis,
+      y: l.axis === 'h' ? l.tiles[0][1] : null, x: l.axis === 'v' ? l.tiles[0][0] : null, reserve: l.tiles, waypoints,
+    });
+  }
 
   // Each part of a route: the machine rows it serves and how many machines that is.
   const parts = [];
@@ -299,8 +360,20 @@ export function buildCore(sb, building, links, variant, env) {
     if (!part) parts.push(part = { routeIds: b.routeIds, part: b.part, rows: [], machines: 0, lanes: 2 });
     for (const r of b.serves) if (!part.rows.includes(r)) { part.rows.push(r); part.machines += counts[r]; }
     // Inserters drop onto the lane farther from them: a belt between two rows gets both lanes
-    // filled, a belt beside one row only one.
-    if (b.serves.length < 2) part.lanes = 1;
+    // filled, a belt beside one row only one. A 90° inserter drops along its belt, on a lane
+    // nothing decides.
+    if (b.serves.length < 2 || access.some(a => a.belt === b && a.depth === 1 && b.routeIds.includes(links.output))) part.lanes = 1;
+  }
+  // A Side Belt fills one lane; a Head-on Belt both, from inserters either side of it. Nothing
+  // feeds a head-on output from behind (the machine is there), and a head-on input ends against
+  // the machine.
+  for (const l of lines) {
+    if (parts.some(p => p.routeIds.join() === l.routeIds.join() && p.part === l.part)) throw new LayoutError('a side belt shares its part');
+    const rows = [...new Set(l.serves)];
+    parts.push({
+      routeIds: l.routeIds, part: l.part, rows, machines: rows.reduce((sum, r) => sum + counts[r], 0), lanes: l.kind === 'head' ? 2 : 1,
+      kind: l.kind, face: l.face, canEnter: !(l.kind === 'head' && l.face === 'E'), canExit: !(l.kind === 'head' && l.face === 'W'),
+    });
   }
   // Every connection needs a way out for its pipe: a pipe row of its fluid in its band, a free
   // tile beside it, or a free tile straight out within a pipe-to-ground's reach.
@@ -353,11 +426,95 @@ export function buildCore(sb, building, links, variant, env) {
     supply: [...supply.values()], shortfall, overload,
   };
 
+  // A Side or Head-on Belt for one machine row, in period coordinates: its tiles, and the
+  // inserters it needs for the machine's share (fewest first: fast before long-handed).
+  function placeLine({ r, line }) {
+    const id = belts.length + lines.indexOf(line);
+    const isOutput = line.routeIds.includes(links.output);
+    const items = line.routeIds.flatMap(routeId => routeItems(sb, env.routes[routeId], isOutput));
+    const demand = items.reduce((sum, i) => sum + i.rate, 0) / sb.count;
+    const y0 = machineY[r];
+    const free = (c, y) => !period.get(c, y) || period.get(c, y).type === 'unused';
+    const claim = (c, y, v) => {
+      if (!free(c, y)) throw new LayoutError('a side belt collides');
+      period.set(c, y, v);
+    };
+    // The inserter column against the machine, and the way out from it.
+    const A = mxOff + Wm + rightPad, B = mxOff - 1;
+    const [column, out] = line.face === 'E' ? [A, 1] : [B, -1];
+    const inserters = [];
+    const tiles = [];
+    const add = (x, y, spec, angle, lengths, entity) => {
+      claim(x, y, { type: 'inserter' });
+      const rate = inserterRate(spec, angle, env.handSize, lengths);
+      inserters.push({ rate, entity: { name: spec.name, kind: 'inserter', x, y, w: 1, h: 1, ...entity, rate } });
+    };
+    // An output's inserters fill a lane each side of a head-on belt: enough of them that the two
+    // lanes, half a belt each, carry it all.
+    const fits = () => {
+      if (!isOutput || line.kind !== 'head') return inserters.reduce((sum, i) => sum + i.rate, 0) >= demand - 1e-9;
+      const lane = side => Math.min(env.laneCapacity, inserters.filter(i => i.side === side).reduce((sum, i) => sum + i.rate, 0));
+      return lane(-1) + lane(1) >= demand - 1e-9;
+    };
+    const length = v => Math.hypot(v.x, v.y);
+    if (line.kind === 'side') {
+      const x = column + out * line.slot;
+      for (let k = 0; k < Hm; k++) {
+        claim(x, y0 + k, { type: 'line', id });
+        tiles.push([x, y0 + k]);
+      }
+      const spec = line.slot === 1 ? env.inserters.short : env.inserters.long;
+      // A straight inserter's direction is the side it picks up from.
+      const toward = line.face === 'E' ? W : E, away = line.face === 'E' ? E : W;
+      // From the middle of the side outward, so the belt's waypoints stay together.
+      const order = [...Array(Hm).keys()].sort((a, b) => Math.abs(a - (Hm - 1) / 2) - Math.abs(b - (Hm - 1) / 2) || a - b);
+      for (const k of order) {
+        if (fits()) break;
+        if (!free(column, y0 + k)) continue;
+        add(column, y0 + k, spec, 180, null, { direction: isOutput ? toward : away });
+        inserters.at(-1).pick = [x, y0 + k];
+      }
+      if (!inserters.length) throw new LayoutError('no room for a side belt\'s inserters');
+      return { id, axis: 'v', tiles, inserters, demand, isOutput, items };
+    }
+    // Head-on: an output leaves east, an input arrives from the west.
+    if ((line.face === 'E') !== isOutput) throw new LayoutError('head-on belts carry outputs east and inputs from the west');
+    if (line.at < 1 || line.at > Hm - 2) throw new LayoutError('a head-on belt needs a machine row either side');
+    const y = y0 + line.at;
+    for (const k of [0, 1]) {
+      claim(column + out * k, y, { type: 'line', id });
+      tiles.push([column + out * k, y]);
+    }
+    const { short, long } = env.inserters;
+    // 90°: the fast ones against the machine take from (or drop onto) the belt's end tile beside
+    // them; the long-handed ones behind them reach the machine two tiles away and the belt tile
+    // beside them (Inserter_Config custom vectors).
+    const options = [
+      { spec: short, dx: 0, dy: -1 }, { spec: short, dx: 0, dy: 1 },
+      { spec: long, dx: out, dy: -1 }, { spec: long, dx: out, dy: 1 },
+    ];
+    for (const { spec, dx, dy } of options) {
+      if (fits()) break;
+      const [ix, iy] = [column + dx, y + dy];
+      if (!free(ix, iy)) continue;
+      // The machine lies 1 (fast) or 2 (long-handed) tiles away, toward it from the belt side.
+      const fromMachine = { x: -out * (Math.abs(dx) + 1), y: 0 };
+      const toMachine = { x: -out * length(spec.insert), y: 0 };
+      const belt = isOutput ? { x: 0, y: -dy * length(short.insert) } : { x: 0, y: -dy };
+      const vectors = isOutput ? { pickup: fromMachine, drop: belt } : { pickup: belt, drop: toMachine };
+      const lengths = { pickup: length(vectors.pickup), insert: length(vectors.drop) };
+      add(ix, iy, spec, 90, lengths, { direction: isOutput ? (line.face === 'E' ? W : E) : dy < 0 ? S : N, vectors });
+      inserters.at(-1).pick = [column + dx, y];
+      inserters.at(-1).side = dy;
+    }
+    return { id, axis: 'h', tiles, inserters, demand, isOutput, items };
+  }
+
   function inserter(s, x, side) {
     const toward = s.side === 'top' ? S : N;
     const away = s.side === 'top' ? N : S;
     // A straight inserter's direction is the side it picks up from.
-    const e = { name: s.spec.name, kind: 'inserter', x, y: s.insY, w: 1, h: 1, direction: s.isOutput ? toward : away };
+    const e = { name: s.spec.name, kind: 'inserter', x, y: s.insY, w: 1, h: 1, direction: s.isOutput ? toward : away, rate: s.rate };
     if (s.depth === 1) {
       // 90°: the belt beside it, the machine in front of it (vectors relative to the inserter).
       const length = v => Math.hypot(v.x, v.y);

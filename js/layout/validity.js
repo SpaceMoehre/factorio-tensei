@@ -44,9 +44,8 @@ export function routeChain(route, catalog, logistics, entities) {
       if (!inLine || !(hop >= 1 && hop <= reach)) {
         problems.push(`route ${route.id}: tunnel at ${a.x},${a.y} does not surface within ${reach} tiles ahead`);
       } else {
-        const sameAxis = e => (DIR[e.travel][0] !== 0) === (dx !== 0);
-        const between = entities.find(e => e !== a && e !== b && e.name === a.name && e.underground && sameAxis(e)
-          && (dx ? e.y === a.y && (e.x - a.x) / dx > 0 && (e.x - a.x) / dx < hop : e.x === a.x && (e.y - a.y) / dy > 0 && (e.y - a.y) / dy < hop));
+        const between = undergroundsOnLine(entities, a.name, dx !== 0, dx ? a.y : a.x)
+          .find(e => e !== a && e !== b && (dx ? (e.x - a.x) / dx > 0 && (e.x - a.x) / dx < hop : (e.y - a.y) / dy > 0 && (e.y - a.y) / dy < hop));
         if (between) problems.push(`route ${route.id}: tunnel at ${a.x},${a.y} is interleaved with ${between.name} at ${between.x},${between.y}`);
       }
     } else if (b.x !== a.x + dx || b.y !== a.y + dy) {
@@ -54,6 +53,23 @@ export function routeChain(route, catalog, logistics, entities) {
     }
   }
   return problems;
+}
+
+// Undergrounds of one type travelling along one axis on one line, indexed once per entity list.
+const lineIndex = new WeakMap();
+function undergroundsOnLine(entities, name, horizontal, line) {
+  if (!lineIndex.has(entities)) {
+    const index = new Map();
+    for (const e of entities) {
+      if (!e.underground || e.travel === undefined) continue;
+      const h = DIR[e.travel][0] !== 0;
+      const k = `${e.name}|${h}|${h ? e.y : e.x}`;
+      if (!index.has(k)) index.set(k, []);
+      index.get(k).push(e);
+    }
+    lineIndex.set(entities, index);
+  }
+  return lineIndex.get(entities).get(`${name}|${horizontal}|${line}`) ?? [];
 }
 
 // Where an inserter picks up and drops, as tiles: custom vectors when it has them, otherwise its
@@ -78,17 +94,38 @@ function insideEntity(tile, e) {
 
 const routeTiles = route => new Set(route.pieces.map(p => key(p.x, p.y)));
 
+// Every inserter's pickup and drop tiles, and per machine the inserters dropping into it and
+// picking up from it — worked out once per entity list.
+const reachIndex = new WeakMap();
+function inserterReach(entities, catalog) {
+  if (!reachIndex.has(entities)) {
+    const machineAt = new Map();
+    for (const e of entities.filter(x => x.kind === 'building')) {
+      for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) machineAt.set(key(e.x + dx, e.y + dy), e);
+    }
+    const into = new Map(), outOf = new Map();
+    const add = (map, m, v) => { if (m) { if (!map.has(m)) map.set(m, []); map.get(m).push(v); } };
+    for (const ins of entities.filter(x => x.kind === 'inserter')) {
+      const t = inserterTiles(ins, catalog);
+      add(into, machineAt.get(t.drop), t);
+      add(outOf, machineAt.get(t.pickup), t);
+    }
+    reachIndex.set(entities, { into, outOf });
+  }
+  return reachIndex.get(entities);
+}
+
 export function feedsEveryMachine(block, route, machines, catalog) {
   const tiles = routeTiles(route);
-  const inserters = block.entities.filter(e => e.kind === 'inserter').map(i => inserterTiles(i, catalog));
-  return machines.filter(m => !inserters.some(({ pickup, drop }) => tiles.has(pickup) && insideEntity(drop, m)))
+  const { into } = inserterReach(block.entities, catalog);
+  return machines.filter(m => !(into.get(m) ?? []).some(({ pickup }) => tiles.has(pickup)))
     .map(m => `no inserter moves route ${route.id} into machine at ${m.x},${m.y}`);
 }
 
 export function drainsEveryMachine(block, route, machines, catalog) {
   const tiles = routeTiles(route);
-  const inserters = block.entities.filter(e => e.kind === 'inserter').map(i => inserterTiles(i, catalog));
-  return machines.filter(m => !inserters.some(({ pickup, drop }) => insideEntity(pickup, m) && tiles.has(drop)))
+  const { outOf } = inserterReach(block.entities, catalog);
+  return machines.filter(m => !(outOf.get(m) ?? []).some(({ drop }) => tiles.has(drop)))
     .map(m => `no inserter moves output of machine at ${m.x},${m.y} onto route ${route.id}`);
 }
 
@@ -112,30 +149,108 @@ function electricConsumers(block, catalog) {
   return block.entities.filter(e => e.kind === 'inserter' || (e.kind === 'building' && catalog.buildings[e.name].energy === 'electric'));
 }
 
-function networkConnected(poles, spec) {
-  if (poles.length === 0) return true;
-  const seen = new Set([0]);
-  const stack = [0];
+// Poles bucketed by centre: the poles within reach of a point without scanning them all.
+function bucketed(poles, size) {
+  const buckets = new Map();
+  const cell = v => Math.floor(v / size);
+  poles.forEach((p, i) => {
+    const [cx, cy] = center(p);
+    const k = `${cell(cx)},${cell(cy)}`;
+    if (!buckets.has(k)) buckets.set(k, []);
+    buckets.get(k).push(i);
+  });
+  // Indices of poles whose centre lies within the box [x0, x1] × [y0, y1].
+  return (x0, y0, x1, y1) => {
+    const out = [];
+    for (let bx = cell(x0); bx <= cell(x1); bx++) {
+      for (let by = cell(y0); by <= cell(y1); by++) out.push(...(buckets.get(`${bx},${by}`) ?? []));
+    }
+    return out;
+  };
+}
+
+// Whether the poles (all but `skip`) are wired into one network.
+function networkConnected(poles, spec, near, skip = -1) {
+  const count = poles.length - (skip >= 0 ? 1 : 0);
+  if (count <= 0) return true;
+  const first = skip === 0 ? 1 : 0;
+  const seen = new Set([first]);
+  const stack = [first];
+  const reach = spec.wireReach;
   while (stack.length) {
     const [ax, ay] = center(poles[stack.pop()]);
-    poles.forEach((p, j) => {
-      const [bx, by] = center(p);
-      if (!seen.has(j) && Math.hypot(ax - bx, ay - by) <= spec.wireReach) { seen.add(j); stack.push(j); }
-    });
+    for (const j of near(ax - reach, ay - reach, ax + reach, ay + reach)) {
+      if (j === skip || seen.has(j)) continue;
+      const [bx, by] = center(poles[j]);
+      if (Math.hypot(ax - bx, ay - by) <= reach) { seen.add(j); stack.push(j); }
+    }
   }
-  return seen.size === poles.length;
+  return seen.size === count;
+}
+
+// The poles whose removal would split the network (Tarjan's lowlink, iteratively).
+function articulationPoints(poles, spec, near) {
+  const reach = spec.wireReach;
+  const neighbours = poles.map(p => {
+    const [ax, ay] = center(p);
+    return near(ax - reach, ay - reach, ax + reach, ay + reach).filter(j => {
+      if (poles[j] === p) return false;
+      const [bx, by] = center(poles[j]);
+      return Math.hypot(ax - bx, ay - by) <= reach;
+    });
+  });
+  const order = new Array(poles.length).fill(-1), low = new Array(poles.length).fill(0);
+  const out = new Set();
+  let time = 0;
+  for (let root = 0; root < poles.length; root++) {
+    if (order[root] >= 0) continue;
+    order[root] = low[root] = time++;
+    let children = 0;
+    const stack = [{ v: root, parent: -1, k: 0 }];
+    while (stack.length) {
+      const top = stack.at(-1);
+      if (top.k < neighbours[top.v].length) {
+        const w = neighbours[top.v][top.k++];
+        if (order[w] < 0) {
+          order[w] = low[w] = time++;
+          if (top.v === root) children++;
+          stack.push({ v: w, parent: top.v, k: 0 });
+        } else if (w !== top.parent) {
+          low[top.v] = Math.min(low[top.v], order[w]);
+        }
+        continue;
+      }
+      stack.pop();
+      const up = stack.at(-1);
+      if (up) {
+        low[up.v] = Math.min(low[up.v], low[top.v]);
+        if (up.v !== root && low[top.v] >= order[up.v]) out.add(up.v);
+      }
+    }
+    if (children > 1) out.add(root);
+  }
+  return out;
 }
 
 export function powerNetwork(block, catalog, logistics) {
   const spec = catalog.poles[logistics.pole];
   const poles = block.entities.filter(e => e.kind === 'pole');
   const needs = electricConsumers(block, catalog);
-  const problems = needs.filter(e => !poles.some(p => powers(p, spec, e))).map(e => `${e.name} at ${e.x},${e.y} is not powered`);
-  if (!networkConnected(poles, spec)) problems.push('poles do not form one connected network');
+  const r = spec.supplyRadius;
+  const supplyNear = bucketed(poles, Math.max(1, 2 * r));
+  // The poles powering each consumer, and how many.
+  const powering = needs.map(e => supplyNear(e.x - r, e.y - r, e.x + e.w + r, e.y + e.h + r).filter(i => powers(poles[i], spec, e)));
+  const problems = needs.filter((e, n) => !powering[n].length).map(e => `${e.name} at ${e.x},${e.y} is not powered`);
+  const wireNear = bucketed(poles, Math.max(1, spec.wireReach));
+  if (!networkConnected(poles, spec, wireNear)) problems.push('poles do not form one connected network');
+  // A pole is redundant when every consumer it powers has another pole and the network holds
+  // without it (it is no articulation point of the wire graph).
+  const sole = new Set(powering.filter(list => list.length === 1).map(([i]) => i));
+  const holding = articulationPoints(poles, spec, wireNear);
   poles.forEach((removed, i) => {
-    const rest = poles.filter((_, j) => j !== i);
-    const stillCovered = needs.every(e => rest.some(p => powers(p, spec, e)));
-    if (stillCovered && networkConnected(rest, spec)) problems.push(`pole at ${removed.x},${removed.y} is redundant`);
+    if (sole.has(i) || holding.has(i)) return;
+    if (poles.length === 1 && needs.length) return;
+    problems.push(`pole at ${removed.x},${removed.y} is redundant`);
   });
   return problems;
 }
