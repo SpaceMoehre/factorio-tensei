@@ -3,6 +3,7 @@ import { routeLink, routePipe, RoutingError } from './router.js';
 import { PowerError } from './poles.js';
 import { trim, maxFlow } from './module.js';
 import { pathFlow } from './flow.js';
+import { simulate } from '../sim.js';
 
 export { RoutingError, PowerError, maxFlow };
 
@@ -16,6 +17,17 @@ export function prepare(ctx, designs, columns = []) {
   const laneCapacity = ctx.catalog.belts[ctx.logistics.belt].itemsPerSecond * 30;
   const instances = makeInstances(ctx.plan, designs, columns);
   return { instances, routes: groupRoutes(ctx, instances, laneCapacity) };
+}
+
+// What a prepared layout starves at least, before it is placed (Starvation): its belts carry
+// what their Path Flow delivers, through every splitter it asks for or none (compose places
+// what it can), and its inserters move what they move. Routing only adds to it.
+export function leastStarvation(ctx, prepared) {
+  const subBlocks = ctx.plan.map((sb, i) => ({ ...sb, inserters: supplyOf(prepared.instances.filter(inst => inst.step === i)) }));
+  const starving = routes => simulate({ routes, subBlocks }).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
+  const plain = starving(prepared.routes);
+  if (!prepared.routes.some(r => r.splitter)) return plain;
+  return Math.min(plain, starving(prepared.routes.map(r => (r.splitter ? { ...r, items: r.splitter.items } : r))));
 }
 
 // The Compound Block from routed modules (bottom-up): each Sub-Block's design is one or more
@@ -105,9 +117,9 @@ export function compose(ctx, prepared, positions, layout) {
     // lane dives under the inner ones and surfaces between them; other belts and the fluids'
     // pipes dive across them to the trunks further out.
     for (const step of new Set(instances.map(inst => inst.step))) {
-      const mine = instances.filter(inst => inst.step === step);
+      const mine = instances.filter(inst => inst.step === step && !inst.detached);
       const snaking = routes.filter(r => r.kind === 'belt' && r.slots.some((slot, k) => k > 0
-        && slot.inst.step === step && r.slots[k - 1].inst.step === step));
+        && slot.inst.step === step && stacked(r.slots[k - 1].inst, slot.inst)));
       if (mine.length < 2 || !snaking.length || 2 * snaking.length + 2 > Math.min(belts.reach, pipes.reach)) continue;
       for (const column of new Set(mine.map(inst => inst.column ?? 0))) {
         const boxes = mine.filter(inst => (inst.column ?? 0) === column).map(inst => placed[inst.index].box);
@@ -178,7 +190,7 @@ export function compose(ctx, prepared, positions, layout) {
   // row).
   const taskRank = task => {
     const { route, slot: k } = task;
-    if (k > 0 && k < route.slots.length && route.slots[k].inst.step === route.slots[k - 1].inst.step) {
+    if (k > 0 && k < route.slots.length && stacked(route.slots[k].inst, route.slots[k - 1].inst)) {
       const ends = endsOf(task);
       const goal = /** @type {{ y: number }} */ (ends?.goal);
       return [0, ends ? Math.abs(goal.y - ends.starts[0].y) : 0];
@@ -359,8 +371,13 @@ export function compose(ctx, prepared, positions, layout) {
     for (const r of result) for (const p of r.pieces) if (!seen.has(p)) { seen.add(p); entities.push(p); }
     const subBlocks = plan.map((sb, i) => {
       const mine = instances.filter(inst => inst.step === i);
-      const box = extentOf(mine.map(inst => placed[inst.index]), { w: 0, e: 0, n: 0, s: 0 });
-      return { ...sb, index: i, x: box.x, y: box.y, w: box.w, h: box.h, copies: mine.length, inserters: supplyOf(mine) };
+      const box = extentOf(mine.filter(inst => !inst.detached).map(inst => placed[inst.index]), { w: 0, e: 0, n: 0, s: 0 });
+      // Machines broken out of it (Breakout) stand apart, each in a box of its own.
+      const apart = mine.filter(inst => inst.detached).map(inst => ({ ...placed[inst.index].box }));
+      return {
+        ...sb, index: i, x: box.x, y: box.y, w: box.w, h: box.h, copies: mine.length, inserters: supplyOf(mine),
+        ...(apart.length ? { apart } : {}),
+      };
     });
     // Poles come once the block is squeezed (compact.js).
     return { subBlocks, entities, routes: result, bounds: extent(entities) };
@@ -377,7 +394,8 @@ export function compose(ctx, prepared, positions, layout) {
 function makeInstances(plan, designs, wanted) {
   const instances = [];
   plan.forEach((sb, i) => {
-    const kinds = designs[i].kinds.flatMap(kind => Array.from({ length: kind.count }, () => kind));
+    const all = designs[i].kinds.flatMap(kind => Array.from({ length: kind.count }, () => kind));
+    const kinds = all.filter(kind => !kind.detached);
     const n = kinds.length;
     const w = Math.max(...kinds.map(k => k.module.area.w)) + 6;
     const h = kinds.reduce((sum, k) => sum + k.module.area.h, 0) / n;
@@ -393,9 +411,20 @@ function makeInstances(plan, designs, wanted) {
       instances.push({ index: instances.length, step: i, module, rowOffset, column, pos, columns });
       rowOffset += rows;
     });
+    // Machines broken out of the Sub-Block (Breakout): each module stands apart, where placement
+    // finds room, its belts linked to the stack's like a neighbour's.
+    for (const kind of all.filter(k => k.detached)) {
+      const rows = Math.max(...kind.module.entities.filter(e => e.kind === 'building').map(e => e.row)) + 1;
+      instances.push({ index: instances.length, step: i, module: kind.module, rowOffset, column: 0, pos: 0, columns, detached: true });
+      rowOffset += rows;
+    }
   });
   return instances;
 }
+
+// Whether two copies stand in one stack (a belt between them turns beside it): copies of one
+// Sub-Block, neither broken out of it.
+export const stacked = (a, b) => a.step === b.step && !a.detached && !b.detached;
 
 // Global routes. Each base belt route becomes one belt or several, each visiting a run of
 // copies' parts (slots) in order: producers first, then consumers. A belt takes on slots while
@@ -423,8 +452,11 @@ function groupRoutes(ctx, instances, laneCapacity) {
   // One copy's belt goes on into the next: beside the stack (it leaves one copy on the side the
   // next one takes it in) or on east into a consumer.
   const exitSide = s => (s.part.dir === W ? W : E), entrySide = s => (s.part.dir === W ? E : W);
-  const chainable = (a, b) => a.part.canExit && b.part.canEnter
-    && (a.inst.step === b.inst.step ? exitSide(a) === entrySide(b) : exitSide(a) === E && entrySide(b) === W);
+  // A copy's parts never chain into each other. Machines broken out of a Sub-Block chain like a
+  // neighbour's, downstream of its stack: a belt runs on from the stack to them, never back.
+  const backward = (a, b) => a.inst.step === b.inst.step && a.inst.detached && !b.inst.detached;
+  const chainable = (a, b) => a.inst !== b.inst && !backward(a, b) && a.part.canExit && b.part.canEnter
+    && (stacked(a.inst, b.inst) ? exitSide(a) === entrySide(b) : exitSide(a) === E && entrySide(b) === W);
 
   for (const base of ctx.routes) {
     if (base.kind === 'pipe') {
@@ -466,8 +498,12 @@ function groupRoutes(ctx, instances, laneCapacity) {
     }
     // An output: its producer's parts, then (for an Internal Path) its consumers' parts. The belt
     // leaves the producer eastward: from the last copy back to the first, which runs east, when
-    // the copies stand in one column; through the columns west to east when they stand in several.
-    const producers = snakesOf(base.source, base.id).flatMap(snake => (snake[0].inst.columns > 1 ? snake : [...snake].reverse()));
+    // the copies stand in one column; through the columns west to east when they stand in several;
+    // then on through the machines broken out of it.
+    const producers = snakesOf(base.source, base.id).flatMap(snake => {
+      const stack = snake.filter(s => !s.inst.detached), apart = snake.filter(s => s.inst.detached);
+      return [...(stack[0]?.inst.columns > 1 ? stack : [...stack].reverse()), ...apart];
+    });
     const consumers = base.consumers.flatMap(step => slotsOf(step, base.id));
     const products = plan[base.source].outputs.filter(o => o.type === 'item');
     const total = products.reduce((sum, o) => sum + o.rate, 0);

@@ -37,7 +37,7 @@ The modules a step's buildings hold — speed, productivity and efficiency modul
 _Avoid_: beacons (not modelled)
 
 **Sub-Block**:
-The rectangular unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. It is built from one Module, or from Copies of one Module (and a smaller Module for the machines left over). The layout search chooses the arrangement.
+The unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. It is built from one Module, or from Copies of one Module (and a smaller Module for the machines left over), standing as one rectangle — but for machines a Breakout stands apart. The layout search chooses the arrangement.
 _Avoid_: block (ambiguous with Compound Block)
 
 **Module**:
@@ -69,7 +69,7 @@ The order of Sub-Blocks derived by topologically sorting on item overlap (Sub-Bl
 _Avoid_: input order, list order
 
 **Compactness**:
-What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness.
+What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness. Its belts' Path Flow and its inserters set the least it can starve before it is placed: a candidate that would starve more than the best is not placed at all.
 _Avoid_: size, footprint (ambiguous between area and entity count)
 
 **Band**:
@@ -77,7 +77,7 @@ The rows of belts beside a row of machines, counted outward from the machines' f
 _Avoid_: lane (a Lane is one side of a belt), belt row index without saying which face it counts from
 
 **Placement**:
-Arranging the Copies of every Module into the Compound Block. Belts run west to east through Modules, so each Sub-Block stands west of the ones it feeds, the Goals furthest east; each sits level with the entries it feeds, as far east as its consumers allow, sliding west, up or down around those already placed, keeping clear of the rows other Sub-Blocks' Side Inputs arrive on. Beside a stack of Copies stays room for the belts turning between them and the pipes joining them. The layout search chooses the corridors and gaps.
+Arranging the Copies of every Module into the Compound Block. Belts run west to east through Modules, so each Sub-Block stands west of the ones it feeds, the Goals furthest east; each sits level with the entries it feeds, as far east as its consumers allow, sliding west, up or down around those already placed, keeping clear of the rows other Sub-Blocks' Side Inputs arrive on. Beside a stack of Copies stays room for the belts turning between them and the pipes joining them. Machines a Breakout stands apart are placed last, in the gaps. The layout search chooses the corridors and gaps.
 _Avoid_: grid layout (implies uniform cells), fixed margins
 
 **Squeeze**:
@@ -129,8 +129,12 @@ What an Internal Path's belts deliver, as a max-flow: each producer machine make
 _Avoid_: fixed shares per machine; summing what each belt carries on its own
 
 **Refinement**:
-Once a layout stands, each Sub-Block is slid 8, 4, 2 or 1 tiles every way, its box free to reach into a neighbour's empty corner (its entities never landing on another's), the Links routed again; a slide that shrinks the Compound Block is the new best, refined in turn. The search keeps trying other designs and placements after.
+Once a layout stands, each Sub-Block is slid 8, 4, 2 or 1 tiles every way, its box free to reach into a neighbour's empty corner (its entities never landing on another's), the Links routed again; a slide that shrinks the Compound Block is the new best, refined in turn. Breakouts take turns with the slides, and the machines they stand apart take their next best spots or slide on their own. The search keeps trying other designs and placements after.
 _Avoid_: compaction (that is Squeeze)
+
+**Breakout**:
+Some of a Sub-Block's machines taken out of its rectangle, so the rest packs smaller, each standing apart in a gap of the Compound Block: one machine (of repeated Modules, the one for the machines left over, else one Copy), and where that packs no looser before routing, two or three together or each alone. Its machines left and those broken out are Modules of their own, designed like any other (the rest cutting an Internal Path into as many parts as the whole Sub-Block would, each broken-out machine joining one); they stand apart last in Placement, where they grow the block least and their Links run shortest, clear of the corridors other Links take, with a corridor and a column per belt between them and what they link to. Their belts chain like a neighbour's, downstream of the rest: a belt runs on from the rest through them, never back. Tried on every new best, one Sub-Block at a time, a trial after every two slides (never for a lone Sub-Block, which has no gaps); a trial is routed only where it packs no looser than the best before routing.
+_Avoid_: detach (code word), split (Parallel Belts split a route)
 
 **Pipe Row**:
 A row of a Band kept for one fluid's pipe, joining every connection of that fluid in the Band. A connection elsewhere in the Band dives under the belts to a tap just before the Pipe Row. Pipe Rows of one fluid in different Bands join in a riser beside the Sub-Block.

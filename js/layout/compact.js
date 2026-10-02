@@ -24,11 +24,12 @@ export function compact(block) {
   const kept = new Set(entities);
   out.entities = entities;
   for (const r of out.routes) r.pieces = r.pieces.filter(p => kept.has(p));
-  for (const sb of out.subBlocks) {
+  // Each Sub-Block's box, and those of machines broken out of it, shrink with the lines.
+  for (const box of out.subBlocks.flatMap(sb => [sb, ...(sb.apart ?? [])])) {
     for (const { axis, u } of log) {
       const c = axis === 'x' ? 'x' : 'y', d = axis === 'x' ? 'w' : 'h';
-      if (sb[c] > u) sb[c]--;
-      else if (sb[c] + sb[d] > u) sb[d]--;
+      if (box[c] > u) box[c]--;
+      else if (box[c] + box[d] > u) box[d]--;
     }
   }
   return out;
@@ -168,7 +169,7 @@ function clone(block) {
     ...block,
     entities: block.entities.map(e => copies.get(e)),
     routes: block.routes.map(r => ({ ...r, pieces: r.pieces.map(p => copies.get(p) ?? { ...p }) })),
-    subBlocks: block.subBlocks.map(sb => ({ ...sb })),
+    subBlocks: block.subBlocks.map(sb => ({ ...sb, ...(sb.apart ? { apart: sb.apart.map(b => ({ ...b })) } : {}) })),
   };
 }
 

@@ -1,3 +1,5 @@
+import { stacked } from './compose.js';
+
 // Where each copy of each module stands in the Compound Block. Belts run west to east through
 // every module, so a Sub-Block stands west of the ones it feeds. Sub-Blocks are placed from the
 // Goals westward (bottom-up in reverse: consumers first), each as far east as its consumers
@@ -5,8 +7,10 @@
 // up or down, whichever grows the block least and keeps its links short, and it keeps clear of
 // the rows other Sub-Blocks' Side Inputs arrive on. Corridors between a Sub-Block and its
 // consumers hold the links. Returns each copy's top-left corner (its module's area).
+// Machines broken out of a Sub-Block (Breakout) are placed last, each in a gap of the rest.
 // params: { corridor, gap, stack, order: { [step]: number } (nudges the placing order),
-//           lift: { [step]: number } (nudges a Sub-Block up or down), weight (link length cost) }
+//           lift: { [step]: number } (nudges a Sub-Block up or down), weight (link length cost),
+//           spot: { [step]: number } (the broken-out machines' next best spots: 1, 2, …) }
 export function placeBlocks(ctx, prepared, params = {}) {
   const { plan } = ctx;
   const { instances, routes } = prepared;
@@ -19,14 +23,14 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // through them (it turns on both sides), and room for a trunk joining each fluid's pipes (inputs
   // west, outputs east).
   const turns = steps.map(i => routes.filter(r => r.kind === 'belt' && r.slots.some((slot, k) => k > 0
-    && slot.inst.step === i && r.slots[k - 1].inst.step === i)).length);
-  const trunks = (i, side) => routes.filter(r => r.kind === 'pipe' && r.stubs.filter(st => st.inst.step === i && st.side === side).length > 1).length;
+    && slot.inst.step === i && stacked(r.slots[k - 1].inst, slot.inst))).length);
+  const trunks = (i, side) => routes.filter(r => r.kind === 'pipe' && r.stubs.filter(st => st.inst.step === i && !st.inst.detached && st.side === side).length > 1).length;
   // Many copies stand in several columns (compose.js decides which), so the Sub-Block comes out
   // about square: the odd columns bottom to top, hanging from the bottom. Copies of later
   // columns get their own belts through gaps left between the copies of earlier ones.
   const solo = i => routes.filter(r => r.kind === 'belt' && r.slots.length === 1 && r.slots[0].inst.step === i).length;
   const blocks = steps.map(i => {
-    const mine = instances.filter(inst => inst.step === i);
+    const mine = instances.filter(inst => inst.step === i && !inst.detached);
     const copies = mine.length > 1;
     const padW = copies ? 2 * turns[i] + 2 + 3 * trunks(i, 'W') : 0, padE = copies ? 2 * turns[i] + 2 + 3 * trunks(i, 'E') : 0;
     const mw = Math.max(...mine.map(inst => inst.module.area.w)) + padW + padE;
@@ -56,12 +60,14 @@ export function placeBlocks(ctx, prepared, params = {}) {
   });
   // Links from a producer's exit to a consumer's entry, by where each sits in its block; and the
   // rows each block's Side Inputs arrive on.
+  // (Broken-out machines are left out: the belt on either side of one links its neighbours.)
   const links = [];
   for (const route of routes.filter(r => r.kind === 'belt')) {
-    route.slots.forEach((slot, k) => {
+    const slots = route.slots.filter(slot => !slot.inst.detached);
+    slots.forEach((slot, k) => {
       const at = blocks[slot.inst.step].at.get(slot.inst.index).y;
-      if (k === 0 && route.source === 'side-input') blocks[slot.inst.step].entries.push(at + entryY(slot));
-      const next = route.slots[k + 1];
+      if (slot === route.slots[0] && route.source === 'side-input') blocks[slot.inst.step].entries.push(at + entryY(slot));
+      const next = slots[k + 1];
       if (!next || next.inst.step === slot.inst.step) return;
       links.push({
         from: slot.inst.step, to: next.inst.step, fromY: at + exitY(slot),
@@ -70,11 +76,11 @@ export function placeBlocks(ctx, prepared, params = {}) {
     });
   }
   for (const route of routes.filter(r => r.kind === 'pipe')) {
-    for (const stub of route.stubs) {
+    for (const stub of route.stubs.filter(st => !st.inst.detached)) {
       const at = blocks[stub.inst.step].at.get(stub.inst.index).y + stub.y - stub.inst.module.area.y;
       if (route.source === 'side-input' && stub.side === 'W') blocks[stub.inst.step].entries.push(at);
       if (typeof route.source !== 'number' || stub.inst.step !== route.source || stub.side !== 'E') continue;
-      for (const to of route.stubs.filter(s => s.inst.step !== route.source && s.side === 'W')) {
+      for (const to of route.stubs.filter(s => s.inst.step !== route.source && s.side === 'W' && !s.inst.detached)) {
         links.push({ from: route.source, to: to.inst.step, fromY: at, toY: blocks[to.inst.step].at.get(to.inst.index).y + to.y - to.inst.module.area.y });
       }
     }
@@ -140,13 +146,19 @@ export function placeBlocks(ctx, prepared, params = {}) {
     placed.set(i, { x: best.x, y: best.y });
   }
 
+  // Refinement's slides move Sub-Blocks bodily (`shift`); their bounds stay where they were placed.
+  const moved = i => {
+    const [dx, dy] = params.shift?.[i] ?? [0, 0];
+    return { x: placed.get(i).x + dx, y: placed.get(i).y + dy };
+  };
   const positions = [];
   for (const b of blocks) {
-    const at = placed.get(b.step);
+    const at = moved(b.step);
     for (const inst of b.instances) positions[inst.index] = { x: at.x + b.at.get(inst.index).x, y: at.y + b.at.get(inst.index).y };
   }
-  // Shifted to start at 0,0; `bounds` covers every Sub-Block with the room beside its stack.
   const boxes = blocks.map(b => ({ ...placed.get(b.step), w: b.w, h: b.h }));
+  boxes.push(...placeApart(prepared, positions, blocks, moved, links, params));
+  // Shifted to start at 0,0; `bounds` covers every Sub-Block with the room beside its stack.
   const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
   /** @type {any} */
   const out = positions.map(p => ({ x: p.x - x0, y: p.y - y0 }));
@@ -154,6 +166,121 @@ export function placeBlocks(ctx, prepared, params = {}) {
     x: 0, y: 0, w: Math.max(...boxes.map(b => b.x + b.w)) - x0, h: Math.max(...boxes.map(b => b.y + b.h)) - y0,
   };
   return out;
+}
+
+// Breakout: each machine broken out of its Sub-Block stands in the spot, clear of every box
+// placed so far by `gap` and of the corridors the links between Sub-Blocks take, that grows the
+// block least and keeps its own links short (`weight` per tile, a belt running back west
+// costing more); `spot` picks the next best spots instead, and slides (`shift` of `a<step>`)
+// move them on. Fills in their positions; returns their boxes.
+// moved(step): where a Sub-Block's box stands.
+function placeApart(prepared, positions, blocks, moved, links, params) {
+  const { instances, routes } = prepared;
+  const apart = instances.filter(inst => inst.detached);
+  if (!apart.length) return [];
+  const { gap = 1, weight = 4, corridor = 2 } = params;
+  // Each box with what stands in it: a Sub-Block's stack, or a broken-out machine.
+  const boxes = blocks.map(b => ({ ...moved(b.step), w: b.w, h: b.h, holds: inst => inst.step === b.step && !inst.detached }));
+  const placedApart = [];
+  const overlaps = (a, b, g, gy = g) => a.x < b.x + b.w + g && b.x < a.x + a.w + g && a.y < b.y + b.h + gy && b.y < a.y + a.h + gy;
+  const extentOf = list => {
+    const x0 = Math.min(...list.map(b => b.x)), y0 = Math.min(...list.map(b => b.y));
+    return { x: x0, y: y0, w: Math.max(...list.map(b => b.x + b.w)) - x0, h: Math.max(...list.map(b => b.y + b.h)) - y0 };
+  };
+  // Where links run: between the Sub-Blocks they join, along the rows Side Inputs arrive on from
+  // the west edge and outputs leave on to the east edge.
+  const all = extentOf(boxes);
+  const corridors = links.map(l => {
+    const from = boxes[l.from], to = boxes[l.to];
+    const y0 = Math.min(from.y + l.fromY, to.y + l.toY), y1 = Math.max(from.y + l.fromY, to.y + l.toY);
+    return { x: from.x + from.w, y: y0, w: to.x - from.x - from.w, h: y1 - y0 + 1 };
+  }).filter(c => c.w > 0);
+  for (const b of blocks) {
+    const at = moved(b.step);
+    for (const y of b.entries) corridors.push({ x: all.x, y: at.y + y, w: at.x - all.x, h: 1 });
+  }
+  for (const route of routes.filter(r => r.kind === 'belt' && r.sink === 'side-output')) {
+    const last = route.slots.at(-1);
+    if (last.inst.detached) continue;
+    const p = positions[last.inst.index];
+    const exit = last.part.pieces.at(-1);
+    const x = p.x + exit.x - last.inst.module.area.x + 1;
+    corridors.push({ x, y: p.y + exit.y - last.inst.module.area.y, w: all.x + all.w - x, h: 1 });
+  }
+  // Where a slot's belt enters (one tile west of the copy) and leaves it (one tile east).
+  const end = (slot, at, entry) => {
+    const { area } = slot.inst.module;
+    const piece = entry ? slot.part.pieces[0] : slot.part.pieces.at(-1);
+    return { x: at.x + piece.x - area.x + (entry ? -1 : 1), y: at.y + piece.y - area.y };
+  };
+  for (const inst of apart) {
+    const { w, h } = inst.module.area;
+    const where = (other, at) => (other.inst === inst ? at : positions[other.inst.index]);
+    const belts = routes.filter(r => r.kind === 'belt' && r.slots.some(s => s.inst === inst));
+    const pipes = routes.filter(r => r.kind === 'pipe' && r.stubs.some(st => st.inst === inst));
+    // Belts linking it to a box turn in the gap between them: a corridor's width and a column
+    // more for each belt.
+    const linked = box => belts.reduce((n, route) => n + route.slots.filter((slot, k) => k > 0
+      && ((slot.inst === inst && box.holds(route.slots[k - 1].inst)) || (route.slots[k - 1].inst === inst && box.holds(slot.inst)))).length, 0);
+    const clearance = boxes.map(box => {
+      const n = linked(box);
+      return n ? Math.max(gap, corridor + n - 1) : gap;
+    });
+    // Every link this machine's belts take, with it standing at `at`: to and from its neighbours
+    // along each belt, from the west edge or on to the east edge.
+    const length = at => {
+      const block = extentOf([...boxes, { ...at, w, h }]);
+      let sum = 0;
+      for (const route of belts) {
+        route.slots.forEach((slot, k) => {
+          const prev = route.slots[k - 1];
+          if (slot.inst === inst) {
+            if (k === 0 && route.source === 'side-input') sum += end(slot, at, true).x - block.x;
+            if (k === route.slots.length - 1 && route.sink === 'side-output') sum += block.x + block.w - end(slot, at, false).x;
+          }
+          if (!prev || (slot.inst !== inst && prev.inst !== inst)) return;
+          const a = where(prev, at), b = where(slot, at);
+          if (!a || !b) return;
+          const from = end(prev, a, false), to = end(slot, b, true);
+          const dx = to.x - from.x;
+          sum += Math.abs(dx) + Math.abs(to.y - from.y) + (dx < 0 ? 2 * -dx + 8 : 0);
+        });
+      }
+      for (const route of pipes) {
+        const mine = route.stubs.find(st => st.inst === inst);
+        const others = route.stubs.filter(st => st.inst !== inst && positions[st.inst.index]);
+        const p = { x: at.x + mine.x - inst.module.area.x, y: at.y + mine.y - inst.module.area.y };
+        const near = others.map(st => {
+          const q = positions[st.inst.index];
+          return Math.abs(q.x + st.x - st.inst.module.area.x - p.x) + Math.abs(q.y + st.y - st.inst.module.area.y - p.y);
+        });
+        if (near.length) sum += Math.min(...near);
+        else if (route.source === 'side-input') sum += p.x - block.x;
+      }
+      return sum;
+    };
+    const room = extentOf(boxes);
+    const options = [];
+    for (let y = room.y - h - gap - 1; y <= room.y + room.h + gap + 1; y++) {
+      for (let x = room.x - w - gap - 1; x <= room.x + room.w + gap + 1; x++) {
+        const me = { x, y, w, h };
+        if (boxes.some((b, n) => overlaps(me, b, clearance[n], gap)) || corridors.some(c => overlaps(me, c, 0))) continue;
+        const grown = extentOf([...boxes, me]);
+        options.push({ x, y, cost: grown.w * grown.h + weight * length(me) });
+      }
+    }
+    options.sort((a, b) => a.cost - b.cost || a.y - b.y || a.x - b.x);
+    const pick = options[Math.min(options.length - 1, params.spot?.[inst.step] ?? 0)];
+    positions[inst.index] = { x: pick.x, y: pick.y };
+    boxes.push({ x: pick.x, y: pick.y, w, h, holds: other => other === inst });
+    placedApart.push(inst);
+  }
+  return placedApart.map(inst => {
+    const [dx, dy] = params.shift?.[`a${inst.step}`] ?? [0, 0];
+    const p = positions[inst.index];
+    positions[inst.index] = { x: p.x + dx, y: p.y + dy };
+    return { ...positions[inst.index], w: inst.module.area.w, h: inst.module.area.h };
+  });
 }
 
 // Whether a module stacked right on top of another would touch it badly: pipes of two fluids

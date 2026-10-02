@@ -1,5 +1,6 @@
-import { context, designStep, designOf, random } from './design.js';
-import { prepare, compose, RoutingError, PowerError } from './layout/compose.js';
+import { context, designStep, designOf, random, breakoutDesign, detachCopy } from './design.js';
+import { LayoutError } from './layout/core.js';
+import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
 import { placeBlocks } from './layout/place.js';
 import { finishBlock } from './layout/compact.js';
 import { validateBlock } from './layout/validity.js';
@@ -10,9 +11,10 @@ import { simulate } from './sim.js';
 // belts, each routed once as a Module (huge Sub-Blocks repeat one module). Then Compound Blocks
 // are put together from those designs: placed, linked, powered and checked. Each one that beats
 // the best so far is yielded — Starvation first (a layout whose machines starve, for want of
-// belts, lanes or inserters, is no answer), then bounding-box area, then entity count. Later
-// candidates try other designs and placements. Deterministic for a given seed and candidate
-// count.
+// belts, lanes or inserters, is no answer), then bounding-box area, then entity count — and
+// refined: its Sub-Blocks slid, and machines broken out of them into gaps (Breakout, ADR 0006).
+// Later candidates try other designs and placements. Deterministic for a given seed and
+// candidate count.
 // options: { seed, maxCandidates, deadline (ms timestamp), now, trace (called with each
 //            candidate's choices and the error that sank it, for diagnostics) }
 export function* search(entries, catalog, logistics, options = {}) {
@@ -24,21 +26,61 @@ export function* search(entries, catalog, logistics, options = {}) {
   const designs = [];
   for (const i of order) designs[i] = designStep(ctx, i, rng, { now, deadline });
 
+  // Breakout designs, built the first time the search tries them (with a random source of their
+  // own, so the rest of the search draws as it would without them): a Sub-Block's designs for
+  // a share of its machines, put together as the machines left and the ones broken out. Only
+  // the structured variants: random draws take long and seldom pack a share tighter.
+  const breakRng = random(seed + 1);
+  const shares = new Map();
+  const shareOf = (i, machines, rest) => {
+    const k = `${i}:${machines}:${rest}`;
+    if (!shares.has(k)) {
+      let list = null;
+      try {
+        list = designStep(ctx, i, breakRng, { now, deadline, machines, rest, draws: 0 });
+      } catch (e) {
+        if (!(e instanceof LayoutError)) throw e;
+      }
+      shares.set(k, list);
+    }
+    return shares.get(k);
+  };
+  const broken = new Map();
+  // A candidate's design for Sub-Block i: its choice, with machines broken out of it where the
+  // candidate says so ('copy': a repeated module's leftover or a copy; 'n': n machines each apart;
+  // 'ng': n machines together).
+  const designFor = (candidate, i) => {
+    const c = Math.min(candidate.choice[i], designs[i].length - 1);
+    const base = designOf(designs[i][c]);
+    const spec = candidate.breakout?.[i];
+    if (!spec || !base) return base;
+    const k = `${i}:${c}:${spec}`;
+    if (!broken.has(k)) {
+      const n = parseInt(spec, 10), group = spec.endsWith('g');
+      broken.set(k, spec === 'copy' ? detachCopy(base)
+        : breakoutDesign(shareOf(i, ctx.plan[i].count - n, true), shareOf(i, group ? n : 1, false), group ? 1 : n));
+    }
+    return broken.get(k);
+  };
+
   let best = null;
   let failure = null;
   let tried = 0;
   const prepared = new Map();
+  // Breakout trials, each with the Sub-Block and spec it tries: routed only where they look
+  // promising once placed.
+  const trials = new WeakMap();
   const first = { choice: ctx.plan.map(() => 0), columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {}, shift: {} };
   const queue = [first, ...sweep(first, designs)];
-  // Each new best is refined first: every Sub-Block slid a few tiles each way.
+  // Each new best is refined first: every Sub-Block slid a few tiles each way, and Breakouts.
   let refining = [];
   while (tried < maxCandidates && (tried === 0 || now() < deadline)) {
     const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng);
     tried++;
-    const k = `${candidate.choice.join()}|${candidate.columns.join()}`;
+    const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}`;
     if (!prepared.has(k)) {
       // Each Sub-Block's chosen design, routed now if this is the first time it is tried.
-      const chosen = candidate.choice.map((c, i) => designOf(designs[i][Math.min(c, designs[i].length - 1)]));
+      const chosen = candidate.choice.map((c, i) => designFor(candidate, i));
       let ready = null;
       try {
         if (chosen.every(Boolean)) ready = prepare(ctx, chosen, candidate.columns);
@@ -52,9 +94,19 @@ export function* search(entries, catalog, logistics, options = {}) {
     }
     const ready = prepared.get(k);
     if (!ready) continue;
-    let block;
+    // A layout whose belts and inserters starve more than the best's cannot beat it, however it
+    // is placed.
+    ready.least ??= Math.round(leastStarvation(ctx, ready) * 1000) / 1000;
+    if (best && ready.least > best.score[0]) continue;
+    let block, placed;
     try {
-      const positions = shifted(placeBlocks(ctx, ready, candidate), ready.instances, candidate.shift);
+      const positions = placeBlocks(ctx, ready, candidate);
+      placed = positions.bounds.w * positions.bounds.h;
+      // A Breakout trial packs no looser than the best, or it is not worth routing. Where one
+      // machine broken out does, more of that Sub-Block's are tried too.
+      const trial = trials.get(candidate);
+      if (trial && placed > best.placed) continue;
+      if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
       const layout = { margin: { w: 0, e: 0, n: 1, s: 1 } };
       let composed;
       try {
@@ -80,12 +132,21 @@ export function* search(entries, catalog, logistics, options = {}) {
     const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
     const score = [Math.round(starving * 1000) / 1000, block.bounds.w * block.bounds.h, block.entities.length];
     if (!best || better(score, best.score)) {
-      best = { candidate, score };
-      refining = slides(candidate, ctx.plan.length);
+      best = { candidate, score, placed };
+      // A Breakout trial after every two slides (a lone Sub-Block has no gaps to fill).
+      const trying = ctx.plan.length > 1 ? register(breakouts(candidate, ctx.plan, designs)) : [];
+      const sliding = slides(candidate, ctx.plan.length);
+      refining = Array.from({ length: Math.max(trying.length, Math.ceil(sliding.length / 2)) }, (_, j) => [sliding[2 * j], sliding[2 * j + 1], trying[j]]).flat().filter(Boolean);
       yield { block, score, tried };
     }
   }
   return { tried, failure };
+
+  // Breakout trials as candidates, each remembered with what it tries.
+  function register(list) {
+    for (const t of list) trials.set(t.candidate, t);
+    return list.map(t => t.candidate);
+  }
 }
 
 // First the best design of every Sub-Block with roomier and tighter placements, then each
@@ -105,25 +166,38 @@ function sweep(first, designs) {
   return list.slice(1);
 }
 
-// Refinement: a Sub-Block moved bodily after placement, its box free to reach into a
-// neighbour's empty corner (compose rejects copies landing on each other), so the block packs
-// tighter than rectangles side by side.
-function shifted(positions, instances, shift = {}) {
-  /** @type {any} */
-  const out = positions.map((p, n) => {
-    const [dx, dy] = shift[instances[n].step] ?? [0, 0];
-    return { x: p.x + dx, y: p.y + dy };
+// Breakout trials on a layout, as { candidate, step, spec }: one machine of each Sub-Block broken
+// out of it in turn (of a repeated module, its leftover module or a copy), so what is left packs
+// smaller and it stands in a gap; and where machines already stand apart, their next best spots.
+function breakouts(base, plan, designs) {
+  const out = [];
+  plan.forEach((sb, step) => {
+    if (base.breakout?.[step]) return;
+    const copies = designs[step][Math.min(base.choice[step], designs[step].length - 1)]?.design?.copies;
+    if (copies || sb.count > 1) out.push(breakout(base, step, copies ? 'copy' : '1'));
   });
-  out.bounds = positions.bounds;
+  for (const step of Object.keys(base.breakout ?? {})) {
+    for (const r of [1, 2]) out.push({ candidate: { ...base, spot: { ...base.spot, [step]: (base.spot?.[step] ?? 0) + r } }, step: Number(step), spec: 'spot' });
+  }
   return out;
 }
 
-// A layout's Sub-Blocks each slid 8, 4, 2 or 1 tiles west, east, north or south of where it
-// stands, the longest slides first.
+// More of a Sub-Block's machines broken out: two or three together, or each apart.
+function more(base, step, sb) {
+  return ['2g', '3g', '2', '3'].filter(spec => sb.count > parseInt(spec, 10)).map(spec => breakout(base, step, spec));
+}
+
+const breakout = (base, step, spec) => ({ candidate: { ...base, breakout: { ...base.breakout, [step]: spec } }, step, spec });
+
+// Refinement: a layout's Sub-Blocks (and the machines broken out of them, `a<step>`) each slid
+// 8, 4, 2 or 1 tiles west, east, north or south of where it stands, the longest slides first,
+// its box free to reach into a neighbour's empty corner (compose rejects copies landing on each
+// other), so the block packs tighter than rectangles side by side.
 function slides(base, n) {
   const out = [];
+  const keys = [...Array(n).keys(), ...Object.keys(base.breakout ?? {}).map(i => `a${i}`)];
   for (const k of [8, 4, 2, 1]) {
-    for (let i = 0; i < n; i++) {
+    for (const i of keys) {
       const [dx, dy] = base.shift?.[i] ?? [0, 0];
       for (const [sx, sy] of [[-k, 0], [k, 0], [0, -k], [0, k]]) out.push({ ...base, shift: { ...base.shift, [i]: [dx + sx, dy + sy] } });
     }

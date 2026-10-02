@@ -73,13 +73,17 @@ function spareSpeed(sb, index, routes, lane) {
 // repeat a module instead. Only the first candidate that routes is built here (designOf builds
 // the others when the search first tries them); while it starves, the next ones are built too,
 // until the deadline. Throws LayoutError when nothing fits.
-export function designStep(ctx, index, rng, { now = () => Date.now(), deadline = Infinity } = {}) {
-  const sb = ctx.plan[index];
+// machines: design a module of only that many of the Sub-Block's machines (a Breakout's share),
+// its belts free to chain with the other modules' (as a Copy's are); with `rest`, the machines
+// a Breakout leaves, cutting an Internal Path into as many parts as the whole would.
+export function designStep(ctx, index, rng, { now = () => Date.now(), deadline = Infinity, machines = null, rest = false, draws = RANDOM_VARIANTS } = {}) {
+  const whole = !machines || machines === ctx.plan[index].count;
+  const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const building = ctx.catalog.buildings[sb.building];
   const links = coreLinks(sb, index, ctx.routes);
-  const shape = shapeOf(ctx, sb, index, links);
+  const shape = shapeOf(ctx, sb, index, links, rest);
   /** @type {any[]} */
-  const candidates = sb.count > COPIES_FROM ? copyCandidates(ctx, index, shape, rng) : [];
+  const candidates = whole && sb.count > COPIES_FROM ? copyCandidates(ctx, index, shape, rng) : [];
   const errors = new Map();
   if (sb.count <= ONLY_COPIES || !candidates.length) {
     const cores = new Map();
@@ -87,7 +91,7 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
       if (!variant) return;
       try {
         const core = buildCore(sb, building, links, variant, ctx.env);
-        core.pathShort = corePathShort(ctx, sb, core, true);
+        core.pathShort = corePathShort(ctx, sb, core, whole);
         const signature = JSON.stringify([core.w, core.h, core.entities.map(e => [e.x, e.y, e.name, e.direction]), core.rows.map(r => [r.routeIds, r.part, r.y, r.x]), core.pipeRows.map(r => r.y), core.poleSlots]);
         if (!cores.has(signature)) cores.set(signature, { variant, core });
       } catch (e) {
@@ -95,7 +99,7 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
         errors.set(e.message, (errors.get(e.message) ?? 0) + 1);
       }
     };
-    for (const variant of variants(shape, links, sb, rng)) attempt(variant);
+    for (const variant of variants(shape, links, sb, rng, draws)) attempt(variant);
     // Machines whose belts above and below cannot feed them take belts on their sides too.
     const best = Math.min(...[...cores.values()].map(c => trouble(c.core)));
     if (!(best <= 1e-6)) for (const variant of sideVariants(shape, links, sb, rng)) attempt(variant);
@@ -121,7 +125,7 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
           for (const margin of margins(core)) {
             try {
               const module = routeModule(core, moduleOptions(ctx, links, margin, sb));
-              return { kinds: [{ module, count: 1 }], variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module), area: module.area.w * module.area.h };
+              return { kinds: [{ module, count: 1 }], variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module, whole), area: module.area.w * module.area.h };
             } catch (e) {
               if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
               failure = e;
@@ -134,9 +138,9 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
   }
   // Whole modules by their estimate, best first; repeated ones after the best whole one.
   const rank = (a, b) => (a.estimate.stuck ?? 0) - (b.estimate.stuck ?? 0) || a.estimate.trouble - b.estimate.trouble || a.estimate.area - b.estimate.area;
-  const whole = candidates.filter(c => !c.copies).sort(rank), repeated = candidates.filter(c => c.copies).sort(rank);
+  const single = candidates.filter(c => !c.copies).sort(rank), repeated = candidates.filter(c => c.copies).sort(rank);
   // Past 40 machines a whole module takes long to route and seldom does: copies first.
-  const first = sb.count > 40 ? [...repeated, ...whole] : [...whole.slice(0, 1), ...repeated, ...whole.slice(1)];
+  const first = sb.count > 40 ? [...repeated, ...single] : [...single.slice(0, 1), ...repeated, ...single.slice(1)];
   candidates.splice(0, candidates.length, ...first);
   if (!candidates.length) {
     const [reason] = [...errors].sort((a, b) => b[1] - a[1])[0] ?? ['no layout fits'];
@@ -155,6 +159,39 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     if (d && d.trouble < candidates[0].design.trouble - 1e-6) candidates.unshift(...candidates.splice(k, 1));
   }
   return candidates.filter(c => !c.failed);
+}
+
+// Breakout: a Sub-Block's design with some of its machines broken out of it, so what is left
+// packs smaller and the broken-out ones stand wherever the Compound Block has room, their belts
+// linked to the rest's there. rest: designStep's candidates for the machines left; piece: those
+// for one broken-out module (`count` of them stand apart). Null when either does not route.
+export function breakoutDesign(rest, piece, count) {
+  const first = list => {
+    for (const c of list ?? []) {
+      const d = designOf(c);
+      if (d) return d;
+    }
+    return null;
+  };
+  const main = first(rest), out = first(piece);
+  if (!main || !out) return null;
+  return {
+    kinds: [...main.kinds, { module: out.kinds[0].module, count, detached: true }],
+    trouble: main.trouble + count * out.trouble, area: main.area + count * out.area,
+  };
+}
+
+// A repeated module's design with its leftover module, or else one copy, broken out: it stands
+// apart from the stack. Null when the design has neither to spare.
+export function detachCopy(design) {
+  if (!design?.copies) return null;
+  const kinds = design.kinds.map(k => ({ ...k }));
+  if (kinds.length > 1) kinds[kinds.length - 1].detached = true;
+  else if (kinds[0].count > 2) {
+    kinds[0].count--;
+    kinds.push({ module: kinds[0].module, count: 1, detached: true });
+  } else return null;
+  return { ...design, kinds };
 }
 
 // A candidate's design, routed the first time it is asked for; null when it does not route.
@@ -430,7 +467,7 @@ const areaOf = core => core.w * core.h;
 
 // The plainest variants first (one row, nearest belt rows, belts split between the faces, rows
 // as long as the busiest belt allows, pairs of rows facing a shared belt), then random draws.
-function* variants(shape, links, sb, rng) {
+function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS) {
   const rotations = rotationsFor(shape, links);
   for (const rotation of rotations) {
     yield stackVariant(shape, { rotation, rowLength: sb.count, plain: true }, rng);
@@ -465,7 +502,7 @@ function* variants(shape, links, sb, rng) {
     }
   }
   // Fewer random draws for big cores: each takes longer to build.
-  for (let n = 0; n < (sb.count > 24 ? RANDOM_VARIANTS / 3 : RANDOM_VARIANTS); n++) {
+  for (let n = 0; n < (sb.count > 24 ? draws / 3 : draws); n++) {
     const merge = rng() < 0.3;
     const cap = merge ? shape.mergeCap : shape.rowCap;
     const lengths = [sb.count, Math.ceil(sb.count / 2), cap, Math.max(1, cap - 1), Math.ceil(cap / 2), squareRow(shape, sb), 1 + Math.floor(rng() * sb.count)];
@@ -603,7 +640,9 @@ const sbHeight = (shape, rotation) => (rotation === 4 || rotation === 12 ? shape
 // What shapes a Sub-Block's layout: its belt routes, how many machines one belt of each can
 // feed, which routes may split into parallel belts (a Side Input only it takes, an output
 // nothing else takes, or an Internal Path between it and one other Sub-Block), and its fluids.
-export function shapeOf(ctx, sb, index, links) {
+// rest: sb is the machines a Breakout leaves; they keep an Internal Path's parts, as many as the
+// whole Sub-Block's where they have the machines, and each broken-out machine joins one.
+export function shapeOf(ctx, sb, index, links, rest = false) {
   const belts = [...links.inputs, ...(links.output !== null ? [links.output] : [])].map(routeId => {
     const route = ctx.routes[routeId];
     const isOutput = routeId === links.output;
@@ -621,7 +660,7 @@ export function shapeOf(ctx, sb, index, links) {
     if (internal) {
       const belts = pathBelts(ctx, route);
       return {
-        routeIds: [routeId], perBelt: producerPart(sb.count, belts), parts: whole ? belts : null, splittable, perLane, isOutput, items,
+        routeIds: [routeId], perBelt: producerPart(sb.count, belts), parts: whole || (rest && sb.count >= belts) ? belts : null, splittable, perLane, isOutput, items,
         outLane: isOutput ? outputLane(ctx, sb) : 0, oneSide: isOutput ? oneSide(ctx, sb) : 0, oneBelt: false,
         // What each belt brings its consumers (a Two-Way Output's belts are cut to match).
         wants: whole && isOutput ? pathWants(ctx, route, belts) : null,
@@ -736,7 +775,7 @@ export function stackVariant(shape, { rotation, rowLength, flip = false, plain =
   // Two-Way Output: the short row stands where every belt still gets its share — at the end of
   // the stack, else as near it as works (an end band has only one row to feed it).
   const twoWayPath = dual ? belts.find(b => b.isOutput && b.splittable && b.parts) : null;
-  if (twoWayPath && rows > 2 && counts.at(-1) < rowLength) {
+  if (twoWayPath?.wants && rows > 2 && counts.at(-1) < rowLength) {
     const made = twoWayPath.items.reduce((sum, i) => sum + i.rate, 0) / sb.count;
     const moved = k => [...counts.slice(0, k), counts.at(-1), ...counts.slice(k, -1)];
     const at = [...Array(rows).keys()].reverse().find(k => flowCuts(moved(k), twoWayPath.wants, made * (sb.headroom ?? 1), shape.lane));

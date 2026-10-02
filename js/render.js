@@ -109,7 +109,8 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
       ctx.strokeStyle = starving.has(sb.index) ? t.starve : t.subBlock;
       ctx.setLineDash([6, 4]);
       ctx.lineWidth = 1.5;
-      ctx.strokeRect(sx(sb.x) - 3, sy(sb.y) - 3, sb.w * s + 6, sb.h * s + 6);
+      // Machines broken out of it (Breakout) in boxes of their own.
+      for (const b of [sb, ...(sb.apart ?? [])]) ctx.strokeRect(sx(b.x) - 3, sy(b.y) - 3, b.w * s + 6, b.h * s + 6);
       ctx.setLineDash([]);
       if (s >= 3) {
         ctx.fillStyle = starving.has(sb.index) ? t.starve : t.subBlock;
