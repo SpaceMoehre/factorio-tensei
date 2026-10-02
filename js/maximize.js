@@ -96,9 +96,8 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
 // next(): the n to try next, strictly between the highest that fit and the lowest that did not:
 // the highest whole number foretold to fit (right after a try that did not fit, or below one
 // whose designs starved, no more than halfway: the Foretelling knows nothing of designs that
-// starve, and was wrong); once the whole
-// numbers meet, where one more machine's designs starve (not the room), a few rates between,
-// halving the gap (machines that starve at full speed may not a little slower); null after.
+// starve, and was wrong); once the whole numbers meet, a few rates between, halving the gap;
+// null after.
 // record(n, outcome): a try's outcome (attempt's). foretold(): { rate, machines }. span(n): the
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates.
@@ -199,10 +198,18 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
         if (failed || starves) want = Math.min(want, Math.ceil((lo + hi) / 2));
         return Math.min(want, top - 1);
       }
-      // Between whole numbers, where the next one's designs starved.
-      if (!starves || between >= BETWEEN || hi - lo <= 1 / 8) return null;
-      between++;
-      return (lo + hi) / 2;
+      // Between the highest that fit and the next whole number (or the lowest that did not): a
+      // few rates, halving the gap, the last machine slower — fewer machines of the other
+      // Sub-Blocks may fit where the next whole number's do not, and machines that starve at full
+      // speed may not a little slower. Not one foretold to overflow the room.
+      for (;;) {
+        const ceiling = Math.min(hi, top);
+        if (between >= BETWEEN || ceiling - lo <= 1 / 8) return null;
+        between++;
+        const mid = (lo + ceiling) / 2;
+        if (!overflows(mid)) return mid;
+        hi = mid;
+      }
     },
     record(n, outcome) {
       for (const d of outcome.designed ?? []) if (d.area) tiles.set(d.item, d.area / d.count);
@@ -246,7 +253,7 @@ function broken(site, side) {
 }
 
 // Rates tried between whole numbers of machines, at most.
-const BETWEEN = 3;
+const BETWEEN = 2;
 
 function overlap(a, b) {
   const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);

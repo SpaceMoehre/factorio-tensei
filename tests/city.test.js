@@ -153,12 +153,13 @@ test('Maximize finds a higher rate that fits, each layout found valid, inside an
     assert.equal(block.subBlocks.find(sb => sb.item === 'electronic-circuit').count, machines);
     found.push(rate);
   }
-  // 90/min a machine: every try is whole machines, each fit higher than the last.
+  // 90/min a machine: whole machines, then a few rates between (the last machine slower), each
+  // fit higher than the last.
   assert.ok(found.length >= 2);
   assert.ok(found.every((r, i) => i === 0 || r > found[i - 1]));
   assert.equal(step.value.rate, found.at(-1));
   assert.ok(step.value.rate > 180, `found ${step.value.rate}/min`);
-  assert.equal(step.value.rate % 90, 0);
+  assert.equal(found[0] % 90, 0);
   // The Foretelling comes first, and the first try is the most machines it foretells to fit.
   assert.equal(events[0].type, 'foretell');
   assert.equal(events[1].type, 'try');
@@ -181,11 +182,15 @@ test('the Foretelling: the first try is the most machines it foretells to fit; l
   assert.ok(plan.span(1) < plan.span(first) && plan.span(first) < plan.room);
 
   // A layout that fits, its Sub-Blocks spanning all but a twentieth of the room: one machine
-  // more would span more than all of it, so it is not tried.
+  // more would span more than all of it, so it is not tried — only rates between, the last
+  // machine slower, halving the gap.
   plan.record(first, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
   assert.equal(plan.lo, first);
   assert.ok(plan.span(first + 1) > 1.05 * plan.room);
-  assert.equal(plan.next(), null);
+  const between = plan.next();
+  assert.ok(between > first && between < first + 1, `then ${between}`);
+  plan.record(between, { block: null, starves: false, designed: null, tried: 12 });
+  assert.ok(plan.next() < between);
 
   // A try that did not fit (for want of room): the Foretelling no longer says it fits, and the
   // next try is no more than halfway down.
@@ -203,7 +208,7 @@ test('the Foretelling: the first try is the most machines it foretells to fit; l
   assert.ok(broken.foretold().machines < first, `${broken.foretold().machines} of ${first}`);
 });
 
-test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min, its Sub-Blocks in columns', () => {
+test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min and more, its Sub-Blocks in columns', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
   // (Each try's time generous: tests run side by side.)
   const run = maximize([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site, budgetMs: 120000 });
@@ -211,7 +216,7 @@ test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min, its 
   for (; !step.done; step = run.next()) if (/** @type {any} */ (step.value).type === 'best') block = /** @type {any} */ (step.value).block;
   // Placed one by one, from the Goals west, the iron sticks found no room at 3000/min (5 small
   // parts factories, 64 machines): it stopped at 2400/min.
-  assert.equal(step.value.rate, 3000);
+  assert.ok(step.value.rate >= 3000, `${step.value.rate}/min`);
   assertValid(block, pyCatalog, logistics);
   assertInside(block);
   assert.equal(simulate(block).starvation.length, 0);
