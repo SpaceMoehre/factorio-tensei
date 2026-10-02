@@ -21,7 +21,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const { instances, routes } = prepared;
   const { corridor = 2, gap = 1, stack = 0, weight = 4 } = params;
   const steps = plan.map((_, i) => i);
-  const site = siteRules(ctx.site);
+  const site = ctx.site && siteRules(ctx.site);
 
   // Each Sub-Block's copies stacked: their offsets inside the block, and the block's size. Copies
   // touch unless their facing edges would join what must stay apart.
@@ -148,24 +148,30 @@ export function placeBlocks(ctx, prepared, params = {}) {
     }
     // The spot that grows the block least, keeps its links short and keeps off the rows other
     // Sub-Blocks' Side Inputs arrive on (west of their consumers unless `anywhere`).
+    // (What stands placed is taken once, not for each of the many spots a City Block offers: each
+    // box with the rows its Side Inputs arrive on, their bounds, where the links' consumers are.)
     const pick = (spots, anywhere = false) => {
+      const boxes = [...placed.keys()].map(j => ({ ...box(j), entries: blocks[j].entries.map(e => placed.get(j).y + e) }));
+      const targets = mine.map(l => ({ x: placed.get(l.to).x, y: placed.get(l.to).y + l.toY - l.fromY }));
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const o of boxes) [x0, y0, x1, y1] = [Math.min(x0, o.x), Math.min(y0, o.y), Math.max(x1, o.x + o.w), Math.max(y1, o.y + o.h)];
+      const tiles = site ? blockTiles(i) : null;
       let best = null;
       for (const c of spots) {
-        const me = { ...c, w: b.w, h: b.h };
-        if ([...placed.keys()].some(j => overlaps(me, box(j), gap))) continue;
-        const back = mine.reduce((sum, l) => sum + Math.max(0, c.x + b.w + 1 - placed.get(l.to).x), 0);
+        const me = { x: c.x, y: c.y, w: b.w, h: b.h };
+        if (boxes.some(o => overlaps(me, o, gap))) continue;
+        let back = 0;
+        for (const t of targets) back += Math.max(0, c.x + b.w + 1 - t.x);
         if (back && !anywhere) continue;
-        if (site && !site.fits(blockTiles(i), me)) continue;
-        const grown = bounds(me);
-        const length = mine.reduce((sum, l) => sum + Math.abs(placed.get(l.to).x - (c.x + b.w)) + Math.abs(placed.get(l.to).y + l.toY - c.y - l.fromY), 0);
+        if (site && !site.fits(tiles, me)) continue;
+        const grown = (Math.max(x1, c.x + b.w) - Math.min(x0, c.x)) * (Math.max(y1, c.y + b.h) - Math.min(y0, c.y));
+        let length = 0;
+        for (const t of targets) length += Math.abs(t.x - (c.x + b.w)) + Math.abs(t.y - c.y);
         // Side Inputs of Sub-Blocks already placed arrive from the west: keep off their rows.
-        const blocking = [...placed.keys()].filter(j => box(j).x >= c.x + b.w)
-          .reduce((n, j) => n + blocks[j].entries.filter(e => {
-            const y = placed.get(j).y + e;
-            return y >= c.y - 1 && y <= c.y + b.h;
-          }).length, 0);
+        let blocking = 0;
+        for (const o of boxes) if (o.x >= c.x + b.w) for (const y of o.entries) if (y >= c.y - 1 && y <= c.y + b.h) blocking++;
         // A link running back west goes round both boxes.
-        const cost = grown.w * grown.h + weight * (length + 2 * back + (back ? 8 : 0)) + 40 * blocking;
+        const cost = grown + weight * (length + 2 * back + (back ? 8 : 0)) + 40 * blocking;
         if (!best || cost < best.cost) best = { ...c, cost };
       }
       return best;
@@ -358,24 +364,67 @@ function placeApart(prepared, positions, blocks, moved, links, params, site) {
   });
 }
 
+// In a City Block, the share of its spots (every other tile) where each of a design's modules
+// fits, the least of them: none of its machines, inserters, belts or pipes on a Fixture. 1
+// where no Fixture stands in the City Block's room.
+export function roomFor(site, design) {
+  const rules = siteRules(site);
+  if (!rules.fixtures.length) return 1;
+  let least = 1;
+  for (const { module } of design.kinds) {
+    const tiles = new Set(coveredBy(module).map(([x, y]) => tileKey(x, y)));
+    const { w, h } = module.area;
+    const spots = rules.spots({ w, h }, 2);
+    let n = 0;
+    for (const spot of spots) if (rules.fits(tiles, { ...spot, w, h })) n++;
+    least = Math.min(least, spots.length ? n / spots.length : 0);
+  }
+  return least;
+}
+
 // A City Block's rules for boxes: whether one lies inside its Buffer with no Fixture on any of
 // its tiles (as tileKey of where they lie in the box), and every spot a box fits inside it.
+// Made once per City Block.
+const rulesOf = new WeakMap();
 function siteRules(site) {
-  if (!site) return null;
+  if (!rulesOf.has(site)) rulesOf.set(site, makeRules(site));
+  return rulesOf.get(site);
+}
+
+function makeRules(site) {
   const { inner } = site;
-  // Fixtures in it, or right outside it where a link meets a box at its edge.
+  // Fixtures in it, or right outside it where a link meets a box at its edge; filed by the cells
+  // of a coarse grid they touch, so a box looks only at those near it.
   const fixtures = site.fixtures.filter(f => f.x < inner.x + inner.w + 1 && f.x + f.w > inner.x - 1 && f.y < inner.y + inner.h + 1 && f.y + f.h > inner.y - 1);
+  const CELL = 16;
+  const cells = new Map();
+  fixtures.forEach((f, n) => {
+    for (let cx = Math.floor((f.x - 1) / CELL); cx <= Math.floor((f.x + f.w) / CELL); cx++) {
+      for (let cy = Math.floor((f.y - 1) / CELL); cy <= Math.floor((f.y + f.h) / CELL); cy++) {
+        const k = cx * 65536 + cy;
+        if (!cells.has(k)) cells.set(k, []);
+        cells.get(k).push(n);
+      }
+    }
+  });
   const fits = (tiles, box) => {
     if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return false;
-    for (const f of fixtures) {
-      if (f.x > box.x + box.w || f.x + f.w < box.x || f.y > box.y + box.h || f.y + f.h < box.y) continue;
-      for (let x = f.x; x < f.x + f.w; x++) for (let y = f.y; y < f.y + f.h; y++) if (tiles.has(tileKey(x - box.x, y - box.y))) return false;
+    const seen = new Set();
+    for (let cx = Math.floor((box.x - 1) / CELL); cx <= Math.floor((box.x + box.w) / CELL); cx++) {
+      for (let cy = Math.floor((box.y - 1) / CELL); cy <= Math.floor((box.y + box.h) / CELL); cy++) {
+        for (const n of cells.get(cx * 65536 + cy) ?? []) {
+          if (seen.has(n)) continue;
+          seen.add(n);
+          const f = fixtures[n];
+          if (f.x > box.x + box.w || f.x + f.w < box.x || f.y > box.y + box.h || f.y + f.h < box.y) continue;
+          for (let x = f.x; x < f.x + f.w; x++) for (let y = f.y; y < f.y + f.h; y++) if (tiles.has(tileKey(x - box.x, y - box.y))) return false;
+        }
+      }
     }
     return true;
   };
   // Large City Blocks are scanned in steps, so placing stays quick.
-  const step = Math.max(1, Math.round(Math.sqrt(inner.w * inner.h) / 80));
-  const spots = ({ w, h }) => {
+  const spots = ({ w, h }, step = Math.max(1, Math.round(Math.sqrt(inner.w * inner.h) / 80))) => {
     const out = [];
     for (let y = inner.y; y <= inner.y + inner.h - h; y += step) for (let x = inner.x; x <= inner.x + inner.w - w; x += step) out.push({ x, y });
     return out;

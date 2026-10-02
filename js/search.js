@@ -1,7 +1,7 @@
 import { context, designStep, designOf, random, breakoutDesign, detachCopy } from './design.js';
 import { LayoutError } from './layout/core.js';
 import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
-import { placeBlocks } from './layout/place.js';
+import { placeBlocks, roomFor } from './layout/place.js';
 import { finishBlock } from './layout/compact.js';
 import { validateBlock } from './layout/validity.js';
 import { simulate } from './sim.js';
@@ -17,15 +17,40 @@ import { simulate } from './sim.js';
 // candidate count.
 // options: { seed, maxCandidates, deadline (ms timestamp), now, trace (called with each
 //            candidate's choices and the error that sank it, for diagnostics), site (the City
-//            Block to build in, from city.js siteOf) }
+//            Block to build in, from city.js siteOf; where none of the structured candidates
+//            and `patience` more fits, the search gives up), perfect (only a layout without
+//            Starvation counts: designs and layouts that starve are passed over unbuilt, and the
+//            search gives up `patience` candidates after the structured ones; it ends at once, with
+//            `starves` set, when a Sub-Block cannot be designed without), precheck (with perfect:
+//            the Side Output's Sub-Blocks are checked first), designed (called once the
+//            Sub-Blocks are designed, with each one's item, Count and its best design's area) }
+// Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }.
 export function* search(entries, catalog, logistics, options = {}) {
-  const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null } = options;
+  const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null } = options;
   const rng = random(seed);
   const ctx = context(entries, catalog, logistics, site);
-  // Leaves first: every Sub-Block before the ones it feeds.
+  // Leaves first: every Sub-Block before the ones it feeds. Looking for a layout without
+  // Starvation, once a Sub-Block's least starving design starves, no layout can do without, and
+  // the search ends there.
   const order = [...ctx.flows.order];
+  // `precheck`: first the Sub-Blocks that make the Side Output (the busiest, the likeliest to
+  // starve), from structured variants only and with a random source of their own (designs as the
+  // search's own are left as they were); one that starves ends the search before the rest are
+  // designed.
+  if (perfect && options.precheck) {
+    const checkRng = random(seed + 2);
+    for (const i of order.filter(i => ctx.routes.some(r => r.source === i && r.sink === 'side-output')).reverse()) {
+      const least = designOf(designStep(ctx, i, checkRng, { now, deadline, draws: 0 })[0])?.trouble ?? 0;
+      if (least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
+    }
+  }
   const designs = [];
-  for (const i of order) designs[i] = designStep(ctx, i, rng, { now, deadline });
+  for (const i of order) {
+    designs[i] = designStep(ctx, i, rng, { now, deadline });
+    const least = designOf(designs[i][0])?.trouble ?? 0;
+    if (perfect && least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
+  }
+  designed?.(ctx.plan.map((sb, i) => ({ item: sb.item, count: sb.count, area: designOf(designs[i][0])?.area ?? null })));
 
   // Breakout designs, built the first time the search tries them (with a random source of their
   // own, so the rest of the search draws as it would without them): a Sub-Block's designs for
@@ -71,20 +96,46 @@ export function* search(entries, catalog, logistics, options = {}) {
   // Breakout trials, each with the Sub-Block and spec it tries: routed only where they look
   // promising once placed.
   const trials = new WeakMap();
-  const first = { choice: ctx.plan.map(() => 0), columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {}, shift: {} };
+  // In a City Block with Fixtures in its room, a Sub-Block whose best design fits few of its
+  // spots between them (a grid of substations leaves gaps a module must fit) starts from the
+  // design, starving no more, that fits the most.
+  const choice = ctx.plan.map(() => 0);
+  if (site) {
+    designs.forEach((list, i) => {
+      const best = designOf(list[0]);
+      if (!best || roomFor(site, best) >= 0.25) return;
+      const room = list.map(c => {
+        const d = designOf(c);
+        return d && d.trouble <= best.trouble + 1e-6 ? roomFor(site, d) : -1;
+      });
+      const most = Math.max(...room);
+      if (most > 4 * room[0]) choice[i] = room.indexOf(most);
+    });
+  }
+  const first = { choice, columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {}, shift: {} };
   const queue = [first, ...sweep(first, designs)];
+  const structured = queue.length;
+  // A design that starves cannot make a layout without Starvation: its estimate before routing
+  // already shows it (routing only adds), its trouble once routed.
+  const starves = candidate => candidate.choice.some((c, i) => {
+    const d = designs[i][Math.min(c, designs[i].length - 1)];
+    return d.estimate.trouble > 1e-6 || (d.design?.trouble ?? 0) > 1e-6;
+  });
   // Each new best is refined first: every Sub-Block slid a few tiles each way, and Breakouts.
   let refining = [];
   while (tried < maxCandidates && (tried === 0 || now() < deadline)) {
+    // In a City Block, a search whose structured candidates found no room for a layout (or,
+    // looking for one without Starvation, none of those) seldom finds one later.
+    if ((perfect || (site && !best)) && tried >= structured + patience) break;
     const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng);
     tried++;
     const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}`;
     if (!prepared.has(k)) {
       // Each Sub-Block's chosen design, routed now if this is the first time it is tried.
-      const chosen = candidate.choice.map((c, i) => designFor(candidate, i));
+      const chosen = perfect && starves(candidate) ? [null] : candidate.choice.map((c, i) => designFor(candidate, i));
       let ready = null;
       try {
-        if (chosen.every(Boolean)) ready = prepare(ctx, chosen, candidate.columns);
+        if (chosen.every(Boolean) && !(perfect && chosen.some(d => d.trouble > 1e-6))) ready = prepare(ctx, chosen, candidate.columns);
       } catch (e) {
         // Designs whose belts cannot chain into each other.
         if (!(e instanceof RoutingError)) throw e;
@@ -98,7 +149,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     // A layout whose belts and inserters starve more than the best's cannot beat it, however it
     // is placed.
     ready.least ??= Math.round(leastStarvation(ctx, ready) * 1000) / 1000;
-    if (best && ready.least > best.score[0]) continue;
+    if ((best && ready.least > best.score[0]) || (perfect && ready.least > 0)) continue;
     let block, placed;
     try {
       const positions = placeBlocks(ctx, ready, candidate);
@@ -132,13 +183,18 @@ export function* search(entries, catalog, logistics, options = {}) {
     }
     const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
     const score = [Math.round(starving * 1000) / 1000, block.bounds.w * block.bounds.h, block.entities.length];
+    if (perfect && score[0] > 0) {
+      failure = new Error(`the layout starves ${score[0]}/min`);
+      trace(candidate, failure);
+      continue;
+    }
     if (!best || better(score, best.score)) {
       best = { candidate, score, placed };
       // A Breakout trial after every two slides (a lone Sub-Block has no gaps to fill).
       const trying = ctx.plan.length > 1 ? register(breakouts(candidate, ctx.plan, designs)) : [];
       const sliding = slides(candidate, ctx.plan.length);
       refining = Array.from({ length: Math.max(trying.length, Math.ceil(sliding.length / 2)) }, (_, j) => [sliding[2 * j], sliding[2 * j + 1], trying[j]]).flat().filter(Boolean);
-      yield { block, score, tried };
+      yield { block, score, tried, placed };
     }
   }
   return { tried, failure };
@@ -157,11 +213,11 @@ function sweep(first, designs) {
   for (const corridor of [3, 1]) list.push({ ...first, corridor });
   list.push({ ...first, gap: 2 }, { ...first, weight: 1 }, { ...first, weight: 12 });
   designs.forEach((d, i) => {
-    for (let c = 1; c < d.length; c++) list.push({ ...first, choice: first.choice.map((v, j) => (j === i ? c : v)) });
+    for (let c = 0; c < d.length; c++) if (c !== first.choice[i]) list.push({ ...first, choice: first.choice.map((v, j) => (j === i ? c : v)) });
   });
   // A repeated module's copies in about as many columns as make it square, and in two.
   designs.forEach((d, i) => {
-    if (!d[0]?.copies) return;
+    if (!d[first.choice[i]]?.copies) return;
     for (const k of [0, 2]) list.push({ ...first, columns: first.columns.map((v, j) => (j === i ? k : v)) });
   });
   return list.slice(1);

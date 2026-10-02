@@ -3,9 +3,9 @@
 // budget is spent, or { type: 'error', message }. The page stops a search by terminating the
 // worker; it keeps the last layout it was sent.
 // In a City Block (site) with `maximize` ({ goals, made, selections }), it looks for the highest
-// rate that fits instead: { type: 'try', rate, machines } before each try, { type: 'best', …,
-// rate, machines, goals } for each that fits, and { type: 'done', tried, failure, rate,
-// machines, goals } at the end.
+// rate that fits instead: { type: 'foretell', rate, machines } whenever the Foretelling changes,
+// { type: 'try', rate, machines } before each try, { type: 'best', …, rate, machines, goals } for
+// each that fits, and { type: 'done', tried, failure, rate, machines, goals } at the end.
 import { search } from './search.js';
 import { maximize } from './maximize.js';
 

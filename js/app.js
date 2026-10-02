@@ -4,6 +4,7 @@ import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
 import { createMap, turnsSideways } from './render.js';
 import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
+import { planner } from './maximize.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
@@ -95,6 +96,7 @@ for (const [id, field, least] of /** @type {[string, string, number][]} */ ([['c
   $(id).addEventListener('change', () => {
     state.city[field] = Math.max(least, Math.floor(Number($(id).value) || 0));
     $(id).value = String(state.city[field]);
+    renderForetell();
     save();
   });
 }
@@ -179,6 +181,7 @@ function renderChain() {
   } finally {
     drawing = false;
   }
+  renderForetell();
 }
 
 function drawChain() {
@@ -335,6 +338,55 @@ function renderCity() {
   }
   $('city-info').textContent = info;
   $('calculate').textContent = state.city.on && state.city.maximize ? 'Find the highest rate' : 'Build factory block';
+  renderForetell();
+}
+
+// The City Block's Site (from its blueprint, else its size), or why there is none.
+function citySite() {
+  try {
+    return siteOf(city && !city.error ? city : { area: { x: 0, y: 0, w: state.city.w, h: state.city.h }, fixtures: [] }, state.city.buffer);
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
+// The Foretelling (maximize.js planner), before any layout is searched: about how high a rate of
+// the first Goal fits the City Block, and how much of its room the Goals' own rates take.
+function renderForetell() {
+  const text = state.city.on ? foretellLine() : null;
+  $('city-foretell').hidden = !text;
+  $('city-foretell').textContent = text ?? '';
+}
+
+function foretellLine() {
+  const goals = state.goals.filter(g => g.item && g.rate > 0);
+  const site = goals.length && chain && !chain.error && !city?.error ? citySite() : null;
+  if (!site || site.error) return null;
+  let plan;
+  try {
+    plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, index, site });
+  } catch {
+    return null;
+  }
+  const { machines, rate } = plan.foretold();
+  const item = goals[0].item;
+  const fits = machines ? `about ${fmt(rate)}/min of ${item} fits (${count(machines, 'machine')})` : `not one machine of ${item} fits`;
+  // The Goals' own rates: the tiles their Sub-Blocks span, and the square block (with its
+  // Buffer) whose room that fills as full as a layout fills it.
+  const need = plan.span(plan.asked);
+  const side = Math.ceil(Math.sqrt(need / 0.85)) + 2 * state.city.buffer;
+  return `Foretelling: ${fits}. ${fmt(goals[0].rate)}/min needs about ${need.toLocaleString('en')} tiles of its ${plan.room.toLocaleString('en')}`
+    + ` (a block of about ${side} × ${side})${need > plan.room ? ' — more than it has' : ''}.`;
+}
+
+// The logistics settings the search takes (all but the search time).
+function logisticsOf() {
+  const { budget, ...logistics } = state.logistics;
+  return logistics;
+}
+
+function count(n, noun) {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`;
 }
 
 // Starts the layout search in a worker. Every better layout it finds replaces the map and the
@@ -347,15 +399,12 @@ async function build() {
   if (state.city.on) {
     await cityRead;
     if (city?.error) return showStatus('error', `The city block's blueprint was not read: ${city.error}.`);
-    try {
-      site = siteOf(city ?? { area: { x: 0, y: 0, w: state.city.w, h: state.city.h }, fixtures: [] }, state.city.buffer);
-    } catch (e) {
-      return showStatus('error', e.message);
-    }
+    site = citySite();
+    if (site.error) return showStatus('error', site.error);
   }
   worker?.terminate();
   best = null;
-  built = { blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && state.city.maximize), trying: null };
+  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && state.city.maximize), trying: null, foretold: null };
   map?.destroy();
   map = null;
   $('area').hidden = true;
@@ -368,17 +417,17 @@ async function build() {
   $('stop').hidden = false;
   worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
   worker.onmessage = ({ data }) => {
-    if (data.type === 'try') trying(data);
+    if (data.type === 'foretell') built.foretold = data;
+    else if (data.type === 'try') trying(data);
     else if (data.type === 'best') show(data.block, data.tried, data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null);
     else if (data.type === 'done') finish('Done', data.tried, data.failure);
     else finish('Stopped', undefined, data.message);
   };
   worker.onerror = e => finish('Stopped', undefined, e.message);
-  const { budget, ...logistics } = state.logistics;
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   worker.postMessage({
     entries: chain.entries,
-    logistics, budgetMs: budget * 1000, seed: 1, site,
+    logistics: logisticsOf(), budgetMs: state.logistics.budget * 1000, seed: 1, site,
     ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections } } : {}),
   });
 }
@@ -386,16 +435,17 @@ async function build() {
 // Maximize: the rate being tried, after the highest that fits so far.
 function trying({ rate, machines }) {
   const item = state.goals.find(g => g.item && g.rate > 0)?.item;
-  built.trying = `Trying ${fmt(rate)}/min of ${item} (${machines} machine${machines === 1 ? '' : 's'})…`;
+  built.trying = `Trying ${fmt(rate)}/min of ${item} (${count(machines, 'machine')})…`;
   if (best) report(best.block, simulate(best.block).starvation, progress());
-  else showStatus('', built.trying);
+  else showStatus('', progress());
 }
 
 // What the status line says while searching.
 function progress() {
   if (!built?.maximize) return 'Searching…';
+  const told = built.foretold ? ` Foretold: about ${fmt(built.foretold.rate)}/min.` : '';
   const fits = best?.found ? ` Fits so far: ${fmt(best.found.rate)}/min.` : '';
-  return `${built.trying ?? 'Searching…'}${fits}`;
+  return `${built.trying ?? 'Searching…'}${told}${fits}`;
 }
 
 async function show(block, tried, found = null) {
@@ -432,11 +482,15 @@ function finish(how, tried = best?.tried ?? 0, error = null) {
       return showStatus('error', `Nothing fits the city block without starvation${error ? `: ${error}` : ''}. Give each try more time, or a bigger block.`);
     }
     const { rate, machines } = best.found;
-    return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest rate that fits: ${fmt(rate)}/min (${machines} machine${machines === 1 ? '' : 's'}).`);
+    return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest rate that fits: ${fmt(rate)}/min (${count(machines, 'machine')}).`);
   }
   if (!best) {
     $('results').hidden = true;
     $('empty').textContent = 'No layout yet.';
+    if (built?.site) {
+      $('empty').textContent = 'Nothing fits yet.';
+      return showStatus('error', `Nothing fits the city block${error ? `: ${error}` : ''}. ${foretellLine() ?? ''} Maximize finds the highest rate that fits.`);
+    }
     return showStatus('error', error ?? 'No layout found. Give the search more time.');
   }
   report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts.`);

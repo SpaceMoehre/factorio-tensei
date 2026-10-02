@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { deflateSync, inflateSync } from 'node:zlib';
 import { decodeBlueprint, readCityBlock, siteOf } from '../js/city.js';
 import { search } from '../js/search.js';
-import { maximize } from '../js/maximize.js';
+import { maximize, planner } from '../js/maximize.js';
+import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
 import { simulate } from '../js/sim.js';
-import { catalog as vanilla, logistics } from './fixtures/catalog.js';
+import { catalog as vanilla, logistics, pyCatalog } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 
 const catalog = { ...vanilla, poles: { ...vanilla.poles, substation: { name: 'substation', size: { w: 2, h: 2 }, supplyRadius: 9, wireReach: 18 } } };
@@ -106,6 +107,19 @@ test('a block built in a city block stands inside its buffer, off its entities, 
   assert.ok(out.wires.some(([a, , b]) => (a === 3 || a === 4 || b === 3 || b === 4) && (poles.has(a) || poles.has(b))), 'a wire from a pole to a substation');
 });
 
+test('poles of a long reach bridge to a far-off pole of the city block', () => {
+  // One substation in the far corner; the block's own poles are substations too.
+  const far = { name: 'substation', kind: 'fixture', number: 1, x: 96, y: 56, w: 2, h: 2 };
+  const site = siteOf({ area: { x: 0, y: 0, w: 100, h: 60 }, fixtures: [far] }, 1);
+  let block = null;
+  const run = search([asm2('iron-gear-wheel', 120)], catalog, { ...logistics, pole: 'substation' }, { seed: 1, maxCandidates: 4, site });
+  for (let step = run.next(); !step.done; step = run.next()) block = step.value.block;
+  assertValid(block, catalog, { ...logistics, pole: 'substation' });
+  assertInside(block);
+  const fixtures = block.entities.length;
+  assert.ok(block.wires.some(([a, b]) => a >= fixtures || b >= fixtures), 'a wire to the far substation');
+});
+
 test('poles of the city block power what they cover: a block under substations needs none of its own', () => {
   const substations = [];
   for (let x = 4; x < 60; x += 16) for (let y = 4; y < 40; y += 16) substations.push({ name: 'substation', kind: 'fixture', number: substations.length + 1, x, y, w: 2, h: 2 });
@@ -126,9 +140,11 @@ test('Maximize finds a higher rate that fits, each layout found valid, inside an
   const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
   const run = maximize([{ item: 'electronic-circuit', rate: 60 }], catalog, logistics, { made: ['copper-cable'], selections, site, maxCandidates: 12 });
   const found = [];
+  const events = [];
   let step = run.next();
   for (; !step.done; step = run.next()) {
     const value = /** @type {any} */ (step.value);
+    events.push(value);
     if (value.type !== 'best') continue;
     const { block, rate, machines } = value;
     assertValid(block, catalog, logistics);
@@ -143,4 +159,69 @@ test('Maximize finds a higher rate that fits, each layout found valid, inside an
   assert.equal(step.value.rate, found.at(-1));
   assert.ok(step.value.rate > 180, `found ${step.value.rate}/min`);
   assert.equal(step.value.rate % 90, 0);
+  // The Foretelling comes first, and the first try is the most machines it foretells to fit.
+  assert.equal(events[0].type, 'foretell');
+  assert.equal(events[1].type, 'try');
+  assert.equal(events[1].machines, Math.max(1, events[0].machines));
+});
+
+const pyItems = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+const pySelections = Object.fromEntries(pyItems.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+
+test('the Foretelling: the first try is the most machines it foretells to fit; layouts found and tries that did not fit correct it', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
+  const options = { made: pyItems.slice(1), selections: pySelections, site };
+  const plan = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, options);
+  const first = plan.next();
+  assert.equal(first, plan.foretold().machines);
+  assert.ok(first > 1, `foretold ${first}`);
+  assert.equal(plan.goalsFor(first)[0].rate, 600 * first);
+  // More machines take more room: what 600/min takes is far less than all of it.
+  assert.equal(plan.asked, 1);
+  assert.ok(plan.span(1) < plan.span(first) && plan.span(first) < plan.room);
+
+  // A layout that fits, its Sub-Blocks spanning four fifths of the room: one machine more would
+  // span more than all of it, so it is not tried.
+  plan.record(first, { block: {}, placed: Math.round(0.8 * plan.room), designed: null, tried: 1 });
+  assert.equal(plan.lo, first);
+  assert.ok(plan.span(first + 1) > plan.room);
+  assert.equal(plan.next(), null);
+
+  // A try that did not fit (for want of room): the Foretelling no longer says it fits, and the
+  // next try is no more than halfway down.
+  const again = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, options);
+  const n = again.next();
+  again.record(n, { block: null, starves: false, designed: null, tried: 12 });
+  assert.equal(again.hi, n);
+  assert.ok(again.foretold().machines < n);
+  assert.ok(again.next() <= Math.ceil(n / 2));
+
+  // Substations every 18 tiles break up the room: less is foretold to fit than in the empty block.
+  const grid = [];
+  for (let x = 7; x < 112; x += 18) for (let y = 7; y < 112; y += 18) grid.push({ name: 'substation', kind: 'fixture', number: grid.length + 1, x, y, w: 2, h: 2 });
+  const broken = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { ...options, site: siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: grid }, 2) });
+  assert.ok(broken.foretold().machines < first, `${broken.foretold().machines} of ${first}`);
+});
+
+test('a search for a layout without Starvation ends as soon as a Sub-Block cannot be designed without', () => {
+  // Inserters an eighth as fast: no small-parts factory gets its 900 bolts a minute.
+  const slow = { ...pyCatalog, inserters: Object.fromEntries(Object.entries(pyCatalog.inserters).map(([k, v]) => [k, { ...v, rotationSpeed: v.rotationSpeed / 8 }])) };
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 600 }], slow, { made: pyItems.slice(1), selections: pySelections });
+  const site = siteOf({ area: { x: 0, y: 0, w: 80, h: 80 }, fixtures: [] }, 2);
+  let designed = false;
+  for (const precheck of [false, true]) {
+    const step = search(entries, slow, logistics, { site, perfect: true, precheck, designed: () => { designed = true; } }).next();
+    assert.equal(step.done, true);
+    const value = /** @type {any} */ (step.value);
+    assert.equal(value.starves, true);
+    assert.equal(value.tried, 0);
+    assert.match(value.failure.message, /every design starves/);
+  }
+  assert.equal(designed, false);
+  // Without `perfect`, the search builds what it can.
+  assert.equal(search(entries, slow, logistics, { site, maxCandidates: 1 }).next().done, false);
+});
+
+test('the recipe index is built once per catalog', () => {
+  assert.equal(recipeOptions(pyCatalog), recipeOptions(pyCatalog));
 });

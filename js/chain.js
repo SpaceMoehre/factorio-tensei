@@ -8,16 +8,28 @@ import { defaultModules, moduleOptions } from './modules.js';
 const MAX_STEPS = 60;
 
 // Which recipes make each item (best first) and which buildings can run each recipe (slowest
-// first): a recipe named after the item, then one whose first product it is.
+// first): a recipe named after the item, then one whose first product it is. Built once per
+// catalog (thousands of recipes and buildings in a big mod set).
+const optionsOf = new WeakMap();
 export function recipeOptions(catalog) {
+  if (optionsOf.has(catalog)) return optionsOf.get(catalog);
+  // Buildings by crafting category, slowest first, with how many fluid boxes take in and give out.
+  const byCategory = new Map();
+  const sorted = Object.values(catalog.buildings).sort((a, b) => a.craftingSpeed - b.craftingSpeed || a.name.localeCompare(b.name));
+  for (const b of sorted) {
+    const boxes = { building: b, inputs: b.fluidBoxes.filter(x => x.production !== 'output').length, outputs: b.fluidBoxes.filter(x => x.production !== 'input').length };
+    for (const category of new Set(b.categories)) {
+      if (!byCategory.has(category)) byCategory.set(category, []);
+      byCategory.get(category).push(boxes);
+    }
+  }
   const buildingsFor = new Map();
   const producers = new Map();
   for (const recipe of Object.values(catalog.recipes)) {
-    const buildings = Object.values(catalog.buildings)
-      .filter(b => b.categories.includes(recipe.category) && hasFluidBoxes(b, recipe))
-      .sort((a, b) => a.craftingSpeed - b.craftingSpeed || a.name.localeCompare(b.name));
+    const fluidsIn = recipe.ingredients.filter(i => i.type === 'fluid').length, fluidsOut = recipe.products.filter(p => p.type === 'fluid').length;
+    const buildings = (byCategory.get(recipe.category) ?? []).filter(b => fluidsIn <= b.inputs && fluidsOut <= b.outputs);
     if (!buildings.length || !recipe.products.length) continue;
-    buildingsFor.set(recipe.name, buildings.map(b => b.name));
+    buildingsFor.set(recipe.name, buildings.map(b => b.building.name));
     for (const p of recipe.products) {
       if (!producers.has(p.name)) producers.set(p.name, []);
       producers.get(p.name).push(recipe.name);
@@ -25,14 +37,9 @@ export function recipeOptions(catalog) {
   }
   const rank = (item, recipe) => (recipe === item ? 0 : catalog.recipes[recipe].products[0].name === item ? 1 : 2);
   for (const [item, recipes] of producers) recipes.sort((a, b) => rank(item, a) - rank(item, b) || a.localeCompare(b));
-  return { producers, buildingsFor };
-}
-
-function hasFluidBoxes(building, recipe) {
-  const inputs = building.fluidBoxes.filter(b => b.production !== 'output').length;
-  const outputs = building.fluidBoxes.filter(b => b.production !== 'input').length;
-  return recipe.ingredients.filter(i => i.type === 'fluid').length <= inputs
-    && recipe.products.filter(p => p.type === 'fluid').length <= outputs;
+  const index = { producers, buildingsFor };
+  optionsOf.set(catalog, index);
+  return index;
 }
 
 // goals: [{ item, rate }] (per minute)

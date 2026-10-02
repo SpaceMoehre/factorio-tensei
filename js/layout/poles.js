@@ -140,6 +140,21 @@ function connect(poles, free, spec, placed, anchors = []) {
   const near = (a, b) => distance(a, b) <= Math.min(a.reach ?? reach, b.reach ?? reach);
   const spots = new Buckets(reach);
   for (const c of free) spots.add(c);
+  // Toward far-off anchors, poles of a long reach (a nexelit substation's 60 tiles) hop between
+  // spots a few tiles apart, not every free tile in reach (thousands of them, each a step of the
+  // search): the first free spot of each cell a sixth of the reach wide.
+  const cell = Math.floor(reach / 6);
+  let sparse = null;
+  if (anchors.length && cell >= 4) {
+    sparse = new Buckets(reach);
+    const seen = new Set();
+    for (const c of free) {
+      const k = Math.floor(c.x / cell) * 100003 + Math.floor(c.y / cell);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      sparse.add(c);
+    }
+  }
   const used = new Set();
   const parentOf = new Map();
   const root = p => {
@@ -175,10 +190,10 @@ function connect(poles, free, spec, placed, anchors = []) {
     for (const p of start) parent.set(p, null);
     // Whether a pole at `node` wires to another component; the free spots it wires to.
     const reaches = node => placed.within(node, reach).some(p => parentOf.has(p) && root(p) !== own && near(node, p));
-    const around = node => spots.within(node, reach).filter(c => !used.has(c) && !overlaps(c, node) && distance(node, c) <= reach
+    const around = (node, from = spots) => from.within(node, reach).filter(c => !used.has(c) && !overlaps(c, node) && distance(node, c) <= reach
       && !placed.within(c, 0).some(p => overlaps(p, c)));
     let reached = null;
-    if (anchors.length) reached = toward(start, own, parent, reaches, around);
+    if (anchors.length) reached = toward(start, own, parent, reaches, node => around(node, sparse ?? spots));
     else {
       let frontier = [...start];
       while (frontier.length) {

@@ -641,7 +641,49 @@ function onTwoLanes(rates, lane) {
 // belt that wants the most, down to one per belt.
 // passRows: [{ y, reach, route? }], the band's belt and pipe rows and how far their tunnels
 // reach; a pipe row surfaces on its own fluid's connections.
-function placeInserters(slots, passRows, period, { pitch, cyclic, poleY, machineColumns }) {
+// The same band comes up in many of a Sub-Block's variants: its outcome is kept (by everything
+// the search reads: the slots, the rows it passes and what their tiles hold) and replayed.
+const placedBefore = new Map();
+function placeInserters(slots, passRows, period, options) {
+  const { pitch, cyclic, poleY, machineColumns } = options;
+  const rows = [...new Set([...slots.flatMap(s => [s.insY, s.beltY]), ...passRows.map(p => p.y), ...(poleY === null ? [] : [poleY])])].sort((a, b) => a - b);
+  const y0 = rows[0] ?? 0;
+  const tile = v => (v === undefined ? '' : `${v.type}:${v.route ?? ''}:${v.belt ?? ''}`);
+  const band = JSON.stringify([pitch, cyclic, poleY === null ? null : poleY - y0, machineColumns,
+    slots.map(s => [s.depth, s.insY - y0, s.beltY - y0, s.columns, s.needed, s.id]),
+    passRows.map(p => [p.y - y0, p.reach, p.route]),
+    rows.map(y => [y - y0, ...Array.from({ length: pitch }, (_, c) => tile(period.get(c, y)))])]);
+  // Row-2 inserters first (the row-1 belt has to dive under them), then nearest belts first.
+  const sorted = [...slots].sort((a, b) => REACH[b.depth].row - REACH[a.depth].row || a.depth - b.depth);
+  let known = placedBefore.get(band);
+  if (!known) {
+    try {
+      const chosen = searchInserters(sorted, passRows, period, options);
+      const pole = poleY === null ? null : [...Array(pitch).keys()].find(c => period.get(c, poleY)?.type === 'pole');
+      known = { pole, chosen: sorted.map(s => chosen.get(s).map(({ column, side, index }) => ({ column, side, index }))) };
+    } catch (e) {
+      if (!(e instanceof LayoutError)) throw e;
+      known = { error: e.message };
+    }
+    if (placedBefore.size > 20000) placedBefore.clear();
+    placedBefore.set(band, known);
+    if (known.error) throw new LayoutError(known.error);
+    return new Map(sorted.map((s, i) => [s, known.chosen[i]]));
+  }
+  if (known.error) throw new LayoutError(known.error);
+  if (known.pole !== null) period.set(known.pole, poleY, { type: 'pole' });
+  sorted.forEach((s, i) => {
+    for (const { column, side } of known.chosen[i]) {
+      period.set(column, s.insY, { type: 'inserter' });
+      period.set(column + side, s.beltY, { type: 'waypoint', belt: s.id });
+    }
+  });
+  return new Map(sorted.map((s, i) => [s, known.chosen[i].map(c => ({ ...c }))]));
+}
+
+// placeInserters' search: the slots in the order they are placed (row-2 inserters first, then
+// nearest belts first).
+function searchInserters(sorted, passRows, period, { pitch, cyclic, poleY, machineColumns }) {
   const at = (c, y) => period.get(c, y);
   const put = (c, y, v) => period.set(c, y, v);
   const pipeOf = new Map(passRows.filter(p => p.route !== undefined).map(p => [p.y, p.route]));
@@ -677,8 +719,6 @@ function placeInserters(slots, passRows, period, { pitch, cyclic, poleY, machine
   const reachOf = new Map(passRows.map(p => [p.y, p.reach]));
   const stillOpen = y => !reachOf.has(y) || (longestRun(y) < reachOf.get(y) && !(cyclic && longestRun(y) >= pitch));
 
-  // Row-2 inserters first (the row-1 belt has to dive under them), then nearest belts first.
-  const sorted = [...slots].sort((a, b) => REACH[b.depth].row - REACH[a.depth].row || a.depth - b.depth);
   const targets = sorted.map(s => s.needed);
   // No more inserters than a row has free columns: trim the busiest belts on an overfull row
   // first, so the search below starts from what can fit.
@@ -697,6 +737,11 @@ function placeInserters(slots, passRows, period, { pitch, cyclic, poleY, machine
   // must be passable then, before the search goes on to other rows.
   const lastOn = new Map(sorted.map((s, i) => [s.insY, i]));
   const rowsDone = si => passRows.every(p => lastOn.get(p.y) !== si || passable(p));
+  // A row's inserters each take a free tile of it, and a 90° inserter's belt tile beside it is
+  // one more (two of them sharing one would leave a lone belt tile between them): targets that
+  // need more tiles than a row has cannot fit, and are not searched.
+  const freeIn = new Map([...new Set(sorted.map(s => s.insY))].map(y => [y, [...Array(pitch).keys()].filter(c => !taken(c, y)).length]));
+  const tilesSuffice = () => [...freeIn].every(([y, free]) => sorted.reduce((sum, s, i) => sum + (s.insY === y ? targets[i] * (s.depth === 1 ? 2 : 1) : 0), 0) <= free);
   // Once the whole demand has failed to fit, each smaller try gets a shorter search.
   let limit = SEARCH_NODES;
   for (;;) {
@@ -728,7 +773,7 @@ function placeInserters(slots, passRows, period, { pitch, cyclic, poleY, machine
       }
       return false;
     };
-    if (place(0, 0)) return new Map(sorted.map((s, i) => [s, chosen[i]]));
+    if (tilesSuffice() && place(0, 0)) return new Map(sorted.map((s, i) => [s, chosen[i]]));
     // Settle for one inserter fewer on the belt that wants the most.
     const most = targets.indexOf(Math.max(...targets));
     if (most < 0 || targets[most] <= 1) throw new LayoutError('no room for the inserters its belts need');

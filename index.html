@@ -131,8 +131,9 @@
         <label for="city-buffer">Buffer</label>
         <span class="budget"><input type="number" id="city-buffer" min="0" step="1" aria-label="Buffer in tiles"> <span class="hint">tiles kept free inside the border, to wire the inputs (west) and outputs (east)</span></span>
         <label for="maximize">Maximize</label>
-        <label class="check"><input type="checkbox" id="maximize"> <span class="hint">the highest goal rate that fits; goals keep their ratio, each try gets the search time</span></label>
+        <label class="check"><input type="checkbox" id="maximize"> <span class="hint">the highest goal rate that fits; goals keep their ratio, the first try is what the Foretelling says fits, each try gets the search time at most</span></label>
       </div>
+      <p class="hint" id="city-foretell" hidden></p>
     </div>
 
     <h2>Build</h2>
