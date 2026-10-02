@@ -157,9 +157,11 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   let tightest = 0;
   // Once a layout found shows how loosely this City Block packs (its Sub-Blocks spanning so much
   // more than their modules), n whose modules, spread as much, would span more than all its
-  // room are not tried (another layout may pack a little tighter).
+  // room are not tried (another layout may pack a little tighter). Not with Fixtures in the
+  // room: how far a layout spreads round them says little of the next.
   let spread = null;
-  const overflows = n => spread !== null && spread * modules(n) > 1.05 * room;
+  const crowded = site.fixtures.some(f => overlap(f, inner) > 0);
+  const overflows = n => !crowded && spread !== null && spread * modules(n) > 1.05 * room;
   // The highest n foretold to fit (more machines never take less room).
   const foretold = () => {
     let a = Math.floor(lo), b = Math.ceil(hi);
