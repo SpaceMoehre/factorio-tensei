@@ -49,6 +49,12 @@ export function* search(entries, catalog, logistics, options = {}) {
     designs[i] = designStep(ctx, i, rng, { now, deadline });
     const least = designOf(designs[i][0])?.trouble ?? 0;
     if (perfect && least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
+    // In a City Block, a Sub-Block none of whose designs without Starvation fits inside it at all
+    // leaves no layout either: its designs in turn (routed if they must be: not one whose core
+    // alone is too big, or that starves before it is routed) until one does.
+    const fitting = c => !(c.estimate.trouble > 1e-6 || (c.estimate.w !== undefined && !within(site, c.estimate)))
+      && (designOf(c)?.trouble ?? Infinity) <= 1e-6 && c.design.kinds.every(k => within(site, k.module.area));
+    if (perfect && site && !designs[i].some(fitting)) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: no design without starvation fits the city block`) };
   }
   designed?.(ctx.plan.map((sb, i) => ({ item: sb.item, count: sb.count, area: designOf(designs[i][0])?.area ?? null })));
 
@@ -113,7 +119,10 @@ export function* search(entries, catalog, logistics, options = {}) {
     });
   }
   const first = { choice, columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {}, shift: {} };
-  const queue = [first, ...sweep(first, designs)];
+  // Looking for a layout without Starvation in a City Block, the candidates in columns go first:
+  // they pack tighter, and the first that fits ends the search.
+  const swept = [first, ...sweep(first, designs, site)];
+  const queue = perfect && site ? [...swept.filter(c => c.layers), ...swept.filter(c => !c.layers)] : swept;
   const structured = queue.length;
   // A design that starves cannot make a layout without Starvation: its estimate before routing
   // already shows it (routing only adds), its trouble once routed.
@@ -127,7 +136,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     // In a City Block, a search whose structured candidates found no room for a layout (or,
     // looking for one without Starvation, none of those) seldom finds one later.
     if ((perfect || (site && !best)) && tried >= structured + patience) break;
-    const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng);
+    const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng, site);
     tried++;
     const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}`;
     if (!prepared.has(k)) {
@@ -207,8 +216,9 @@ export function* search(entries, catalog, logistics, options = {}) {
 }
 
 // First the best design of every Sub-Block with roomier and tighter placements, then each
-// Sub-Block's other designs in turn.
-function sweep(first, designs) {
+// Sub-Block's other designs in turn. In a City Block, each also with its Sub-Blocks in columns
+// (Layers), right after it.
+function sweep(first, designs, site = null) {
   const list = [first];
   for (const corridor of [3, 1]) list.push({ ...first, corridor });
   list.push({ ...first, gap: 2 }, { ...first, weight: 1 }, { ...first, weight: 12 });
@@ -220,8 +230,11 @@ function sweep(first, designs) {
     if (!d[first.choice[i]]?.copies) return;
     for (const k of [0, 2]) list.push({ ...first, columns: first.columns.map((v, j) => (j === i ? k : v)) });
   });
-  return list.slice(1);
+  return (site ? list.flatMap(c => [c, { ...c, layers: LAYER_SPREAD }]) : list).slice(1);
 }
+
+// How many columns further west than its consumers let it a Sub-Block may stand in Layers.
+const LAYER_SPREAD = 2;
 
 // Breakout trials on a layout, as { candidate, step, spec }: one machine of each Sub-Block broken
 // out of it in turn (of a repeated module, its leftover module or a copy), so what is left packs
@@ -262,8 +275,10 @@ function slides(base, n) {
   return out;
 }
 
-function mutate(base, designs, rng) {
+function mutate(base, designs, rng, site = null) {
   const c = structuredClone(base);
+  // In a City Block, now and then in columns or not.
+  if (site && rng() < 0.25) c.layers = c.layers ? 0 : LAYER_SPREAD;
   const n = designs.length;
   const moves = 1 + Math.floor(rng() * 2);
   for (let m = 0; m < moves; m++) {
@@ -281,6 +296,9 @@ function mutate(base, designs, rng) {
   }
   return c;
 }
+
+// Whether a box (w × h) fits inside a City Block's Buffer.
+const within = (site, { w, h }) => w <= site.inner.w && h <= site.inner.h;
 
 function better(a, b) {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];

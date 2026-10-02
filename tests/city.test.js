@@ -180,11 +180,11 @@ test('the Foretelling: the first try is the most machines it foretells to fit; l
   assert.equal(plan.asked, 1);
   assert.ok(plan.span(1) < plan.span(first) && plan.span(first) < plan.room);
 
-  // A layout that fits, its Sub-Blocks spanning four fifths of the room: one machine more would
-  // span more than all of it, so it is not tried.
-  plan.record(first, { block: {}, placed: Math.round(0.8 * plan.room), designed: null, tried: 1 });
+  // A layout that fits, its Sub-Blocks spanning all but a twentieth of the room: one machine
+  // more would span more than all of it, so it is not tried.
+  plan.record(first, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
   assert.equal(plan.lo, first);
-  assert.ok(plan.span(first + 1) > plan.room);
+  assert.ok(plan.span(first + 1) > 1.05 * plan.room);
   assert.equal(plan.next(), null);
 
   // A try that did not fit (for want of room): the Foretelling no longer says it fits, and the
@@ -201,6 +201,19 @@ test('the Foretelling: the first try is the most machines it foretells to fit; l
   for (let x = 7; x < 112; x += 18) for (let y = 7; y < 112; y += 18) grid.push({ name: 'substation', kind: 'fixture', number: grid.length + 1, x, y, w: 2, h: 2 });
   const broken = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { ...options, site: siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: grid }, 2) });
   assert.ok(broken.foretold().machines < first, `${broken.foretold().machines} of ${first}`);
+});
+
+test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min, its Sub-Blocks in columns', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
+  const run = maximize([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site });
+  let step = run.next(), block = null;
+  for (; !step.done; step = run.next()) if (/** @type {any} */ (step.value).type === 'best') block = /** @type {any} */ (step.value).block;
+  // Placed one by one, from the Goals west, the iron sticks found no room at 3000/min (5 small
+  // parts factories, 64 machines): it stopped at 2400/min.
+  assert.equal(step.value.rate, 3000);
+  assertValid(block, pyCatalog, logistics);
+  assertInside(block);
+  assert.equal(simulate(block).starvation.length, 0);
 });
 
 test('a search for a layout without Starvation ends as soon as a Sub-Block cannot be designed without', () => {

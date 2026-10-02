@@ -117,7 +117,11 @@ export function placeBlocks(ctx, prepared, params = {}) {
     const x0 = Math.min(...all.map(b => b.x)), y0 = Math.min(...all.map(b => b.y));
     return { x: x0, y: y0, w: Math.max(...all.map(b => b.x + b.w)) - x0, h: Math.max(...all.map(b => b.y + b.h)) - y0 };
   };
-  for (const i of order) {
+  // In a City Block, the search's `layers` candidates stand the Sub-Blocks in columns instead.
+  const columns = site && params.layers ? inLayers(blocks, links, depth, routes, site, { corridor, gap, spread: params.layers }, blockTiles) : null;
+  if (site && params.layers && !columns) throw new RoutingError('the Sub-Blocks fit no columns in the city block');
+  for (const [i, p] of columns ?? []) placed.set(i, p);
+  for (const i of columns ? [] : order) {
     const b = blocks[i];
     const mine = links.filter(l => l.from === i && placed.has(l.to));
     const lift = params.lift?.[i] ?? 0;
@@ -233,6 +237,118 @@ export function placeBlocks(ctx, prepared, params = {}) {
       tileSets.set(i, set);
     }
     return tileSets.get(i);
+  }
+}
+
+// Layers, in a City Block: the Sub-Blocks in columns, the Goals easternmost and every producer in
+// a column west of all it feeds; each column's Sub-Blocks stacked top to bottom a gap apart, each
+// as near level with the rows its links meet as the others let it, aligned to the column's east
+// side; columns a corridor apart, wider for the links turning in it. Of the ways to put the
+// Sub-Blocks in columns — each as far east as its consumers let it, or up to `spread` columns
+// further west — the one is taken that fits the City Block (no column taller than its room with a
+// row for every belt crossing it: links passing through, Side Inputs to the columns east of it,
+// outputs from the columns west of it) and spans the least. The search places greedily
+// otherwise; that can leave no room for a Sub-Block placed late where columns would fit them all.
+// Returns each Sub-Block's top-left corner, or null when no way fits.
+function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread }, tilesOf) {
+  const { inner } = site;
+  const steps = blocks.map(b => b.step);
+  // Consumers first, so each Sub-Block's column follows from its consumers'.
+  const order = [...steps].sort((a, b) => depth.get(a) - depth.get(b) || a - b);
+  const feeds = new Map(steps.map(i => [i, [...new Set(links.filter(l => l.from === i && l.to !== i).map(l => l.to))]]));
+  const outputs = new Map(steps.map(i => [i, routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.slots.at(-1).inst.step === i).length]));
+  const col = new Map();
+  // The columns in use, east to west, with their Sub-Blocks, widths, heights and crossing belts.
+  const shape = cols => {
+    const used = [...new Set(cols.values())].sort((a, b) => a - b);
+    const k = new Map(used.map((c, n) => [c, n]));
+    const members = used.map(c => steps.filter(i => cols.get(i) === c));
+    const width = members.map(list => Math.max(...list.map(i => blocks[i].w)));
+    const height = members.map(list => list.reduce((sum, i) => sum + blocks[i].h, 0) + gap * (list.length - 1));
+    // Belts turning in the corridor west of each column, and crossing each column.
+    const turning = used.map(() => 0), crossing = used.map(() => 0);
+    for (const l of links) {
+      const a = k.get(cols.get(l.to)), b = k.get(cols.get(l.from));
+      for (let n = a; n < b; n++) turning[n]++;
+      for (let n = a + 1; n < b; n++) crossing[n]++;
+    }
+    for (const i of steps) {
+      for (let n = k.get(cols.get(i)) + 1; n < used.length; n++) crossing[n] += blocks[i].entries.length;
+      for (let n = 0; n < k.get(cols.get(i)); n++) crossing[n] += outputs.get(i);
+    }
+    const lanes = n => corridor + Math.floor(turning[n] / 2);
+    const span = width.reduce((sum, w) => sum + w, 0) + width.slice(1).reduce((sum, _, n) => sum + lanes(n), 0);
+    return { members, width, height, crossing, lanes, span };
+  };
+  const fitting = [];
+  const assign = n => {
+    if (n === order.length) {
+      const s = shape(col);
+      if (s.span > inner.w || s.height.some((h, k) => h + s.crossing[k] > inner.h)) return;
+      const tall = Math.max(...s.height.map((h, k) => h + s.crossing[k]));
+      fitting.push({ cost: s.span * tall + 40 * s.crossing.reduce((sum, c) => sum + c, 0), cols: new Map(col) });
+      return;
+    }
+    const i = order[n];
+    const lo = Math.max(0, ...feeds.get(i).map(q => (col.has(q) ? col.get(q) + 1 : 0)));
+    for (let c = lo; c <= lo + spread; c++) {
+      col.set(i, c);
+      assign(n + 1);
+    }
+    col.delete(i);
+  };
+  assign(0);
+  // The ways that fit, least spanning first, until one stands clear of the Fixtures.
+  fitting.sort((a, b) => a.cost - b.cost);
+  for (const { cols } of fitting.slice(0, site.fixtures.length ? 24 : 1)) {
+    const at = stand(cols);
+    if (at) return at;
+  }
+  return null;
+
+  // The columns placed from the east edge west, each a corridor from the last; in a City Block
+  // with Fixtures, a column moves on west (as far as the room left lets it) to where its
+  // Sub-Blocks stand clear of them.
+  function stand(cols) {
+    const { members, width, lanes, span } = shape(cols);
+    const at = new Map();
+    let x = inner.x + inner.w, slack = inner.w - span;
+    for (const [n, list] of members.entries()) {
+      x -= width[n] + (n > 0 ? lanes(n - 1) : 0);
+      let d = 0, done = null;
+      for (; d <= slack && !done; d++) done = column(list, x - d, width[n], at);
+      if (!done) return null;
+      x -= d - 1;
+      slack -= d - 1;
+      for (const [i, p] of done) at.set(i, p);
+    }
+    return at;
+
+    // A column's Sub-Blocks with its west side at cx: each level with what it feeds (the Goals
+    // at the top), pushed apart and into the room, then up or down to the nearest spot clear of
+    // the Fixtures and the others. Null when one finds none.
+    function column(list, cx, w, placed) {
+      const want = i => {
+        const mine = links.filter(l => l.from === i && placed.has(l.to));
+        return mine.length ? Math.round(mine.reduce((sum, l) => sum + placed.get(l.to).y + l.toY - l.fromY, 0) / mine.length) : inner.y;
+      };
+      const items = list.map(i => ({ i, y: want(i), h: blocks[i].h, x: cx + w - blocks[i].w })).sort((a, b) => a.y - b.y || a.i - b.i);
+      let bottom = inner.y - gap;
+      for (const it of items) bottom = (it.y = Math.max(it.y, bottom + gap)) + it.h;
+      let top = inner.y + inner.h + gap;
+      for (const it of [...items].reverse()) top = it.y = Math.min(it.y, top - gap - it.h);
+      if (items[0].y < inner.y) return null;
+      const boxOf = (it, y = it.y) => ({ x: it.x, y, w: blocks[it.i].w, h: it.h });
+      for (const it of items) {
+        const clear = y => site.fits(tilesOf(it.i), boxOf(it, y)) && items.every(o => o === it || y + it.h + gap <= o.y || o.y + o.h + gap <= y);
+        if (clear(it.y)) continue;
+        let moved = null;
+        for (let d = 1; d < inner.h && moved === null; d++) for (const y of [it.y - d, it.y + d]) if (moved === null && clear(y)) moved = y;
+        if (moved === null) return null;
+        it.y = moved;
+      }
+      return new Map(items.map(it => [it.i, { x: it.x, y: it.y }]));
+    }
   }
 }
 

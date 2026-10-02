@@ -121,7 +121,7 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     const leaders = ranked.filter((v, i) => ranked.findIndex(w => kind(w) === kind(v)) === i);
     for (const { variant, core } of [...leaders, ...ranked.filter(v => !leaders.includes(v))].slice(0, ROUTE_TRIES)) {
       candidates.push({
-        estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }) }, variant,
+        estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }), w: core.w, h: core.h }, variant,
         build: () => {
           let failure = null;
           for (const margin of margins(core)) {

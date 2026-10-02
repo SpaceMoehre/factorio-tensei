@@ -168,7 +168,7 @@ export function routeModule(core, opts) {
     const listOf = k => pieces.get(k).map(q => copies.get(q)).filter(q => keptSet.has(q));
     const entities = core.entities.map(e => copies.get(e));
     const consumers = entities.filter(e => e.kind === 'inserter' || (e.kind === 'building' && opts.electric(e)));
-    const poles = placePoles(grid, consumers, opts.pole).map(({ x, y, w, h }) => ({ x, y, w, h }));
+    const poles = powered(grid, kept, consumers);
     const machines = entities.filter(e => e.kind === 'building');
     const inserters = entities.filter(e => e.kind === 'inserter');
     // How each machine's output splits between the belts it drops on, then the lanes.
@@ -205,6 +205,23 @@ export function routeModule(core, opts) {
     const box = extentOf([...kept, ...poles]);
     const out = { x: box.x, y: box.y, w: box.w, h: box.h };
     return { area: out, w: core.w, h: core.h, entities, parts: routedParts, fluids: routedFluids, poles, core: squeezedCore };
+  }
+
+  // Poles proving the module can be powered. A pole too big for any gap of a dense module, out of
+  // reach from the strips north and south of it, may stand beside it west or east instead, where
+  // the Compound Block leaves room between Sub-Blocks (its own pole placement has the last word):
+  // such a pole is not the module's.
+  function powered(grid, objects, consumers) {
+    const own = list => list.map(({ x, y, w, h }) => ({ x, y, w, h }));
+    try {
+      return own(placePoles(grid, consumers, opts.pole));
+    } catch (e) {
+      if (!(e instanceof PowerError)) throw e;
+      const { x, y, w, h } = grid.area, side = opts.pole.size.w;
+      const wide = new Grid({ x: x - side, y, w: w + 2 * side, h });
+      for (const o of objects) wide.place(o);
+      return own(placePoles(wide, consumers, opts.pole)).filter(p => p.x >= x && p.x + p.w <= x + w);
+    }
   }
 
   // A grid holding the squeezed module, for poles and for where a belt may end.

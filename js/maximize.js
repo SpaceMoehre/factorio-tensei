@@ -135,17 +135,17 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   // Block's room they may span: more than that seldom fits. Fixtures scattered all over it (a
   // grid of substations) leave room only for what fits between them: the more of its stretches
   // as big as a few machines' modules a Fixture breaks, the less.
-  let loose = 1.8;
+  let loose = 1.6;
   const largest = Math.max(1, ...(planOf(1) ?? []).map(s => Math.max(size(s).w, size(s).h)));
-  const reach = 0.85 * room * (1 - broken(site, 2 * (largest + 5)) / 2);
+  const reach = 0.95 * room * (1 - broken(site, 2 * (largest + 5)) / 2);
   const fits = n => loose * modules(n) <= reach;
 
   let lo = 0, hi = upper, missed = false, designable = 0;
   // Once a layout found shows how loosely this City Block packs (its Sub-Blocks spanning so much
-  // more than their modules), n whose modules, spread as much, would span more than all its room
-  // are not tried.
+  // more than their modules), n whose modules, spread as much, would span more than all its
+  // room are not tried (another layout may pack a little tighter).
   let spread = null;
-  const overflows = n => spread !== null && spread * modules(n) > room;
+  const overflows = n => spread !== null && spread * modules(n) > 1.05 * room;
   // The highest n foretold to fit (more machines never take less room).
   const foretold = () => {
     let a = lo, b = hi;
