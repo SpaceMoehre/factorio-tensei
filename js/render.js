@@ -2,12 +2,13 @@
 const ARROW = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
 const MIN_SCALE = 2, MAX_SCALE = 64;
 
+// circuit: the circuit wires to draw, { colors: ['red', 'green'], pairs (circuitPairs) }, or null.
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {any} block
- * @param {{ onHover?: (entity: any, block: any) => void, starving?: Set<number>, icon?: (name: string) => string | null }} [options]
+ * @param {{ onHover?: (entity: any, block: any) => void, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null }} [options]
  */
-export function createMap(canvas, block, { onHover = () => {}, starving = new Set(), icon = () => null } = {}) {
+export function createMap(canvas, block, { onHover = () => {}, starving = new Set(), icon = () => null, circuit = null } = {}) {
   const ctx = canvas.getContext('2d');
   // Icons load in the background; the map redraws as each arrives.
   const images = new Map();
@@ -183,6 +184,11 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
           if (s >= 14 && n % 3 === 0) drawIcon(items[(n / 3) % items.length].item, x + s / 2, y + s / 2, s * 0.55);
           break;
         }
+        case 'splitter':
+          ctx.fillStyle = t.machineEdge;
+          ctx.fillRect(x + s * 0.1, y + s * 0.1, w - s * 0.2, h - s * 0.2);
+          arrow(x + (w - s) / 2, y + (h - s) / 2, s, e.travel ?? e.direction, t.bg);
+          break;
         case 'pipe':
         case 'pipe-to-ground':
           ctx.fillStyle = colors.fluid(e.fluid);
@@ -214,16 +220,22 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
       }
     }
 
-    // Copper wires between poles (on to the City Block's: indices past the entities).
-    ctx.strokeStyle = 'rgba(214, 140, 70, 0.9)';
-    ctx.lineWidth = Math.max(1, s * 0.08);
-    ctx.beginPath();
-    for (const [a, b] of block.wires ?? []) {
-      const p = block.entities[a] ?? fixtures[a - block.entities.length], q = block.entities[b] ?? fixtures[b - block.entities.length];
-      ctx.moveTo(sx(p.x + p.w / 2), sy(p.y + p.h / 2));
-      ctx.lineTo(sx(q.x + q.w / 2), sy(q.y + q.h / 2));
-    }
-    ctx.stroke();
+    // Copper wires between poles (on to the City Block's: indices past the entities), then the
+    // circuit wires, red and green side by side.
+    const wire = (pairs, style, width, shift) => {
+      ctx.strokeStyle = style;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      for (const [a, b] of pairs) {
+        const p = block.entities[a] ?? fixtures[a - block.entities.length], q = block.entities[b] ?? fixtures[b - block.entities.length];
+        ctx.moveTo(sx(p.x + p.w / 2) + shift, sy(p.y + p.h / 2) + shift);
+        ctx.lineTo(sx(q.x + q.w / 2) + shift, sy(q.y + q.h / 2) + shift);
+      }
+      ctx.stroke();
+    };
+    wire(block.wires ?? [], 'rgba(214, 140, 70, 0.9)', Math.max(1, s * 0.08), 0);
+    (circuit?.colors ?? []).forEach((color, k) => wire(circuit.pairs, color === 'red' ? 'rgba(230, 70, 70, 0.85)' : 'rgba(70, 200, 90, 0.85)',
+      Math.max(1, s * 0.05), (k - (circuit.colors.length - 1) / 2) * Math.max(1, s * 0.1)));
   }
 
   function pipeLinks(e, x, y, s) {

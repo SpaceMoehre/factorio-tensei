@@ -41,6 +41,28 @@ test('poles are joined by copper wires into one network', async () => {
 // A 90° fast inserter south of nothing, west of its belt: it picks from the tile to its west and
 // drops 1.2 tiles south into the machine. Factorio 2.0 blueprints carry both as vectors relative
 // to the inserter (BlueprintEntity pickup_position / drop_position).
+// Circuit wires join every pole and inserter onto one network, red (connector 1), green (2) or
+// both, along the shortest wires within reach: an inserter's 9 tiles, a pole's wire reach.
+test('circuit wires join every pole and inserter, red, green or both', async () => {
+  const inserter = (x, y) => ({ name: 'fast-inserter', kind: 'inserter', x, y, w: 1, h: 1, direction: 0 });
+  const wired = { ...block, entities: [...block.entities, inserter(1, 3), inserter(6, 5), inserter(12, 6)] };
+  const circuit = async how => JSON.parse((await encodeBlueprint(wired, catalog, null, { circuit: how })).json).blueprint.wires.filter(w => w[1] !== 5);
+  assert.deepEqual(await circuit('none'), []);
+  const red = await circuit('red');
+  assert.ok(red.every(([, a, , b]) => a === 1 && b === 1));
+  // Three poles and three inserters (entities 4 to 9): one network, five wires.
+  const parent = new Map([4, 5, 6, 7, 8, 9].map(n => [n, n]));
+  const root = n => (parent.get(n) === n ? n : root(parent.get(n)));
+  for (const [a, , b] of red) parent.set(root(a), root(b));
+  assert.equal(red.length, 5);
+  assert.equal(new Set([4, 5, 6, 7, 8, 9].map(root)).size, 1);
+  const at = n => wired.entities[n - 1];
+  for (const [a, , b] of red) assert.ok(Math.hypot(at(a).x - at(b).x, at(a).y - at(b).y) <= 9);
+  assert.deepEqual((await circuit('green')).map(([a, , b]) => [a, b]), red.map(([a, , b]) => [a, b]));
+  assert.ok((await circuit('green')).every(([, a, , b]) => a === 2 && b === 2));
+  assert.equal((await circuit('both')).length, 10);
+});
+
 test('custom pickup and drop vectors appear only on 90° inserters', async () => {
   const { json } = await encodeBlueprint({
     subBlocks: [{ item: 'iron-gear-wheel' }],
@@ -83,6 +105,19 @@ test('display panels mark which item every Side Input and Side Output carries', 
     { position: at(7, 9), icon: { type: 'item', name: 'py-science-pack-2' }, text: 'py-science-pack-2 450/min', always_show: true, show_in_chart: true },
     { position: at(1, 0), icon: { type: 'item', name: 'iron-plate' }, text: 'iron-plate 30/min', always_show: true, show_in_chart: true },
   ]);
+});
+
+// A Fan-out comes in on its belts from the west edge: a panel for each, with what it brings.
+test('a Fan-out has a display panel for each of its belts from the west edge', async () => {
+  const belt = (route, x, y) => ({ name: 'transport-belt', kind: 'belt', route, x, y, w: 1, h: 1, direction: 4 });
+  const splitter = { name: 'splitter', kind: 'splitter', x: 1, y: 0, w: 1, h: 2, direction: 4 };
+  const routes = [
+    { id: 0, kind: 'belt', source: 'side-input', sink: null, items: [{ item: 'urea', rate: 360 }], brings: [{ item: 'urea', rate: 660 }], pieces: [belt(0, 0, 0), splitter, belt(0, 2, 1)] },
+    { id: 1, kind: 'belt', source: 'side-input', sink: null, items: [{ item: 'urea', rate: 300 }], fedBy: 0, pieces: [splitter, belt(1, 2, 0)] },
+  ];
+  const { json } = await encodeBlueprint({ subBlocks: [], entities: [belt(0, 0, 0), splitter, belt(0, 2, 1), belt(1, 2, 0)], routes }, catalog);
+  const panels = JSON.parse(json).blueprint.entities.filter(e => e.name === 'display-panel').map(({ position, text }) => ({ position, text }));
+  assert.deepEqual(panels, [{ position: { x: -0.5, y: 0.5 }, text: 'urea 660/min' }]);
 });
 
 // Module requests fill the machine's module inventory (4 in Factorio 2.0), one slot each, so

@@ -144,6 +144,13 @@ _Avoid_: merging parts on one belt (a part's belt carries one run of producers)
 Two belts of one Internal Path side by side through a splitter between the producers and the consumers, lane to lane: 2 to 2, each consumer run gets what it takes from both belts' supply, so a belt of three producers' parts and a belt of one no longer starve the run fed by the one (paired greedily, the belt short the most with the partner that makes the Path Flow deliver the most); 2 to 1, a second producers' belt ends in it and both carry on as one; 1 to 2, one producers' belt feeds two consumer runs, shared by what each takes. Where no splitter fits, the belts go straight on.
 _Avoid_: balancer (only pairs are joined)
 
+**Fan-out**:
+A Side Input's belts into the copies of one column, coming from the west edge on as few belts as carry them all: one line runs past their entries in turn, a splitter before each sending a belt off into it, and ends in the last; where the line carries less than the next entry takes, another belt from the west edge joins it through that entry's splitter. Where no splitter finds room, belts come from the west edge on their own.
+_Avoid_: balancer; a belt of its own from the train for every copy that takes a fraction of one
+
+**Circuit Wires**:
+Red or green wires (or both) putting every pole and inserter of the block on one circuit network, the shortest that join them within reach (an inserter's 9 tiles, a pole's wire reach). A City Block's poles may carry it across. Only the blueprint and the map have them; the layout is the same.
+
 **Two-Way Output**:
 A machine row dropping its output onto belts in both bands beside it, so a belt may take part of a row: nine machines fill six belts in rows of one, a belt taking a machine's whole output and half the next one's. The split is not fixed: an output inserter whose lane is full waits, so the machine's output goes to whichever belt has room (Path Flow). Rows are cut into belts so each belt can bring its consumers what they take, each row planned to give each of its belts a share (its load), its inserters sized for it; the short row stands where that works. A band between two rows holds a belt row for each row's half, or one both rows reach. Tried only where an Internal Path's belts cannot take a whole row each. Machines standing alone in their rows may also put the half rows two tiles out (straight inserters), clear of the inserter row, so each belt runs straight past its drops.
 _Avoid_: splitting one machine's output with a splitter

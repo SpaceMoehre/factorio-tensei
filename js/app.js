@@ -2,6 +2,7 @@ import { simulate } from './sim.js';
 import { expandChain, recipeOptions } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
+import { circuitPairs } from './layout/wires.js';
 import { createMap, turnsSideways } from './render.js';
 import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
 import { planner } from './maximize.js';
@@ -64,6 +65,13 @@ for (const key of SELECTS) {
   fillSelect($(key), choices[key], state.logistics[key]);
   $(key).addEventListener('change', () => { state.logistics[key] = $(key).value; save(); });
 }
+$('circuit').value = state.logistics.circuit;
+$('circuit').addEventListener('change', () => {
+  state.logistics.circuit = $('circuit').value;
+  save();
+  // Only the blueprint and the map change: the block stays as it is.
+  if (best) show(best.block, best.tried, best.found);
+});
 $('right-angle').checked = state.logistics.rightAngle;
 $('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
 $('handSize').value = String(state.logistics.handSize);
@@ -142,6 +150,7 @@ function defaultLogistics() {
     rightAngle: true,
     handSize: 1,
     budget: 10,
+    circuit: 'none',
   };
 }
 
@@ -455,7 +464,11 @@ async function show(block, tried, found = null) {
   const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
   $('empty').hidden = true;
-  map = createMap($('map'), block, { starving, onHover: describe, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null) });
+  const circuit = state.logistics.circuit;
+  map = createMap($('map'), block, {
+    starving, onHover: describe, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null),
+    circuit: circuit === 'none' ? null : { colors: circuit === 'both' ? ['red', 'green'] : [circuit], pairs: circuitPairs(block.entities, catalog, block.site?.fixtures ?? []) },
+  });
   const { bounds, site } = block;
   // Compactness, as the search scores it: its parts, and the score.
   const score = compactness(block);
@@ -468,7 +481,7 @@ async function show(block, tried, found = null) {
   report(block, starvation, worker ? progress() : null);
   fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input'));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
-  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null);
+  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null, { circuit });
   if (best?.block !== block) return;
   $('bp-string').value = string;
   $('bp-json').value = JSON.stringify(JSON.parse(json), null, 2);
@@ -539,7 +552,8 @@ function fillFlows(list, routes, block) {
       const k = `${i.item} (${r.kind})`;
       const line = lines.get(k) ?? { rate: 0, belts: 0 };
       line.rate += block ? Math.max(0, i.rate - taken) : i.rate;
-      line.belts++;
+      // A Fan-out's belts count once: the belt from the west edge.
+      if (r.fedBy === undefined) line.belts++;
       lines.set(k, line);
     }
   }

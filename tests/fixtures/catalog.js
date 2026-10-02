@@ -250,6 +250,15 @@ export const pyCatalog = {
       ingredients: [{ type: 'item', name: 'iron-plate', amount: 1 }],
       products: [{ type: 'item', name: 'iron-stick', amount: 2 }],
     },
+    fertilizer: {
+      name: 'fertilizer', category: 'agitator', time: 5,
+      ingredients: [
+        { type: 'fluid', name: 'blood', amount: 30 }, { type: 'item', name: 'bones', amount: 6 },
+        { type: 'item', name: 'urea', amount: 5 }, { type: 'item', name: 'ash', amount: 10 },
+        { type: 'item', name: 'biomass', amount: 20 },
+      ],
+      products: [{ type: 'item', name: 'fertilizer', amount: 10 }],
+    },
     'Moss-1': {
       name: 'Moss-1', category: 'moss', time: 100,
       ingredients: [{ type: 'fluid', name: 'muddy-sludge', amount: 100 }, { type: 'fluid', name: 'carbon-dioxide', amount: 100 }],
@@ -276,6 +285,15 @@ export const pyCatalog = {
         { production: 'input', connections: [{ x: -1.5, y: -2.5, direction: 0 }] },
         { production: 'output', connections: [{ x: 1.5, y: 2.5, direction: 8 }] },
         { production: 'output', connections: [{ x: -1.5, y: 2.5, direction: 8 }] },
+      ],
+    },
+    'agitator-mk01': {
+      name: 'agitator-mk01', size: { w: 5, h: 5 }, craftingSpeed: 1, categories: ['agitator'], energy: 'electric', energyUsage: 1000000,
+      fluidBoxes: [
+        { production: 'input', connections: [{ x: 2, y: 0, direction: 4 }] },
+        { production: 'input', connections: [{ x: 0, y: 2, direction: 8 }] },
+        { production: 'output', connections: [{ x: -2, y: 0, direction: 12 }] },
+        { production: 'output', connections: [{ x: 0, y: -2, direction: 0 }] },
       ],
     },
     'chipshooter-mk01': {

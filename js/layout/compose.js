@@ -1,4 +1,4 @@
-import { Grid, E, W, VEC, key } from './grid.js';
+import { Grid, N, E, S, W, VEC, key } from './grid.js';
 import { routeLink, routePipe, RoutingError } from './router.js';
 import { PowerError } from './poles.js';
 import { trim, maxFlow } from './module.js';
@@ -9,6 +9,12 @@ export { RoutingError, PowerError, maxFlow };
 
 const REROUTES = 1;
 const SPLITTER_TRIES = 3;
+// A Fan-out's splitter stands up to this many tiles before the entry it feeds; so many spots are
+// tried.
+const FAN_REACH = 8;
+const FAN_TRIES = 4;
+// A Fan-out's run holds at most this many belts.
+const FAN_RUN = 16;
 
 // The copies of every Sub-Block's modules and the global routes between them, before any of
 // them is placed. designs: per Sub-Block { kinds: [{ module, count }] }; columns: per Sub-Block,
@@ -44,8 +50,9 @@ export function leastStarvation(ctx, prepared) {
 // Belts of one route chain through as many copies as one belt can carry; pipes join every copy's
 // stub of a fluid into one network. Poles are placed later, over the whole block (compact.js).
 // prepared: from prepare(); positions: each copy's top-left corner (its module's area)
-// layout: { margin, routeOrder, plain (no splitters: paired belts go straight on), until (true
-//          once the search is out of time) }
+// layout: { margin, routeOrder, plain (no splitters: paired belts go straight on, a Fan-out's
+//          belts each from the west edge), fansLast (Fan-outs routed after the other Side
+//          Inputs), until (true once the search is out of time) }
 // In a City Block (ctx.site) links are routed inside its Buffer and round its Fixtures (or under
 // them): the train's belts enter on its inner west edge and leave on its inner east edge.
 // Throws RoutingError or PowerError when the layout cannot be built.
@@ -176,9 +183,14 @@ export function compose(ctx, prepared, positions, layout) {
     for (const route of routes.filter(r => r.kind === 'belt')) {
       route.slots.forEach((slot, k) => {
         if (k === 0 && route.source !== 'side-input') return;
-        // A pair of belts through a splitter is routed as one task, by the first of the pair.
+        // A pair of belts through a splitter is routed as one task, by the first of the pair;
+        // a Fan-out's belts by its first.
         if (route.splitter && k === route.splitter.at && !layout.plain) {
           if (route.id < route.splitter.with) tasks.push({ route, slot: k, split: true });
+          return;
+        }
+        if (route.fan && k === 0 && !layout.plain) {
+          if (route.id === route.fan.family[0]) tasks.push({ route, slot: k, fan: route.fan.family });
           return;
         }
         tasks.push({ route, slot: k });
@@ -221,6 +233,10 @@ export function compose(ctx, prepared, positions, layout) {
       return [1, ends ? -Math.abs(goal.x - ends.starts[0].x) : 0];
     }
     if (k === route.slots.length) return [2, 0];
+    // Fan-outs before the other Side Inputs (with `fansLast`, after them: a run's splitters and
+    // line find their way round them, else its belts go on their own): runs no belt joins first
+    // (each splitter of theirs saves a belt), the shortest first.
+    if (task.fan) return [layout.fansLast ? 4 : 3, (planFan(task.fan.map(id => routes[id])).joins.length ? 1000 : 0) + task.fan.length - 2000];
     return [3, 0];
   };
   // A belt route's pieces in the order items travel: each link, then the slot it leads into.
@@ -256,6 +272,10 @@ export function compose(ctx, prepared, positions, layout) {
   let order = null;
   const tried = new Set();
   let balanced = new Set();
+  // The Fan-outs' belts routed through their splitters: per belt, what the line carries on to it
+  // (items) and the belt it is fed from (fedBy, the trunk), or for a belt from the west edge,
+  // what it brings (brings).
+  let fanned = new Map();
   const splitterName = beltSpec.splitter ?? beltSpec.name.replace(/transport-belt$/, 'splitter');
   for (;;) {
     const { grid, entities, pieces } = placeAll();
@@ -270,6 +290,7 @@ export function compose(ctx, prepared, positions, layout) {
     tried.add(order.map(keyOf).join());
     const links = new Map();
     balanced = new Set();
+    fanned = new Map();
     let failed = null;
     for (const task of order) {
       // A search out of time gives up on the layout rather than route on.
@@ -287,12 +308,15 @@ export function compose(ctx, prepared, positions, layout) {
           }
           continue;
         }
-        const ends = endsOf(task);
-        if (!ends) continue;
-        const leg = task.slot === 0 && approach > area.x ? approached(grid, task.route.id, ends.goal)
-          : routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal }, belts);
+        if (task.fan) {
+          for (const [id, leg] of fan(grid, task.fan.map(id => routes[id]))) {
+            if (!links.has(id)) links.set(id, new Map());
+            links.get(id).set(0, leg);
+          }
+          continue;
+        }
         if (!links.has(task.route.id)) links.set(task.route.id, new Map());
-        links.get(task.route.id).set(task.slot, leg);
+        links.get(task.route.id).set(task.slot, link(grid, task));
       } catch (e) {
         if (!(e instanceof RoutingError)) throw e;
         failed = { task, error: e };
@@ -305,6 +329,168 @@ export function compose(ctx, prepared, positions, layout) {
     }
     order = [failed.task, ...order.filter(t => t !== failed.task)];
     if (tried.has(order.map(keyOf).join()) || tried.size > REROUTES) throw failed.error;
+  }
+
+  // A belt link on its own (a task): from the train (in a City Block through the approach
+  // column) or from the copy before.
+  function link(grid, task) {
+    const ends = endsOf(task);
+    if (!ends) return [];
+    return task.slot === 0 && approach > area.x ? approached(grid, task.route.id, ends.goal)
+      : routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal }, belts);
+  }
+
+  // A Fan-out's run: through its splitters; else, where belts join it, as runs without (each
+  // fitting one belt); else as two runs, each half of it, and so on down to belts on their own
+  // from the west edge.
+  function fan(grid, members) {
+    if (members.length < 2) return members.map(r => [r.id, link(grid, { route: r, slot: 0 })]);
+    const legs = routeFan(grid, members);
+    if (legs) return legs;
+    const runs = planFan(members).joins.length ? cutRuns(members, false) : [];
+    if (runs.length > 1) return runs.flatMap(run => fan(grid, run));
+    const half = Math.ceil(members.length / 2);
+    return [...fan(grid, members.slice(0, half)), ...fan(grid, members.slice(half))];
+  }
+
+  // A run of a Fan-out (fanOut), its belts in line order (or the other way round): one belt
+  // from the west edge runs past their entries, a splitter before each sending a belt off into
+  // it, and ends in the last (the trunk: it holds the line). Where planFan has a belt join, the
+  // entry's belt itself comes from the west edge into that splitter's other side. Each splitter
+  // stands as near its entry as there is room, its other output toward the next entry; a few
+  // spots are tried for each, those before it tried again where one leaves the rest no way on.
+  // Returns [routeId, pieces] for every belt; null when no spots let every leg through (the
+  // grid as it was).
+  function routeFan(grid, members) {
+    const entryOf = r => {
+      const slot = r.slots[0];
+      return { x: slot.pieces[0].x, y: slot.pieces[0].y, a: slot.part.dir ?? E };
+    };
+    if (members.some(r => entryOf(r).a !== E)) return null;
+    const held = [];
+    const reserve = (x, y, id) => {
+      held.push([x, y, grid.holder(x, y)]);
+      grid.reserve(x, y, id);
+    };
+    const undo = (to, count) => {
+      grid.restore(to);
+      while (held.length > count) {
+        const [x, y, before] = held.pop();
+        if (before === undefined) grid.unreserve(x, y);
+        else grid.reserve(x, y, before);
+      }
+    };
+    const family = new Set(members.map(r => r.id));
+    // A tile free for belt `id`; a splitter tile free for the belt it sends off, and no other
+    // belt's piece pointing into it.
+    const open = (x, y, id) => grid.inBounds(x, y) && !grid.at(x, y) && [undefined, id].includes(grid.holder(x, y));
+    const room = (x, y, id) => open(x, y, id) && Object.values(VEC).every(([dx, dy]) => {
+      const n = grid.at(x + dx, y + dy);
+      return n?.out !== key(x, y) || family.has(n.route);
+    });
+    // From the west edge (in a City Block through the approach column) into a splitter.
+    const fromWest = (id, goal) => (goal.x > approach + 1 && approach > area.x ? approached(grid, id, goal)
+      : routeLink(grid, { id, starts: westEdge(area), goal }, belts));
+    for (const order of [members, [...members].reverse()]) {
+      const { joins, supply, brings } = planFan(order);
+      if (joins.includes(order.length - 1)) continue;
+      const entries = order.map(entryOf);
+      const trunk = order.at(-1);
+      const pieces = new Map(members.map(r => [r.id, []]));
+      let budget = FAN_TRIES * order.length;
+      // The splitter before order[i]'s entry, the line coming on from `from` (the last
+      // splitter's other output; at first the west edge), then those after it.
+      const tap = (i, from) => {
+        if (i === order.length - 1) {
+          pieces.get(trunk.id).push(...routeLink(grid, { id: trunk.id, starts: [from], goal: entries[i] }, belts));
+          return true;
+        }
+        const member = order[i], entry = entries[i], next = entries[i + 1];
+        const join = joins.includes(i);
+        // The belt sent off leaves on the entry's row, the line goes on toward the next entry
+        // (way: 1 below it, -1 above). A splitter facing that way stands across the line just
+        // before the entry's row (the line runs on straight; its east side's belt turns east
+        // into the entry), or one facing east before the entry (its upper side's belt on into
+        // the entry going down, its lower side's going up; the line turns on from the other).
+        // Right before the entry the latter feeds it straight; that leaves the line going on
+        // inside the copy, so it comes last.
+        const ways = next.y > entry.y ? [1] : next.y < entry.y ? [-1] : [1, -1];
+        const spots = [];
+        const reach = Math.max(area.x + 1, entry.x - FAN_REACH);
+        for (const way of ways) {
+          const along = way > 0 ? S : N, row = entry.y - way;
+          for (let x = entry.x - 2; x >= reach; x--) {
+            spots.push({
+              splitter: { x, y: row, w: 2, h: 1, direction: along },
+              lanes: [0, 1].map(k => ({ at: [x + k, row - way], goal: { x: x + k, y: row, a: along } })),
+              off: { x: x + 1, y: entry.y, a: along }, on: { x, y: entry.y, a: along },
+            });
+          }
+          const y = way > 0 ? entry.y : entry.y - 1;
+          for (let x = entry.x - 2; x >= reach; x--) {
+            spots.push({
+              splitter: { x, y, w: 1, h: 2, direction: E },
+              lanes: [0, 1].map(k => ({ at: [x - 1, y + k], goal: { x, y: y + k, a: E } })),
+              off: { x: x + 1, y: entry.y, a: E }, on: { x: x + 1, y: entry.y + way, a: E },
+            });
+          }
+          spots.push({
+            splitter: { x: entry.x - 1, y, w: 1, h: 2, direction: E },
+            lanes: [0, 1].map(k => ({ at: [entry.x - 2, y + k], goal: { x: entry.x - 1, y: y + k, a: E } })),
+            off: null, on: { x: entry.x, y: entry.y + way, a: E },
+          });
+        }
+        const tiles = ({ x, y, w, h }) => Array.from({ length: w * h }, (_, k) => [x + (k % w), y + Math.floor(k / w)]);
+        const usable = spots.filter(spot => tiles(spot.splitter).every(([x, y]) => room(x, y, member.id))
+          && (!spot.off || open(spot.off.x, spot.off.y, member.id)) && open(spot.on.x, spot.on.y, trunk.id))
+          .flatMap(spot => [0, 1].filter(lane => open(...spot.lanes[lane].at, trunk.id) && (!join || open(...spot.lanes[1 - lane].at, member.id)))
+            .map(lane => ({ ...spot, lane })));
+        for (const spot of usable) {
+          if (budget-- <= 0) break;
+          const before = grid.snapshot(), count = held.length, length = pieces.get(trunk.id).length;
+          try {
+            const line = spot.lanes[spot.lane], other = spot.lanes[1 - spot.lane];
+            reserve(...line.at, trunk.id);
+            if (join) reserve(...other.at, member.id);
+            if (spot.off) reserve(spot.off.x, spot.off.y, member.id);
+            reserve(spot.on.x, spot.on.y, trunk.id);
+            const splitter = { name: splitterName, kind: 'splitter', ...spot.splitter, travel: spot.splitter.direction };
+            grid.place(splitter);
+            const off = spot.off ? routeLink(grid, { id: member.id, starts: [spot.off], goal: entry }, belts) : [];
+            const into = from ? routeLink(grid, { id: trunk.id, starts: [from], goal: line.goal }, belts) : fromWest(trunk.id, line.goal);
+            const joined = join ? fromWest(member.id, other.goal) : [];
+            pieces.get(trunk.id).push(...into, splitter);
+            pieces.set(member.id, [...joined, splitter, ...off]);
+            if (tap(i + 1, spot.on)) return true;
+          } catch (e) {
+            if (!(e instanceof RoutingError)) throw e;
+          }
+          undo(before, count);
+          pieces.get(trunk.id).length = length;
+          pieces.set(member.id, []);
+        }
+        return false;
+      };
+      const saved = grid.snapshot();
+      let done = false;
+      try {
+        done = tap(0, null);
+      } catch (e) {
+        if (!(e instanceof RoutingError)) throw e;
+      }
+      if (!done) {
+        undo(saved, 0);
+        continue;
+      }
+      // The belts from the west edge: the trunk's, then each joining one's.
+      const from = [trunk, ...joins.map(k => order[k])];
+      order.forEach((r, k) => fanned.set(r.id, {
+        items: supply[k],
+        ...(from.includes(r) ? { brings: brings[from.indexOf(r)] } : { fedBy: trunk.id }),
+      }));
+      return [...pieces];
+    }
+    return null;
   }
 
   // A Side Input in two legs: through the block from the approach column, on a row whose way
@@ -409,8 +595,13 @@ export function compose(ctx, prepared, positions, layout) {
 
   function finish(grid, entities, pieces) {
     const result = routes.map(r => {
-      const { slots, stubs, splitter, ...rest } = r;
-      return { ...rest, ...(balanced.has(r.id) ? { items: splitter.items, balancedWith: splitter.with } : {}), pieces: pieces[r.id] };
+      const { slots, stubs, splitter, fan, ...rest } = r;
+      return {
+        ...rest,
+        ...(balanced.has(r.id) ? { items: splitter.items, balancedWith: splitter.with } : {}),
+        ...(fanned.get(r.id) ?? {}),
+        pieces: pieces[r.id],
+      };
     });
     const seen = new Set();
     for (const r of result) for (const p of r.pieces) if (!seen.has(p)) { seen.add(p); entities.push(p); }
@@ -531,6 +722,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
         if (group && (base.consumers.length > 1 || (load && sameBelt)) && chainable(group.at(-1), slot)) group.push(slot);
         else groups.push([slot]);
       }
+      const first = routes.length;
       for (const group of groups) {
         const used = [...new Set(group.flatMap(s => s.part.routeIds))];
         const its = used.flatMap(id => ctx.routes[id].items).map(i => ({
@@ -539,6 +731,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
         }));
         routes.push(beltRoute(routes.length, base, used, its, group, plan));
       }
+      if (base.consumers.length === 1) fanOut(routes.slice(first));
       continue;
     }
     // An output: its producer's parts, then (for an Internal Path) its consumers' parts. The belt
@@ -704,6 +897,75 @@ function groupRoutes(ctx, instances, laneCapacity) {
     });
   }
   return routes;
+}
+
+// Fan-out: a Side Input's belts into the copies of a Sub-Block (each copy's own, or a run of
+// them) come from the west edge on as few belts as carry them all. In the order the copies of a
+// column stand (down an even column, up an odd one) they are cut into runs (cutRuns): each run
+// one line past the entries of its belts, a splitter before each sending a belt off into it,
+// ending in the last; where what the line still carries falls short of an entry, a belt from
+// the west edge joins it through that entry's splitter (planFan). Marks each belt of a run of
+// two or more (route.fan: { family }, the run's belts in line order).
+function fanOut(belts) {
+  const where = r => r.slots[0].inst;
+  const columns = new Map();
+  for (const r of belts) {
+    const inst = where(r);
+    if (inst.detached) continue;
+    const k = `${inst.step}|${inst.column ?? 0}|${r.bases.join()}`;
+    if (!columns.has(k)) columns.set(k, []);
+    columns.get(k).push(r);
+  }
+  for (const list of columns.values()) {
+    const y = r => r.slots[0].part.pieces[0].y * ((where(r).column ?? 0) % 2 ? -1 : 1);
+    list.sort((a, b) => where(a).index - where(b).index || y(a) - y(b));
+    for (const run of cutRuns(list, true)) if (run.length > 1) for (const r of run) r.fan = { family: run.map(m => m.id) };
+  }
+}
+
+// Belts in line order cut into runs: the fewest belts from the west edge, then the fewest
+// splitters; with `joins`, a run may take belts joining it (a joining belt never ends a run),
+// else each run's belts together fit one.
+function cutRuns(list, joins) {
+  const n = list.length;
+  const best = [{ belts: 0, splitters: 0, from: -1 }];
+  for (let j = 1; j <= n; j++) {
+    best[j] = null;
+    for (let i = j - 1; i >= Math.max(0, j - FAN_RUN); i--) {
+      const run = list.slice(i, j);
+      const plan = planFan(run);
+      if (plan.joins.includes(run.length - 1) || (!joins && plan.joins.length)) continue;
+      const belts = best[i].belts + plan.belts, splitters = best[i].splitters + run.length - 1;
+      if (!best[j] || belts < best[j].belts || (belts === best[j].belts && splitters < best[j].splitters)) best[j] = { belts, splitters, from: i };
+    }
+  }
+  const runs = [];
+  for (let j = n; j > 0; j = best[j].from) runs.unshift(list.slice(best[j].from, j));
+  return runs;
+}
+
+// What a run of a Fan-out needs, its belts in line order: the line starts as one belt from the
+// west edge; before an entry whose belt would get less of an item than it takes, a belt joins
+// (joins: the entries where). Each belt's items: what the line carries on to it (supply), and
+// what each belt from the west edge brings (brings: the line's first belt, then each joining
+// one: all a belt carries but the last, which brings the rest).
+export function planFan(run) {
+  const left = new Map(run[0].items.map(i => [i.item, i.capacity]));
+  const joins = [], supply = [];
+  run.forEach((r, k) => {
+    if (k > 0 && r.items.some(i => (left.get(i.item) ?? 0) < i.rate - 1e-6)) {
+      joins.push(k);
+      for (const i of r.items) left.set(i.item, (left.get(i.item) ?? 0) + i.capacity);
+    }
+    supply.push(r.items.map(i => ({ ...i, supply: Math.min(i.capacity, left.get(i.item) ?? 0) })));
+    for (const i of r.items) left.set(i.item, (left.get(i.item) ?? 0) - i.rate);
+  });
+  const belts = joins.length + 1;
+  const total = item => run.reduce((sum, r) => sum + (r.items.find(i => i.item === item)?.rate ?? 0), 0);
+  const brings = Array.from({ length: belts }, (_, b) => run[0].items.map(i => ({
+    item: i.item, rate: b < belts - 1 ? i.capacity : Math.max(0, total(i.item) - (belts - 1) * i.capacity),
+  })));
+  return { belts, joins, supply, brings };
 }
 
 // Pairs belts of one Internal Path through splitters, greedily: the belt short the most with the

@@ -411,6 +411,14 @@ function startsAtWestEdge(block, route) {
   return route.pieces[0].x === block.bounds.x ? [] : [`route ${route.id} does not start at the west edge`];
 }
 
+// A Side Input's belt in a Fan-out starts at a splitter on the belt from the west edge.
+function fedBySplitter(block, route) {
+  const [s] = route.pieces;
+  const trunk = block.routes[route.fedBy];
+  if (s.kind !== 'splitter' || !trunk.pieces.some(p => p.kind === 'splitter' && p.x === s.x && p.y === s.y)) return [`route ${route.id} does not start at a splitter of route ${route.fedBy}`];
+  return startsAtWestEdge(block, trunk);
+}
+
 // Every rule, for every route and machine of a Compound Block.
 export function validateBlock(block, catalog, logistics) {
   const machinesOf = i => block.entities.filter(e => e.kind === 'building' && e.subBlock === i);
@@ -433,6 +441,7 @@ export function validateBlock(block, catalog, logistics) {
     }
     problems.push(...routeChain(route, catalog, logistics, block.entities));
     if (typeof route.source === 'number') problems.push(...drainsEveryMachine(block, route, servedBy(route, route.source), catalog));
+    else if (route.fedBy !== undefined) problems.push(...fedBySplitter(block, route));
     else problems.push(...startsAtWestEdge(block, route));
     problems.push(...feedsEveryMachine(block, route, route.consumers.flatMap(i => servedBy(route, i)), catalog));
     if (route.sink === 'side-output') problems.push(...endsAtEastEdge(block, route));

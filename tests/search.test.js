@@ -5,7 +5,7 @@ import { context, designStep, designOf, random, shapeOf, stackVariant, moduleOpt
 import { coreLinks } from '../js/routes.js';
 import { buildCore } from '../js/layout/core.js';
 import { routeModule } from '../js/layout/module.js';
-import { prepare, compose, RoutingError } from '../js/layout/compose.js';
+import { prepare, compose, planFan, RoutingError } from '../js/layout/compose.js';
 import { placeBlocks } from '../js/layout/place.js';
 import { finishBlock } from '../js/layout/compact.js';
 import { simulate } from '../js/sim.js';
@@ -204,6 +204,53 @@ test('Py small parts at 900/min, bolts on one belt each: a splitter joins the tw
   assert.ok(block, 'a small parts design lays out');
   assert.equal(block.entities.filter(e => e.kind === 'splitter').length, 1);
   assertValid(block, pyCatalog, hands);
+});
+
+// Py fertilizer at 2880/min: 24 agitators as four copies of six, one under the other. A copy
+// takes 432 bones and 360 urea a minute, so two copies' share fits one belt: one belt from the
+// west edge feeds both through a splitter (Fan-out), where each copy had a belt of its own.
+test('Fan-out: Py fertilizer copies share their belts of bones and urea from the west edge, two copies each', () => {
+  const { entries } = expandChain([{ item: 'fertilizer', rate: 2880 }], pyCatalog, { selections: { fertilizer: { recipe: 'fertilizer', building: 'agitator-mk01' } } });
+  const ctx = context(entries, pyCatalog, logistics);
+  const design = designStep(ctx, 0, random(1), { draws: 0 }).map(designOf).find(d => d?.kinds.length === 1 && d.kinds[0].count === 4);
+  assert.ok(design, 'four copies of six agitators');
+  const ready = prepare(ctx, [design]);
+  const block = finishBlock(compose(ctx, ready, placeBlocks(ctx, ready, {}), { margin: { w: 0, e: 0, n: 1, s: 1 } }), pyCatalog, logistics);
+  const inputs = item => block.routes.filter(r => r.kind === 'belt' && r.source === 'side-input' && r.items.some(i => i.item === item));
+  for (const item of ['bones', 'urea']) {
+    assert.equal(inputs(item).length, 4);
+    const trunks = inputs(item).filter(r => r.fedBy === undefined);
+    assert.equal(trunks.length, 2, `${item}: belts from the west edge`);
+    for (const trunk of trunks) {
+      const [fed, ...more] = inputs(item).filter(r => r.fedBy === trunk.id);
+      assert.equal(more.length, 0);
+      assert.equal(fed.pieces[0].kind, 'splitter');
+      assert.ok(trunk.pieces.includes(fed.pieces[0]), 'the splitter stands on the belt from the west edge');
+      // The belt from the west edge brings what both take.
+      assert.equal(trunk.brings[0].rate, trunk.items[0].rate + fed.items[0].rate);
+    }
+  }
+  // Ash fills most of a belt for each copy: no Fan-out.
+  assert.equal(inputs('ash').filter(r => r.fedBy !== undefined || r.feeds).length, 0);
+  assertValid(block, pyCatalog, logistics);
+  assert.deepEqual(simulate(block).starvation, []);
+});
+
+// A run of a Fan-out on yellow belts (900/min): copies taking 720 ash a minute each. One belt
+// from the west edge feeds the first; before each of the next three a belt joins the line (what
+// it carries on, 180, 360, 540, falls short of 720), and the fifth is fed from what is left:
+// four belts for five copies, every copy getting all it takes.
+test('Fan-out: belts join a run where its line falls short, as few as carry it all', () => {
+  const run = Array.from({ length: 5 }, () => ({ items: [{ item: 'ash', rate: 720, capacity: 900, supply: 900 }] }));
+  const plan = planFan(run);
+  assert.deepEqual(plan.joins, [1, 2, 3]);
+  assert.equal(plan.belts, 4);
+  assert.deepEqual(plan.brings.map(b => b[0].rate), [900, 900, 900, 900]);
+  for (const [k, items] of plan.supply.entries()) assert.ok(items[0].supply >= run[k].items[0].rate, `copy ${k}`);
+  // Urea, 360 a copy: one belt joins before the third.
+  const urea = planFan(Array.from({ length: 5 }, () => ({ items: [{ item: 'urea', rate: 360, capacity: 900, supply: 900 }] })));
+  assert.deepEqual(urea.joins, [2]);
+  assert.deepEqual(urea.brings.map(b => b[0].rate), [900, 900]);
 });
 
 // Py small parts at 3600/min with fast inserters moving one item a swing: 76 automated factories,

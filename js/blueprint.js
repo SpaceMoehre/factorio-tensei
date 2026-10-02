@@ -1,14 +1,18 @@
-import { wirePairs } from './layout/wires.js';
+import { wirePairs, circuitPairs } from './layout/wires.js';
 
 // Factorio 2.0.0 as the packed 64-bit version number blueprints carry.
 const VERSION = 562949953421312;
+// Wire connectors (defines.wire_connector_id): a pole's copper, and the red and green circuit
+// wires of poles and inserters.
 const POLE_COPPER = 5;
+const CIRCUIT = { red: [1], green: [2], both: [1, 2] };
 
 // Compound Block → Factorio blueprint: the importable string ("0" + base64(zlib(JSON)))
 // and the JSON it encodes. Built in a City Block, it is the City Block's blueprint (`city`) with
 // the Compound Block added: its entities, tiles, wires and grid snapping as they were, and
-// copper wires joining the block's poles to its own.
-export async function encodeBlueprint(block, catalog, city = null) {
+// copper wires joining the block's poles to its own. circuit: 'red', 'green' or 'both' wires
+// every pole and inserter of the block onto one circuit network (circuitPairs); 'none' none.
+export async function encodeBlueprint(block, catalog, city = null, { circuit = 'none' } = {}) {
   const kept = city?.entities ?? [];
   const numberOf = new Map(kept.map((e, i) => [e.entity_number, i + 1]));
   const entities = [...block.entities, ...markers(block)].map((e, i) => {
@@ -34,9 +38,12 @@ export async function encodeBlueprint(block, catalog, city = null) {
   // entities are its Fixtures).
   const fixtures = block.site?.fixtures ?? [];
   const numbered = i => (i < block.entities.length ? kept.length + i + 1 : numberOf.get(fixtures[i - block.entities.length].number));
+  const colors = CIRCUIT[circuit] ?? [];
   const wires = [
     ...(city?.wires ?? []).map(([a, ca, b, cb]) => [numberOf.get(a), ca, numberOf.get(b), cb]),
     ...wirePairs(block.entities, catalog, city ? fixtures : []).map(([a, b]) => [numbered(a), POLE_COPPER, numbered(b), POLE_COPPER]),
+    ...(colors.length ? circuitPairs(block.entities, catalog, city ? fixtures : []) : [])
+      .flatMap(([a, b]) => colors.map(c => [numbered(a), c, numbered(b), c])),
   ];
   const blueprint = {
     blueprint: {
@@ -71,7 +78,8 @@ function markers(block) {
   const area = block.site?.area;
   for (const route of block.routes ?? []) {
     const side = route.source === 'side-input' ? -1 : route.sink === 'side-output' ? 1 : 0;
-    if (!side || !route.pieces.length) continue;
+    // A Fan-out's belts come in on its belts from the west edge, each with what it brings.
+    if (!side || !route.pieces.length || route.fedBy !== undefined) continue;
     const end = route.pieces.reduce((best, p) => (p.x * side > best.x * side ? p : best));
     let x = end.x + side;
     while (taken.has(`${x},${end.y}`)) x += side;
@@ -81,7 +89,7 @@ function markers(block) {
     out.push({
       name: 'display-panel', kind: 'marker', x, y: end.y, w: 1, h: 1,
       icon: { type: route.kind === 'pipe' ? 'fluid' : 'item', name: first.item },
-      text: route.items.map(i => `${i.item} ${Math.round(i.rate)}/min`).join(' + '),
+      text: (route.brings ?? route.items).map(i => `${i.item} ${Math.round(i.rate)}/min`).join(' + '),
     });
   }
   return out;

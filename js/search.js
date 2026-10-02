@@ -178,9 +178,16 @@ export function* search(entries, catalog, logistics, options = {}) {
       try {
         composed = compose(ctx, ready, positions, layout);
       } catch (e) {
-        // Splitters took the room a link needed: the same layout without them.
-        if (!(e instanceof RoutingError) || !ready.routes.some(r => r.splitter)) throw e;
-        composed = compose(ctx, ready, positions, { ...layout, plain: true });
+        // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
+        // else without splitters.
+        if (!(e instanceof RoutingError) || !ready.routes.some(r => r.splitter || r.fan)) throw e;
+        try {
+          if (!ready.routes.some(r => r.fan)) throw e;
+          composed = compose(ctx, ready, positions, { ...layout, fansLast: true });
+        } catch (again) {
+          if (!(again instanceof RoutingError)) throw again;
+          composed = compose(ctx, ready, positions, { ...layout, plain: true });
+        }
       }
       block = finishBlock(composed, catalog, logistics);
     } catch (e) {
