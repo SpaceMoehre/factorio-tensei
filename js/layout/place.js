@@ -1,4 +1,6 @@
 import { stacked } from './compose.js';
+import { RoutingError } from './router.js';
+import { VEC, E } from './grid.js';
 
 // Where each copy of each module stands in the Compound Block. Belts run west to east through
 // every module, so a Sub-Block stands west of the ones it feeds. Sub-Blocks are placed from the
@@ -11,11 +13,15 @@ import { stacked } from './compose.js';
 // params: { corridor, gap, stack, order: { [step]: number } (nudges the placing order),
 //           lift: { [step]: number } (nudges a Sub-Block up or down), weight (link length cost),
 //           spot: { [step]: number } (the broken-out machines' next best spots: 1, 2, …) }
+// In a City Block (ctx.site) everything stands inside its Buffer, placed from its east edge (the
+// Goals) and then slid west as far as it fits, and no machine, belt or pipe stands on a Fixture
+// (a Fixture may stand in a box's empty tiles); where nothing fits it throws a RoutingError.
 export function placeBlocks(ctx, prepared, params = {}) {
   const { plan } = ctx;
   const { instances, routes } = prepared;
   const { corridor = 2, gap = 1, stack = 0, weight = 4 } = params;
   const steps = plan.map((_, i) => i);
+  const site = siteRules(ctx.site);
 
   // Each Sub-Block's copies stacked: their offsets inside the block, and the block's size. Copies
   // touch unless their facing edges would join what must stay apart.
@@ -102,6 +108,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     || links.filter(l => l.from === b).length - links.filter(l => l.from === a).length || a - b);
 
   const placed = new Map();
+  const tileSets = new Map();
   const box = i => ({ x: placed.get(i).x, y: placed.get(i).y, w: blocks[i].w, h: blocks[i].h });
   const overlaps = (a, b, g) => a.x < b.x + b.w + g && b.x < a.x + a.w + g && a.y < b.y + b.h + g && b.y < a.y + a.h + g;
   const bounds = extra => {
@@ -118,8 +125,12 @@ export function placeBlocks(ctx, prepared, params = {}) {
     const ty = mine.length ? Math.round(mine.reduce((sum, l) => sum + placed.get(l.to).y + l.toY - l.fromY, 0) / mine.length) + lift : null;
     const east = mine.length ? Math.min(...mine.map(l => placed.get(l.to).x)) - corridor - b.w : null;
     const all = bounds();
-    // With nothing to feed here (a Goal), below the Goals already placed.
-    const start = ty === null ? { x: placed.size ? all.x + all.w - b.w : 0, y: placed.size ? all.y + all.h + gap + 1 : 0 } : { x: east, y: ty };
+    // With nothing to feed here (a Goal), below the Goals already placed (in a City Block,
+    // against its east edge).
+    const right = site ? site.inner.x + site.inner.w : all.x + all.w;
+    const start = ty === null
+      ? { x: placed.size || site ? right - b.w : 0, y: placed.size ? all.y + all.h + gap + 1 : site ? site.inner.y : 0 }
+      : { x: east, y: ty };
     const candidates = [start];
     for (const j of placed.keys()) {
       const o = box(j);
@@ -127,23 +138,53 @@ export function placeBlocks(ctx, prepared, params = {}) {
       candidates.push({ x: start.x, y: o.y - gap - 1 - b.h }, { x: start.x, y: o.y + o.h + gap + 1 });
       candidates.push({ x: Math.min(start.x, o.x - gap - 1 - b.w), y: o.y }, { x: Math.min(start.x, o.x - gap - 1 - b.w), y: o.y + o.h - b.h });
     }
-    let best = null;
-    for (const c of candidates) {
-      const me = { ...c, w: b.w, h: b.h };
-      if ([...placed.keys()].some(j => overlaps(me, box(j), gap))) continue;
-      if (mine.some(l => c.x + b.w + 1 > placed.get(l.to).x)) continue;
-      const grown = bounds(me);
-      const length = mine.reduce((sum, l) => sum + Math.abs(placed.get(l.to).x - (c.x + b.w)) + Math.abs(placed.get(l.to).y + l.toY - c.y - l.fromY), 0);
-      // Side Inputs of Sub-Blocks already placed arrive from the west: keep off their rows.
-      const blocking = [...placed.keys()].filter(j => box(j).x >= c.x + b.w)
-        .reduce((n, j) => n + blocks[j].entries.filter(e => {
-          const y = placed.get(j).y + e;
-          return y >= c.y - 1 && y <= c.y + b.h;
-        }).length, 0);
-      const cost = grown.w * grown.h + weight * length + 40 * blocking;
-      if (!best || cost < best.cost) best = { ...c, cost };
+    // In a City Block also beside its Fixtures and against its edges.
+    if (site) {
+      const { inner } = site;
+      for (const f of site.fixtures) {
+        candidates.push({ x: Math.min(start.x, f.x - 1 - b.w), y: start.y }, { x: start.x, y: f.y - 1 - b.h }, { x: start.x, y: f.y + f.h + 1 });
+      }
+      candidates.push({ x: start.x, y: inner.y }, { x: start.x, y: inner.y + inner.h - b.h });
     }
+    // The spot that grows the block least, keeps its links short and keeps off the rows other
+    // Sub-Blocks' Side Inputs arrive on (west of their consumers unless `anywhere`).
+    const pick = (spots, anywhere = false) => {
+      let best = null;
+      for (const c of spots) {
+        const me = { ...c, w: b.w, h: b.h };
+        if ([...placed.keys()].some(j => overlaps(me, box(j), gap))) continue;
+        const back = mine.reduce((sum, l) => sum + Math.max(0, c.x + b.w + 1 - placed.get(l.to).x), 0);
+        if (back && !anywhere) continue;
+        if (site && !site.fits(blockTiles(i), me)) continue;
+        const grown = bounds(me);
+        const length = mine.reduce((sum, l) => sum + Math.abs(placed.get(l.to).x - (c.x + b.w)) + Math.abs(placed.get(l.to).y + l.toY - c.y - l.fromY), 0);
+        // Side Inputs of Sub-Blocks already placed arrive from the west: keep off their rows.
+        const blocking = [...placed.keys()].filter(j => box(j).x >= c.x + b.w)
+          .reduce((n, j) => n + blocks[j].entries.filter(e => {
+            const y = placed.get(j).y + e;
+            return y >= c.y - 1 && y <= c.y + b.h;
+          }).length, 0);
+        // A link running back west goes round both boxes.
+        const cost = grown.w * grown.h + weight * (length + 2 * back + (back ? 8 : 0)) + 40 * blocking;
+        if (!best || cost < best.cost) best = { ...c, cost };
+      }
+      return best;
+    };
+    // In a City Block, where none of those fits: every spot inside it, west of the consumers
+    // first.
+    const best = pick(candidates) ?? (site && (pick(site.spots(b)) ?? pick(site.spots(b), true)));
+    if (!best) throw new RoutingError(`no room for ${plan[i].item} in the city block`);
     placed.set(i, { x: best.x, y: best.y });
+  }
+  // In a City Block, the whole block slides west as far as it fits: the Side Inputs, its many
+  // belts, come in short; only its outputs run on to the east edge.
+  if (site) {
+    const slack = Math.min(...steps.map(i => placed.get(i).x)) - site.inner.x;
+    for (let dx = slack; dx > 0; dx--) {
+      if (!steps.every(i => site.fits(blockTiles(i), { ...box(i), x: placed.get(i).x - dx }))) continue;
+      for (const i of steps) placed.get(i).x -= dx;
+      break;
+    }
   }
 
   // Refinement's slides move Sub-Blocks bodily (`shift`); their bounds stay where they were placed.
@@ -157,15 +198,36 @@ export function placeBlocks(ctx, prepared, params = {}) {
     for (const inst of b.instances) positions[inst.index] = { x: at.x + b.at.get(inst.index).x, y: at.y + b.at.get(inst.index).y };
   }
   const boxes = blocks.map(b => ({ ...placed.get(b.step), w: b.w, h: b.h }));
-  boxes.push(...placeApart(prepared, positions, blocks, moved, links, params));
-  // Shifted to start at 0,0; `bounds` covers every Sub-Block with the room beside its stack.
-  const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+  // A slide may take a Sub-Block out of the City Block or onto a Fixture.
+  if (site) {
+    for (const b of blocks) {
+      if (!site.fits(blockTiles(b.step), { ...moved(b.step), w: b.w, h: b.h })) throw new RoutingError(`${plan[b.step].item} does not fit there in the city block`);
+    }
+  }
+  boxes.push(...placeApart(prepared, positions, blocks, moved, links, params, site));
+  // Shifted to start at 0,0 (in a City Block, where they stand); `bounds` covers every Sub-Block
+  // with the room beside its stack.
+  const x0 = site ? 0 : Math.min(...boxes.map(b => b.x)), y0 = site ? 0 : Math.min(...boxes.map(b => b.y));
   /** @type {any} */
   const out = positions.map(p => ({ x: p.x - x0, y: p.y - y0 }));
+  const left = Math.min(...boxes.map(b => b.x)) - x0, top = Math.min(...boxes.map(b => b.y)) - y0;
   out.bounds = {
-    x: 0, y: 0, w: Math.max(...boxes.map(b => b.x + b.w)) - x0, h: Math.max(...boxes.map(b => b.y + b.h)) - y0,
+    x: left, y: top, w: Math.max(...boxes.map(b => b.x + b.w)) - x0 - left, h: Math.max(...boxes.map(b => b.y + b.h)) - y0 - top,
   };
   return out;
+
+  // Tiles of a Sub-Block's stack that no Fixture may stand on, by where they lie in its box.
+  function blockTiles(i) {
+    if (!tileSets.has(i)) {
+      const set = new Set();
+      for (const inst of blocks[i].instances) {
+        const o = blocks[i].at.get(inst.index);
+        for (const [x, y] of coveredBy(inst.module)) set.add(tileKey(x + o.x, y + o.y));
+      }
+      tileSets.set(i, set);
+    }
+    return tileSets.get(i);
+  }
 }
 
 // Breakout: each machine broken out of its Sub-Block stands in the spot, clear of every box
@@ -173,8 +235,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
 // block least and keeps its own links short (`weight` per tile, a belt running back west
 // costing more); `spot` picks the next best spots instead, and slides (`shift` of `a<step>`)
 // move them on. Fills in their positions; returns their boxes.
-// moved(step): where a Sub-Block's box stands.
-function placeApart(prepared, positions, blocks, moved, links, params) {
+// moved(step): where a Sub-Block's box stands. In a City Block, only spots inside it whose tiles
+// no Fixture stands on.
+function placeApart(prepared, positions, blocks, moved, links, params, site) {
   const { instances, routes } = prepared;
   const apart = instances.filter(inst => inst.detached);
   if (!apart.length) return [];
@@ -261,14 +324,22 @@ function placeApart(prepared, positions, blocks, moved, links, params) {
     };
     const room = extentOf(boxes);
     const options = [];
-    for (let y = room.y - h - gap - 1; y <= room.y + room.h + gap + 1; y++) {
-      for (let x = room.x - w - gap - 1; x <= room.x + room.w + gap + 1; x++) {
+    const tiles = site && new Set(coveredBy(inst.module).map(([x, y]) => tileKey(x, y)));
+    let y0 = room.y - h - gap - 1, y1 = room.y + room.h + gap + 1, x0 = room.x - w - gap - 1, x1 = room.x + room.w + gap + 1;
+    if (site) {
+      const { inner } = site;
+      [x0, x1, y0, y1] = [Math.max(x0, inner.x), Math.min(x1, inner.x + inner.w - w), Math.max(y0, inner.y), Math.min(y1, inner.y + inner.h - h)];
+    }
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
         const me = { x, y, w, h };
         if (boxes.some((b, n) => overlaps(me, b, clearance[n], gap)) || corridors.some(c => overlaps(me, c, 0))) continue;
+        if (site && !site.fits(tiles, me)) continue;
         const grown = extentOf([...boxes, me]);
         options.push({ x, y, cost: grown.w * grown.h + weight * length(me) });
       }
     }
+    if (!options.length) throw new RoutingError('no room for a machine broken out of its Sub-Block');
     options.sort((a, b) => a.cost - b.cost || a.y - b.y || a.x - b.x);
     const pick = options[Math.min(options.length - 1, params.spot?.[inst.step] ?? 0)];
     positions[inst.index] = { x: pick.x, y: pick.y };
@@ -279,9 +350,68 @@ function placeApart(prepared, positions, blocks, moved, links, params) {
     const [dx, dy] = params.shift?.[`a${inst.step}`] ?? [0, 0];
     const p = positions[inst.index];
     positions[inst.index] = { x: p.x + dx, y: p.y + dy };
-    return { ...positions[inst.index], w: inst.module.area.w, h: inst.module.area.h };
+    const box = { ...positions[inst.index], w: inst.module.area.w, h: inst.module.area.h };
+    if (site && (dx || dy) && !site.fits(new Set(coveredBy(inst.module).map(([x, y]) => tileKey(x, y))), box)) {
+      throw new RoutingError('a machine broken out of its Sub-Block does not fit there in the city block');
+    }
+    return box;
   });
 }
+
+// A City Block's rules for boxes: whether one lies inside its Buffer with no Fixture on any of
+// its tiles (as tileKey of where they lie in the box), and every spot a box fits inside it.
+function siteRules(site) {
+  if (!site) return null;
+  const { inner } = site;
+  // Fixtures in it, or right outside it where a link meets a box at its edge.
+  const fixtures = site.fixtures.filter(f => f.x < inner.x + inner.w + 1 && f.x + f.w > inner.x - 1 && f.y < inner.y + inner.h + 1 && f.y + f.h > inner.y - 1);
+  const fits = (tiles, box) => {
+    if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return false;
+    for (const f of fixtures) {
+      if (f.x > box.x + box.w || f.x + f.w < box.x || f.y > box.y + box.h || f.y + f.h < box.y) continue;
+      for (let x = f.x; x < f.x + f.w; x++) for (let y = f.y; y < f.y + f.h; y++) if (tiles.has(tileKey(x - box.x, y - box.y))) return false;
+    }
+    return true;
+  };
+  // Large City Blocks are scanned in steps, so placing stays quick.
+  const step = Math.max(1, Math.round(Math.sqrt(inner.w * inner.h) / 80));
+  const spots = ({ w, h }) => {
+    const out = [];
+    for (let y = inner.y; y <= inner.y + inner.h - h; y += step) for (let x = inner.x; x <= inner.x + inner.w - w; x += step) out.push({ x, y });
+    return out;
+  };
+  return { inner, fixtures, fits, spots };
+}
+
+// The tiles of a module that no Fixture may stand on, relative to its area's corner: its
+// machines, inserters, belts and pipes, and just outside it where its belts and pipes meet their
+// links.
+const covered = new WeakMap();
+function coveredBy(module) {
+  if (!covered.has(module)) {
+    const { area } = module;
+    const out = [];
+    const add = (x, y) => out.push([x - area.x, y - area.y]);
+    for (const e of [...module.entities, ...module.parts.flatMap(p => p.pieces), ...module.fluids.flatMap(f => f.pieces)]) {
+      for (let dx = 0; dx < (e.w ?? 1); dx++) for (let dy = 0; dy < (e.h ?? 1); dy++) add(e.x + dx, e.y + dy);
+    }
+    for (const part of module.parts) {
+      const first = part.pieces[0], last = part.pieces.at(-1);
+      const [ex, ey] = VEC[part.dir ?? E], [dx, dy] = VEC[last.travel];
+      add(first.x - ex, first.y - ey);
+      add(last.x + dx, last.y + dy);
+    }
+    for (const f of module.fluids) {
+      const edge = f.role === 'input' ? area.x : area.x + area.w - 1;
+      for (const p of f.pieces.filter(q => q.x === edge)) add(edge + (f.role === 'input' ? -1 : 1), p.y);
+    }
+    covered.set(module, out);
+  }
+  return covered.get(module);
+}
+
+// A tile of a box as one number (tiles from one left of or above the box on).
+const tileKey = (x, y) => (x + 4) * 1048576 + y + 4;
 
 // Whether a module stacked right on top of another would touch it badly: pipes of two fluids
 // meeting across the seam, or a belt pointing across it into something.

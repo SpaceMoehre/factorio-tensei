@@ -7,7 +7,9 @@ import { wirePairs } from './wires.js';
 // by one. Belts and pipes just get shorter; tunnels too. A column stays when removing it would
 // join what must stay apart (a belt pointing into the gap, two pipes, an inserter's reach), or
 // when it holds anything else. Then poles are placed on the result. Returns a new block.
+// A block in a City Block is not squeezed: its Fixtures stay where they are, and so does the rest.
 export function finishBlock(block, catalog, logistics) {
+  if (block.site) return power(clone(block), catalog, logistics);
   const squeezed = compact(block);
   try {
     return power(squeezed, catalog, logistics);
@@ -152,15 +154,17 @@ function removeLine(entities, axis, u) {
   return kept;
 }
 
-// Minimal Pole Placement over the block's own extent, then wires and bounds.
+// Minimal Pole Placement over the block's own extent, then wires and bounds. In a City Block,
+// over the area inside its Buffer, round its Fixtures, joining its poles' network.
 export function power(block, catalog, logistics) {
   const entities = block.entities.filter(e => e.kind !== 'pole');
-  const bounds = extent(entities);
-  const grid = new Grid(bounds);
-  for (const e of entities) grid.place(e);
+  const fixtures = block.site?.fixtures ?? [];
+  const grid = new Grid(block.site ? block.site.inner : extent(entities));
+  for (const e of [...fixtures, ...entities]) grid.place(e);
   const consumers = entities.filter(e => e.kind === 'inserter' || (e.kind === 'building' && catalog.buildings[e.name].energy === 'electric'));
-  const all = [...entities, ...placePoles(grid, consumers, catalog.poles[logistics.pole])];
-  return { ...block, entities: all, bounds: extent(all), wires: wirePairs(all, catalog) };
+  const fixed = fixtures.filter(f => catalog.poles[f.name]).map(f => ({ ...f, spec: catalog.poles[f.name] }));
+  const all = [...entities, ...placePoles(grid, consumers, catalog.poles[logistics.pole], { fixed, inside: !!block.site })];
+  return { ...block, entities: all, bounds: extent(all), wires: wirePairs(all, catalog, fixtures) };
 }
 
 function clone(block) {

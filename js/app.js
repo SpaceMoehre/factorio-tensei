@@ -3,6 +3,7 @@ import { expandChain, recipeOptions } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
 import { createMap, turnsSideways } from './render.js';
+import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
@@ -27,6 +28,9 @@ state.logistics = { ...defaultLogistics(), ...state.logistics };
 state.made ??= [];
 delete state.inputs;
 state.selections ??= {};
+// The City Block to build in: its blueprint string (or a size, without one), the Buffer and
+// whether to look for the highest rate that fits.
+state.city = { on: false, blueprint: '', w: 100, h: 100, buffer: 2, maximize: false, ...state.city };
 // Goals used to carry their own recipe and building; they are now the chain's selections.
 for (const g of state.goals) {
   if (g.recipe && !state.selections[g.item]) state.selections[g.item] = { recipe: g.recipe, building: g.building };
@@ -45,6 +49,13 @@ let map = null;
 let worker = null;
 // The best layout the running (or last) search has sent, and how many layouts it had tried.
 let best = null;
+// The City Block read from its blueprint ({ area, fixtures, unknown, blueprint } or { error }),
+// null without one; and what the running (or last) build used: the blueprint its Fixtures came
+// from, whether it maximizes, and the try in progress.
+let city = null;
+let reading = 0;
+let cityRead = Promise.resolve();
+let built = null;
 
 $('items').replaceChildren(...[...index.producers.keys()].sort().map(name => new Option(name)));
 for (const key of SELECTS) {
@@ -66,6 +77,32 @@ $('add-goal').addEventListener('click', () => {
   renderGoals();
   save();
 });
+$('city-on').checked = state.city.on;
+$('city-on').addEventListener('change', () => { state.city.on = $('city-on').checked; renderCity(); save(); });
+$('city-bp').value = state.city.blueprint;
+$('city-bp').addEventListener('input', () => { state.city.blueprint = $('city-bp').value.trim(); save(); readCity(); });
+$('city-load').addEventListener('click', () => $('city-file').click());
+$('city-file').addEventListener('change', async () => {
+  const [file] = $('city-file').files;
+  if (!file) return;
+  state.city.blueprint = $('city-bp').value = (await file.text()).trim();
+  $('city-file').value = '';
+  save();
+  readCity();
+});
+$('city-clear').addEventListener('click', () => { state.city.blueprint = $('city-bp').value = ''; save(); readCity(); });
+for (const [id, field, least] of /** @type {[string, string, number][]} */ ([['city-w', 'w', 8], ['city-h', 'h', 8], ['city-buffer', 'buffer', 0]])) {
+  $(id).addEventListener('change', () => {
+    state.city[field] = Math.max(least, Math.floor(Number($(id).value) || 0));
+    $(id).value = String(state.city[field]);
+    save();
+  });
+}
+$('city-buffer').value = String(state.city.buffer);
+$('maximize').checked = state.city.maximize;
+$('maximize').addEventListener('change', () => { state.city.maximize = $('maximize').checked; renderCity(); save(); });
+$('apply-rate').addEventListener('click', applyRate);
+readCity();
 $('calculate').addEventListener('click', build);
 $('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
@@ -258,17 +295,72 @@ function iconOf(item) {
   return icon;
 }
 
+// The City Block from its blueprint string (none without one), shown in its section. A build
+// waits for the last read.
+function readCity() {
+  const text = state.city.blueprint;
+  const mine = ++reading;
+  cityRead = (async () => {
+    let read = null;
+    if (text) {
+      try {
+        const blueprint = await decodeBlueprint(text);
+        read = { ...readCityBlock(blueprint, catalog), blueprint };
+      } catch (e) {
+        read = { error: e.message };
+      }
+    }
+    if (mine !== reading) return;
+    city = read;
+    renderCity();
+  })();
+  return cityRead;
+}
+
+function renderCity() {
+  $('city').hidden = !state.city.on;
+  const fromBlueprint = Boolean(city && !city.error);
+  $('city-w').disabled = $('city-h').disabled = fromBlueprint;
+  $('city-w').value = String(fromBlueprint ? city.area.w : state.city.w);
+  $('city-h').value = String(fromBlueprint ? city.area.h : state.city.h);
+  let info = 'No blueprint: an empty block of this size.';
+  if (city?.error) info = `Not read: ${city.error}.`;
+  else if (city) {
+    const counts = new Map();
+    for (const f of city.fixtures) counts.set(f.name, (counts.get(f.name) ?? 0) + 1);
+    const most = [...counts].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const list = most.slice(0, 6).map(([name, n]) => `${n} ${name}`).join(', ') + (most.length > 6 ? ', …' : '');
+    info = `${city.area.w} × ${city.area.h} tiles; ${city.fixtures.length} entities stay${city.fixtures.length ? ` (${list})` : ''}.`
+      + (city.unknown.length ? ` Size unknown, taken as one tile: ${city.unknown.join(', ')}.` : '');
+  }
+  $('city-info').textContent = info;
+  $('calculate').textContent = state.city.on && state.city.maximize ? 'Find the highest rate' : 'Build factory block';
+}
+
 // Starts the layout search in a worker. Every better layout it finds replaces the map and the
-// blueprint; Stop, or the end of the budget, keeps the best one found.
-function build() {
+// blueprint; Stop, or the end of the budget, keeps the best one found. In a City Block it builds
+// inside it, or (Maximize) looks for the highest rate that fits.
+async function build() {
   if (!chain) return showStatus('error', 'Add at least one goal.');
   if (chain.error) return showStatus('error', chain.error);
+  let site = null;
+  if (state.city.on) {
+    await cityRead;
+    if (city?.error) return showStatus('error', `The city block's blueprint was not read: ${city.error}.`);
+    try {
+      site = siteOf(city ?? { area: { x: 0, y: 0, w: state.city.w, h: state.city.h }, fixtures: [] }, state.city.buffer);
+    } catch (e) {
+      return showStatus('error', e.message);
+    }
+  }
   worker?.terminate();
   best = null;
+  built = { blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && state.city.maximize), trying: null };
   map?.destroy();
   map = null;
   $('area').hidden = true;
   $('results').hidden = true;
+  $('apply-row').hidden = true;
   $('bp-string').value = $('bp-json').value = '';
   $('empty').hidden = false;
   $('empty').textContent = 'Searching for a layout…';
@@ -276,31 +368,52 @@ function build() {
   $('stop').hidden = false;
   worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
   worker.onmessage = ({ data }) => {
-    if (data.type === 'best') show(data.block, data.tried);
+    if (data.type === 'try') trying(data);
+    else if (data.type === 'best') show(data.block, data.tried, data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null);
     else if (data.type === 'done') finish('Done', data.tried, data.failure);
     else finish('Stopped', undefined, data.message);
   };
   worker.onerror = e => finish('Stopped', undefined, e.message);
   const { budget, ...logistics } = state.logistics;
+  const goals = state.goals.filter(g => g.item && g.rate > 0);
   worker.postMessage({
     entries: chain.entries,
-    logistics, budgetMs: budget * 1000, seed: 1,
+    logistics, budgetMs: budget * 1000, seed: 1, site,
+    ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections } } : {}),
   });
 }
 
-async function show(block, tried) {
-  best = { block, tried };
+// Maximize: the rate being tried, after the highest that fits so far.
+function trying({ rate, machines }) {
+  const item = state.goals.find(g => g.item && g.rate > 0)?.item;
+  built.trying = `Trying ${fmt(rate)}/min of ${item} (${machines} machine${machines === 1 ? '' : 's'})…`;
+  if (best) report(best.block, simulate(best.block).starvation, progress());
+  else showStatus('', built.trying);
+}
+
+// What the status line says while searching.
+function progress() {
+  if (!built?.maximize) return 'Searching…';
+  const fits = best?.found ? ` Fits so far: ${fmt(best.found.rate)}/min.` : '';
+  return `${built.trying ?? 'Searching…'}${fits}`;
+}
+
+async function show(block, tried, found = null) {
+  best = { block, tried, found };
   const { starvation } = simulate(block);
   const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
   $('empty').hidden = true;
   map = createMap($('map'), block, { starving, onHover: describe, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null) });
-  $('area').textContent = `${block.bounds.w} × ${block.bounds.h} = ${block.bounds.w * block.bounds.h} tiles`;
+  const { bounds, site } = block;
+  $('area').textContent = site
+    ? `City block ${site.area.w} × ${site.area.h} · buffer ${site.buffer} · factory ${bounds.w} × ${bounds.h}${found ? ` · ${fmt(found.rate)}/min` : ''}`
+    : `${bounds.w} × ${bounds.h} = ${bounds.w * bounds.h} tiles`;
   $('area').hidden = false;
-  report(block, starvation, worker ? 'Searching…' : null);
+  report(block, starvation, worker ? progress() : null);
   fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input'));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
-  const { string, json } = await encodeBlueprint(block, catalog);
+  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null);
   if (best?.block !== block) return;
   $('bp-string').value = string;
   $('bp-json').value = JSON.stringify(JSON.parse(json), null, 2);
@@ -311,12 +424,32 @@ function finish(how, tried = best?.tried ?? 0, error = null) {
   worker?.terminate();
   worker = null;
   $('stop').hidden = true;
+  if (built?.maximize) {
+    $('apply-row').hidden = !best?.found;
+    if (!best?.found) {
+      $('results').hidden = true;
+      $('empty').textContent = 'Nothing fits yet.';
+      return showStatus('error', `Nothing fits the city block without starvation${error ? `: ${error}` : ''}. Give each try more time, or a bigger block.`);
+    }
+    const { rate, machines } = best.found;
+    return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest rate that fits: ${fmt(rate)}/min (${machines} machine${machines === 1 ? '' : 's'}).`);
+  }
   if (!best) {
     $('results').hidden = true;
     $('empty').textContent = 'No layout yet.';
     return showStatus('error', error ?? 'No layout found. Give the search more time.');
   }
   report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts.`);
+}
+
+// Maximize: the Goals take the rates of the highest that fit.
+function applyRate() {
+  const goals = best?.found?.goals;
+  if (!goals) return;
+  for (const g of state.goals) g.rate = goals.find(x => x.item === g.item)?.rate ?? g.rate;
+  $('apply-row').hidden = true;
+  renderGoals();
+  save();
 }
 
 function report(block, starvation, prefix) {
@@ -364,6 +497,7 @@ function describe(entity, block) {
   }
   if (entity.underground) parts.push(`tunnel ${entity.underground === 'input' ? 'entrance' : 'exit'}`);
   if (entity.vectors) parts.push(turnsSideways(entity) ? '90° (Inserter_Config)' : 'drop offset (Inserter_Config)');
+  if (entity.kind === 'fixture') parts.push('city block (stays)');
   tip.textContent = parts.join(' · ');
 }
 

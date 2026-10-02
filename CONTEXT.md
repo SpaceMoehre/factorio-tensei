@@ -64,6 +64,22 @@ _Avoid_: dead-end belt
 The full packed layout combining every Sub-Block for the current set of Goals, plus poles, inter-block belts/pipes, and side input/output paths.
 _Avoid_: factory, blueprint (Blueprint is the exported artifact, not the layout)
 
+**City Block**:
+The area a Compound Block may be built in instead of standing on its own: the blueprint of a city block — its snap grid, else the extent of its entities and tiles — or a size given. Its entities are Fixtures. The Compound Block stands inside its Buffer, its Side Input entering on the Buffer's west edge and its Side Output leaving on its east edge, slid as far west as it fits so the Side Input's many belts come in short and only its outputs cross the City Block. It is not squeezed: the Fixtures stay where they are, and so does everything else.
+_Avoid_: site (code word), block on its own (ambiguous with Compound Block)
+
+**Fixture**:
+An entity of a City Block's blueprint — a pole, roboport, radar, lamp, rail… It stays where it is: nothing of the Compound Block stands on it, though it may stand in a Module's empty tiles, and belts and pipes pass round or under it. A Fixture pole powers what lies in its supply area; a City Block's poles are taken as one network already (its blueprint wires them), and the Compound Block's own poles join it. An entity whose footprint the catalog does not know counts as one tile, and the page names it.
+_Avoid_: obstacle
+
+**Buffer**:
+The tiles kept free inside a City Block's border, on every side, for the belts the user lays to the Side Input and from the Side Output.
+_Avoid_: margin (the Compound Block's own rows around it)
+
+**Maximize**:
+Finding the highest rate of the Goals whose Compound Block fits the City Block without Starvation, the Recipe Selections, modules and items made here as chosen. The Goals scale together, so the first Goal's machines run at full speed: each try asks for a whole number of them and runs the layout search until it finds a layout that starves nothing (one that finds none within the search time does not fit). Tries grow from the Goals' own rates as far as the room the last layout left suggests — never so far that the machines alone would cover the City Block — then halve the gap between the highest that fits and the lowest that does not.
+_Avoid_: optimize (the layout search optimizes Compactness)
+
 **Dependency Order**:
 The order of Sub-Blocks derived by topologically sorting on item overlap (Sub-Block A precedes B if A's recipe output is one of B's recipe inputs): the order they are designed in (the leaves of the Production Chain first) and the order a belt visits its consumers in. Placement follows the same direction — producers west of what they feed — so belts flow one way.
 _Avoid_: input order, list order
@@ -77,11 +93,11 @@ The rows of belts beside a row of machines, counted outward from the machines' f
 _Avoid_: lane (a Lane is one side of a belt), belt row index without saying which face it counts from
 
 **Placement**:
-Arranging the Copies of every Module into the Compound Block. Belts run west to east through Modules, so each Sub-Block stands west of the ones it feeds, the Goals furthest east; each sits level with the entries it feeds, as far east as its consumers allow, sliding west, up or down around those already placed, keeping clear of the rows other Sub-Blocks' Side Inputs arrive on. Beside a stack of Copies stays room for the belts turning between them and the pipes joining them. Machines a Breakout stands apart are placed last, in the gaps. The layout search chooses the corridors and gaps.
+Arranging the Copies of every Module into the Compound Block. Belts run west to east through Modules, so each Sub-Block stands west of the ones it feeds, the Goals furthest east; each sits level with the entries it feeds, as far east as its consumers allow, sliding west, up or down around those already placed, keeping clear of the rows other Sub-Blocks' Side Inputs arrive on. Beside a stack of Copies stays room for the belts turning between them and the pipes joining them. Machines a Breakout stands apart are placed last, in the gaps. The layout search chooses the corridors and gaps. In a City Block everything stands inside the Buffer, the Goals against its east edge, no machine, belt or pipe on a Fixture (also beside them, against the edges, or anywhere it fits); then the whole block slides west as far as it fits.
 _Avoid_: grid layout (implies uniform cells), fixed margins
 
 **Squeeze**:
-Taking out a row or column of the routed Compound Block that holds nothing but belts or pipes running straight across it and empty tiles; everything beyond moves in by one, belts and tunnels get shorter. Placement leaves room generously; squeezing takes back what the Links did not use. Poles are placed after.
+Taking out a row or column of the routed Compound Block that holds nothing but belts or pipes running straight across it and empty tiles; everything beyond moves in by one, belts and tunnels get shorter. Placement leaves room generously; squeezing takes back what the Links did not use. Poles are placed after. A block in a City Block is not squeezed (its Fixtures cannot move with it).
 _Avoid_: compaction (ambiguous with Compactness)
 
 **Internal Path**:
@@ -89,11 +105,11 @@ A belt or pipe between two Sub-Blocks A→B, carrying whichever item(s) A's Reci
 _Avoid_: hardcoded path items unrelated to the configured Goals
 
 **Side Input**:
-The train-fed path carrying every item some Sub-Block needs but no Sub-Block in the Compound Block produces (raw materials/imports).
+The train-fed path carrying every item some Sub-Block needs but no Sub-Block in the Compound Block produces (raw materials/imports). It enters on the Compound Block's west edge (in a City Block, the Buffer's).
 _Avoid_: hardcoded raw item list
 
 **Side Output**:
-The train-bound path carrying every Goal's target item not consumed internally by another Sub-Block, plus unconsumed Byproducts (the Compound Block's final products).
+The train-bound path carrying every Goal's target item not consumed internally by another Sub-Block, plus unconsumed Byproducts (the Compound Block's final products). It leaves on the Compound Block's east edge (in a City Block, the Buffer's).
 _Avoid_: hardcoded output item list
 
 **Tunnel**:
@@ -145,7 +161,7 @@ A row of a Band with no belt in it, left open so pipes can run between machines;
 _Avoid_: gap, spacer
 
 **Minimal Pole Placement**:
-The fewest poles of the chosen pole type (by default the one with the largest supply area) that fully cover every building's footprint and stay wire-connected as one network — computed from the Compound Block's real footprint and the pole's real supply/wire-reach, not a fixed step size or fixed canvas bounds. Scales to huge (modded) buildings because it's footprint-driven, not hardcoded.
+The fewest poles of the chosen pole type (by default the one with the largest supply area) that fully cover every building's footprint and stay wire-connected as one network — computed from the Compound Block's real footprint and the pole's real supply/wire-reach, not a fixed step size or fixed canvas bounds. Scales to huge (modded) buildings because it's footprint-driven, not hardcoded. In a City Block, what its Fixture poles power needs no pole, the poles stand inside the Buffer, and they join the Fixture poles' network (two poles wire within the shorter reach of the two).
 _Avoid_: fixed-step pole grid
 
 **Starvation**:
@@ -153,5 +169,5 @@ A Sub-Block's demand isn't met because, walking an edge's consumers in belt orde
 _Avoid_: aggregate demand ≤ aggregate supply (ignores belt order and per-edge capacity)
 
 **Blueprint**:
-The exported artifact for a Compound Block, provided two ways: the real importable Factorio string (`"0" + base64(zlib_deflate(JSON))`, paste-ready in-game) as the primary output, and the underlying raw JSON available alongside it for inspection/debugging.
+The exported artifact for a Compound Block, provided two ways: the real importable Factorio string (`"0" + base64(zlib_deflate(JSON))`, paste-ready in-game) as the primary output, and the underlying raw JSON available alongside it for inspection/debugging. Built in a City Block from its blueprint, it is that blueprint — entities, tiles, wires, snap grid — with the Compound Block added.
 _Avoid_: JSON-only export (not usable in-game)

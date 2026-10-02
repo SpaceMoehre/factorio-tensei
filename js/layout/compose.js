@@ -38,6 +38,8 @@ export function leastStarvation(ctx, prepared) {
 // stub of a fluid into one network. Poles are placed later, over the whole block (compact.js).
 // prepared: from prepare(); positions: each copy's top-left corner (its module's area)
 // layout: { margin, routeOrder, plain (no splitters: paired belts go straight on) }
+// In a City Block (ctx.site) links are routed inside its Buffer and round its Fixtures (or under
+// them): the train's belts enter on its inner west edge and leave on its inner east edge.
 // Throws RoutingError or PowerError when the layout cannot be built.
 export function compose(ctx, prepared, positions, layout) {
   const { plan, catalog, logistics } = ctx;
@@ -46,10 +48,12 @@ export function compose(ctx, prepared, positions, layout) {
     const { area } = instances[n].module;
     return { x: p.x - area.x, y: p.y - area.y, box: { x: p.x, y: p.y, w: area.w, h: area.h } };
   });
-  // Copies whose pipes stop at the block's west (east) edge are joined there: room for a trunk
-  // per fluid to join, three columns each so trunks of two fluids can pass each other.
-  const area = extentOf([...placed, ...(positions.bounds ? [positions.bounds] : [])], layout.margin);
-  for (const side of ['W', 'E']) {
+  // In a City Block the area inside its Buffer, its Fixtures standing in it. Elsewhere, copies
+  // whose pipes stop at the block's west (east) edge are joined there: room for a trunk per fluid
+  // to join, three columns each so trunks of two fluids can pass each other.
+  const { site = null } = ctx;
+  const area = site ? { ...site.inner } : extentOf([...placed, ...(positions.bounds ? [positions.bounds] : [])], layout.margin);
+  for (const side of site ? [] : ['W', 'E']) {
     const edge = side === 'W' ? area.x : area.x + area.w - 1;
     const trunks = routes.filter(r => r.kind === 'pipe' && r.stubs.length > 1 && r.stubs.some(st => st.side === side
       && placed[st.inst.index].x + st.x === edge)).length;
@@ -58,6 +62,11 @@ export function compose(ctx, prepared, positions, layout) {
     area.w += 3 * trunks;
   }
 
+  // In a City Block, the column just west of the westmost copy: a Side Input is routed through
+  // the block from there (a search from the City Block's west edge would flood all the room in
+  // front of it), then from the west edge on to where it starts.
+  const approach = site ? Math.max(area.x, Math.min(...placed.map(p => p.box.x)) - 1) : area.x;
+
   const beltSpec = catalog.belts[logistics.belt];
   const belts = { belt: beltSpec.name, underground: beltSpec.underground.name, reach: beltSpec.underground.maxDistance };
   const pipes = { pipe: logistics.plainPipe ?? 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance };
@@ -65,6 +74,7 @@ export function compose(ctx, prepared, positions, layout) {
   // Every copy's machines, inserters and routed pieces, under the global route ids.
   const placeAll = () => {
     const grid = new Grid(area);
+    for (const f of site?.fixtures ?? []) grid.place(f);
     // Copies may stand in each other's empty corners (a refined placement), never on each other.
     const put = e => {
       for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) {
@@ -269,7 +279,8 @@ export function compose(ctx, prepared, positions, layout) {
         }
         const ends = endsOf(task);
         if (!ends) continue;
-        const leg = routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal }, belts);
+        const leg = task.slot === 0 && approach > area.x ? approached(grid, task.route.id, ends.goal)
+          : routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal }, belts);
         if (!links.has(task.route.id)) links.set(task.route.id, new Map());
         links.get(task.route.id).set(task.slot, leg);
       } catch (e) {
@@ -284,6 +295,30 @@ export function compose(ctx, prepared, positions, layout) {
     }
     order = [failed.task, ...order.filter(t => t !== failed.task)];
     if (tried.has(order.map(keyOf).join()) || tried.size > REROUTES) throw failed.error;
+  }
+
+  // A Side Input in two legs: through the block from the approach column, on a row whose way
+  // from the west edge is free, then from the west edge to where that leg starts (entering it
+  // heading east). Without such a row, or where the legs do not meet, in one leg from the west
+  // edge.
+  function approached(grid, id, goal) {
+    const rows = westEdge(area).filter(s => {
+      for (let x = area.x; x <= approach; x++) if (!grid.freeFor(x, s.y, id)) return false;
+      return true;
+    });
+    if (rows.length) {
+      const saved = grid.snapshot();
+      try {
+        const inside = routeLink(grid, { id, starts: rows.map(s => ({ ...s, x: approach })), goal }, belts);
+        const [first] = inside;
+        const outside = routeLink(grid, { id, starts: westEdge(area), goal: first ? { x: first.x, y: first.y, a: E } : goal }, belts);
+        return [...outside, ...inside];
+      } catch (e) {
+        if (!(e instanceof RoutingError)) throw e;
+        grid.restore(saved);
+      }
+    }
+    return routeLink(grid, { id, starts: westEdge(area), goal }, belts);
   }
 
   // Two belts of one Internal Path through a splitter, each in its own lane of it: 2 to 2 (each
@@ -380,7 +415,7 @@ export function compose(ctx, prepared, positions, layout) {
       };
     });
     // Poles come once the block is squeezed (compact.js).
-    return { subBlocks, entities, routes: result, bounds: extent(entities) };
+    return { subBlocks, entities, routes: result, bounds: extent(entities), ...(site ? { site } : {}) };
   }
 }
 

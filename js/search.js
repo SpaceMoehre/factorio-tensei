@@ -16,11 +16,12 @@ import { simulate } from './sim.js';
 // Later candidates try other designs and placements. Deterministic for a given seed and
 // candidate count.
 // options: { seed, maxCandidates, deadline (ms timestamp), now, trace (called with each
-//            candidate's choices and the error that sank it, for diagnostics) }
+//            candidate's choices and the error that sank it, for diagnostics), site (the City
+//            Block to build in, from city.js siteOf) }
 export function* search(entries, catalog, logistics, options = {}) {
-  const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {} } = options;
+  const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null } = options;
   const rng = random(seed);
-  const ctx = context(entries, catalog, logistics);
+  const ctx = context(entries, catalog, logistics, site);
   // Leaves first: every Sub-Block before the ones it feeds.
   const order = [...ctx.flows.order];
   const designs = [];

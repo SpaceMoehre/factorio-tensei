@@ -235,3 +235,14 @@ test('modules: module items with their effects; slots, allowed effects and categ
   const recipe = catalog.recipes['moss-1'];
   assert.deepEqual([recipe.allowedModuleCategories, recipe.allowProductivity], [['moss'], true]);
 });
+
+test('every entity with a collision box gets its tile footprint, for the entities of a city block', () => {
+  const { footprints } = buildCatalog(dataRaw({
+    roboport: { roboport: { name: 'roboport', collision_box: [[-1.7, -1.7], [1.7, 1.7]] } },
+    'straight-rail': { 'straight-rail': { name: 'straight-rail', collision_box: [[-0.7, -0.99], [0.7, 0.99]], tile_width: 2, tile_height: 2 } },
+    lamp: { 'small-lamp': { name: 'small-lamp', collision_box: [[-0.15, -0.15], [0.15, 0.15]] } },
+  }));
+  assert.deepEqual(footprints.roboport, { w: 4, h: 4 });
+  assert.deepEqual(footprints['straight-rail'], { w: 2, h: 2 });
+  assert.deepEqual(footprints['small-lamp'], { w: 1, h: 1 });
+});

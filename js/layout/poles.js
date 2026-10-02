@@ -1,3 +1,5 @@
+import { Heap } from './router.js';
+
 export class PowerError extends Error {}
 
 const center = e => [e.x + e.w / 2, e.y + e.h / 2];
@@ -11,13 +13,18 @@ const distance = (a, b) => {
 // also stand in the strips just north and south of the block (growing it), never west or east,
 // where the Side Input and Side Output edges are; a spot inside wins a tie.
 // Spatial indexes keep it fast on blocks with thousands of machines and inserters.
-export function placePoles(grid, consumers, spec) {
+// options: { fixed: a City Block's poles, each with its own spec ({ x, y, w, h, spec }) — they
+//            power what lies in their supply areas and are one network already, which the new
+//            poles join; inside: no pole outside the grid's area }
+export function placePoles(grid, consumers, spec, { fixed = [], inside = false } = {}) {
   const { x: ax, y: ay, w: aw, h: ah } = grid.area;
   const { w: pw, h: ph } = spec.size;
   const r = spec.supplyRadius;
+  const anchors = fixed.map(f => ({ x: f.x, y: f.y, w: f.w, h: f.h, reach: f.spec.wireReach }));
+  consumers = consumers.filter(e => !fixed.some(f => powers(f, f.spec, e)));
   // Candidate positions on a dense index: column x - ax, row y - y0.
-  const y0 = ay - ph, cols = aw - pw + 1, rows = ah + ph + 1;
-  if (cols <= 0) throw new PowerError('the block is narrower than a pole');
+  const y0 = inside ? ay : ay - ph, cols = aw - pw + 1, rows = inside ? ah - ph + 1 : ah + ph + 1;
+  if (cols <= 0 || rows <= 0) throw new PowerError('the block is narrower than a pole');
   const index = (x, y) => (y - y0) * cols + (x - ax);
   const fitsAt = new Uint8Array(cols * rows);
   for (let y = y0; y < y0 + rows; y++) {
@@ -111,10 +118,10 @@ export function placePoles(grid, consumers, spec) {
   const free = [];
   for (let c = 0; c < cols * rows; c++) if (fitsAt[c] && !blocked[c]) free.push(pole(c));
   const greedy = poles.length;
-  connect(poles, free, spec, placed);
+  connect(poles, free, spec, placed, anchors);
   // Bridging poles power what lies in their reach too.
   for (const p of poles.slice(greedy)) for (const i of covers.get(p.candidate) ?? []) coverCount[i]++;
-  prune(poles, spec, coverCount, p => covers.get(p.candidate) ?? []);
+  prune(poles, spec, coverCount, p => covers.get(p.candidate) ?? [], anchors);
   for (const p of poles) {
     delete p.candidate;
     grid.place(p);
@@ -125,9 +132,12 @@ export function placePoles(grid, consumers, spec) {
 // Joins the network one component at a time: the smallest component searches outward — a
 // breadth-first search over free pole positions, each hop within wire reach — for the nearest
 // pole of another component, and the fewest poles linking them are placed, even where the link
-// has to go around machines. Components are kept in a union-find as poles join them.
-function connect(poles, free, spec, placed) {
+// has to go around machines. Components are kept in a union-find as poles join them. Anchors (a
+// City Block's poles, each with its reach) are one component from the start.
+function connect(poles, free, spec, placed, anchors = []) {
   const reach = spec.wireReach;
+  // Two poles wire together within the shorter reach of the two.
+  const near = (a, b) => distance(a, b) <= Math.min(a.reach ?? reach, b.reach ?? reach);
   const spots = new Buckets(reach);
   for (const c of free) spots.add(c);
   const used = new Set();
@@ -141,36 +151,50 @@ function connect(poles, free, spec, placed) {
   const join = (a, b) => { const ra = root(a), rb = root(b); if (ra !== rb) parentOf.set(ra, rb); };
   const add = p => {
     parentOf.set(p, p);
-    for (const q of placed.within(p, reach)) if (q !== p && parentOf.has(q) && distance(p, q) <= reach) join(p, q);
+    for (const q of placed.within(p, reach)) if (q !== p && parentOf.has(q) && near(p, q)) join(p, q);
   };
+  for (const a of anchors) {
+    placed.add(a);
+    parentOf.set(a, anchors[0]);
+  }
   for (const p of poles) parentOf.set(p, p);
-  for (const p of poles) for (const q of placed.within(p, reach)) if (q !== p && parentOf.has(q) && distance(p, q) <= reach) join(p, q);
+  for (const p of poles) for (const q of placed.within(p, reach)) if (q !== p && parentOf.has(q) && near(p, q)) join(p, q);
   for (;;) {
     const groups = new Map();
-    for (const p of poles) {
+    for (const p of [...anchors, ...poles]) {
       const r = root(p);
       if (!groups.has(r)) groups.set(r, []);
       groups.get(r).push(p);
     }
     if (groups.size <= 1) return;
-    const start = [...groups.values()].reduce((a, b) => (b.length < a.length ? b : a));
+    // Never from the anchors' network: it may be large, and every other component joins it.
+    const anchored = anchors.length ? root(anchors[0]) : null;
+    const start = [...groups].filter(([r]) => r !== anchored).map(([, g]) => g).reduce((a, b) => (b.length < a.length ? b : a));
     const own = root(start[0]);
     const parent = new Map();
-    let frontier = [...start];
-    for (const p of frontier) parent.set(p, null);
+    for (const p of start) parent.set(p, null);
+    // Whether a pole at `node` wires to another component; the free spots it wires to.
+    const reaches = node => placed.within(node, reach).some(p => parentOf.has(p) && root(p) !== own && near(node, p));
+    const around = node => spots.within(node, reach).filter(c => !used.has(c) && !overlaps(c, node) && distance(node, c) <= reach
+      && !placed.within(c, 0).some(p => overlaps(p, c)));
     let reached = null;
-    while (frontier.length && !reached) {
-      const next = [];
-      for (const node of frontier) {
-        if (placed.within(node, reach).some(p => parentOf.has(p) && root(p) !== own && distance(node, p) <= reach)) { reached = node; break; }
-        for (const c of spots.within(node, reach)) {
-          if (parent.has(c) || used.has(c) || overlaps(c, node) || distance(node, c) > reach) continue;
-          if (placed.within(c, 0).some(p => overlaps(p, c))) continue;
-          parent.set(c, node);
-          next.push(c);
+    if (anchors.length) reached = toward(start, own, parent, reaches, around);
+    else {
+      let frontier = [...start];
+      while (frontier.length) {
+        // A wave's poles are all asked first: one that reaches ends the search before it spreads.
+        reached = frontier.find(reaches) ?? null;
+        if (reached) break;
+        const next = [];
+        for (const node of frontier) {
+          for (const c of around(node)) {
+            if (parent.has(c)) continue;
+            parent.set(c, node);
+            next.push(c);
+          }
         }
+        frontier = next;
       }
-      frontier = next;
     }
     if (!reached) throw new PowerError('cannot connect all poles into one network');
     for (let n = reached; parent.get(n) !== null; n = parent.get(n)) {
@@ -180,24 +204,57 @@ function connect(poles, free, spec, placed) {
       add(n);
     }
   }
+
+  // Toward a City Block's network, which may stand far off: best first by the fewest hops a
+  // chain from `start` could still need (its hops so far, and the distance left in wire reaches),
+  // the nearest first among equals. Fills in `parent`; returns the spot that reaches, or null.
+  function toward(start, own, parent, reaches, around) {
+    const targets = new Buckets(reach);
+    for (const p of [...anchors, ...poles]) if (root(p) !== own) targets.add(p);
+    const hops = new Map(start.map(p => [p, 0]));
+    const done = new Set();
+    const open = new Heap();
+    const push = (node, g) => {
+      const d = Math.min(targets.nearest(node), 1e5);
+      open.push(node, (g + Math.max(0, Math.ceil((d - reach) / reach))) * 1e6 + d);
+    };
+    for (const p of start) push(p, 0);
+    while (open.size) {
+      const node = open.pop();
+      if (done.has(node)) continue;
+      done.add(node);
+      if (reaches(node)) return node;
+      const g = hops.get(node) + 1;
+      for (const c of around(node)) {
+        if (hops.has(c) && hops.get(c) <= g) continue;
+        hops.set(c, g);
+        parent.set(c, node);
+        push(c, g);
+      }
+    }
+    return null;
+  }
 }
 
 // Removes poles whose consumers are all powered by others and whose loss keeps the network
 // connected, last placed first. Poles holding the wire graph together (its articulation points)
 // are found once; after a removal, whether the network survives losing a pole is checked
 // locally: searches from each of its neighbours grow, smallest first, until they all meet (it
-// can go) or one runs out (it holds a part on its own).
-function prune(poles, spec, coverCount, coveredBy) {
+// can go) or one runs out (it holds a part on its own). Anchors stay, wired to each other.
+function prune(poles, spec, coverCount, coveredBy, anchors = []) {
   const reach = spec.wireReach;
+  const all = [...anchors, ...poles];
   const links = new Buckets(reach);
-  for (const p of poles) links.add(p);
-  const wired = new Map(poles.map(p => [p, links.within(p, reach).filter(q => q !== p && distance(p, q) <= reach)]));
-  const holding = articulation(poles, wired);
+  for (const p of all) links.add(p);
+  const near = (a, b) => distance(a, b) <= Math.min(a.reach ?? reach, b.reach ?? reach);
+  const wired = new Map(all.map(p => [p, links.within(p, p.reach ?? reach).filter(q => q !== p && near(p, q))]));
+  for (const a of anchors) wired.set(a, [...new Set([...wired.get(a), ...anchors.filter(b => b !== a)])]);
+  const holding = articulation(all, wired);
   let removed = 0;
   for (let i = poles.length - 1; i >= 0; i--) {
     const p = poles[i];
     const mine = coveredBy(p);
-    if (poles.length === 1 || mine.some(c => coverCount[c] < 2) || holding.has(p)) continue;
+    if ((poles.length === 1 && !anchors.length) || mine.some(c => coverCount[c] < 2) || holding.has(p)) continue;
     if (removed && !reconnects(p, wired)) continue;
     for (const q of wired.get(p)) {
       wired.set(q, wired.get(q).filter(n => n !== p));

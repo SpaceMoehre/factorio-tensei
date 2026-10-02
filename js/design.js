@@ -18,7 +18,9 @@ const RANDOM_VARIANTS = 60;
 const COPIES_FROM = 8;
 const ONLY_COPIES = 120;
 
-export function context(entries, catalog, logistics) {
+// Everything the layout search shares: the plan, its flows and routes, and the City Block it builds
+// in (site, from city.js siteOf; null for a free-standing block).
+export function context(entries, catalog, logistics, site = null) {
   if (!catalog.inserters || !catalog.fuels) throw new Error('catalog is missing inserter data — regenerate it');
   const inserters = { short: catalog.inserters[logistics.inserter], long: catalog.inserters[logistics.longInserter] };
   for (const [role, spec] of Object.entries(inserters)) {
@@ -41,7 +43,7 @@ export function context(entries, catalog, logistics) {
     // Items per swing: 1, more with inserter capacity research.
     handSize: Math.max(1, Math.floor(logistics.handSize ?? 1)),
   };
-  return { plan, flows, routes, catalog, logistics, env };
+  return { plan, flows, routes, catalog, logistics, env, site };
 }
 
 // How much faster than the plan a Sub-Block's machines can run (its headroom, from the Count

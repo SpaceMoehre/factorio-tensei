@@ -37,8 +37,13 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
   for (const r of block.routes) r.pieces.forEach((p, i) => pieceIndex.set(p, i));
   const view = { scale: 16, x: 0, y: 0 };
   const colors = palette(block);
+  // A City Block: its area, the Buffer inside its border, and its Fixtures.
+  const { site = null } = block;
+  const fixtures = site?.fixtures ?? [];
+  // What the map covers: the City Block, else the block itself.
+  const extent = site?.area ?? block.bounds;
   const byTile = new Map();
-  for (const e of block.entities) {
+  for (const e of [...fixtures, ...block.entities]) {
     for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) byTile.set(`${e.x + dx},${e.y + dy}`, e);
   }
 
@@ -66,7 +71,7 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
 
   function fit() {
     const { width, height } = canvas.getBoundingClientRect();
-    const b = block.bounds;
+    const b = extent;
     view.scale = clamp(Math.min(width / b.w, height / b.h) * 0.95, MIN_SCALE, MAX_SCALE);
     view.x = b.x + b.w / 2 - width / 2 / view.scale;
     view.y = b.y + b.h / 2 - height / 2 / view.scale;
@@ -89,21 +94,44 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
     ctx.fillStyle = t.bg;
     ctx.fillRect(0, 0, width, height);
 
-    const b = block.bounds;
     if (s >= 6) {
+      const g = extent;
       ctx.strokeStyle = t.grid;
       ctx.lineWidth = 1;
       ctx.beginPath();
-      for (let x = b.x; x <= b.x + b.w; x++) { ctx.moveTo(sx(x), sy(b.y)); ctx.lineTo(sx(x), sy(b.y + b.h)); }
-      for (let y = b.y; y <= b.y + b.h; y++) { ctx.moveTo(sx(b.x), sy(y)); ctx.lineTo(sx(b.x + b.w), sy(y)); }
+      for (let x = g.x; x <= g.x + g.w; x++) { ctx.moveTo(sx(x), sy(g.y)); ctx.lineTo(sx(x), sy(g.y + g.h)); }
+      for (let y = g.y; y <= g.y + g.h; y++) { ctx.moveTo(sx(g.x), sy(y)); ctx.lineTo(sx(g.x + g.w), sy(y)); }
       ctx.stroke();
     }
 
-    // Side Input enters on the west edge, Side Output leaves on the east edge.
+    if (site) {
+      // The Buffer, kept free, and the City Block's border.
+      const { area: a, inner: n } = site;
+      ctx.fillStyle = 'rgba(160, 170, 190, 0.08)';
+      ctx.fillRect(sx(a.x), sy(a.y), a.w * s, (n.y - a.y) * s);
+      ctx.fillRect(sx(a.x), sy(n.y + n.h), a.w * s, (a.y + a.h - n.y - n.h) * s);
+      ctx.fillRect(sx(a.x), sy(n.y), (n.x - a.x) * s, n.h * s);
+      ctx.fillRect(sx(n.x + n.w), sy(n.y), (a.x + a.w - n.x - n.w) * s, n.h * s);
+      ctx.strokeStyle = t.machineEdge;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx(a.x), sy(a.y), a.w * s, a.h * s);
+    }
+    // Side Input enters on the west edge, Side Output leaves on the east edge (in a City Block,
+    // inside its Buffer).
+    const b = site?.inner ?? block.bounds;
     ctx.fillStyle = 'rgba(120, 200, 140, 0.18)';
     ctx.fillRect(sx(b.x), sy(b.y), s, b.h * s);
     ctx.fillStyle = 'rgba(230, 160, 90, 0.18)';
     ctx.fillRect(sx(b.x + b.w - 1), sy(b.y), s, b.h * s);
+
+    // The City Block's entities, which the block is built around.
+    for (const f of fixtures) {
+      const x = sx(f.x), y = sy(f.y), w = f.w * s, h = f.h * s;
+      if (x > width || y > height || x + w < 0 || y + h < 0) continue;
+      ctx.fillStyle = 'rgba(120, 128, 145, 0.45)';
+      ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+      if (s * Math.min(f.w, f.h) >= 12) drawIcon(f.name, x + w / 2, y + h / 2, Math.min(w, h) * 0.8);
+    }
 
     for (const sb of block.subBlocks) {
       ctx.strokeStyle = starving.has(sb.index) ? t.starve : t.subBlock;
@@ -186,12 +214,12 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
       }
     }
 
-    // Copper wires between poles.
+    // Copper wires between poles (on to the City Block's: indices past the entities).
     ctx.strokeStyle = 'rgba(214, 140, 70, 0.9)';
     ctx.lineWidth = Math.max(1, s * 0.08);
     ctx.beginPath();
     for (const [a, b] of block.wires ?? []) {
-      const p = block.entities[a], q = block.entities[b];
+      const p = block.entities[a] ?? fixtures[a - block.entities.length], q = block.entities[b] ?? fixtures[b - block.entities.length];
       ctx.moveTo(sx(p.x + p.w / 2), sy(p.y + p.h / 2));
       ctx.lineTo(sx(q.x + q.w / 2), sy(q.y + q.h / 2));
     }

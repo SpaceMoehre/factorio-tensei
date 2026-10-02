@@ -61,10 +61,12 @@
   .swap { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
   .row.build { margin-top: 0; }
   .row.build .primary { flex: 1; width: auto; }
-  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
   .check { display: flex; gap: 6px; align-items: center; }
   .check .hint, .budget .hint { margin: 0; }
   .budget input { width: 80px; }
+  #city-bp { height: 56px; }
+  #city > .settings { margin-top: 8px; }
   .area { position: absolute; top: 12px; left: 12px; background: rgba(17,19,24,.92); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--accent); z-index: 2; }
   .area[hidden] { display: none; }
   .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
@@ -112,12 +114,34 @@
       <span class="budget"><input type="number" id="budget" min="1" step="1" aria-label="Search time in seconds"> <span class="hint">s</span></span>
     </div>
 
+    <h2>City block</h2>
+    <label class="check"><input type="checkbox" id="city-on"> <span>Build inside a city block</span></label>
+    <div id="city" hidden>
+      <p class="hint">Paste the city block's blueprint, or load it from a file: its poles, roboports, radars and everything else stay where they are, the factory is built around them and their poles power it. Without a blueprint, give the block's size.</p>
+      <textarea id="city-bp" aria-label="City block blueprint string" placeholder="Blueprint string (0eN…)"></textarea>
+      <div class="row">
+        <button id="city-load" type="button">Load file…</button>
+        <input type="file" id="city-file" accept=".txt,.json,text/plain,application/json" hidden>
+        <button id="city-clear" type="button">Clear</button>
+      </div>
+      <p class="hint" id="city-info"></p>
+      <div class="settings">
+        <label for="city-w">Size</label>
+        <span class="budget"><input type="number" id="city-w" min="8" step="1" aria-label="City block width"> × <input type="number" id="city-h" min="8" step="1" aria-label="City block height"> <span class="hint">tiles</span></span>
+        <label for="city-buffer">Buffer</label>
+        <span class="budget"><input type="number" id="city-buffer" min="0" step="1" aria-label="Buffer in tiles"> <span class="hint">tiles kept free inside the border, to wire the inputs (west) and outputs (east)</span></span>
+        <label for="maximize">Maximize</label>
+        <label class="check"><input type="checkbox" id="maximize"> <span class="hint">the highest goal rate that fits; goals keep their ratio, each try gets the search time</span></label>
+      </div>
+    </div>
+
     <h2>Build</h2>
     <div class="row build">
       <button id="calculate" class="primary" type="button">Build factory block</button>
       <button id="stop" type="button" hidden>Stop</button>
     </div>
     <div id="status"></div>
+    <div class="row" id="apply-row" hidden><button id="apply-rate" type="button">Use this rate</button></div>
     <div id="results" hidden>
       <h2>Side Input (train in)</h2>
       <ul class="flows" id="side-input"></ul>

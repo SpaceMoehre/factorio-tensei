@@ -94,7 +94,21 @@ export function buildCatalog(raw) {
       if (p.fuel_value) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
     }
   }
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, modules, icons: spriteIcons(raw) };
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, modules, icons: spriteIcons(raw), footprints: footprints(raw) };
+}
+
+// Every entity's tile footprint facing north, so a City Block's blueprint can hold anything:
+// from its collision box, or the tile size it names.
+function footprints(raw) {
+  const out = {};
+  for (const group of Object.values(raw)) {
+    for (const p of Object.values(group ?? {})) {
+      if (!p?.name || !Array.isArray(p.collision_box) || out[p.name]) continue;
+      const size = footprint(p.collision_box);
+      out[p.name] = { w: p.tile_width ?? Math.max(1, size.w), h: p.tile_height ?? Math.max(1, size.h) };
+    }
+  }
+  return out;
 }
 
 // Factorio 2.0 names one fuel category per item and a list per burner; mods may use either form.

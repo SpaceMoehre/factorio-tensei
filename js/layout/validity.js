@@ -179,36 +179,35 @@ function bucketed(poles, size) {
   };
 }
 
-// Whether the poles (all but `skip`) are wired into one network.
-function networkConnected(poles, spec, near, skip = -1) {
-  const count = poles.length - (skip >= 0 ? 1 : 0);
-  if (count <= 0) return true;
-  const first = skip === 0 ? 1 : 0;
-  const seen = new Set([first]);
-  const stack = [first];
-  const reach = spec.wireReach;
-  while (stack.length) {
-    const [ax, ay] = center(poles[stack.pop()]);
-    for (const j of near(ax - reach, ay - reach, ax + reach, ay + reach)) {
-      if (j === skip || seen.has(j)) continue;
+// Each pole's neighbours in the wire graph: the poles within the shorter wire reach of the two;
+// a City Block's poles (the first `anchors` of them) are all joined already.
+function wireGraph(poles, reachOf, near, anchors) {
+  return poles.map((p, i) => {
+    const [ax, ay] = center(p);
+    const reach = reachOf(p);
+    const out = near(ax - reach, ay - reach, ax + reach, ay + reach).filter(j => {
+      if (j === i) return false;
       const [bx, by] = center(poles[j]);
-      if (Math.hypot(ax - bx, ay - by) <= reach) { seen.add(j); stack.push(j); }
-    }
+      return Math.hypot(ax - bx, ay - by) <= Math.min(reach, reachOf(poles[j]));
+    });
+    if (i < anchors) for (let j = 0; j < anchors; j++) if (j !== i && !out.includes(j)) out.push(j);
+    return out;
+  });
+}
+
+// Whether the poles are wired into one network.
+function networkConnected(neighbours) {
+  if (!neighbours.length) return true;
+  const seen = new Set([0]);
+  const stack = [0];
+  while (stack.length) {
+    for (const j of neighbours[stack.pop()]) if (!seen.has(j)) { seen.add(j); stack.push(j); }
   }
-  return seen.size === count;
+  return seen.size === neighbours.length;
 }
 
 // The poles whose removal would split the network (Tarjan's lowlink, iteratively).
-function articulationPoints(poles, spec, near) {
-  const reach = spec.wireReach;
-  const neighbours = poles.map(p => {
-    const [ax, ay] = center(p);
-    return near(ax - reach, ay - reach, ax + reach, ay + reach).filter(j => {
-      if (poles[j] === p) return false;
-      const [bx, by] = center(poles[j]);
-      return Math.hypot(ax - bx, ay - by) <= reach;
-    });
-  });
+function articulationPoints(poles, neighbours) {
   const order = new Array(poles.length).fill(-1), low = new Array(poles.length).fill(0);
   const out = new Set();
   let time = 0;
@@ -242,26 +241,50 @@ function articulationPoints(poles, spec, near) {
   return out;
 }
 
+// Every machine and inserter powered, the poles one network, none of them redundant. In a City
+// Block its poles (Fixtures) power what lies in their supply areas too, and are one network
+// already: the block's own poles join it.
 export function powerNetwork(block, catalog, logistics) {
   const spec = catalog.poles[logistics.pole];
-  const poles = block.entities.filter(e => e.kind === 'pole');
+  const anchors = (block.site?.fixtures ?? []).filter(f => catalog.poles[f.name]);
+  const own = block.entities.filter(e => e.kind === 'pole');
+  const poles = [...anchors, ...own];
+  const specOf = p => (p.kind === 'fixture' ? catalog.poles[p.name] : spec);
   const needs = electricConsumers(block, catalog);
-  const r = spec.supplyRadius;
+  const r = Math.max(...poles.map(p => specOf(p).supplyRadius), spec.supplyRadius);
   const supplyNear = bucketed(poles, Math.max(1, 2 * r));
   // The poles powering each consumer, and how many.
-  const powering = needs.map(e => supplyNear(e.x - r, e.y - r, e.x + e.w + r, e.y + e.h + r).filter(i => powers(poles[i], spec, e)));
+  const powering = needs.map(e => supplyNear(e.x - r, e.y - r, e.x + e.w + r, e.y + e.h + r).filter(i => powers(poles[i], specOf(poles[i]), e)));
   const problems = needs.filter((e, n) => !powering[n].length).map(e => `${e.name} at ${e.x},${e.y} is not powered`);
-  const wireNear = bucketed(poles, Math.max(1, spec.wireReach));
-  if (!networkConnected(poles, spec, wireNear)) problems.push('poles do not form one connected network');
+  const reach = Math.max(...poles.map(p => specOf(p).wireReach), spec.wireReach);
+  const neighbours = wireGraph(poles, p => specOf(p).wireReach, bucketed(poles, Math.max(1, reach)), anchors.length);
+  if (!networkConnected(neighbours)) problems.push('poles do not form one connected network');
   // A pole is redundant when every consumer it powers has another pole and the network holds
   // without it (it is no articulation point of the wire graph).
   const sole = new Set(powering.filter(list => list.length === 1).map(([i]) => i));
-  const holding = articulationPoints(poles, spec, wireNear);
-  poles.forEach((removed, i) => {
+  const holding = articulationPoints(poles, neighbours);
+  own.forEach((removed, k) => {
+    const i = anchors.length + k;
     if (sole.has(i) || holding.has(i)) return;
-    if (poles.length === 1 && needs.length) return;
+    if (own.length === 1 && needs.length && !anchors.length) return;
     problems.push(`pole at ${removed.x},${removed.y} is redundant`);
   });
+  return problems;
+}
+
+// In a City Block, everything stands inside its Buffer and off its Fixtures.
+export function insideSite(block) {
+  const { site } = block;
+  if (!site) return [];
+  const { inner } = site;
+  const problems = block.entities.filter(e => e.x < inner.x || e.y < inner.y || e.x + e.w > inner.x + inner.w || e.y + e.h > inner.y + inner.h)
+    .map(e => `${e.name} at ${e.x},${e.y} lies outside the city block's buffer`);
+  const fixed = new Map();
+  for (const f of site.fixtures) for (const t of tilesOf(f)) fixed.set(t, f);
+  for (const e of block.entities) {
+    const on = tilesOf(e).find(t => fixed.has(t));
+    if (on) problems.push(`${e.name} at ${e.x},${e.y} stands on ${fixed.get(on).name} at ${on}`);
+  }
   return problems;
 }
 
@@ -399,6 +422,7 @@ export function validateBlock(block, catalog, logistics) {
     ...noFluidMixing(block, catalog, logistics),
     ...separateNetworks(block, catalog, logistics),
     ...customVectors(block, catalog, logistics),
+    ...insideSite(block),
   ];
   for (const route of block.routes) {
     if (!route.pieces.length) { problems.push(`route ${route.id} has no pieces`); continue; }

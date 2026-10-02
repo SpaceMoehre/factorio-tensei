@@ -575,7 +575,7 @@ function canPipe(grid, spec, x, y) {
   return true;
 }
 
-class Heap {
+export class Heap {
   constructor() { this.items = []; }
   get size() { return this.items.length; }
   push(value, priority) {
