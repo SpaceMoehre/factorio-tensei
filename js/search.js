@@ -5,13 +5,15 @@ import { placeBlocks, roomFor } from './layout/place.js';
 import { finishBlock } from './layout/compact.js';
 import { validateBlock } from './layout/validity.js';
 import { simulate } from './sim.js';
+import { compactness } from './layout/score.js';
 
 // Anytime layout search, bottom-up (ADR 0005). First every Sub-Block is designed on its own,
 // from the leaves of the Production Chain up to the Goals: candidate layouts of its machines and
 // belts, each routed once as a Module (huge Sub-Blocks repeat one module). Then Compound Blocks
 // are put together from those designs: placed, linked, powered and checked. Each one that beats
 // the best so far is yielded — Starvation first (a layout whose machines starve, for want of
-// belts, lanes or inserters, is no answer), then bounding-box area, then entity count — and
+// belts, lanes or inserters, is no answer), then Compactness (score.js: square first, then empty
+// tiles, then the bends of its belts and pipes), then entity count — and
 // refined: its Sub-Blocks slid, and machines broken out of them into gaps (Breakout, ADR 0006).
 // Later candidates try other designs and placements. Deterministic for a given seed and
 // candidate count.
@@ -194,7 +196,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       continue;
     }
     const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
-    const score = [Math.round(starving * 1000) / 1000, block.bounds.w * block.bounds.h, block.entities.length];
+    const score = [Math.round(starving * 1000) / 1000, compactness(block).value, block.entities.length];
     if (perfect && score[0] > 0) {
       failure = new Error(`the layout starves ${score[0]}/min`);
       trace(candidate, failure);

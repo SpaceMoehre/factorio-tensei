@@ -5,6 +5,7 @@ import { encodeBlueprint } from './blueprint.js';
 import { createMap, turnsSideways } from './render.js';
 import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
 import { planner } from './maximize.js';
+import { compactness, SQUARE, BEND } from './layout/score.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
@@ -456,9 +457,13 @@ async function show(block, tried, found = null) {
   $('empty').hidden = true;
   map = createMap($('map'), block, { starving, onHover: describe, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null) });
   const { bounds, site } = block;
+  // Compactness, as the search scores it: its parts, and the score.
+  const score = compactness(block);
+  const parts = `${site ? '' : `${score.square.toLocaleString('en')} off square · `}${score.empty.toLocaleString('en')} empty · ${count(score.bends, 'bend')} · score ${score.value.toLocaleString('en')}`;
   $('area').textContent = site
-    ? `City block ${site.area.w} × ${site.area.h} · buffer ${site.buffer} · factory ${bounds.w} × ${bounds.h}${found ? ` · ${fmt(found.rate)}/min` : ''}`
-    : `${bounds.w} × ${bounds.h} = ${bounds.w * bounds.h} tiles`;
+    ? `City block ${site.area.w} × ${site.area.h} · buffer ${site.buffer} · factory ${bounds.w} × ${bounds.h}${found ? ` · ${fmt(found.rate)}/min` : ''} · ${parts}`
+    : `${bounds.w} × ${bounds.h} = ${(bounds.w * bounds.h).toLocaleString('en')} tiles · ${parts}`;
+  $('area').title = `Compactness, lower is better: ${SQUARE === 1 ? '' : `${SQUARE} × `}the strip beyond a square, plus the tiles no machine, inserter or pole stands on, plus ${BEND} for every bend of a belt or pipe`;
   $('area').hidden = false;
   report(block, starvation, worker ? progress() : null);
   fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input'));

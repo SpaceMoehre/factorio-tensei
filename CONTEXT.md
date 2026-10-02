@@ -89,7 +89,7 @@ The order of Sub-Blocks derived by topologically sorting on item overlap (Sub-Bl
 _Avoid_: input order, list order
 
 **Compactness**:
-What the layout search minimizes when comparing valid Compound Blocks: the bounding-box area (width × height), with the number of entities breaking ties. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness. Its belts' Path Flow and its inserters set the least it can starve before it is placed: a candidate that would starve more than the best is not placed at all.
+What the layout search minimizes when comparing valid Compound Blocks, a score in tiles: the strip its bounding box has beyond a square (|width − height| × the shorter side; none in a City Block, whose shape is given), plus its empty tiles (those no machine, inserter or pole stands on: a belt or pipe fills nothing, so belts running round the block never make it look compact), plus 4 for every bend of a belt or pipe (where a belt turns, or a pipe meets its own pipes on both axes); the number of entities breaks ties. Placement grows a block standing on its own toward a square. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness. Its belts' Path Flow and its inserters set the least it can starve before it is placed: a candidate that would starve more than the best is not placed at all.
 _Avoid_: size, footprint (ambiguous between area and entity count)
 
 **Band**:

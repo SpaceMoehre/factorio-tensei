@@ -1,6 +1,7 @@
 import { stacked } from './compose.js';
 import { RoutingError } from './router.js';
 import { VEC, E } from './grid.js';
+import { SQUARE } from './score.js';
 
 // Where each copy of each module stands in the Compound Block. Belts run west to east through
 // every module, so a Sub-Block stands west of the ones it feeds. Sub-Blocks are placed from the
@@ -168,7 +169,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
         for (const t of targets) back += Math.max(0, c.x + b.w + 1 - t.x);
         if (back && !anywhere) continue;
         if (site && !site.fits(tiles, me)) continue;
-        const grown = (Math.max(x1, c.x + b.w) - Math.min(x0, c.x)) * (Math.max(y1, c.y + b.h) - Math.min(y0, c.y));
+        const gw = Math.max(x1, c.x + b.w) - Math.min(x0, c.x), gh = Math.max(y1, c.y + b.h) - Math.min(y0, c.y);
+        // Standing on its own, the block grows toward a square (Compactness): the strip it has
+        // beyond one counts too.
+        const grown = gw * gh + (site ? 0 : SQUARE * Math.abs(gw - gh) * Math.min(gw, gh));
         let length = 0;
         for (const t of targets) length += Math.abs(t.x - (c.x + b.w)) + Math.abs(t.y - c.y);
         // Side Inputs of Sub-Blocks already placed arrive from the west: keep off their rows.
