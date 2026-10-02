@@ -11,6 +11,15 @@ test('Count covers the Goal rate: 300 electronic-circuit/min in assembling-machi
   assert.equal(sb.count, 4);
 });
 
+// 300/min needs 3.33 machines of 90/min each: 4 of them could make 360/min.
+test('the rounded-up Count leaves headroom: 4 machines can run 1.2 times as fast as 300/min needs', () => {
+  const [sb] = planSubBlocks([{
+    goal: { item: 'electronic-circuit', rate: 300 },
+    selection: { recipe: 'electronic-circuit', building: 'assembling-machine-2' },
+  }], catalog);
+  assert.ok(Math.abs(sb.headroom - 1.2) < 1e-9);
+});
+
 test('Sub-Block input and output rates are scaled to the Goal rate, not to the rounded-up Count', () => {
   const [sb] = planSubBlocks([{
     goal: { item: 'electronic-circuit', rate: 300 },

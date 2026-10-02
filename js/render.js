@@ -172,7 +172,7 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
             arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
             break;
           }
-          ctx.fillStyle = e.vectors ? '#9b6fe0' : e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
+          ctx.fillStyle = turnsSideways(e) ? '#9b6fe0' : e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
           ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
           // Arrow points toward the drop.
           arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
@@ -280,6 +280,14 @@ function palette(block) {
 }
 
 // The main direction of a vector: 0 north, 4 east, 8 south, 12 west.
+// A 90° inserter (Inserter_Config): it drops beside where it picks up, not across from it. Custom
+// vectors on a straight one only set its Drop Offset.
+export function turnsSideways(e) {
+  if (!e.vectors) return false;
+  const { pickup: p, drop: d } = e.vectors;
+  return p.x * d.x + p.y * d.y > -0.7 * Math.hypot(p.x, p.y) * Math.hypot(d.x, d.y);
+}
+
 function directionOf({ x, y }) {
   if (Math.abs(x) > Math.abs(y)) return x > 0 ? 4 : 12;
   return y > 0 ? 8 : 0;

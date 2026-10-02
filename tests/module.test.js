@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { context, moduleOptions } from '../js/design.js';
 import { buildCore } from '../js/layout/core.js';
-import { routeModule, trim } from '../js/layout/module.js';
+import { routeModule, trim, laneOf, lanePoint } from '../js/layout/module.js';
 import { maxFlow } from '../js/layout/compose.js';
 import { coreLinks } from '../js/routes.js';
 import { expandChain } from '../js/chain.js';
@@ -134,4 +134,49 @@ test('90° output inserters choose their lane: one row of machines fills both la
   const lanes = output.drops.reduce((sum, d) => ({ left: sum.left + d.left, right: sum.right + d.right, either: sum.either + d.either }), { left: 0, right: 0, either: 0 });
   assert.ok(lanes.left > 0 && lanes.right > 0 && lanes.either === 0, JSON.stringify(lanes));
   assert.ok(maxFlow(output.drops, 600, ctx.env.laneCapacity) > ctx.env.laneCapacity);
+});
+
+// Drop Offset: Inserter_Config sets where in its tile an inserter drops. A quarter tile toward a
+// curve's inner corner lands on the inner lane, toward its outer corner on the outer lane, however
+// the game measures it; the middle of a curve stays undecided.
+test('a drop toward a curve\'s inner or outer corner lands on a decided lane', () => {
+  const E = 4, S = 8, N = 0;
+  for (const [turn, inner] of [[S, 'right'], [N, 'left']]) {
+    const pieces = [{ kind: 'belt', x: 0, y: 1, travel: E }, { kind: 'belt', x: 1, y: 1, travel: turn }, { kind: 'belt', x: 1, y: turn === S ? 2 : 0, travel: turn }];
+    for (const side of ['left', 'right']) {
+      const at = lanePoint(pieces, 1, side);
+      assert.equal(laneOf(pieces, 1, at).lane, side);
+      assert.ok(at.x > 1 && at.x < 2 && at.y > 1 && at.y < 2, 'within the curve\'s tile');
+      // The inner lane's point lies toward the inner corner (south-west of a right turn).
+      const toInner = side === inner;
+      assert.equal(at.x < 1.5, toInner);
+      assert.equal(turn === S ? at.y > 1.5 : at.y < 1.5, toInner);
+      assert.equal(laneOf(pieces, 2, lanePoint(pieces, 2, side)).lane, side);
+    }
+    assert.equal(laneOf(pieces, 1, { x: 1.5, y: 1.5 }).lane, 'either');
+  }
+});
+
+// With custom vectors a Side Belt's straight output inserters drop left and right in turn, so the
+// one machine beside it fills both lanes; without them they all drop on the far lane.
+test('a Side Belt output fills both lanes with Drop Offsets, one lane without', () => {
+  for (const rightAngle of [true, false]) {
+    const setup = smallParts({ ...logistics, handSize: 1, rightAngle });
+    const { ctx, sb, links, gears } = setup;
+    const variant = {
+      ...allSides(setup), heads: [],
+      sides: [{ routeIds: [gears], part: 0, face: 'W', slot: 1, serves: [0] }, { routeIds: [links.output], part: 0, face: 'E', slot: 1, serves: [0] }],
+    };
+    const core = buildCore(sb, pyCatalog.buildings[sb.building], links, variant, ctx.env);
+    const module = routeModule(core, moduleOptions(ctx, links, { w: 2, e: 2, n: 1, s: 1 }, sb));
+    const output = module.parts.find(p => p.routeIds.includes(links.output));
+    const [machine] = output.drops;
+    if (rightAngle) {
+      assert.equal(core.parts.find(p => p.routeIds.includes(links.output)).lanes, 2);
+      assert.ok(machine.left > 0 && machine.right > 0 && machine.either === 0, JSON.stringify(machine));
+      assert.ok(maxFlow(output.drops, 600, ctx.env.laneCapacity) >= 600 - 1e-9, JSON.stringify(machine));
+    } else {
+      assert.ok(machine.left === 0 || machine.right === 0, JSON.stringify(machine));
+    }
+  }
 });

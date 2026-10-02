@@ -20,7 +20,10 @@ const REROUTES = 3;
 // opts: { margin: { w, e, n, s }, fluids: [{ routeId, fluid, role }], belt: { belt, underground,
 //         reach }, pipe: { pipe, underground, reach }, pole, inserters: { [name]: spec },
 //         electric: entity => boolean, order: [part or fluid key] (routing order),
-//         reverse: Set of part keys }
+//         reverse: Set of part keys, made: items/min each machine makes (output lanes are
+//         chosen by it), full: what each makes at full speed (its lanes are chosen to carry
+//         that), lane: items/min a lane carries, offsets: every output inserter whose
+//         prototype allows custom vectors picks its lane by its drop point (Inserter_Config) }
 export function routeModule(core, opts) {
   const { margin } = opts;
   const area = { x: -margin.w, y: -margin.n, w: core.w + margin.w + margin.e, h: core.h + margin.n + margin.s };
@@ -76,10 +79,24 @@ export function routeModule(core, opts) {
     const start = job.canEnter
       ? { tiles: [...Array(area.h).keys()].map(k => [edge, area.y + k]), dir: job.dir }
       : { tiles: [waypoints[0]], dir: E };
-    return routeBelt(grid, {
+    const route = level => routeBelt(grid, {
       id: job.id, start, waypoints: job.canEnter ? waypoints : waypoints.slice(1),
-      end: job.canExit ? (job.dir === W ? 'west' : 'east') : 'dead',
+      end: job.canExit ? (job.dir === W ? 'west' : 'east') : 'dead', straight: level,
     }, opts.belt);
+    // An output's belt goes straight on where its inserters drop, so each drop's lane is
+    // decided (on a curve it is not): along its rows if it can, else any way it can go on; where
+    // neither routes, it may turn there.
+    if (!job.output) return route(0);
+    for (const level of [2, 1]) {
+      const saved = grid.snapshot();
+      try {
+        return route(level);
+      } catch (e) {
+        if (!(e instanceof RoutingError)) throw e;
+        grid.restore(saved);
+      }
+    }
+    return route(0);
   };
 
   // Pipes first: no fluid may touch another. On a failure everything is ripped up and routed
@@ -121,6 +138,16 @@ export function routeModule(core, opts) {
   // than it needs. Then poles prove it can be powered, and each part learns where a copy may
   // drop its head or tail and which lanes its machines fill.
   function finish(routedGrid, pieces) {
+    try {
+      return finishWith(routedGrid, pieces, opts.squeeze !== false);
+    } catch (e) {
+      // Squeezing took the room a pole needed: power the module as routed.
+      if (!(e instanceof PowerError) || opts.squeeze === false) throw e;
+      return finishWith(routedGrid, pieces, false);
+    }
+  }
+
+  function finishWith(routedGrid, pieces, squeeze) {
     // Each part's waypoints, by the pieces on them: they stay put while lines come out.
     const marks = new Map(parts.map(p => {
       const at = new Map(pieces.get(p.key).map(q => [key(q.x, q.y), q]));
@@ -134,7 +161,7 @@ export function routeModule(core, opts) {
       return c;
     };
     const objects = [...core.entities.map(dup), ...[...pieces.values()].flat().map(dup)];
-    const { entities: kept, log } = opts.squeeze === false ? { entities: objects, log: [] } : squeezeEntities(objects);
+    const { entities: kept, log } = squeeze ? squeezeEntities(objects) : { entities: objects, log: [] };
     const keptSet = new Set(kept);
     const moved = (x, y) => squeezed(log, x, y);
     const grid = routedGrid && !log.length ? routedGrid : regrid(kept);
@@ -144,8 +171,12 @@ export function routeModule(core, opts) {
     const poles = placePoles(grid, consumers, opts.pole).map(({ x, y, w, h }) => ({ x, y, w, h }));
     const machines = entities.filter(e => e.kind === 'building');
     const inserters = entities.filter(e => e.kind === 'inserter');
-    for (const p of parts) chooseLanes(listOf(p.key), inserters, machines, opts.inserters, p.dir === W ? 'right' : 'left');
-    const routedParts = parts.map(p => {
+    // How each machine's output splits between the belts it drops on, then the lanes.
+    const split = outputSplit(parts.map(p => listOf(p.key)), inserters, machines, opts.inserters, opts.made ?? Infinity);
+    parts.forEach((p, k) => chooseLanes(listOf(p.key), inserters, machines, opts.inserters, p.dir === W ? 'right' : 'left', {
+      made: opts.full ?? opts.made ?? Infinity, lane: opts.lane ?? Infinity, share: m => split(m, k), offsets: opts.offsets ?? false,
+    }));
+    const routedParts = parts.map((p, k) => {
       const list = listOf(p.key);
       const indices = marks.get(p.key).map(q => list.indexOf(copies.get(q)));
       return {
@@ -155,7 +186,7 @@ export function routeModule(core, opts) {
         pieces: list, first: Math.min(...indices), last: Math.max(...indices),
         // The first piece a copy may end on without pushing items into another route.
         end: deadEnd(grid, list, Math.max(...indices), p.id),
-        drops: laneDrops(list, inserters, machines, opts.inserters),
+        drops: laneDrops(list, inserters, machines, opts.inserters, m => split(m, k)),
       };
     });
     const routedFluids = fluids.map(f => ({ routeId: f.routeId, fluid: f.fluid, role: f.role, pieces: listOf(f.key) }));
@@ -170,7 +201,8 @@ export function routeModule(core, opts) {
       pipeBlocked: tiles(core.pipeBlocked), surfacePorts: tiles(core.surfacePorts), poleSlots: tiles(core.poleSlots),
       taps: (core.taps ?? []).map(t => ({ ...t, tile: moved(...t.tile) })).filter(t => t.tile),
     };
-    const box = extentOf(kept);
+    // Poles placed in a margin the routing left empty belong to the module too.
+    const box = extentOf([...kept, ...poles]);
     const out = { x: box.x, y: box.y, w: box.w, h: box.h };
     return { area: out, w: core.w, h: core.h, entities, parts: routedParts, fluids: routedFluids, poles, core: squeezedCore };
   }
@@ -234,59 +266,182 @@ function deadEnd(grid, pieces, last, id) {
   return pieces.length - 1;
 }
 
-// Which lane each output inserter drops onto, per machine: items/min it can put on the belt's
-// left and right lanes (relative to the belt's travel), and on a lane the drop does not decide
-// (a drop along the belt, or onto a curve).
-function laneDrops(pieces, inserters, machines, specs) {
+// Which lane each output inserter drops onto, per machine (its index among the module's machines):
+// items/min it can put on the belt's left and right lanes (relative to the belt's travel), and on
+// a lane the drop does not decide (a drop onto a curve); and the machine's share of its output
+// that goes onto this belt (a Two-Way Output's row drops on two belts).
+function laneDrops(pieces, inserters, machines, specs, share) {
   const at = new Map(pieces.map((p, i) => [key(p.x, p.y), i]));
   const byMachine = new Map();
   for (const ins of inserters) {
     const { pickup, drop } = points(ins, specs);
     const i = at.get(key(Math.floor(drop.x), Math.floor(drop.y)));
     if (i === undefined) continue;
-    const m = machines.findIndex(e => pickup.x >= e.x && pickup.x < e.x + e.w && pickup.y >= e.y && pickup.y < e.y + e.h);
+    const m = machines.findIndex(e => inside(pickup, e));
     if (m < 0) continue;
-    const p = pieces[i];
-    const prev = pieces[i - 1];
-    const curve = p.kind === 'belt' && prev && prev.underground !== 'input' && prev.travel !== p.travel;
-    const [dx, dy] = VEC[p.travel];
-    const ox = drop.x - (p.x + 0.5), oy = drop.y - (p.y + 0.5);
-    const cross = dx * oy - dy * ox;
-    const lane = curve || Math.abs(cross) < 1e-6 ? 'either' : cross > 0 ? 'right' : 'left';
-    if (!byMachine.has(m)) byMachine.set(m, { left: 0, right: 0, either: 0 });
-    byMachine.get(m)[lane] += ins.rate ?? 0;
+    if (!byMachine.has(m)) byMachine.set(m, { machine: m, left: 0, right: 0, either: 0, share: share(m) });
+    byMachine.get(m)[laneOf(pieces, i, drop).lane] += ins.rate ?? 0;
   }
   return [...byMachine.values()];
 }
 
-// A 90° inserter dropping along its belt (from beside it in the belt's row) would leave the lane
-// to chance: its drop point moves a quarter tile to one side, onto the lane that has less so far,
-// so the machines of a row fill both lanes of the belt beside them (custom vectors). A tie goes
-// to `first`: the copies routed the other way round take the other lane, and a belt snaking
-// through them gets both.
-function chooseLanes(pieces, inserters, machines, specs, first) {
+// Output drops whose inserters take custom vectors (Inserter_Config, `offsets`) choose their lane:
+// the drop point sits on the drop offset grid of its tile (3×3), a quarter tile off a straight
+// piece's centre line, or toward a curve's inner or outer corner (laneOf). Each goes onto the lane
+// that lets the belt carry the most of what the machines make for it (each its share of `made`,
+// a lane holding `lane`); where both do as well, onto the lane the inserters fill less so far —
+// a single-item belt gets its drops left and right in turn — a tie going to `first`: the copies
+// routed the other way round take the other lane, and a belt snaking through them gets both.
+// Then any drop moving to the other lane that lets the belt carry more does.
+function chooseLanes(pieces, inserters, machines, specs, first, { made, lane, share, offsets }) {
   const at = new Map(pieces.map((p, i) => [key(p.x, p.y), i]));
-  const load = { left: 0, right: 0 };
+  const here = new Map();
   const open = [];
   for (const ins of inserters) {
     const { pickup, drop } = points(ins, specs);
     const i = at.get(key(Math.floor(drop.x), Math.floor(drop.y)));
-    if (i === undefined || !machines.some(e => pickup.x >= e.x && pickup.x < e.x + e.w && pickup.y >= e.y && pickup.y < e.y + e.h)) continue;
-    const p = pieces[i], prev = pieces[i - 1];
-    if (p.kind === 'belt' && prev && prev.underground !== 'input' && prev.travel !== p.travel) continue;
+    const m = machines.findIndex(e => inside(pickup, e));
+    if (i === undefined || m < 0) continue;
+    if (!here.has(m)) here.set(m, { left: 0, right: 0, either: 0, share: share(m) });
+    if (ins.vectors || (offsets && specs[ins.name]?.customVectors)) open.push({ ins, m, i, pickup, side: null });
+    else here.get(m)[laneOf(pieces, i, drop).lane] += ins.rate ?? 0;
+  }
+  const other = first === 'left' ? 'right' : 'left';
+  const filled = side => [...here.values()].reduce((sum, h) => sum + h[side], 0);
+  const flow = () => maxFlow([...here.values()], made, lane);
+  open.sort((a, b) => a.i - b.i);
+  for (const o of open) {
+    const h = here.get(o.m), rate = o.ins.rate ?? 0;
+    const flowWith = side => {
+      h[side] += rate;
+      const f = flow();
+      h[side] -= rate;
+      return f;
+    };
+    const [a, b] = [flowWith(first), flowWith(other)];
+    o.side = Math.abs(a - b) > 1e-9 ? (a > b ? first : other) : filled(first) <= filled(other) ? first : other;
+    h[o.side] += rate;
+  }
+  for (let improved = true, rounds = 0; improved && rounds < open.length; rounds++) {
+    improved = false;
+    for (const o of open) {
+      const h = here.get(o.m), rate = o.ins.rate ?? 0, to = o.side === 'left' ? 'right' : 'left';
+      const before = flow();
+      h[o.side] -= rate;
+      h[to] += rate;
+      if (flow() > before + 1e-9) {
+        o.side = to;
+        improved = true;
+      } else {
+        h[to] -= rate;
+        h[o.side] += rate;
+      }
+    }
+  }
+  for (const { ins, i, pickup, side } of open) {
+    const to = lanePoint(pieces, i, side);
+    const cx = ins.x + 0.5, cy = ins.y + 0.5;
+    ins.vectors = { pickup: ins.vectors?.pickup ?? { x: pickup.x - cx, y: pickup.y - cy }, drop: { x: to.x - cx, y: to.y - cy } };
+  }
+}
+
+// Where on piece i a drop lands on `side` (relative to the belt's travel): a quarter tile off a
+// straight piece's centre line, or a quarter tile toward a curve's inner corner (its inner lane)
+// or outer corner — cells of Inserter_Config's 3×3 drop offset grid.
+export function lanePoint(pieces, i, side) {
+  const p = pieces[i];
+  const cx = p.x + 0.5, cy = p.y + 0.5;
+  const from = curveFrom(pieces, i);
+  if (from === null) {
     const [dx, dy] = VEC[p.travel];
-    const cross = dx * (drop.y - (p.y + 0.5)) - dy * (drop.x - (p.x + 0.5));
-    if (Math.abs(cross) > 1e-6) load[cross > 0 ? 'right' : 'left'] += ins.rate ?? 0;
-    else if (ins.vectors) open.push({ ins, i, dx, dy });
+    const s = side === 'right' ? 0.25 : -0.25;
+    return { x: cx - dy * s, y: cy + dx * s };
   }
-  for (const { ins, dx, dy } of open.sort((a, b) => a.i - b.i)) {
-    const other = first === 'left' ? 'right' : 'left';
-    const lane = load[first] <= load[other] ? first : other;
-    load[lane] += ins.rate ?? 0;
-    // The right lane lies to the right of the belt's travel.
-    const side = lane === 'right' ? 0.25 : -0.25;
-    ins.vectors = { ...ins.vectors, drop: { x: ins.vectors.drop.x - dy * side, y: ins.vectors.drop.y + dx * side } };
+  const [ax, ay] = VEC[from], [bx, by] = VEC[p.travel];
+  // A right turn's inner lane is its right lane.
+  const inner = (side === 'right') === (ax * by - ay * bx > 0);
+  const s = inner ? 0.25 : -0.25;
+  return { x: cx + s * (bx - ax), y: cy + s * (by - ay) };
+}
+
+// The way items enter piece i where it is a curve (fed from the side by the piece before it),
+// else null.
+function curveFrom(pieces, i) {
+  const p = pieces[i], prev = pieces[i - 1];
+  return p.kind === 'belt' && prev && prev.underground !== 'input' && prev.travel !== p.travel ? prev.travel : null;
+}
+
+// How each machine's output splits between the belts (parts' pieces) its inserters drop on:
+// evenly, as far as its inserters onto each belt move that much, the rest onto the others (a
+// machine's inserters wait at a full belt while the others take its output, so the split follows
+// the room). Without `made`, by its inserters' rates. Returns share(machine, part index).
+function outputSplit(lists, inserters, machines, specs, made) {
+  const at = new Map();
+  lists.forEach((pieces, k) => { for (const p of pieces) at.set(key(p.x, p.y), k); });
+  const caps = machines.map(() => lists.map(() => 0));
+  for (const ins of inserters) {
+    const { pickup, drop } = points(ins, specs);
+    const m = machines.findIndex(e => inside(pickup, e));
+    const k = at.get(key(Math.floor(drop.x), Math.floor(drop.y)));
+    if (m >= 0 && k !== undefined) caps[m][k] += ins.rate ?? 0;
   }
+  const shares = caps.map(row => {
+    const total = row.reduce((sum, c) => sum + c, 0);
+    if (!total || made === Infinity) return row.map(c => (total ? c / total : 0));
+    // The belts its inserters move least onto first, each its even part of what is left.
+    const out = row.map(() => 0);
+    const order = row.map((c, k) => k).filter(k => row[k] > 0).sort((a, b) => row[a] - row[b]);
+    let left = made;
+    order.forEach((k, n) => {
+      const give = Math.min(row[k], left / (order.length - n));
+      out[k] = give / made;
+      left -= give;
+    });
+    return out;
+  });
+  return (m, k) => shares[m][k];
+}
+
+const inside = (pt, e) => pt.x >= e.x && pt.x < e.x + e.w && pt.y >= e.y && pt.y < e.y + e.h;
+
+// The lane a drop lands on (Factorio: the side of the belt's centre line the drop point lies on,
+// the right lane right on it; an underground belt's hood snaps to its belt). On a curve, a drop
+// toward the inner corner lands on the inner lane and one toward the outer corner on the outer
+// lane — on the same side of the centre line coming in and going out, and of the arc between —
+// elsewhere on it the lane is not predictable: either. centre: the drop lies on the centre line
+// of a straight piece.
+export function laneOf(pieces, i, drop) {
+  const p = pieces[i];
+  const cx = p.x + 0.5, cy = p.y + 0.5;
+  const sideOf = d => {
+    const [dx, dy] = VEC[d];
+    return dx * (drop.y - cy) - dy * (drop.x - cx);
+  };
+  const from = curveFrom(pieces, i);
+  if (from === null) {
+    const cross = sideOf(p.travel);
+    return { lane: cross < -1e-6 ? 'left' : 'right', centre: Math.abs(cross) <= 1e-6 };
+  }
+  const [ax, ay] = VEC[from], [bx, by] = VEC[p.travel];
+  const right = ax * by - ay * bx > 0;
+  // The arc between: a quarter circle round the inner corner, half a tile out.
+  const nearInner = Math.hypot(drop.x - (cx + (bx - ax) / 2), drop.y - (cy + (by - ay) / 2)) < 0.5 - 1e-6;
+  const arc = nearInner === right ? 'right' : 'left';
+  const agree = [sideOf(from), sideOf(p.travel)].every(c => (arc === 'right' ? c > 1e-6 : c < -1e-6));
+  return { lane: agree ? arc : 'either', centre: false };
+}
+
+// Items/min a run of producer machines can put on one belt: each machine makes `made` and drops
+// it on the lanes its inserters reach (its share of it, where it drops onto two belts), each lane
+// carrying `lane` at most (max flow through the lanes; a drop whose lane is not decided counts on
+// the worse lane).
+export function maxFlow(drops, made, lane) {
+  const flow = side => {
+    const l = m => m.left + (side === 'left' ? m.either : 0), r = m => m.right + (side === 'right' ? m.either : 0);
+    const sum = f => drops.reduce((s, m) => s + Math.min(made * (m.share ?? 1), f(m)), 0);
+    return Math.min(sum(m => l(m) + r(m)), lane + sum(r), lane + sum(l), 2 * lane);
+  };
+  return Math.min(flow('left'), flow('right'));
 }
 
 // Where an inserter picks up and drops, as points: custom vectors when it has them, otherwise

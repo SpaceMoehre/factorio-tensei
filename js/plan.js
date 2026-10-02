@@ -27,13 +27,18 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       if (fuel) fuel.rate += rate;
       else inputs.push({ name: logistics.fuel, type: 'item', rate });
     }
+    const count = Math.ceil(goal.rate / perMachinePerMinute);
     return {
       item: goal.item,
       rate: goal.rate,
       recipe: selection.recipe,
       building: selection.building,
       modules,
-      count: Math.ceil(goal.rate / perMachinePerMinute),
+      count,
+      // How much faster than the plan needs its machines can run (the Count is rounded up): a
+      // machine makes its share of every flow times this at full speed (as far as its inputs
+      // keep up: design.js narrows it).
+      headroom: count * perMachinePerMinute / goal.rate,
       inputs,
       outputs,
       byproducts: outputs.filter(o => o.name !== goal.item),

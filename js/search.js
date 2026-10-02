@@ -28,10 +28,12 @@ export function* search(entries, catalog, logistics, options = {}) {
   let failure = null;
   let tried = 0;
   const prepared = new Map();
-  const first = { choice: ctx.plan.map(() => 0), columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {} };
-  const queue = sweep(first, designs);
+  const first = { choice: ctx.plan.map(() => 0), columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {}, shift: {} };
+  const queue = [first, ...sweep(first, designs)];
+  // Each new best is refined first: every Sub-Block slid a few tiles each way.
+  let refining = [];
   while (tried < maxCandidates && (tried === 0 || now() < deadline)) {
-    const candidate = queue.length ? queue.shift() : mutate(best?.candidate ?? first, designs, rng);
+    const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng);
     tried++;
     const k = `${candidate.choice.join()}|${candidate.columns.join()}`;
     if (!prepared.has(k)) {
@@ -52,7 +54,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     if (!ready) continue;
     let block;
     try {
-      const positions = placeBlocks(ctx, ready, candidate);
+      const positions = shifted(placeBlocks(ctx, ready, candidate), ready.instances, candidate.shift);
       const layout = { margin: { w: 0, e: 0, n: 1, s: 1 } };
       let composed;
       try {
@@ -79,6 +81,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     const score = [Math.round(starving * 1000) / 1000, block.bounds.w * block.bounds.h, block.entities.length];
     if (!best || better(score, best.score)) {
       best = { candidate, score };
+      refining = slides(candidate, ctx.plan.length);
       yield { block, score, tried };
     }
   }
@@ -100,6 +103,32 @@ function sweep(first, designs) {
     for (const k of [0, 2]) list.push({ ...first, columns: first.columns.map((v, j) => (j === i ? k : v)) });
   });
   return list.slice(1);
+}
+
+// Refinement: a Sub-Block moved bodily after placement, its box free to reach into a
+// neighbour's empty corner (compose rejects copies landing on each other), so the block packs
+// tighter than rectangles side by side.
+function shifted(positions, instances, shift = {}) {
+  /** @type {any} */
+  const out = positions.map((p, n) => {
+    const [dx, dy] = shift[instances[n].step] ?? [0, 0];
+    return { x: p.x + dx, y: p.y + dy };
+  });
+  out.bounds = positions.bounds;
+  return out;
+}
+
+// A layout's Sub-Blocks each slid 8, 4, 2 or 1 tiles west, east, north or south of where it
+// stands, the longest slides first.
+function slides(base, n) {
+  const out = [];
+  for (const k of [8, 4, 2, 1]) {
+    for (let i = 0; i < n; i++) {
+      const [dx, dy] = base.shift?.[i] ?? [0, 0];
+      for (const [sx, sy] of [[-k, 0], [k, 0], [0, -k], [0, k]]) out.push({ ...base, shift: { ...base.shift, [i]: [dx + sx, dy + sy] } });
+    }
+  }
+  return out;
 }
 
 function mutate(base, designs, rng) {

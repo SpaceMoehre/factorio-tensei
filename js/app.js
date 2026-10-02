@@ -2,7 +2,7 @@ import { simulate } from './sim.js';
 import { expandChain, recipeOptions } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
-import { createMap } from './render.js';
+import { createMap, turnsSideways } from './render.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
@@ -363,7 +363,7 @@ function describe(entity, block) {
     parts.push(`carries: ${block.routes[entity.route].items.map(i => i.item).join(' + ')}`);
   }
   if (entity.underground) parts.push(`tunnel ${entity.underground === 'input' ? 'entrance' : 'exit'}`);
-  if (entity.vectors) parts.push('90° (Inserter_Config)');
+  if (entity.vectors) parts.push(turnsSideways(entity) ? '90° (Inserter_Config)' : 'drop offset (Inserter_Config)');
   tip.textContent = parts.join(' · ');
 }
 

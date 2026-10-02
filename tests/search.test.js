@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { solve } from '../js/solve.js';
+import { context, designStep, designOf, random, shapeOf, stackVariant, moduleOptions } from '../js/design.js';
+import { coreLinks } from '../js/routes.js';
+import { buildCore } from '../js/layout/core.js';
+import { routeModule } from '../js/layout/module.js';
+import { prepare, compose, RoutingError } from '../js/layout/compose.js';
+import { placeBlocks } from '../js/layout/place.js';
+import { finishBlock } from '../js/layout/compact.js';
 import { simulate } from '../js/sim.js';
 import { expandChain } from '../js/chain.js';
 import { catalog, pyCatalog, logistics } from './fixtures/catalog.js';
@@ -148,15 +155,67 @@ test('Py small parts at 600/min, hand size 1: every machine fed, both output lan
 });
 
 // Py small parts at 900/min: three bolt factories make 1350 a minute for two small parts
-// factories, more than one belt carries. Two belts bring 900 and 450; a splitter between them
-// gives each consumer its 675. Output inserters pick their lane (custom vectors), so one row of
-// machines fills both lanes.
-test('Py small parts at 900/min: a splitter balances two belts, nothing starves', () => {
+// factories, more than one belt carries. With a Two-Way Output the middle factory drops onto both
+// belts, each bringing its consumer 675; output inserters pick their lane (custom vectors), so one
+// row of machines fills both lanes.
+test('Py small parts at 900/min: three bolt factories fill two belts, nothing starves', () => {
   const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
   const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
   const { entries } = expandChain([{ item: 'small-parts-01', rate: 900 }], pyCatalog, { made: items.slice(1), selections });
   const block = solve(entries, pyCatalog, logistics, { maxCandidates: 40 });
-  assert.ok(block.entities.some(e => e.kind === 'splitter'));
+  assert.deepEqual(simulate(block).starvation, []);
+  assertValid(block, pyCatalog, logistics);
+});
+
+// The same with every bolt factory dropping on one belt: two belts bring 900 and 600, and a
+// splitter between them evens them out (Path Flow through it brings more than either alone).
+// Inserters moving three items a swing, so rows of one factory get all the inserters they need.
+test('Py small parts at 900/min, bolts on one belt each: a splitter joins the two belts', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 900 }], pyCatalog, { made: items.slice(1), selections });
+  const hands = { ...logistics, handSize: 3 };
+  const ctx = context(entries, pyCatalog, hands);
+  const rng = random(1);
+  const candidates = [];
+  for (const i of ctx.flows.order) candidates[i] = designStep(ctx, i, rng);
+  // The bolt factories in rows of one, each dropping on the belt below it only.
+  const bolts = ctx.plan.findIndex(sb => sb.recipe === 'bolts');
+  const sb = ctx.plan[bolts], links = coreLinks(sb, bolts, ctx.routes);
+  const variant = stackVariant(shapeOf(ctx, sb, bolts, links), { rotation: 0, rowLength: 1, flip: true, plain: true, middle: 4 }, random(1));
+  const core = buildCore(sb, pyCatalog.buildings[sb.building], links, variant, ctx.env);
+  const oneWay = { kinds: [{ module: routeModule(core, moduleOptions(ctx, links, { w: 2, e: 2, n: 1, s: 1 }, sb)), count: 1 }] };
+  // Beside the first small parts design that lays out with them (the search tries others too).
+  const small = ctx.plan.findIndex(x => x.recipe === 'small-parts-01');
+  let block = null;
+  for (const design of candidates[small].map(designOf).filter(Boolean)) {
+    const ready = prepare(ctx, candidates.map((list, i) => (i === bolts ? oneWay : i === small ? design : designOf(list[0]))));
+    const pair = ready.routes.filter(r => r.splitter);
+    assert.equal(pair.length, 2);
+    const carried = r => r.items[0].capacity, joined = r => r.splitter.items[0].capacity;
+    assert.ok(joined(pair[0]) + joined(pair[1]) > carried(pair[0]) + carried(pair[1]));
+    try {
+      block = finishBlock(compose(ctx, ready, placeBlocks(ctx, ready, {}), { margin: { w: 0, e: 0, n: 1, s: 1 } }), pyCatalog, hands);
+      break;
+    } catch (e) {
+      if (!(e instanceof RoutingError)) throw e;
+    }
+  }
+  assert.ok(block, 'a small parts design lays out');
+  assert.equal(block.entities.filter(e => e.kind === 'splitter').length, 1);
+  assertValid(block, pyCatalog, hands);
+});
+
+// Py small parts at 3600/min with fast inserters moving one item a swing: 76 automated factories,
+// every belt full or nearly. Small parts factories take 2100 items a minute through belts on all
+// four sides; bolts, sticks and cable cannot be cut into belts by whole machines, so their rows
+// drop on both bands (Two-Way Output) and the belts' Path Flow brings each consumer all it takes.
+test('Py small parts at 3600/min: nothing starves', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 3600 }], pyCatalog, { made: items.slice(1), selections });
+  const block = solve(entries, pyCatalog, logistics, { maxCandidates: 30 });
+  assert.equal(block.entities.filter(e => e.kind === 'building').length, 76);
   assert.deepEqual(simulate(block).starvation, []);
   assertValid(block, pyCatalog, logistics);
 });

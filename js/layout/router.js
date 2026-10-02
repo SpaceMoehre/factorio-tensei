@@ -1,4 +1,4 @@
-import { VEC, E, W, turnLeft, turnRight, opposite, key, span, spansOverlap } from './grid.js';
+import { VEC, N, E, S, W, turnLeft, turnRight, opposite, key, span, spansOverlap } from './grid.js';
 
 const TURN_COST = 0.2;
 const TUNNEL_COST = 2;
@@ -16,14 +16,19 @@ const EXPANSIONS_PER_STEP = 100;
 export class RoutingError extends Error {}
 
 // Routes a belt through its waypoints (a chain), committing each leg to the grid as it goes.
-// spec: { id, kind: 'belt', start: { tiles, dir }, waypoints, end: 'dead' | 'east' }
+// With `straight`, the belt goes straight on through every waypoint (or dives or surfaces
+// there): no waypoint piece is a curve, where an inserter's lane is not predictable. Straight 2
+// also passes each waypoint heading the way its row runs on (toward the next waypoint in the
+// row), straight 1 any way it can go on.
+// spec: { id, kind: 'belt', start: { tiles, dir }, waypoints, end: 'dead' | 'east', straight: 0 | 1 | 2 }
 // names: { belt, underground, reach }
 export function routeBelt(grid, spec, names) {
   const pieces = [];
   const commit = leg => commitLeg(grid, spec, names.underground, leg, pieces);
   let starts = spec.start.tiles.map(([x, y]) => ({ x, y, a: spec.start.dir }));
   const pending = new Set(spec.waypoints.map(([x, y]) => key(x, y)));
-  const target = { key: null, last: false };
+  // from: the waypoint a leg leaves, its piece not yet laid (the leg's first move lays it).
+  const target = { key: null, last: false, from: null };
   const moves = beltMoves(grid, spec, names, pending, target);
   // A leg never crosses a later waypoint of its own route. The piece on a waypoint tile is a
   // belt, a tunnel entrance or a tunnel exit: an inserter can reach any of them.
@@ -32,10 +37,28 @@ export function routeBelt(grid, spec, names) {
     target.key = key(wx, wy);
     target.last = i === spec.waypoints.length - 1 && spec.end === 'dead';
     pending.delete(target.key);
-    const isGoal = s => s.reached || (s.x === wx && s.y === wy);
+    // A straight belt arrives heading the way its row runs on (toward the next waypoint in the
+    // row, or on past the last), where it can go on: a free tile ahead, or one to surface on.
+    const want = spec.straight === 2 ? rowHeading(spec.waypoints, i) : null;
+    const goesOn = s => {
+      if (!spec.straight || target.last) return true;
+      if (want !== null && s.a !== want) return false;
+      if (s.reached || grid.freeFor(...step(s.x, s.y, s.a), spec.id)) return true;
+      return HOPS(names.reach).some(hop => {
+        const [x, y] = step(s.x, s.y, s.a, hop);
+        return grid.freeFor(x, y, spec.id) && grid.tunnelFits(names.underground, s, { x, y });
+      });
+    };
+    const isGoal = s => (s.reached || (s.x === wx && s.y === wy)) && goesOn(s);
+    // A straight belt that can neither arrive nor go on any way it may: no leg to search for.
+    if (spec.straight && !target.last && !(starts.length === 1 && starts[0].x === wx && starts[0].y === wy)
+      && ![N, E, S, W].some(d => (want === null || d === want) && passes(grid, spec, names, pending, wx, wy, d))) {
+      throw new RoutingError(`belt ${spec.id}: no straight way through waypoint ${wx},${wy}`);
+    }
     // A tunnel that surfaced on the previous waypoint may already stand before this one.
-    if (starts.length === 1 && isGoal({ ...starts[0], reached: false })) {
+    if (starts.length === 1 && starts[0].x === wx && starts[0].y === wy) {
       surfaced = false;
+      target.from = target.key;
       continue;
     }
     const leg = search(grid, starts, isGoal, (x, y) => Math.abs(x - wx) + Math.abs(y - wy), moves,
@@ -44,6 +67,7 @@ export function routeBelt(grid, spec, names) {
     commit(leg);
     starts = [leg.state];
     surfaced = leg.state.reached;
+    target.from = surfaced ? null : target.key;
   }
   if (spec.end === 'east' || spec.end === 'west') {
     const leg = search(grid, starts, ...edgeGoal(grid, spec.end), moves);
@@ -55,6 +79,30 @@ export function routeBelt(grid, spec, names) {
     commit({ pieces: [beltPiece(spec, names, s.x, s.y, s.a)] });
   }
   return pieces;
+}
+
+// Whether a belt could pass waypoint x, y heading d: in from behind (a belt, or a tunnel
+// surfacing on it) and on ahead (a belt, or a tunnel diving there).
+function passes(grid, spec, names, pending, x, y, d) {
+  const free = (u, v) => grid.freeFor(u, v, spec.id) && !pending.has(key(u, v));
+  const tunnel = sign => HOPS(names.reach).some(hop => {
+    const [u, v] = step(x, y, d, sign * hop);
+    return free(u, v) && grid.tunnelFits(names.underground, { x, y }, { x: u, y: v });
+  });
+  const [bx, by] = step(x, y, d, -1), [ax, ay] = step(x, y, d);
+  return (free(bx, by) || tunnel(-1)) && (grid.freeFor(ax, ay, spec.id) || tunnel(1));
+}
+
+// The heading a belt passes waypoint i with: toward the next waypoint when it lies in the same
+// row (or column), on the way from the one before when that does; null when it is alone there.
+function rowHeading(waypoints, i) {
+  const [x, y] = waypoints[i];
+  const toward = ([nx, ny]) => (ny === y ? (nx > x ? E : W) : nx === x ? (ny > y ? S : N) : null);
+  const next = waypoints[i + 1], prev = waypoints[i - 1];
+  const ahead = next && toward(next);
+  if (ahead !== null && ahead !== undefined) return ahead;
+  const behind = prev && toward(prev);
+  return behind === null || behind === undefined ? null : opposite(behind);
 }
 
 // Leaving the area across its east (or west) edge: the goal and the distance to it.
@@ -415,11 +463,13 @@ function tunnelMove(node, hop, pieces) {
 }
 
 // target.key: the waypoint the current leg heads for; a tunnel surfacing there reaches it.
+// target.from: the waypoint it leaves, which a `straight` belt leaves the way it came.
 function beltMoves(grid, spec, names, pending, target) {
   return node => {
     const options = [];
     if (pending.has(key(node.x, node.y))) return options;
-    for (const d of directions(node.a)) {
+    const straightOn = spec.straight && node.prev === null && key(node.x, node.y) === target.from;
+    for (const d of straightOn ? [node.a] : directions(node.a)) {
       if (!canBelt(grid, spec, node.x, node.y, d)) continue;
       const [nx, ny] = step(node.x, node.y, d);
       options.push({ x: nx, y: ny, a: d, cost: 1 + (d === node.a ? 0 : TURN_COST), pieces: [beltPiece(spec, names, node.x, node.y, d)] });
