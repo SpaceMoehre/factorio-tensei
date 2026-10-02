@@ -29,12 +29,12 @@ export function* maximize(goals, catalog, logistics, options) {
     const n = plan.next();
     if (n === null) break;
     const list = plan.goalsFor(n);
-    yield { type: 'try', rate: list[0].rate, machines: n };
+    yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n) };
     const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable });
     plan.record(n, outcome);
     tried += outcome.tried;
     if (outcome.block) {
-      best = { rate: list[0].rate, machines: n, goals: list };
+      best = { rate: list[0].rate, machines: Math.ceil(n), goals: list };
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
     } else failure = outcome.failure;
   }
@@ -83,10 +83,13 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
 // how loosely the City Block's layouts pack (at first a guess, then from the layouts found) —
 // against the room the City Block has; the highest n whose layout it says fits.
 // goalsFor(n): the Goals with n of the first Goal's machines at full speed (rates rounded down to
-// 1/100 a minute, so its Count stays n). next(): the n to try next, strictly between the
-// highest that fit and the lowest that did not: the highest foretold to fit (after a try that
-// did not fit, no more than halfway: the Foretelling knows nothing of designs that starve, and
-// was wrong), or null once the bounds meet.
+// 1/100 a minute, so its Count stays n; n need not be whole: the last of them runs slower).
+// next(): the n to try next, strictly between the highest that fit and the lowest that did not:
+// the highest whole number foretold to fit (right after a try that did not fit, or below one
+// whose designs starved, no more than halfway: the Foretelling knows nothing of designs that
+// starve, and was wrong); once the whole
+// numbers meet, where one more machine's designs starve (not the room), a few rates between,
+// halving the gap (machines that starve at full speed may not a little slower); null after.
 // record(n, outcome): a try's outcome (attempt's). foretold(): { rate, machines }. span(n): the
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates.
@@ -140,7 +143,9 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   const reach = 0.95 * room * (1 - broken(site, 2 * (largest + 5)) / 2);
   const fits = n => loose * modules(n) <= reach;
 
-  let lo = 0, hi = upper, missed = false, designable = 0;
+  let lo = 0, hi = upper, failed = false, starves = false, between = 0, designable = 0;
+  // The least looseness the tries that found no room show (one at least that loose did not fit).
+  let tightest = 0;
   // Once a layout found shows how loosely this City Block packs (its Sub-Blocks spanning so much
   // more than their modules), n whose modules, spread as much, would span more than all its
   // room are not tried (another layout may pack a little tighter).
@@ -148,7 +153,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   const overflows = n => spread !== null && spread * modules(n) > 1.05 * room;
   // The highest n foretold to fit (more machines never take less room).
   const foretold = () => {
-    let a = lo, b = hi;
+    let a = Math.floor(lo), b = Math.ceil(hi);
     while (b - a > 1) {
       const mid = Math.floor((a + b) / 2);
       if (fits(mid)) a = mid;
@@ -168,32 +173,40 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     get designable() { return designable; },
     foretold,
     next() {
-      // Above the highest that fit, below the lowest that did not and the first that would
-      // overflow the room (more machines never take less room).
-      let top = hi;
-      for (let a = lo; top - a > 1;) {
+      // Whole numbers above the highest that fit, below the lowest that did not and the first
+      // that would overflow the room (more machines never take less room).
+      let top = Math.ceil(hi);
+      for (let a = Math.floor(lo); top - a > 1;) {
         const mid = Math.floor((a + top) / 2);
         if (overflows(mid)) top = mid;
         else a = mid;
       }
-      if (top - lo <= 1) return null;
-      // Only a try tells whether the one above the highest that fit does: at least that one.
-      let want = Math.max(lo + 1, foretold().machines);
-      if (missed) want = Math.min(want, Math.ceil((lo + hi) / 2));
-      return Math.min(want, top - 1);
+      const low = Math.floor(lo) + 1;
+      if (low < top) {
+        // Only a try tells whether the one above the highest that fit does: at least that one.
+        let want = Math.max(low, foretold().machines);
+        if (failed || starves) want = Math.min(want, Math.ceil((lo + hi) / 2));
+        return Math.min(want, top - 1);
+      }
+      // Between whole numbers, where the next one's designs starved.
+      if (!starves || between >= BETWEEN || hi - lo <= 1 / 8) return null;
+      between++;
+      return (lo + hi) / 2;
     },
     record(n, outcome) {
       for (const d of outcome.designed ?? []) if (d.area) tiles.set(d.item, d.area / d.count);
       if (outcome.designed) designable = Math.max(designable, n);
+      failed = !outcome.block;
       if (outcome.block) {
         lo = Math.max(lo, n);
-        if (outcome.placed) loose = spread = outcome.placed / modules(n);
+        if (outcome.placed) loose = Math.max(spread = outcome.placed / modules(n), tightest);
         return;
       }
-      hi = Math.min(hi, n);
-      missed = true;
-      // It did not fit for want of room: the Foretelling must not say it does.
-      if (!outcome.starves && fits(n)) loose = 1.02 * reach / modules(n);
+      if (n < hi) [hi, starves] = [n, Boolean(outcome.starves)];
+      // It did not fit for want of room: the Foretelling must not say it does (nor again after a
+      // layout found below it).
+      if (!outcome.starves) tightest = Math.max(tightest, 1.02 * reach / modules(n));
+      loose = Math.max(loose, tightest);
     },
   };
 }
@@ -220,6 +233,9 @@ function broken(site, side) {
   }
   return hit / all;
 }
+
+// Rates tried between whole numbers of machines, at most.
+const BETWEEN = 3;
 
 function overlap(a, b) {
   const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);

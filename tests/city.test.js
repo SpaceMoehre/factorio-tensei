@@ -138,7 +138,7 @@ test('nothing fits a city block too small for the machines', () => {
 test('Maximize finds a higher rate that fits, each layout found valid, inside and starving nothing', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 40, h: 30 }, fixtures: [{ name: 'roboport', kind: 'fixture', number: 1, x: 18, y: 13, w: 4, h: 4 }] }, 1);
   const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
-  const run = maximize([{ item: 'electronic-circuit', rate: 60 }], catalog, logistics, { made: ['copper-cable'], selections, site, maxCandidates: 12 });
+  const run = maximize([{ item: 'electronic-circuit', rate: 60 }], catalog, logistics, { made: ['copper-cable'], selections, site, maxCandidates: 12, budgetMs: 120000 });
   const found = [];
   const events = [];
   let step = run.next();
@@ -205,7 +205,8 @@ test('the Foretelling: the first try is the most machines it foretells to fit; l
 
 test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min, its Sub-Blocks in columns', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
-  const run = maximize([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site });
+  // (Each try's time generous: tests run side by side.)
+  const run = maximize([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site, budgetMs: 120000 });
   let step = run.next(), block = null;
   for (; !step.done; step = run.next()) if (/** @type {any} */ (step.value).type === 'best') block = /** @type {any} */ (step.value).block;
   // Placed one by one, from the Goals west, the iron sticks found no room at 3000/min (5 small

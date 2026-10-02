@@ -125,10 +125,12 @@ export function* search(entries, catalog, logistics, options = {}) {
   const queue = perfect && site ? [...swept.filter(c => c.layers), ...swept.filter(c => !c.layers)] : swept;
   const structured = queue.length;
   // A design that starves cannot make a layout without Starvation: its estimate before routing
-  // already shows it (routing only adds), its trouble once routed.
+  // already shows it (routing only adds), its trouble once routed. Nor can one too big for the
+  // City Block (by its routed module, else its core).
   const starves = candidate => candidate.choice.some((c, i) => {
     const d = designs[i][Math.min(c, designs[i].length - 1)];
-    return d.estimate.trouble > 1e-6 || (d.design?.trouble ?? 0) > 1e-6;
+    const size = d.design ? d.design.kinds.map(k => k.module.area) : d.estimate.w === undefined ? [] : [d.estimate];
+    return d.estimate.trouble > 1e-6 || (d.design?.trouble ?? 0) > 1e-6 || (site && !size.every(box => within(site, box)));
   });
   // Each new best is refined first: every Sub-Block slid a few tiles each way, and Breakouts.
   let refining = [];
@@ -168,7 +170,8 @@ export function* search(entries, catalog, logistics, options = {}) {
       const trial = trials.get(candidate);
       if (trial && placed > best.placed) continue;
       if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
-      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 } };
+      // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
+      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => now() > deadline : null };
       let composed;
       try {
         composed = compose(ctx, ready, positions, layout);

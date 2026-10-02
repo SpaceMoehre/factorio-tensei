@@ -15,7 +15,14 @@ const SPLITTER_TRIES = 3;
 // how many columns its copies stand in (by default one; 0 for about square).
 export function prepare(ctx, designs, columns = []) {
   const laneCapacity = ctx.catalog.belts[ctx.logistics.belt].itemsPerSecond * 30;
-  const instances = makeInstances(ctx.plan, designs, columns);
+  // In a City Block, a stack of copies taller than its room stands in as many columns as it needs
+  // (unless the candidate says how many).
+  const fit = ctx.site ? designs.map((d, i) => {
+    if (columns[i] !== null && columns[i] !== undefined) return columns[i];
+    const height = d.kinds.filter(k => !k.detached).reduce((sum, k) => sum + k.count * k.module.area.h, 0);
+    return height > ctx.site.inner.h ? Math.ceil(height / (ctx.site.inner.h - 2)) : null;
+  }) : columns;
+  const instances = makeInstances(ctx.plan, designs, fit);
   return { instances, routes: groupRoutes(ctx, instances, laneCapacity) };
 }
 
@@ -37,7 +44,8 @@ export function leastStarvation(ctx, prepared) {
 // Belts of one route chain through as many copies as one belt can carry; pipes join every copy's
 // stub of a fluid into one network. Poles are placed later, over the whole block (compact.js).
 // prepared: from prepare(); positions: each copy's top-left corner (its module's area)
-// layout: { margin, routeOrder, plain (no splitters: paired belts go straight on) }
+// layout: { margin, routeOrder, plain (no splitters: paired belts go straight on), until (true
+//          once the search is out of time) }
 // In a City Block (ctx.site) links are routed inside its Buffer and round its Fixtures (or under
 // them): the train's belts enter on its inner west edge and leave on its inner east edge.
 // Throws RoutingError or PowerError when the layout cannot be built.
@@ -264,6 +272,8 @@ export function compose(ctx, prepared, positions, layout) {
     balanced = new Set();
     let failed = null;
     for (const task of order) {
+      // A search out of time gives up on the layout rather than route on.
+      if (layout.until && layout.until()) throw new RoutingError('out of time routing the links');
       try {
         if (task.pipe !== undefined) {
           pieces[task.pipe].push(...routeFluid(grid, routes[task.pipe]));

@@ -17,6 +17,12 @@ const RANDOM_VARIANTS = 60;
 // that, a whole module usually packs tighter: it is tried first.
 const COPIES_FROM = 8;
 const ONLY_COPIES = 120;
+// Machines a column with belts beside them (Side and Head-on Belts) takes at most; in a City
+// Block as many as stand in a column as tall as its room (a machine with a belt row above and
+// below), where a machine that takes more than one face's inserters move can have nothing else
+// (Maximize ends at the first Count whose designs all starve).
+const SIDES_UP_TO = 8;
+const sidesUpTo = (ctx, building) => (ctx.site ? Math.max(SIDES_UP_TO, Math.floor(ctx.site.inner.h / (Math.max(building.size.w, building.size.h) + 3))) : SIDES_UP_TO);
 
 // Everything the layout search shares: the plan, its flows and routes, and the City Block it builds
 // in (site, from city.js siteOf; null for a free-standing block).
@@ -102,9 +108,11 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
       }
     };
     for (const variant of variants(shape, links, sb, rng, draws)) attempt(variant);
-    // Machines whose belts above and below cannot feed them take belts on their sides too.
+    // Machines whose belts above and below cannot feed them take belts on their sides too; in a
+    // City Block with Fixtures in its room, columns that narrow are candidates anyway (they fit
+    // between Fixtures where rows of machines do not).
     const best = Math.min(...[...cores.values()].map(c => trouble(c.core)));
-    if (!(best <= 1e-6)) for (const variant of sideVariants(shape, links, sb, rng)) attempt(variant);
+    if (!(best <= 1e-6) || ctx.site?.fixtures.length) for (const variant of sideVariants(shape, links, sb, rng, sidesUpTo(ctx, building))) attempt(variant);
     // Stacked rows whose connections face the bands above and below but have no pipe rows rarely
     // route: their pipes must find their own way between the rows. Those come last. (Connections
     // on the machines' sides are reached through the gaps between them.)
@@ -235,7 +243,7 @@ function copyCandidates(ctx, index, shape, rng) {
     const stack = { w: n * pitch, h: count * rows * depth };
     const aspect = Math.max(stack.w / stack.h, stack.h / stack.w);
     out.push({
-      estimate: { trouble: 0, area: sb.count * pitch * depth * (1 + 0.1 * aspect) }, copies: count,
+      estimate: { trouble: 0, area: sb.count * pitch * depth * (1 + 0.1 * aspect), w: n * pitch, h: rows * depth }, copies: count,
       build: () => {
         const main = repeatable(ctx, index, m, n, rng, count + (rest ? 1 : 0));
         const kinds = [{ ...main, count }];
@@ -553,9 +561,10 @@ function squareRow(shape, sb) {
 // One machine per row, belts on all four sides: each of a few routes moves from the bands above
 // and below to a Side Belt (west or east, one or two tiles out) or a Head-on Belt (an input from
 // the west, an output to the east). The busiest routes move first.
-function* sideVariants(shape, links, sb, rng) {
-  // Past 8 machines only where a path already gives every machine a belt of its own (rows of one).
-  if (sb.count > 8 && !shape.belts.some(b => b.parts === sb.count)) return;
+function* sideVariants(shape, links, sb, rng, upTo = SIDES_UP_TO) {
+  // Past `upTo` machines only where a path already gives every machine a belt of its own (rows of
+  // one).
+  if (sb.count > upTo && !shape.belts.some(b => b.parts === sb.count)) return;
   const demand = b => b.items.reduce((sum, i) => sum + i.rate, 0);
   const routes = [...shape.belts].sort((a, b) => demand(b) - demand(a));
   // A Head-on Belt serves one machine and starts (an output) or ends (an input) its belt: only
