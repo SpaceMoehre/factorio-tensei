@@ -420,7 +420,7 @@ async function build() {
     if (data.type === 'foretell') built.foretold = data;
     else if (data.type === 'try') trying(data);
     else if (data.type === 'best') show(data.block, data.tried, data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null);
-    else if (data.type === 'done') finish('Done', data.tried, data.failure);
+    else if (data.type === 'done') finish('Done', data.tried, data.failure, data.above);
     else finish('Stopped', undefined, data.message);
   };
   worker.onerror = e => finish('Stopped', undefined, e.message);
@@ -470,7 +470,7 @@ async function show(block, tried, found = null) {
   $('results').hidden = false;
 }
 
-function finish(how, tried = best?.tried ?? 0, error = null) {
+function finish(how, tried = best?.tried ?? 0, error = null, above = null) {
   worker?.terminate();
   worker = null;
   $('stop').hidden = true;
@@ -482,7 +482,9 @@ function finish(how, tried = best?.tried ?? 0, error = null) {
       return showStatus('error', `Nothing fits the city block without starvation${error ? `: ${error}` : ''}. Give each try more time, or a bigger block.`);
     }
     const { rate, machines } = best.found;
-    return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest rate that fits: ${fmt(rate)}/min (${count(machines, 'machine')}).`);
+    // Why the next rate up does not fit: the lowest that did not.
+    const next = above?.reason ? ` ${fmt(above.rate)}/min does not fit: ${above.reason.replace(/\.$/, '')}.` : '';
+    return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest rate that fits: ${fmt(rate)}/min (${count(machines, 'machine')}).${next}`);
   }
   if (!best) {
     $('results').hidden = true;

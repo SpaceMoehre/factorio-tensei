@@ -14,12 +14,13 @@ import { LayoutError } from './layout/core.js';
 // Yields { type: 'foretell', rate, machines } (the highest rate foretold to fit, again whenever
 // the outcomes change it), { type: 'try', rate, machines } before each try and { type: 'best',
 // block, score, tried, rate, machines, goals } for each that fits; returns { rate, machines,
-// goals, tried, failure } of the highest that fit (machines 0 when none did).
+// goals, tried, failure, above } of the highest that fit (machines 0 when none did), `above` the
+// lowest rate tried that did not fit and why ({ rate, machines, reason }, null when none did not).
 // options: { made, selections, index, site, budgetMs (each try's), maxCandidates (each try's),
 //            seed, now }
 export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
-  let tried = 0, failure = null, best = null, told = null;
+  let tried = 0, failure = null, best = null, told = null, above = null;
   for (;;) {
     const foretold = plan.foretold();
     if (foretold.machines !== told) {
@@ -36,9 +37,17 @@ export function* maximize(goals, catalog, logistics, options) {
     if (outcome.block) {
       best = { rate: list[0].rate, machines: Math.ceil(n), goals: list };
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
-    } else failure = outcome.failure;
+    } else {
+      failure = outcome.failure;
+      if (!above || list[0].rate < above.rate) above = { rate: list[0].rate, machines: Math.ceil(n), reason: outcome.failure?.message ?? null };
+    }
   }
-  return { ...(best ?? { rate: 0, machines: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure };
+  // One more machine than fit, not tried: foretold to overflow the City Block.
+  const next = Math.floor(plan.lo) + 1;
+  if (best && next < plan.hi && plan.goalsFor(next)[0].rate < (above?.rate ?? Infinity)) {
+    above = { rate: plan.goalsFor(next)[0].rate, machines: next, reason: 'its layout is foretold to take more room than the city block has' };
+  }
+  return { ...(best ?? { rate: 0, machines: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above };
 }
 
 // One try: the layout search for n of the first Goal's machines, to its first layout without
