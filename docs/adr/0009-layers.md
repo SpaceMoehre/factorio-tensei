@@ -11,3 +11,5 @@ The search therefore also tries Layers for every candidate in a City Block. Ever
 The corridors between columns widen with the links turning in them, by half a lane each, not a lane each. Belts also cross through the gaps between stacked Sub-Blocks and along the free rows below them, and a lane each made no Layers fit even where tight corridors route. With many belts crossing far, routing can still fail. That happened at 4800/min in 200 × 200. Only routing tells.
 
 Fixtures are not weighed while columns are chosen. A column whose Sub-Blocks stand on one moves up or down its column, then west as far as the room left lets it. The next-best ways are tried when the best cannot avoid them. Don't drop the one-at-a-time placement: around scattered Fixtures it finds spots that columns cannot.
+
+Later, a column too tall for its Sub-Blocks one below the other stacks them in each other's Nooks (ADR 0016).

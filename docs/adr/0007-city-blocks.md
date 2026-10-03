@@ -15,3 +15,5 @@ The Side Input enters on the Buffer's west edge and the Side Output leaves on it
 A City Block's poles are taken as one network (its blueprint wires them), so nothing of the block needs to connect them; its own poles join that network, bridged by a best-first search toward it (it may stand far off). The exported blueprint is the City Block's own, entities, tiles, wires and snap grid as they were, with the Compound Block added: pasted onto the built city block, only the factory is new.
 
 Maximize looks for the highest rate by trying whole numbers of the first Goal's machines, each try a layout search that ends at the first layout without Starvation. The machines' footprints bound it from above before any try; which numbers it tries, and when a try gives up, is ADR 0008's. Don't search the rate inside one layout search: the Count, the Modules and every design change with it.
+
+Later, Sub-Blocks are kept apart the same way: one may stand in the room another's box leaves, its Nook (ADR 0016).

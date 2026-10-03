@@ -470,7 +470,8 @@ async function build() {
       else if (data.type === 'try') trying(data);
       else if (data.type === 'best') {
         run.tried = data.tried;
-        if (!best || better(data.score, best.score)) show(data.block, tried(), data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null, data.score);
+        // A Maximize's every fit is a higher rate than the last: shown whatever its score.
+        if (data.goals || !best || better(data.score, best.score)) show(data.block, tried(), data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null, data.score);
       } else if (data.type === 'done') {
         run.tried = data.tried;
         over(data.failure, data.above);

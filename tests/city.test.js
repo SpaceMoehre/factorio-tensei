@@ -7,6 +7,10 @@ import { maximize, planner } from '../js/maximize.js';
 import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
 import { simulate } from '../js/sim.js';
+import { context, designStep, designOf, random } from '../js/design.js';
+import { prepare, compose } from '../js/layout/compose.js';
+import { placeBlocks } from '../js/layout/place.js';
+import { finishBlock } from '../js/layout/compact.js';
 import { catalog as vanilla, logistics, pyCatalog } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 
@@ -128,6 +132,33 @@ test('poles of the city block power what they cover: a block under substations n
   assertValid(block, catalog, logistics);
   assertInside(block);
   assert.equal(block.entities.filter(e => e.kind === 'pole').length, 0);
+});
+
+// Eleven assembling machines 2 of gears: a row of five repeated twice, the one left over a module
+// of its own below them, so the stack's box leaves a Nook beside it. Copper cable's two machines
+// stand in that Nook: the two fit a City Block too narrow for them side by side and too low for
+// one below the other, placed one by one or in columns. With the gears' copies in two columns, the
+// Nook above the shorter one takes them.
+test("in a City Block a Sub-Block stands in another's Nook: beside a narrower copy, above a shorter column", () => {
+  const entries = [asm2('iron-gear-wheel', 960), asm2('copper-cable', 300)];
+  const narrow = siteOf({ area: { x: 0, y: 0, w: 30, h: 24 }, fixtures: [] }, 1);
+  const wide = siteOf({ area: { x: 0, y: 0, w: 60, h: 60 }, fixtures: [] }, 1);
+  for (const { site, params, columns } of [{ site: narrow, params: {}, columns: [] }, { site: narrow, params: { layers: 2 }, columns: [] }, { site: wide, params: {}, columns: [2] }]) {
+    const ctx = context(entries, catalog, logistics, site);
+    const designs = ctx.plan.map((sb, i) => {
+      const list = designStep(ctx, i, random(1), { draws: 0 });
+      return designOf(sb.item === 'iron-gear-wheel' ? list.find(c => c.spec?.copies?.rest === 1) : list[0]);
+    });
+    const ready = prepare(ctx, designs, columns);
+    const positions = placeBlocks(ctx, ready, params);
+    const [gears, cable] = ['iron-gear-wheel', 'copper-cable'].map(item => positions.boxes[ctx.plan.findIndex(sb => sb.item === item)]);
+    assert.ok(cable.x < gears.x + gears.w && gears.x < cable.x + cable.w && cable.y < gears.y + gears.h && gears.y < cable.y + cable.h,
+      `cable ${JSON.stringify(cable)} in the gears' box ${JSON.stringify(gears)}`);
+    const block = finishBlock(compose(ctx, ready, positions, { margin: { w: 0, e: 0, n: 1, s: 1 } }), catalog, logistics);
+    assertValid(block, catalog, logistics);
+    assertInside(block);
+    assert.equal(simulate(block).starvation.length, 0);
+  }
 });
 
 test('nothing fits a city block too small for the machines', () => {

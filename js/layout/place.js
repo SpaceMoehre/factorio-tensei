@@ -16,7 +16,8 @@ import { SQUARE } from './score.js';
 //           spot: { [step]: number } (the broken-out machines' next best spots: 1, 2, …) }
 // In a City Block (ctx.site) everything stands inside its Buffer, placed from its east edge (the
 // Goals) and then slid west as far as it fits, and no machine, belt or pipe stands on a Fixture
-// (a Fixture may stand in a box's empty tiles); where nothing fits it throws a RoutingError.
+// (a Fixture may stand in a box's empty tiles); a Sub-Block may stand in another's Nook (nooksOf);
+// where nothing fits it throws a RoutingError.
 export function placeBlocks(ctx, prepared, params = {}) {
   const { plan } = ctx;
   const { instances, routes } = prepared;
@@ -74,7 +75,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
       p.x += pad;
       p.y += pad;
     }
-    return { step: i, instances: mine, at, w: columns * mw + (columns - 1) * cross + tapRoom + loopRoom + 2 * pad, h: h + 2 * pad, entries: [] };
+    const block = { step: i, instances: mine, at, w: columns * mw + (columns - 1) * cross + tapRoom + loopRoom + 2 * pad, h: h + 2 * pad, entries: [], pad };
+    // In a City Block, its Nooks: the room its box leaves another Sub-Block (none where the search
+    // made room round it: a link found none).
+    return Object.assign(block, site && !pad ? nooksOf(block, { padW, mw, cross, over, columns }) : { need: null, nooks: [] });
   });
   // Links from a producer's exit to a consumer's entry, by where each sits in its block; and the
   // rows each block's Side Inputs arrive on.
@@ -122,7 +126,8 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const placed = new Map();
   const tileSets = new Map();
   const box = i => ({ x: placed.get(i).x, y: placed.get(i).y, w: blocks[i].w, h: blocks[i].h });
-  const overlaps = (a, b, g) => a.x < b.x + b.w + g && b.x < a.x + a.w + g && a.y < b.y + b.h + g && b.y < a.y + a.h + g;
+  // Whether Sub-Block i standing at `me` comes within `gap` tiles of placed Sub-Block j.
+  const clashes = (i, me, j) => !apart(blocks[i], me, blocks[j], placed.get(j), gap);
   const bounds = extra => {
     const all = [...[...placed.keys()].map(box), ...(extra ? [extra] : [])];
     if (!all.length) return { x: 0, y: 0, w: 0, h: 0 };
@@ -140,7 +145,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     const wanted = params.at?.[i];
     if (wanted) {
       const me = { ...wanted, w: b.w, h: b.h };
-      if (![...placed.keys()].some(j => overlaps(me, box(j), gap)) && (!site || site.fits(blockTiles(i), me))) {
+      if (![...placed.keys()].some(j => clashes(i, me, j)) && (!site || site.fits(blockTiles(i), me))) {
         placed.set(i, { x: wanted.x, y: wanted.y });
         continue;
       }
@@ -164,20 +169,30 @@ export function placeBlocks(ctx, prepared, params = {}) {
       candidates.push({ x: start.x, y: o.y - gap - 1 - b.h }, { x: start.x, y: o.y + o.h + gap + 1 });
       candidates.push({ x: Math.min(start.x, o.x - gap - 1 - b.w), y: o.y }, { x: Math.min(start.x, o.x - gap - 1 - b.w), y: o.y + o.h - b.h });
     }
-    // In a City Block also beside its Fixtures and against its edges.
+    // In a City Block also beside its Fixtures and against its edges, and in the corners of a
+    // placed Sub-Block's Nooks (or with a placed one in a corner of one of its own).
     if (site) {
       const { inner } = site;
       for (const f of site.fixtures) {
         candidates.push({ x: Math.min(start.x, f.x - 1 - b.w), y: start.y }, { x: start.x, y: f.y - 1 - b.h }, { x: start.x, y: f.y + f.h + 1 });
       }
       candidates.push({ x: start.x, y: inner.y }, { x: start.x, y: inner.y + inner.h - b.h });
+      for (const j of placed.keys()) {
+        const o = box(j);
+        for (const r of blocks[j].nooks) {
+          for (const x of [o.x + r.x + gap, o.x + r.x + r.w - gap - b.w]) candidates.push({ x, y: o.y + r.y + gap }, { x, y: o.y + r.y + r.h - gap - b.h }, { x, y: start.y });
+        }
+        for (const r of b.nooks) {
+          for (const x of [o.x - r.x - gap, o.x + o.w + gap - r.x - r.w]) candidates.push({ x, y: o.y - r.y - gap }, { x, y: o.y + o.h + gap - r.y - r.h });
+        }
+      }
     }
     // The spot that grows the block least, keeps its links short and keeps off the rows other
     // Sub-Blocks' Side Inputs arrive on (west of their consumers unless `anywhere`).
     // (What stands placed is taken once, not for each of the many spots a City Block offers: each
     // box with the rows its Side Inputs arrive on, their bounds, where the links' consumers are.)
     const pick = (spots, anywhere = false) => {
-      const boxes = [...placed.keys()].map(j => ({ ...box(j), entries: blocks[j].entries.map(e => placed.get(j).y + e) }));
+      const boxes = [...placed.keys()].map(j => ({ ...box(j), step: j, entries: blocks[j].entries.map(e => placed.get(j).y + e) }));
       const targets = mine.map(l => ({ x: placed.get(l.to).x, y: placed.get(l.to).y + l.toY - l.fromY }));
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const o of boxes) [x0, y0, x1, y1] = [Math.min(x0, o.x), Math.min(y0, o.y), Math.max(x1, o.x + o.w), Math.max(y1, o.y + o.h)];
@@ -185,7 +200,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
       let best = null;
       for (const c of spots) {
         const me = { x: c.x, y: c.y, w: b.w, h: b.h };
-        if (boxes.some(o => overlaps(me, o, gap))) continue;
+        if (boxes.some(o => clashes(i, me, o.step))) continue;
         let back = 0;
         for (const t of targets) back += Math.max(0, c.x + b.w + 1 - t.x);
         if (back && !anywhere) continue;
@@ -277,7 +292,8 @@ export function placeBlocks(ctx, prepared, params = {}) {
 // Layers, in a City Block: the Sub-Blocks in columns, the Goals easternmost and every producer in
 // a column west of all it feeds; each column's Sub-Blocks stacked top to bottom a gap apart, each
 // as near level with the rows its links meet as the others let it, aligned to the column's east
-// side; columns a corridor apart, wider for the links turning in it. Of the ways to put the
+// side (where that is too tall for the room, in each other's Nooks); columns a corridor apart,
+// wider for the links turning in it. Of the ways to put the
 // Sub-Blocks in columns — each as far east as its consumers let it, or up to `spread` columns
 // further west — the one is taken that fits the City Block (no column taller than its room with a
 // row for every belt crossing it: links passing through, Side Inputs to the columns east of it,
@@ -298,7 +314,6 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
     const k = new Map(used.map((c, n) => [c, n]));
     const members = used.map(c => steps.filter(i => cols.get(i) === c));
     const width = members.map(list => Math.max(...list.map(i => blocks[i].w)));
-    const height = members.map(list => list.reduce((sum, i) => sum + blocks[i].h, 0) + gap * (list.length - 1));
     // Belts turning in the corridor west of each column, and crossing each column.
     const turning = used.map(() => 0), crossing = used.map(() => 0);
     for (const l of links) {
@@ -310,9 +325,42 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
       for (let n = k.get(cols.get(i)) + 1; n < used.length; n++) crossing[n] += blocks[i].entries.length;
       for (let n = 0; n < k.get(cols.get(i)); n++) crossing[n] += outputs.get(i);
     }
+    // One below the other; where that is too tall, as tight as their Nooks let them.
+    const height = members.map((list, n) => {
+      const h = list.reduce((sum, i) => sum + blocks[i].h, 0) + gap * (list.length - 1);
+      return h + crossing[n] <= inner.h || !list.some(i => blocks[i].nooks.length) ? h : Math.min(h, stackOf(list, width[n]).height);
+    });
     const lanes = n => corridor + Math.floor(turning[n] / 2);
     const span = width.reduce((sum, w) => sum + w, 0) + width.slice(1).reduce((sum, _, n) => sum + lanes(n), 0);
     return { members, width, height, crossing, lanes, span };
+  };
+  // A column's Sub-Blocks as tight as their Nooks let them: the tallest at the top, each next as
+  // high as it stands clear of those above, its east side in line with the column's or in a corner
+  // of a Nook of one above. Where each stands in the column, and the height they take.
+  const stacks = new Map();
+  const stackOf = (list, w) => {
+    const key = `${w}:${list.join()}`;
+    if (!stacks.has(key)) {
+      const at = new Map();
+      let height = 0;
+      for (const i of [...list].sort((a, b) => blocks[b].h - blocks[a].h || a - b)) {
+        const b = blocks[i];
+        const xs = new Set([w - b.w]);
+        for (const [j, p] of at) {
+          for (const r of blocks[j].nooks) for (const x of [p.x + r.x + gap, p.x + r.x + r.w - gap - b.w]) if (x >= 0 && x <= w - b.w) xs.add(x);
+        }
+        let best = null;
+        for (const x of xs) {
+          let y = 0;
+          while ([...at].some(([j, p]) => !apart(b, { x, y }, blocks[j], p, gap))) y++;
+          if (!best || y < best.y) best = { x, y };
+        }
+        at.set(i, best);
+        height = Math.max(height, best.y + b.h);
+      }
+      stacks.set(key, { at, height });
+    }
+    return stacks.get(key);
   };
   const fitting = [];
   const assign = n => {
@@ -367,14 +415,23 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
         return mine.length ? Math.round(mine.reduce((sum, l) => sum + placed.get(l.to).y + l.toY - l.fromY, 0) / mine.length) : inner.y;
       };
       const items = list.map(i => ({ i, y: want(i), h: blocks[i].h, x: cx + w - blocks[i].w })).sort((a, b) => a.y - b.y || a.i - b.i);
-      let bottom = inner.y - gap;
-      for (const it of items) bottom = (it.y = Math.max(it.y, bottom + gap)) + it.h;
-      let top = inner.y + inner.h + gap;
-      for (const it of [...items].reverse()) top = it.y = Math.min(it.y, top - gap - it.h);
-      if (items[0].y < inner.y) return null;
+      if (items.reduce((sum, it) => sum + it.h, 0) + gap * (items.length - 1) <= inner.h) {
+        let bottom = inner.y - gap;
+        for (const it of items) bottom = (it.y = Math.max(it.y, bottom + gap)) + it.h;
+        let top = inner.y + inner.h + gap;
+        for (const it of [...items].reverse()) top = it.y = Math.min(it.y, top - gap - it.h);
+      } else {
+        // Too tall one below the other: in each other's Nooks, the stack as level with what it
+        // feeds as the room lets it.
+        const { at, height } = stackOf(list, w);
+        const y = Math.round(items.reduce((sum, it) => sum + it.y - at.get(it.i).y, 0) / items.length);
+        const y0 = Math.max(inner.y, Math.min(inner.y + inner.h - height, y));
+        for (const it of items) Object.assign(it, { x: cx + at.get(it.i).x, y: y0 + at.get(it.i).y });
+      }
+      if (items.some(it => it.y < inner.y || it.y + it.h > inner.y + inner.h)) return null;
       const boxOf = (it, y = it.y) => ({ x: it.x, y, w: blocks[it.i].w, h: it.h });
       for (const it of items) {
-        const clear = y => site.fits(tilesOf(it.i), boxOf(it, y)) && items.every(o => o === it || y + it.h + gap <= o.y || o.y + o.h + gap <= y);
+        const clear = y => site.fits(tilesOf(it.i), boxOf(it, y)) && items.every(o => o === it || apart(blocks[it.i], { x: it.x, y }, blocks[o.i], o, gap));
         if (clear(it.y)) continue;
         let moved = null;
         for (let d = 1; d < inner.h && moved === null; d++) for (const y of [it.y - d, it.y + d]) if (moved === null && clear(y)) moved = y;
@@ -611,6 +668,69 @@ function coveredBy(module) {
 
 // A tile of a box as one number (tiles from one left of or above the box on).
 const tileKey = (x, y) => (x + 4) * 1048576 + y + 4;
+
+// A Sub-Block's Nooks (in a City Block), the room its box leaves another, as rectangles of its box
+// (`nooks`), and the tiles of its box it needs (`need`: 1 each, row by row; null when it needs them
+// all): beside a copy narrower than the widest, a column on from its east edge (where its links
+// meet it), and above or below a column of copies shorter than the stack, a row away. It needs
+// the rest: its copies, the room beside them where belts turn and trunks run, the rows between
+// them, the rows above columns where trunks cross, the corridors between columns, the room east
+// of it for a Recipe Loop's splitters.
+function nooksOf(block, { padW, mw, cross, over, columns }) {
+  const { w, h, at, instances } = block;
+  const widest = Math.max(...instances.map(inst => inst.module.area.w));
+  const nooks = [];
+  for (let c = 0; c < columns; c++) {
+    const band = c * (mw + cross);
+    const copies = instances.filter(inst => (inst.column ?? 0) === c).map(inst => ({ ...at.get(inst.index), w: inst.module.area.w, h: inst.module.area.h }));
+    if (!copies.length) continue;
+    for (const p of copies) {
+      const x = p.x + p.w + 1, end = band + padW + widest;
+      if (end > x) nooks.push({ x, y: p.y, w: end - x, h: p.h });
+    }
+    const top = Math.min(...copies.map(p => p.y)) - 1, bottom = Math.max(...copies.map(p => p.y + p.h)) + 1;
+    if (top > over) nooks.push({ x: band, y: over, w: mw, h: top - over });
+    if (bottom < h) nooks.push({ x: band, y: bottom, w: mw, h: h - bottom });
+  }
+  if (!nooks.length) return { need: null, nooks };
+  const need = new Uint8Array(w * h).fill(1);
+  for (const r of nooks) for (let y = r.y; y < r.y + r.h; y++) need.fill(0, y * w + r.x, y * w + r.x + r.w);
+  return { need, nooks };
+}
+
+// Whether Sub-Block a standing at pa (its box's corner) keeps `gap` tiles from b standing at pb.
+// In a City Block one may stand in the other's Nook: only the tiles each needs keep apart (a
+// Sub-Block the search made room round keeps its whole box).
+function apart(a, pa, b, pb, gap) {
+  if (pa.x >= pb.x + b.w + gap || pb.x >= pa.x + a.w + gap || pa.y >= pb.y + b.h + gap || pb.y >= pa.y + a.h + gap) return true;
+  if (a.pad || b.pad || (!a.nooks.length && !b.nooks.length)) return false;
+  const mine = a.need ??= full(a), theirs = b.near ??= around(b, gap), tw = b.w + 2 * gap;
+  const x0 = Math.max(pa.x, pb.x - gap), x1 = Math.min(pa.x + a.w, pb.x + b.w + gap);
+  const y0 = Math.max(pa.y, pb.y - gap), y1 = Math.min(pa.y + a.h, pb.y + b.h + gap);
+  for (let y = y0; y < y1; y++) {
+    const r = (y - pa.y) * a.w - pa.x, t = (y - pb.y + gap) * tw - pb.x + gap;
+    for (let x = x0; x < x1; x++) if (mine[r + x] && theirs[t + x]) return false;
+  }
+  return true;
+}
+
+// Every tile of a box needed.
+const full = block => new Uint8Array(block.w * block.h).fill(1);
+
+// The tiles within g of one a Sub-Block needs, over its box grown by g on every side.
+function around(block, g) {
+  const { w, h } = block, need = block.need ?? full(block);
+  const gw = w + 2 * g, gh = h + 2 * g;
+  const across = new Uint8Array(gw * h);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) if (need[y * w + x]) across.fill(1, y * gw + x, y * gw + x + 2 * g + 1);
+  }
+  const out = new Uint8Array(gw * gh);
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < gw; x++) if (across[y * gw + x]) for (let dy = 0; dy <= 2 * g; dy++) out[(y + dy) * gw + x] = 1;
+  }
+  return out;
+}
 
 // Whether a module stacked right on top of another would touch it badly: pipes of two fluids
 // meeting across the seam, or a belt pointing across it into something.
