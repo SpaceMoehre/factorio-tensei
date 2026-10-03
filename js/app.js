@@ -524,10 +524,12 @@ function better(a, b) {
   return false;
 }
 
-// Maximize: the rate being tried, after the highest that fits so far.
-function trying({ rate, machines }) {
+// Maximize: the rate being tried, after the highest that fits so far (Filling: how many machines
+// more than that).
+function trying({ rate, machines, more }) {
   const item = state.goals.find(g => g.item && g.rate > 0)?.item;
-  built.trying = `Trying ${fmt(rate)}/min of ${item} (${count(machines, 'machine')})…`;
+  const filling = more ? `, ${fmt(more)} more than fit` : '';
+  built.trying = `${more ? 'Filling up: trying' : 'Trying'} ${fmt(rate)}/min of ${item} (${count(machines, 'machine')}${filling})…`;
   if (best) report(best.block, simulate(best.block).starvation, progress());
   else showStatus('', progress());
 }

@@ -10,9 +10,10 @@ import { LayoutError } from './layout/core.js';
 // starves nothing; a try ends as soon as a Sub-Block cannot be designed without Starvation, and
 // soon after its structured candidates when none fits (one whose first layouts do not fit seldom
 // finds one later). Which n to try comes from the Foretelling (planner below), then the bounds
-// close in from the outcomes.
+// close in from the outcomes; then Filling tries more machines than fit, ten at a time, halving.
 // Yields { type: 'foretell', rate, machines } (the highest rate foretold to fit, again whenever
-// the outcomes change it), { type: 'try', rate, machines } before each try and { type: 'best',
+// the outcomes change it), { type: 'try', rate, machines, more } before each try (`more`: while
+// Filling, how many machines more than the highest that fit) and { type: 'best',
 // block, score, tried, rate, machines, goals } for each that fits; returns { rate, machines,
 // goals, tried, failure, above } of the highest that fit (machines 0 when none did), `above` the
 // lowest rate tried that did not fit and why ({ rate, machines, reason }, null when none did not).
@@ -30,7 +31,7 @@ export function* maximize(goals, catalog, logistics, options) {
     const n = plan.next();
     if (n === null) break;
     const list = plan.goalsFor(n);
-    yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n) };
+    yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n), ...(plan.filling ? { more: n - plan.lo } : {}) };
     const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable });
     plan.record(n, outcome);
     tried += outcome.tried;
@@ -41,11 +42,6 @@ export function* maximize(goals, catalog, logistics, options) {
       failure = outcome.failure;
       if (!above || list[0].rate < above.rate) above = { rate: list[0].rate, machines: Math.ceil(n), reason: outcome.failure?.message ?? null };
     }
-  }
-  // One more machine than fit, not tried: foretold to overflow the City Block.
-  const next = Math.floor(plan.lo) + 1;
-  if (best && next < plan.hi && plan.goalsFor(next)[0].rate < (above?.rate ?? Infinity)) {
-    above = { rate: plan.goalsFor(next)[0].rate, machines: next, reason: 'its layout is foretold to take more room than the city block has' };
   }
   return { ...(best ?? { rate: 0, machines: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above };
 }
@@ -96,8 +92,9 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
 // next(): the n to try next, strictly between the highest that fit and the lowest that did not:
 // the highest whole number foretold to fit (right after a try that did not fit, or below one
 // whose designs starved, no more than halfway: the Foretelling knows nothing of designs that
-// starve, and was wrong); once the whole numbers meet, a few rates between, halving the gap;
-// null after.
+// starve, and was wrong); once it foretells no more, Filling: FILL machines more than the
+// highest that fit, again while they fit, half as many after each that does not; null after.
+// filling: how many more Filling adds (null before it starts).
 // record(n, outcome): a try's outcome (attempt's). foretold(): { rate, machines }. span(n): the
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates.
@@ -153,7 +150,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   const reach = 0.95 * room * (1 - broken(site, 2 * (largest + 5)) / 2);
   const fits = n => loose * modules(n) <= reach;
 
-  let lo = 0, hi = upper, failed = false, starves = false, between = 0, designable = 0;
+  let lo = 0, hi = upper, failed = false, starves = false, fill = null, designable = 0;
   // The least looseness the tries that found no room show (one at least that loose did not fit).
   let tightest = 0;
   // Once a layout found shows how loosely this City Block packs (its Sub-Blocks spanning so much
@@ -163,7 +160,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   let spread = null;
   const crowded = site.fixtures.some(f => overlap(f, inner) > 0);
   const overflows = n => !crowded && spread !== null && spread * modules(n) > 1.05 * room;
-  // The highest n foretold to fit (more machines never take less room).
+  // The highest n foretold to fit (more machines never take less room), and no fewer than fit.
   const foretold = () => {
     let a = Math.floor(lo), b = Math.ceil(hi);
     while (b - a > 1) {
@@ -171,6 +168,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
       if (fits(mid)) a = mid;
       else b = mid;
     }
+    a = Math.max(a, lo);
     return { machines: a, rate: goalsFor(a)[0].rate };
   };
   return {
@@ -183,35 +181,36 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     get hi() { return hi; },
     // The highest n whose Sub-Blocks were all designed without Starvation.
     get designable() { return designable; },
+    get filling() { return fill; },
     foretold,
     next() {
-      // Whole numbers above the highest that fit, below the lowest that did not and the first
-      // that would overflow the room (more machines never take less room).
-      let top = Math.ceil(hi);
-      for (let a = Math.floor(lo); top - a > 1;) {
-        const mid = Math.floor((a + top) / 2);
-        if (overflows(mid)) top = mid;
-        else a = mid;
+      if (fill === null) {
+        // Whole numbers above the highest that fit, below the lowest that did not and the first
+        // that would overflow the room (more machines never take less room).
+        let top = Math.ceil(hi);
+        for (let a = Math.floor(lo); top - a > 1;) {
+          const mid = Math.floor((a + top) / 2);
+          if (overflows(mid)) top = mid;
+          else a = mid;
+        }
+        const low = Math.floor(lo) + 1;
+        if (low < top) {
+          // Only a try tells whether the one above the highest that fit does: at least that one.
+          let want = Math.max(low, foretold().machines);
+          if (failed || starves) want = Math.min(want, Math.ceil((lo + hi) / 2));
+          return Math.min(want, top - 1);
+        }
+        fill = FILL;
       }
-      const low = Math.floor(lo) + 1;
-      if (low < top) {
-        // Only a try tells whether the one above the highest that fit does: at least that one.
-        let want = Math.max(low, foretold().machines);
-        if (failed || starves) want = Math.min(want, Math.ceil((lo + hi) / 2));
-        return Math.min(want, top - 1);
-      }
-      // Between the highest that fit and the next whole number (or the lowest that did not): a
-      // few rates, halving the gap, the last machine slower — fewer machines of the other
-      // Sub-Blocks may fit where the next whole number's do not, and machines that starve at full
-      // speed may not a little slower. Not one foretold to overflow the room.
-      for (;;) {
-        const ceiling = Math.min(hi, top);
-        if (between >= BETWEEN || ceiling - lo <= 1 / 8) return null;
-        between++;
-        const mid = (lo + ceiling) / 2;
-        if (!overflows(mid)) return mid;
-        hi = mid;
-      }
+      // Filling: FILL machines more than the highest that fit, again while they fit; half as many
+      // after each that does not (or would be no fewer than the lowest that did not), down to a
+      // quarter machine, the last machine slower (the other Sub-Blocks need fewer machines than
+      // the next whole number's, and machines that starve at full speed may not a little
+      // slower). Never held back by the Foretelling: a layout found may pack looser than the
+      // next, and only a try tells.
+      const rate = n => goalsFor(n)[0].rate;
+      for (; fill >= LEAST; fill /= 2) if (lo + fill < hi && rate(lo + fill) > rate(lo)) return lo + fill;
+      return null;
     },
     record(n, outcome) {
       for (const d of outcome.designed ?? []) if (d.area) tiles.set(d.item, d.area / d.count);
@@ -254,8 +253,9 @@ function broken(site, side) {
   return hit / all;
 }
 
-// Rates tried between whole numbers of machines, at most.
-const BETWEEN = 2;
+// Filling: how many machines more than the highest that fit it first tries, and the fewest.
+const FILL = 10;
+const LEAST = 1 / 4;
 
 function overlap(a, b) {
   const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);

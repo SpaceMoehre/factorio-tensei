@@ -11,3 +11,5 @@ The Foretelling says up front how much room n machines' layout takes: tiles per 
 A try looks only for a layout without Starvation. Designs and layouts that starve are passed over before they are built. A try ends as soon as a Sub-Block's least starving design starves, or when none of its designs without Starvation fits inside the City Block at all. Above the highest number designed without Starvation, the Side Output's Sub-Blocks are checked first; they are the busiest and the likeliest to starve. A try gives up a few candidates after its structured ones. Its routing gives up when its time is out, and designs too big for the City Block are passed over before they are routed.
 
 This is not a proven maximum. A tighter packing could fit the number the Foretelling skips. Don't run tries in parallel workers: two at once slowed the try that decides the outcome by a third, and the Foretelling usually makes the second one unnecessary.
+
+Later, Maximize goes on past where the Foretelling stops, ten machines more at a time, halving after each that does not fit; that replaces the two rates in between (ADR 0015).

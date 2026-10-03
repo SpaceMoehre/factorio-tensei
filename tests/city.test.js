@@ -169,7 +169,7 @@ test('Maximize finds a higher rate that fits, each layout found valid, inside an
 const pyItems = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
 const pySelections = Object.fromEntries(pyItems.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
 
-test('the Foretelling: the first try is the most machines it foretells to fit; layouts found and tries that did not fit correct it', () => {
+test("the Foretelling: the first try is the most machines it foretells to fit; layouts found and tries that did not fit correct it; Filling tries more than it foretells", () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
   const options = { made: pyItems.slice(1), selections: pySelections, site };
   const plan = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, options);
@@ -181,16 +181,23 @@ test('the Foretelling: the first try is the most machines it foretells to fit; l
   assert.equal(plan.asked, 1);
   assert.ok(plan.span(1) < plan.span(first) && plan.span(first) < plan.room);
 
-  // A layout that fits, its Sub-Blocks spanning all but a twentieth of the room: one machine
-  // more would span more than all of it, so it is not tried — only rates between, the last
-  // machine slower, halving the gap.
-  plan.record(first, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
+  // A layout that fits, its Sub-Blocks spanning all but a twentieth of the room: the Foretelling
+  // says one machine more would span more than all of it, so it tries no more whole numbers.
+  // Filling does: ten machines more, again while they fit, half as many after each that does
+  // not, down to a quarter machine (the last machine slower). Here up to 6¼ more fit.
+  const fit = n => plan.record(n, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
+  fit(first);
   assert.equal(plan.lo, first);
   assert.ok(plan.span(first + 1) > 1.05 * plan.room);
-  const between = plan.next();
-  assert.ok(between > first && between < first + 1, `then ${between}`);
-  plan.record(between, { block: null, starves: false, designed: null, tried: 12 });
-  assert.ok(plan.next() < between);
+  assert.ok(plan.hi > first + 10);
+  const more = [];
+  for (let n = plan.next(); n !== null; n = plan.next()) {
+    more.push(n - first);
+    if (n - first <= 6.25) fit(n);
+    else plan.record(n, { block: null, starves: false, designed: null, tried: 12 });
+  }
+  assert.deepEqual(more, [10, 5, 7.5, 6.25, 6.875, 6.5625]);
+  assert.equal(plan.lo, first + 6.25);
 
   // A try that did not fit (for want of room): the Foretelling no longer says it fits, and the
   // next try is no more than halfway down.
