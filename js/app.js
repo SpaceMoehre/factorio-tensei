@@ -13,7 +13,11 @@ const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter'
 const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop that cannot feed itself (a fluid, or one taking more than it makes)' };
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
-const catalog = await fetch('data/catalog.json').then(r => r.json());
+const raw = await fetch('data/catalog.json').then(r => r.arrayBuffer());
+const catalog = JSON.parse(new TextDecoder().decode(raw));
+// The catalog's fingerprint in a shared setup: the first 12 hex digits of its SHA-256.
+let catalogId = null;
+crypto.subtle?.digest('SHA-256', raw).then(d => { catalogId = [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12); }, () => {});
 // A catalog built before v2 has no inserters, power draw or fuel; the search needs all three.
 const outdated = !catalog.inserters || !catalog.fuels;
 if (outdated) Object.assign(catalog, { inserters: {}, fuels: {} });
@@ -122,6 +126,8 @@ $('calculate').addEventListener('click', build);
 $('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
 $('copy-json').addEventListener('click', () => copy($('bp-json').value, $('copy-json')));
+$('copy-setup').addEventListener('click', () => copy($('setup-json').value = setupText(), $('copy-setup')));
+$('setup').addEventListener('toggle', () => { if ($('setup').open) $('setup-json').value = setupText(); });
 $('zoom-in').addEventListener('click', () => map?.zoom(1.4));
 $('zoom-out').addEventListener('click', () => map?.zoom(1 / 1.4));
 $('fit').addEventListener('click', () => map?.fit());
@@ -669,6 +675,25 @@ function showStatus(kind, text) {
   const status = $('status');
   status.className = kind ? `status ${kind}` : 'status';
   status.textContent = text;
+}
+
+// The setup to share when describing a problem (Copy setup): the page's saved state (Goals, the
+// items made here, Recipe Selections, logistics, City Block), the Production Chain it gives, the
+// catalog's fingerprint and what the last build said.
+function setupText() {
+  const round = n => Math.round(n * 100) / 100;
+  const steps = chain?.entries?.map(({ goal, selection }) => ({ item: goal.item, rate: round(goal.rate), ...selection }));
+  const result = $('status').textContent ? {
+    status: $('status').textContent,
+    ...($('area').hidden ? {} : { map: $('area').textContent }),
+    ...(best ? { subBlocks: best.block.subBlocks.map(sb => ({ item: sb.item, machines: sb.count, copies: sb.copies, box: `${sb.x},${sb.y} ${sb.w}×${sb.h}` })) } : {}),
+  } : null;
+  return JSON.stringify({
+    catalog: catalogId, ...state,
+    chain: chain?.error ? { error: chain.error } : chain && { steps, train: chain.trainInputs.map(t => ({ ...t, rate: round(t.rate) })), loops: chain.loops.map(l => ({ ...l, rate: round(l.rate) })) },
+    ...(state.city.on && !$('city-foretell').hidden ? { foretold: $('city-foretell').textContent } : {}),
+    result,
+  }, null, 2);
 }
 
 async function copy(text, button) {

@@ -145,6 +145,11 @@
     </div>
     <div id="status"></div>
     <div class="row" id="apply-row" hidden><button id="apply-rate" type="button">Use this rate</button></div>
+    <div class="row"><button id="copy-setup" type="button" title="The goals, production chain, logistics, city block and what the last build said, as JSON: paste it when describing a problem">Copy setup</button></div>
+    <details id="setup">
+      <summary>Setup JSON</summary>
+      <textarea id="setup-json" readonly aria-label="Setup JSON" style="height:160px"></textarea>
+    </details>
     <div id="results" hidden>
       <h2>Side Input (train in)</h2>
       <ul class="flows" id="side-input"></ul>
