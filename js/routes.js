@@ -51,6 +51,16 @@ export function buildRoutes(plan, flows, laneCapacity) {
       });
     }
   });
+  // A Recipe Loop's feedback: the producer's item back into the Sub-Block taking it, a belt of its
+  // own like a Side Input's (never merged with another), fed from the producer's output through
+  // a splitter that gives it priority (compose.js); by train where that finds no room.
+  // Each of its belts carries no more than one of the producer's output belts brings (it is fed
+  // from one): the producer's output over as few belts as carry it.
+  for (const f of flows.feedback ?? []) {
+    const made = plan[f.from].outputs.find(o => o.name === f.item).rate;
+    const perBelt = made / Math.max(1, Math.ceil(made / (2 * laneCapacity) - 1e-9));
+    add({ kind: 'belt', source: 'side-input', loop: { from: f.from }, sink: null, consumers: [f.to], items: [saturated(f.item, f.rate, Math.min(2 * laneCapacity, perBelt))] });
+  }
   return routes;
 }
 

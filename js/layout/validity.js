@@ -411,12 +411,13 @@ function startsAtWestEdge(block, route) {
   return route.pieces[0].x === block.bounds.x ? [] : [`route ${route.id} does not start at the west edge`];
 }
 
-// A Side Input's belt in a Fan-out starts at a splitter on the belt from the west edge.
+// A Side Input's belt in a Fan-out starts at a splitter on the belt from the west edge; a Recipe
+// Loop's feedback, at one on its producer's output belt.
 function fedBySplitter(block, route) {
   const [s] = route.pieces;
   const trunk = block.routes[route.fedBy];
   if (s.kind !== 'splitter' || !trunk.pieces.some(p => p.kind === 'splitter' && p.x === s.x && p.y === s.y)) return [`route ${route.id} does not start at a splitter of route ${route.fedBy}`];
-  return startsAtWestEdge(block, trunk);
+  return trunk.source === 'side-input' ? startsAtWestEdge(block, trunk) : [];
 }
 
 // Every rule, for every route and machine of a Compound Block.

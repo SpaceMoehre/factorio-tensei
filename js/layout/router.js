@@ -13,7 +13,10 @@ const GREED = 1.5;
 const EXPANSIONS_MAX = 20000;
 const EXPANSIONS_PER_STEP = 100;
 
-export class RoutingError extends Error {}
+export class RoutingError extends Error {
+  /** @type {number[] | undefined} the Sub-Blocks a link that found no room runs between */
+  steps;
+}
 
 // Routes a belt through its waypoints (a chain), committing each leg to the grid as it goes.
 // With `straight`, the belt goes straight on through every waypoint (or dives or surfaces

@@ -46,11 +46,11 @@ export function squeezeEntities(entities) {
   for (let pass = 0; pass < 200; pass++) {
     let any = false;
     for (const axis of ['x', 'y']) {
-      for (const u of removableLines(list, axis)) {
-        list = removeLine(list, axis, u);
-        log.push({ axis, u });
-        any = true;
-      }
+      const lines = removableLines(list, axis);
+      if (!lines.length) continue;
+      list = removeLines(list, axis, lines);
+      for (const u of lines) log.push({ axis, u });
+      any = true;
     }
     if (!any) break;
   }
@@ -70,15 +70,21 @@ export function squeezed(log, x, y) {
 // The removable lines along one axis that are not next to each other, highest first.
 function removableLines(entities, axis) {
   if (!entities.length) return [];
-  const map = new Map();
-  for (const e of entities) {
-    for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) map.set(key(e.x + dx, e.y + dy), e);
-  }
-  const reach = inserterReach(entities).map(r => r[axis]);
   const box = extent(entities);
+  // Which entity stands on each tile, by tile index inside the extent (0: none).
+  const cells = new Int32Array(box.w * box.h);
+  entities.forEach((e, i) => {
+    for (let dy = 0; dy < e.h; dy++) {
+      const row = (e.y + dy - box.y) * box.w + e.x - box.x;
+      cells.fill(i + 1, row, row + e.w);
+    }
+  });
+  const tile = (x, y) => (x < box.x || y < box.y || x >= box.x + box.w || y >= box.y + box.h ? undefined
+    : entities[cells[(y - box.y) * box.w + x - box.x] - 1]);
+  const reach = inserterReach(entities).map(r => r[axis]);
   const [lo, hi] = axis === 'x' ? [box.x, box.x + box.w - 1] : [box.y, box.y + box.h - 1];
   const across = axis === 'x' ? [box.y, box.y + box.h - 1] : [box.x, box.x + box.w - 1];
-  const at = (u, v) => map.get(axis === 'x' ? key(u, v) : key(v, u));
+  const at = (u, v) => (axis === 'x' ? tile(u, v) : tile(v, u));
   const lines = [];
   for (let u = hi - 1; u > lo; u--) {
     if (lines.length && lines.at(-1) === u + 1) continue;
@@ -140,16 +146,34 @@ function inserterReach(entities) {
   });
 }
 
-// The entities off line u, everything past it moved in by one, pointers to tiles past it too.
-function removeLine(entities, axis, u) {
-  const kept = entities.filter(e => (axis === 'x' ? e.x : e.y) !== u);
-  for (const e of kept) {
-    if (axis === 'x' && e.x > u) e.x--;
-    if (axis === 'y' && e.y > u) e.y--;
+// The entities off the lines (highest first, none next to another), everything past each moved
+// in by one, pointers to tiles past them too: as if taken out one at a time, highest first.
+function removeLines(entities, axis, lines) {
+  const ascending = [...lines].reverse();
+  // How many of the lines lie below v (binary search); -1 when v lies on one.
+  const below = v => {
+    let lo = 0, hi = ascending.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (ascending[mid] < v) lo = mid + 1;
+      else hi = mid;
+    }
+    return ascending[lo] === v ? -1 : lo;
+  };
+  const kept = [];
+  for (const e of entities) {
+    const shift = below(axis === 'x' ? e.x : e.y);
+    if (shift < 0) continue;
+    if (axis === 'x') e.x -= shift;
+    else e.y -= shift;
     if (typeof e.out === 'string') {
       const [ox, oy] = e.out.split(',').map(Number);
-      e.out = axis === 'x' ? key(ox > u ? ox - 1 : ox, oy) : key(ox, oy > u ? oy - 1 : oy);
+      const v = axis === 'x' ? ox : oy, n = below(v);
+      // A pointer onto a line taken out ends up on the tile that comes in to it.
+      const moved = v - (n < 0 ? ascending.filter(u => u < v).length : n);
+      e.out = axis === 'x' ? key(moved, oy) : key(ox, moved);
     }
+    kept.push(e);
   }
   return kept;
 }

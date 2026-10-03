@@ -68,6 +68,13 @@ export function compose(ctx, prepared, positions, layout) {
   // to join, three columns each so trunks of two fluids can pass each other.
   const { site = null } = ctx;
   const area = site ? { ...site.inner } : extentOf([...placed, ...(positions.bounds ? [positions.bounds] : [])], layout.margin);
+  // Standing on its own, a row along the top for each Recipe Loop's feedback to run back west
+  // on, from its producer to the Sub-Block it feeds.
+  const feeds = routes.filter(r => r.tapOf !== undefined && !layout.plain);
+  if (!site) {
+    area.y -= feeds.length;
+    area.h += feeds.length;
+  }
   for (const side of site ? [] : ['W', 'E']) {
     const edge = side === 'W' ? area.x : area.x + area.w - 1;
     const trunks = routes.filter(r => r.kind === 'pipe' && r.stubs.length > 1 && r.stubs.some(st => st.side === side
@@ -159,6 +166,7 @@ export function compose(ctx, prepared, positions, layout) {
         });
       }
     }
+    if (!site) feeds.forEach((r, k) => { for (let x = area.x; x < area.x + area.w; x++) hold(grid, x, area.y + k, r.id); });
     // The tile before each copy's entry and after its exit belongs to the link that meets it
     // there: no other link may pass in front of it.
     for (const route of routes.filter(r => r.kind === 'belt')) {
@@ -193,9 +201,12 @@ export function compose(ctx, prepared, positions, layout) {
           if (route.id === route.fan.family[0]) tasks.push({ route, slot: k, fan: route.fan.family });
           return;
         }
-        tasks.push({ route, slot: k });
+        // A Recipe Loop's feedback starts at its splitter on the producer's output: routed with
+        // that link (taps).
+        if (route.tapOf !== undefined && k === 0 && !layout.plain) return;
+        tasks.push({ route, slot: k, ...(route.taps && k === route.tapAt && !layout.plain ? { taps: true } : {}) });
       });
-      if (route.sink === 'side-output') tasks.push({ route, slot: route.slots.length });
+      if (route.sink === 'side-output') tasks.push({ route, slot: route.slots.length, ...(route.taps && route.tapAt === route.slots.length && !layout.plain ? { taps: true } : {}) });
     }
     return tasks;
   };
@@ -220,6 +231,9 @@ export function compose(ctx, prepared, positions, layout) {
   // row).
   const taskRank = task => {
     const { route, slot: k } = task;
+    // A Recipe Loop's feedback runs back across the block (along its row on top), after every
+    // other link.
+    if (task.taps) return [5, 0];
     if (k > 0 && k < route.slots.length && stacked(route.slots[k].inst, route.slots[k - 1].inst)) {
       const ends = endsOf(task);
       const goal = /** @type {{ y: number }} */ (ends?.goal);
@@ -276,6 +290,8 @@ export function compose(ctx, prepared, positions, layout) {
   // (items) and the belt it is fed from (fedBy, the trunk), or for a belt from the west edge,
   // what it brings (brings).
   let fanned = new Map();
+  // A Recipe Loop's feedback belts routed from their splitters.
+  let tapped = new Set();
   const splitterName = beltSpec.splitter ?? beltSpec.name.replace(/transport-belt$/, 'splitter');
   for (;;) {
     const { grid, entities, pieces } = placeAll();
@@ -291,6 +307,7 @@ export function compose(ctx, prepared, positions, layout) {
     const links = new Map();
     balanced = new Set();
     fanned = new Map();
+    tapped = new Set();
     let failed = null;
     for (const task of order) {
       // A search out of time gives up on the layout rather than route on.
@@ -315,6 +332,16 @@ export function compose(ctx, prepared, positions, layout) {
           }
           continue;
         }
+        if (task.taps) {
+          // Without room for the splitters, the link on its own and each feedback by train.
+          const feeds = task.route.taps.map(id => routes[id]);
+          const legs = routeTaps(grid, task, feeds) ?? [[task.route.id, task.slot, link(grid, task)], ...feeds.map(r => [r.id, 0, link(grid, { route: r, slot: 0 })])];
+          for (const [id, k, leg] of legs) {
+            if (!links.has(id)) links.set(id, new Map());
+            links.get(id).set(k, leg);
+          }
+          continue;
+        }
         if (!links.has(task.route.id)) links.set(task.route.id, new Map());
         links.get(task.route.id).set(task.slot, link(grid, task));
       } catch (e) {
@@ -328,7 +355,22 @@ export function compose(ctx, prepared, positions, layout) {
       return finish(grid, entities, pieces);
     }
     order = [failed.task, ...order.filter(t => t !== failed.task)];
-    if (tried.has(order.map(keyOf).join()) || tried.size > REROUTES) throw failed.error;
+    // The Sub-Blocks the link runs between go with the error: the search makes room round them.
+    if (tried.has(order.map(keyOf).join()) || tried.size > REROUTES) throw Object.assign(failed.error, { steps: stepsOf(failed.task) });
+  }
+
+  // The Sub-Blocks a task's link runs between: the copies it leaves and enters (a Side Input:
+  // the one it feeds; one to the east edge: the one it leaves; a fluid: every one it joins;
+  // splitters: every belt's through them).
+  function stepsOf(task) {
+    if (task.pipe !== undefined) return [...new Set(routes[task.pipe].stubs.map(st => st.inst.step))];
+    const ends = (route, k) => [route.slots[k - 1], route.slots[k]].filter(Boolean).map(slot => slot.inst.step);
+    const { route, slot: k } = task;
+    const out = [...ends(route, k)];
+    if (task.split) out.push(...ends(routes[route.splitter.with], routes[route.splitter.with].splitter.at));
+    for (const id of task.fan ?? []) out.push(...ends(routes[id], 0));
+    for (const id of task.taps ? route.taps : []) out.push(...ends(routes[id], 0));
+    return [...new Set(out)];
   }
 
   // A belt link on its own (a task): from the train (in a City Block through the approach
@@ -338,6 +380,99 @@ export function compose(ctx, prepared, positions, layout) {
     if (!ends) return [];
     return task.slot === 0 && approach > area.x ? approached(grid, task.route.id, ends.goal)
       : routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal }, belts);
+  }
+
+  // A Recipe Loop's feedback: the producer's output belt's link after its producers (task) runs
+  // through a splitter for each feedback belt (feeds), standing a few tiles on from the
+  // producers and giving its feedback side priority, so the loop takes what it needs before the
+  // rest goes on (to the train or the belt's consumers). A few spots are tried for each, those
+  // before it tried again where one leaves the rest no way on. Returns [routeId, slot, pieces]
+  // for the link and each feedback belt's first link; null when no spots let every leg through
+  // (the grid as it was).
+  function routeTaps(grid, task, feeds) {
+    const { route } = task;
+    const ends = endsOf(task);
+    if (!ends) return null;
+    const held = [];
+    const reserve = (x, y, id) => {
+      held.push([x, y, grid.holder(x, y)]);
+      grid.reserve(x, y, id);
+    };
+    const undo = (to, count) => {
+      grid.restore(to);
+      while (held.length > count) {
+        const [x, y, before] = held.pop();
+        if (before === undefined) grid.unreserve(x, y);
+        else grid.reserve(x, y, before);
+      }
+    };
+    const ids = new Set([route.id, ...feeds.map(r => r.id)]);
+    // A tile free for belt `id`, no other belt's piece pointing into it.
+    const open = (x, y, id) => grid.inBounds(x, y) && !grid.at(x, y) && [undefined, id].includes(grid.holder(x, y))
+      && Object.values(VEC).every(([dx, dy]) => {
+        const n = grid.at(x + dx, y + dy);
+        return n?.out !== key(x, y) || ids.has(n.route);
+      });
+    const room = (x, y) => open(x, y, route.id);
+    const entryOf = r => ({ x: r.slots[0].pieces[0].x, y: r.slots[0].pieces[0].y, a: r.slots[0].part.dir ?? E });
+    const line = [];
+    const off = new Map();
+    let budget = FAN_TRIES * (feeds.length + 1);
+    const tap = (j, from) => {
+      if (j === feeds.length) {
+        line.push(...routeLink(grid, { id: route.id, starts: [from], goal: ends.goal }, belts));
+        return true;
+      }
+      const feed = feeds[j], entry = entryOf(feed);
+      // Splitters facing east, a few tiles on, the line coming in on either side; the feedback
+      // leaves on the side toward its entry first.
+      const spots = [];
+      for (let x = from.x + 1; x <= from.x + FAN_REACH; x++) {
+        for (const y of [from.y - 1, from.y, from.y - 2, from.y + 1]) {
+          if (!room(x, y) || !room(x, y + 1)) continue;
+          for (const top of entry.y <= from.y ? [true, false] : [false, true]) {
+            const branch = { x: x + 1, y: top ? y : y + 1 }, on = { x: x + 1, y: top ? y + 1 : y };
+            if (!open(branch.x, branch.y, feed.id) || !open(on.x, on.y, route.id)) continue;
+            for (const lane of [0, 1]) if (open(x - 1, y + lane, route.id)) spots.push({ x, y, top, lane, branch, on });
+          }
+        }
+      }
+      for (const spot of spots) {
+        if (budget-- <= 0) break;
+        const before = grid.snapshot(), count = held.length, length = line.length;
+        try {
+          reserve(spot.x - 1, spot.y + spot.lane, route.id);
+          reserve(spot.branch.x, spot.branch.y, feed.id);
+          reserve(spot.on.x, spot.on.y, route.id);
+          // Output priority: the feedback's side (left of a splitter facing east is north).
+          const splitter = { name: splitterName, kind: 'splitter', x: spot.x, y: spot.y, w: 1, h: 2, direction: E, travel: E, priority: spot.top ? 'left' : 'right' };
+          grid.place(splitter);
+          const leg = routeLink(grid, { id: feed.id, starts: [{ ...spot.branch, a: E }], goal: entry }, belts);
+          line.push(...routeLink(grid, { id: route.id, starts: [from], goal: { x: spot.x, y: spot.y + spot.lane, a: E } }, belts), splitter);
+          off.set(feed.id, [splitter, ...leg]);
+          if (tap(j + 1, { ...spot.on, a: E })) return true;
+        } catch (e) {
+          if (!(e instanceof RoutingError)) throw e;
+        }
+        undo(before, count);
+        line.length = length;
+        off.delete(feed.id);
+      }
+      return false;
+    };
+    const saved = grid.snapshot();
+    let done = false;
+    try {
+      done = tap(0, ends.starts[0]);
+    } catch (e) {
+      if (!(e instanceof RoutingError)) throw e;
+    }
+    if (!done) {
+      undo(saved, 0);
+      return null;
+    }
+    for (const r of feeds) tapped.add(r.id);
+    return [[route.id, task.slot, line], ...feeds.map(r => [r.id, 0, off.get(r.id)])];
   }
 
   // A Fan-out's run: through its splitters; else, where belts join it, as runs without (each
@@ -381,13 +516,14 @@ export function compose(ctx, prepared, positions, layout) {
       }
     };
     const family = new Set(members.map(r => r.id));
-    // A tile free for belt `id`; a splitter tile free for the belt it sends off, and no other
-    // belt's piece pointing into it.
-    const open = (x, y, id) => grid.inBounds(x, y) && !grid.at(x, y) && [undefined, id].includes(grid.holder(x, y));
-    const room = (x, y, id) => open(x, y, id) && Object.values(VEC).every(([dx, dy]) => {
-      const n = grid.at(x + dx, y + dy);
-      return n?.out !== key(x, y) || family.has(n.route);
-    });
+    // A tile free for belt `id`, no other belt's piece pointing into it (a splitter tile: free for
+    // the belt it sends off).
+    const open = (x, y, id) => grid.inBounds(x, y) && !grid.at(x, y) && [undefined, id].includes(grid.holder(x, y))
+      && Object.values(VEC).every(([dx, dy]) => {
+        const n = grid.at(x + dx, y + dy);
+        return n?.out !== key(x, y) || family.has(n.route);
+      });
+    const room = open;
     // From the west edge (in a City Block through the approach column) into a splitter.
     const fromWest = (id, goal) => (goal.x > approach + 1 && approach > area.x ? approached(grid, id, goal)
       : routeLink(grid, { id, starts: westEdge(area), goal }, belts));
@@ -595,11 +731,16 @@ export function compose(ctx, prepared, positions, layout) {
 
   function finish(grid, entities, pieces) {
     const result = routes.map(r => {
-      const { slots, stubs, splitter, fan, ...rest } = r;
+      const { slots, stubs, splitter, fan, taps, tapAt, tapOf, ...rest } = r;
+      // A Recipe Loop's feedback fed from its splitter, else by train (all a belt brings).
+      const fed = taps?.filter(id => tapped.has(id)) ?? [];
+      const loop = tapOf === undefined ? {} : tapped.has(r.id) ? { fedBy: tapOf } : { items: r.items.map(i => ({ ...i, supply: i.capacity })) };
       return {
         ...rest,
         ...(balanced.has(r.id) ? { items: splitter.items, balancedWith: splitter.with } : {}),
         ...(fanned.get(r.id) ?? {}),
+        ...loop,
+        ...(fed.length ? { taps: fed } : {}),
         pieces: pieces[r.id],
       };
     });
@@ -711,7 +852,11 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const bases = [...new Set(slots.flatMap(s => s.part.routeIds))];
       const items = bases.flatMap(id => ctx.routes[id].items);
       const perLane = items.length > 1 || slots.some(s => s.part.routeIds.length > 1);
-      const capacity = perLane ? laneCapacity : 2 * laneCapacity;
+      // A Recipe Loop's feedback belt takes no more than the fullest of its producer's output
+      // belts brings (each is fed from one).
+      const fed = base.loop ? routes.filter(r => r.kind === 'belt' && r.source === base.loop.from && !r.splitter)
+        .map(r => r.items.find(i => i.item === base.items[0].item)?.rate ?? 0) : [];
+      const capacity = Math.min(perLane ? laneCapacity : 2 * laneCapacity, ...(fed.length ? [Math.max(...fed)] : []));
       const demand = slot => Object.fromEntries(items.map(i => [i.item, flowOf(slot.inst.step, i.item, 'input') * shareOf(slot)]));
       const groups = [];
       for (const slot of slots) {
@@ -731,7 +876,8 @@ function groupRoutes(ctx, instances, laneCapacity) {
         }));
         routes.push(beltRoute(routes.length, base, used, its, group, plan));
       }
-      if (base.consumers.length === 1) fanOut(routes.slice(first));
+      if (base.loop) tapLoop(routes, routes.slice(first), base);
+      else if (base.consumers.length === 1) fanOut(routes.slice(first));
       continue;
     }
     // An output: its producer's parts, then (for an Internal Path) its consumers' parts. The belt
@@ -897,6 +1043,26 @@ function groupRoutes(ctx, instances, laneCapacity) {
     });
   }
   return routes;
+}
+
+// A Recipe Loop's feedback belts, each fed from one of its producer's output belts (no splitter
+// pair on it), the one with the most still to give: a splitter on that belt's link after its
+// producers sends the feedback off first (route.taps on the output belt, at slot tapAt;
+// route.tapOf on the feedback, its items with what the output belt has for it).
+function tapLoop(routes, feeds, base) {
+  const { item } = base.items[0];
+  const outs = routes.filter(r => r.kind === 'belt' && r.source === base.loop.from && !r.splitter && r.items.some(i => i.item === item))
+    .map(r => ({ r, left: r.items.find(i => i.item === item).rate }));
+  for (const feed of feeds) {
+    const out = outs.sort((a, b) => b.left - a.left)[0];
+    if (!out) return;
+    const at = out.r.slots.findIndex(slot => slot.inst.step !== out.r.source);
+    out.r.taps = [...(out.r.taps ?? []), feed.id];
+    out.r.tapAt = at < 0 ? out.r.slots.length : at;
+    feed.tapOf = out.r.id;
+    feed.items = feed.items.map(i => ({ ...i, supply: Math.max(0, Math.min(i.capacity, out.left)) }));
+    out.left -= feed.items[0].rate;
+  }
 }
 
 // Fan-out: a Side Input's belts into the copies of a Sub-Block (each copy's own, or a run of

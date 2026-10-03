@@ -1,4 +1,4 @@
-import { context, designStep, designOf, random, breakoutDesign, detachCopy } from './design.js';
+import { context, designStep, designOf, revive, random, breakoutDesign, detachCopy } from './design.js';
 import { LayoutError } from './layout/core.js';
 import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
 import { placeBlocks, roomFor } from './layout/place.js';
@@ -28,7 +28,8 @@ import { compactness } from './layout/score.js';
 //            Sub-Blocks are designed, with each one's item, Count and its best design's area) }
 // Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }.
 export function* search(entries, catalog, logistics, options = {}) {
-  const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null } = options;
+  const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null, strategy = 'search' } = options;
+  const spread = strategy === 'spread';
   const rng = random(seed);
   const ctx = context(entries, catalog, logistics, site);
   // Leaves first: every Sub-Block before the ones it feeds. Looking for a layout without
@@ -48,7 +49,9 @@ export function* search(entries, catalog, logistics, options = {}) {
   }
   const designs = [];
   for (const i of order) {
-    designs[i] = designStep(ctx, i, rng, { now, deadline });
+    // Designed already, each Sub-Block on its own (`designs`: the candidates of each, built
+    // elsewhere and handed over): built again only where the search tries one not built yet.
+    designs[i] = options.designs?.[i] ? revive(ctx, i, options.designs[i], rng) : designStep(ctx, i, rng, { now, deadline });
     const least = designOf(designs[i][0])?.trouble ?? 0;
     if (perfect && least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
     // In a City Block, a Sub-Block none of whose designs without Starvation fits inside it at all
@@ -122,10 +125,12 @@ export function* search(entries, catalog, logistics, options = {}) {
   }
   const first = { choice, columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {}, shift: {} };
   // Looking for a layout without Starvation in a City Block, the candidates in columns go first:
-  // they pack tighter, and the first that fits ends the search.
-  const swept = [first, ...sweep(first, designs, site)];
+  // they pack tighter, and the first that fits ends the search. Spread (ADR 0013): a wide buffer
+  // round every Sub-Block first, so its links find room, then ever tighter.
+  const buffer = spread ? Math.min(16, Math.max(4, 2 + ctx.routes.filter(r => r.kind === 'belt').length)) : 0;
+  const swept = spread ? loosened(first, buffer) : [first, ...sweep(first, designs, site)];
   const queue = perfect && site ? [...swept.filter(c => c.layers), ...swept.filter(c => !c.layers)] : swept;
-  const structured = queue.length;
+  let structured = queue.length;
   // A design that starves cannot make a layout without Starvation: its estimate before routing
   // already shows it (routing only adds), its trouble once routed. Nor can one too big for the
   // City Block (by its routed module, else its core).
@@ -163,10 +168,22 @@ export function* search(entries, catalog, logistics, options = {}) {
     // is placed.
     ready.least ??= Math.round(leastStarvation(ctx, ready) * 1000) / 1000;
     if ((best && ready.least > best.score[0]) || (perfect && ready.least > 0)) continue;
-    let block, placed;
+    let block, placed, boxes, composed = null;
+    // A link that found no room makes room (spacedOut): the same candidate is tried next with
+    // its Sub-Blocks spaced out round the link (the user's rule: a belt that cannot be connected
+    // spaces the blocks out).
+    let roomy = false;
+    const makeRoom = steps => {
+      const roomier = roomy ? null : spacedOut(candidate, steps);
+      roomy = true;
+      if (!roomier) return;
+      queue.unshift(roomier);
+      structured++;
+    };
     try {
       const positions = placeBlocks(ctx, ready, candidate);
       placed = positions.bounds.w * positions.bounds.h;
+      boxes = positions.boxes;
       // A Breakout trial packs no looser than the best, or it is not worth routing. Where one
       // machine broken out does, more of that Sub-Block's are tried too.
       const trial = trials.get(candidate);
@@ -174,13 +191,13 @@ export function* search(entries, catalog, logistics, options = {}) {
       if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
       // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
       const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => now() > deadline : null };
-      let composed;
       try {
         composed = compose(ctx, ready, positions, layout);
       } catch (e) {
+        if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
         // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
-        // else without splitters.
-        if (!(e instanceof RoutingError) || !ready.routes.some(r => r.splitter || r.fan)) throw e;
+        // else without splitters (a Recipe Loop's feedback by train) — and the roomier one next.
+        if (!(e instanceof RoutingError) || !ready.routes.some(r => r.splitter || r.fan || r.taps)) throw e;
         try {
           if (!ready.routes.some(r => r.fan)) throw e;
           composed = compose(ctx, ready, positions, { ...layout, fansLast: true });
@@ -192,6 +209,9 @@ export function* search(entries, catalog, logistics, options = {}) {
       block = finishBlock(composed, catalog, logistics);
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+      // No pole for a machine there: room round the Sub-Blocks about it.
+      if (e instanceof PowerError && e.at && composed) makeRoom(near(composed.subBlocks, e.at));
+      else if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
       failure = e;
       trace(candidate, e);
       continue;
@@ -203,7 +223,9 @@ export function* search(entries, catalog, logistics, options = {}) {
       continue;
     }
     const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
-    const score = [Math.round(starving * 1000) / 1000, compactness(block).value, block.entities.length];
+    // A Recipe Loop's feedback by train (no room for its splitter) counts before Compactness.
+    const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
+    const score = [Math.round(starving * 1000) / 1000, loopsByTrain, compactness(block).value, block.entities.length];
     if (perfect && score[0] > 0) {
       failure = new Error(`the layout starves ${score[0]}/min`);
       trace(candidate, failure);
@@ -211,10 +233,14 @@ export function* search(entries, catalog, logistics, options = {}) {
     }
     if (!best || better(score, best.score)) {
       best = { candidate, score, placed };
-      // A Breakout trial after every two slides (a lone Sub-Block has no gaps to fill).
+      // A Breakout trial after every two slides (a lone Sub-Block has no gaps to fill). Spread
+      // first packs the smaller Sub-Blocks beside the biggest.
       const trying = ctx.plan.length > 1 ? register(breakouts(candidate, ctx.plan, designs)) : [];
       const sliding = slides(candidate, ctx.plan.length);
-      refining = Array.from({ length: Math.max(trying.length, Math.ceil(sliding.length / 2)) }, (_, j) => [sliding[2 * j], sliding[2 * j + 1], trying[j]]).flat().filter(Boolean);
+      refining = [
+        ...(spread ? packs(candidate, boxes, buffer) : []),
+        ...Array.from({ length: Math.max(trying.length, Math.ceil(sliding.length / 2)) }, (_, j) => [sliding[2 * j], sliding[2 * j + 1], trying[j]]).flat().filter(Boolean),
+      ];
       yield { block, score, tried, placed };
     }
   }
@@ -225,6 +251,79 @@ export function* search(entries, catalog, logistics, options = {}) {
     for (const t of list) trials.set(t.candidate, t);
     return list.map(t => t.candidate);
   }
+}
+
+// Room for a link that found none: the Sub-Blocks it runs between (`steps`; every one when none
+// is known) get ROOM tiles more on every side, then twice as many and twice again; past that
+// every corridor and gap widens by ROOM as well, each time. Null once spaced out SPACING times.
+const ROOM = 4;
+const SPACING = 6;
+export function spacedOut(candidate, steps) {
+  const level = candidate.spaced ?? 0;
+  if (level >= SPACING) return null;
+  const pad = { ...candidate.pad };
+  for (const i of steps) pad[i] = pad[i] ? 2 * pad[i] : ROOM;
+  const wider = level >= SPACING / 2 || !steps.length;
+  return { ...candidate, pad, spaced: level + 1, ...(wider ? { corridor: candidate.corridor + ROOM, gap: candidate.gap + ROOM } : {}) };
+}
+
+// The Sub-Blocks whose box holds a tile, else the one nearest it.
+function near(subBlocks, { x, y }) {
+  const inside = subBlocks.filter(b => x >= b.x && y >= b.y && x < b.x + b.w && y < b.y + b.h);
+  if (inside.length) return inside.map(b => b.index);
+  const gap = b => Math.max(0, b.x - x, x - (b.x + b.w)) + Math.max(0, b.y - y, y - (b.y + b.h));
+  return [subBlocks.reduce((a, b) => (gap(b) < gap(a) ? b : a)).index];
+}
+
+// Spread: the first candidate with `buffer` tiles between its Sub-Blocks (corridors and gaps),
+// then half as many, and so on down to the first's own.
+function loosened(first, buffer) {
+  const out = [];
+  for (let b = buffer; b > first.corridor; b = Math.ceil(b / 2)) out.push({ ...first, corridor: b, gap: Math.max(first.gap, b) });
+  return [...out, first];
+}
+
+// Spread: the Sub-Blocks other than the biggest packed beside it, in rows as wide as it below it
+// and above it, in columns as tall as it east and west of it, `buffer` tiles apart — each way one
+// move (`at`: where each box stands). Placing every producer west of what it feeds leaves a
+// column as tall as the biggest Sub-Block beside it, mostly empty.
+function packs(base, boxes, buffer) {
+  if (!boxes || boxes.length < 2) return [];
+  const big = boxes.reduce((a, b) => (b.w * b.h > a.w * a.h ? b : a));
+  const rest = boxes.filter(b => b !== big).sort((a, b) => b.h - a.h || b.w - a.w);
+  // Shelves: each box's offset along and across them, and how deep they run in all.
+  const shelve = (length, along, across) => {
+    const spots = [];
+    let u = 0, v = 0, deep = 0;
+    for (const b of rest) {
+      if (u > 0 && u + along(b) > length) {
+        v += deep + buffer;
+        u = 0;
+        deep = 0;
+      }
+      spots.push([b, u, v]);
+      u += along(b) + buffer;
+      deep = Math.max(deep, across(b));
+    }
+    return { spots, depth: v + deep };
+  };
+  const out = [];
+  const rows = shelve(big.w, b => b.w, b => b.h), columns = shelve(big.h, b => b.h, b => b.w);
+  const ways = [
+    rows.spots.map(([b, u, v]) => [b, big.x + u, big.y + big.h + buffer + v]),
+    rows.spots.map(([b, u, v]) => [b, big.x + u, big.y - buffer - rows.depth + v]),
+    columns.spots.map(([b, u, v]) => [b, big.x + big.w + buffer + v, big.y + u]),
+    columns.spots.map(([b, u, v]) => [b, big.x - buffer - columns.depth + v, big.y + u]),
+  ];
+  for (const way of ways) {
+    const at = { ...base.at }, shift = { ...base.shift };
+    for (const [b, x, y] of way) {
+      at[b.step] = { x, y };
+      delete shift[b.step];
+    }
+    out.push({ ...base, at, shift });
+  }
+  return out;
 }
 
 // First the best design of every Sub-Block with roomier and tighter placements, then each

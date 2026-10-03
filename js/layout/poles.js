@@ -1,6 +1,9 @@
 import { Heap } from './router.js';
 
-export class PowerError extends Error {}
+export class PowerError extends Error {
+  /** @type {{ x: number, y: number } | undefined} where a machine found no pole to power it */
+  at;
+}
 
 const center = e => [e.x + e.w / 2, e.y + e.h / 2];
 const distance = (a, b) => {
@@ -104,7 +107,7 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
     while (top > 0 && !byGain[top]?.size) top--;
     if (top <= 0) {
       const i = consumers.findIndex((_, j) => coverCount[j] === 0);
-      throw new PowerError(`no free tile can power ${consumers[i].name} at ${consumers[i].x},${consumers[i].y}`);
+      throw Object.assign(new PowerError(`no free tile can power ${consumers[i].name} at ${consumers[i].x},${consumers[i].y}`), { at: { x: consumers[i].x, y: consumers[i].y } });
     }
     let best = -1, bestKey = Infinity;
     for (const c of byGain[top]) {

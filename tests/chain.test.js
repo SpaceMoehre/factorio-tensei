@@ -72,9 +72,9 @@ test('a recipe consuming its own product takes it by train', () => {
   assert.deepEqual(trainInputs.map(t => [t.item, t.reason]), [['coke-oven-gas', 'cycle'], ['hot-molten-salt', 'no recipe']]);
 });
 
-// Two recipes making each other: the second takes the first's product by train, rather than
-// feeding it back into a step that has already been sized.
-test('in a loop of two recipes, the inner one takes the outer product by train', () => {
+// Two recipes making each other, b taking two a for each b, a one b for each a: the loop takes
+// more a than it makes, so b takes a by train.
+test('in a loop of two recipes that takes more than it makes, the inner one takes the outer product by train', () => {
   const loop = {
     ...catalog,
     recipes: {
@@ -85,6 +85,28 @@ test('in a loop of two recipes, the inner one takes the outer product by train',
   const { entries, trainInputs } = expandChain([{ item: 'a', rate: 10 }], loop, { made: ['b'] });
   assert.deepEqual(byItem(entries), { a: 10, b: 10 });
   assert.deepEqual(trainInputs, [{ item: 'a', rate: 20, reason: 'cycle' }]);
+});
+
+// A Recipe Loop: a takes one b, b takes one a for every two b. Each a made takes half an a back,
+// so the block makes 20 a a minute for the Goal's 10 and feeds the other 10 back into b.
+test('a recipe loop is made in the block: its steps make enough for the Goal and the loop', () => {
+  const loop = {
+    ...catalog,
+    recipes: {
+      a: { name: 'a', category: 'crafting', time: 1, ingredients: [{ type: 'item', name: 'b', amount: 1 }], products: [{ type: 'item', name: 'a', amount: 1 }] },
+      b: { name: 'b', category: 'crafting', time: 1, ingredients: [{ type: 'item', name: 'a', amount: 1 }], products: [{ type: 'item', name: 'b', amount: 2 }] },
+    },
+  };
+  const { entries, trainInputs, loops } = expandChain([{ item: 'a', rate: 10 }], loop, { made: ['b'] });
+  assert.deepEqual(byItem(entries), { a: 20, b: 20 });
+  assert.deepEqual(trainInputs, []);
+  assert.deepEqual(loops, [{ item: 'a', into: 'b', rate: 10 }]);
+  // A recipe taking its own product (four make five): five times the Goal, four fifths back.
+  const self = { ...catalog, recipes: { c: { name: 'c', category: 'crafting', time: 1, ingredients: [{ type: 'item', name: 'c', amount: 4 }, { type: 'item', name: 'iron-plate', amount: 1 }], products: [{ type: 'item', name: 'c', amount: 5 }] } } };
+  const own = expandChain([{ item: 'c', rate: 10 }], self);
+  assert.deepEqual(byItem(own.entries), { c: 50 });
+  assert.deepEqual(own.loops, [{ item: 'c', into: 'c', rate: 40 }]);
+  assert.deepEqual(own.trainInputs, [{ item: 'iron-plate', rate: 10, reason: 'no recipe' }]);
 });
 
 test('each step carries its modules: the default for its building, or the ones chosen for it that fit', () => {

@@ -10,7 +10,7 @@ import { compactness, SQUARE, BEND } from './layout/score.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
-const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop' };
+const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop that cannot feed itself (a fluid, or one taking more than it makes)' };
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
 const catalog = await fetch('data/catalog.json').then(r => r.json());
@@ -49,7 +49,11 @@ const chainRows = new Map();
 // that redraw waits for this one to finish.
 let drawing = false;
 let map = null;
-let worker = null;
+// The searches running: one worker for each strategy (a Maximize: one), each with how many
+// layouts it tried and whether it is done.
+let workers = [];
+// The layout search's strategies, each run in a worker of its own, side by side (ADR 0013).
+const STRATEGIES = ['search', 'spread'];
 // The best layout the running (or last) search has sent, and how many layouts it had tried.
 let best = null;
 // The City Block read from its blueprint ({ area, fixtures, unknown, blueprint } or { error }),
@@ -70,7 +74,7 @@ $('circuit').addEventListener('change', () => {
   state.logistics.circuit = $('circuit').value;
   save();
   // Only the blueprint and the map change: the block stays as it is.
-  if (best) show(best.block, best.tried, best.found);
+  if (best) show(best.block, best.tried, best.found, best.score);
 });
 $('right-angle').checked = state.logistics.rightAngle;
 $('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
@@ -225,6 +229,11 @@ function drawChain() {
     const machineSpeed = chainRows.get(`step:${goal.item}`).el.querySelector('.speed');
     machineSpeed.textContent = `${speed(building.craftingSpeed * effect.speed)}`
       + (effect.speed !== 1 ? ` (${speed(building.craftingSpeed)} × ${speed(effect.speed)} with modules)` : '') + ` · ${fmt(perMachine)}/min a machine`;
+    // A Recipe Loop: what of this step's item goes back into the loop.
+    const back = chain.loops.filter(l => l.item === goal.item);
+    const loop = chainRows.get(`step:${goal.item}`).el.querySelector('.loop');
+    loop.textContent = back.map(l => `↺ ${fmt(l.rate)}/min back into ${l.into === goal.item ? 'itself' : l.into} (a recipe loop)`).join(' · ');
+    loop.hidden = !back.length;
   }
   for (const input of chain.trainInputs) {
     const key = JSON.stringify(['train', input.item, input.reason]);
@@ -259,6 +268,7 @@ function stepRow(item, recipes, buildings, selection) {
   train.hidden = isGoal;
   return el('div', { className: 'step' },
     el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), train),
+    el('div', { className: 'hint loop', hidden: true }),
     el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building,
       ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : []),
       el('span', { textContent: 'Speed' }), el('span', { className: 'speed hint' })));
@@ -412,7 +422,8 @@ async function build() {
     site = citySite();
     if (site.error) return showStatus('error', site.error);
   }
-  worker?.terminate();
+  for (const w of workers) w.worker.terminate();
+  workers = [];
   best = null;
   built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && state.city.maximize), trying: null, foretold: null };
   map?.destroy();
@@ -425,21 +436,92 @@ async function build() {
   $('empty').textContent = 'Searching for a layout…';
   showStatus('', 'Searching…');
   $('stop').hidden = false;
-  worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
-  worker.onmessage = ({ data }) => {
-    if (data.type === 'foretell') built.foretold = data;
-    else if (data.type === 'try') trying(data);
-    else if (data.type === 'best') show(data.block, data.tried, data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null);
-    else if (data.type === 'done') finish('Done', data.tried, data.failure, data.above);
-    else finish('Stopped', undefined, data.message);
-  };
-  worker.onerror = e => finish('Stopped', undefined, e.message);
   const goals = state.goals.filter(g => g.item && g.rate > 0);
-  worker.postMessage({
-    entries: chain.entries,
-    logistics: logisticsOf(), budgetMs: state.logistics.budget * 1000, seed: 1, site,
-    ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections } } : {}),
+  const started = Date.now();
+  const job = { entries: chain.entries, logistics: logisticsOf(), seed: 1, site };
+  // A build first designs each Sub-Block on its own, every one in a worker of its own at once;
+  // the strategies then start from those designs.
+  let designs = null;
+  if (!built.maximize) {
+    const ticket = built;
+    $('empty').textContent = `Designing ${count(chain.entries.length, 'Sub-Block')}…`;
+    try {
+      designs = await designEach(job, ticket);
+    } catch (e) {
+      if (built !== ticket) return;
+      return finish('Stopped', 0, e.message);
+    }
+    if (built !== ticket || !designs) return;
+    $('empty').textContent = 'Searching for a layout…';
+  }
+  // A Maximize tries one rate after another in one worker; a build runs every strategy at once,
+  // the best layout any of them finds shown (the others go on until the budget is spent).
+  for (const strategy of built.maximize ? ['search'] : STRATEGIES) {
+    const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), tried: 0, done: false };
+    workers.push(run);
+    const tried = () => workers.reduce((sum, w) => sum + w.tried, 0);
+    const over = (failure, above) => {
+      run.done = true;
+      run.worker.terminate();
+      if (workers.every(w => w.done)) finish('Done', tried(), failure, above);
+    };
+    run.worker.onmessage = ({ data }) => {
+      if (data.type === 'foretell') built.foretold = data;
+      else if (data.type === 'try') trying(data);
+      else if (data.type === 'best') {
+        run.tried = data.tried;
+        if (!best || better(data.score, best.score)) show(data.block, tried(), data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null, data.score);
+      } else if (data.type === 'done') {
+        run.tried = data.tried;
+        over(data.failure, data.above);
+      } else over(data.message);
+    };
+    run.worker.onerror = e => over(e.message);
+    run.worker.postMessage({
+      ...job, strategy, designs,
+      // The search time counts from the start, designing included (each strategy tries a layout
+      // however little is left).
+      budgetMs: Math.max(1, state.logistics.budget * 1000 - (Date.now() - started)),
+      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections } } : {}),
+    });
+  }
+}
+
+// Each Sub-Block designed in a worker of its own, all at once: their candidates, by Sub-Block.
+// Null once the build was stopped or started again (`ticket` no longer the build running).
+function designEach(job, ticket) {
+  return new Promise((resolve, reject) => {
+    const lists = [];
+    let left = job.entries.length;
+    job.entries.forEach((_, index) => {
+      const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), tried: 0, done: false };
+      workers.push(run);
+      const end = () => {
+        run.done = true;
+        run.worker.terminate();
+        workers = workers.filter(w => w !== run);
+      };
+      run.worker.onmessage = ({ data }) => {
+        end();
+        if (built !== ticket) return resolve(null);
+        if (data.type !== 'designed') return reject(new Error(data.message));
+        lists[data.index] = data.list;
+        if (--left === 0) resolve(lists);
+      };
+      run.worker.onerror = e => {
+        end();
+        reject(new Error(e.message));
+      };
+      run.worker.postMessage({ ...job, design: index });
+    });
   });
+}
+
+// Scores compare part by part (Starvation first): whether a beats b.
+function better(a, b) {
+  if (!b) return true;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
+  return false;
 }
 
 // Maximize: the rate being tried, after the highest that fits so far.
@@ -458,8 +540,8 @@ function progress() {
   return `${built.trying ?? 'Searching…'}${told}${fits}`;
 }
 
-async function show(block, tried, found = null) {
-  best = { block, tried, found };
+async function show(block, tried, found = null, rank = null) {
+  best = { block, tried, found, score: rank };
   const { starvation } = simulate(block);
   const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
@@ -478,8 +560,9 @@ async function show(block, tried, found = null) {
     : `${bounds.w} × ${bounds.h} = ${(bounds.w * bounds.h).toLocaleString('en')} tiles · ${parts}`;
   $('area').title = `Compactness, lower is better: ${SQUARE === 1 ? '' : `${SQUARE} × `}the strip beyond a square, plus the tiles no machine, inserter or pole stands on, plus ${BEND} for every bend of a belt or pipe`;
   $('area').hidden = false;
-  report(block, starvation, worker ? progress() : null);
-  fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input'));
+  report(block, starvation, workers.some(w => !w.done) ? progress() : null);
+  // A Recipe Loop's feedback fed in the block is no Side Input.
+  fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input' && !(r.loop && r.fedBy !== undefined)));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
   const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null, { circuit });
   if (best?.block !== block) return;
@@ -488,9 +571,9 @@ async function show(block, tried, found = null) {
   $('results').hidden = false;
 }
 
-function finish(how, tried = best?.tried ?? 0, error = null, above = null) {
-  worker?.terminate();
-  worker = null;
+function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (best?.tried ?? 0), error = null, above = null) {
+  for (const w of workers) w.worker.terminate();
+  workers = [];
   $('stop').hidden = true;
   if (built?.maximize) {
     $('apply-row').hidden = !best?.found;
@@ -544,11 +627,13 @@ function report(block, starvation, prefix) {
 // One line per item and kind, with how many parallel belts carry it when a route was split.
 function fillFlows(list, routes, block) {
   const lines = new Map();
+  const takes = (r, item) => r.consumers.reduce((sum, c) => sum + (block.subBlocks[c].inputs.find(x => x.name === item)?.rate ?? 0) * (r.share?.[c] ?? 1), 0);
   for (const r of routes) {
     for (const i of r.items) {
       // Leftover on an output route is what the consumers along it do not take (their share of
-      // it, when the route is one of several parallel belts).
-      const taken = block ? r.consumers.reduce((sum, c) => sum + (block.subBlocks[c].inputs.find(x => x.name === i.item)?.rate ?? 0) * (r.share?.[c] ?? 1), 0) : 0;
+      // it, when the route is one of several parallel belts), and what a Recipe Loop's feedback
+      // tapped off it takes back.
+      const taken = block ? takes(r, i.item) + (r.taps ?? []).reduce((sum, id) => sum + takes(block.routes[id], i.item), 0) : 0;
       const k = `${i.item} (${r.kind})`;
       const line = lines.get(k) ?? { rate: 0, belts: 0 };
       line.rate += block ? Math.max(0, i.rate - taken) : i.rate;
@@ -557,7 +642,8 @@ function fillFlows(list, routes, block) {
       lines.set(k, line);
     }
   }
-  list.replaceChildren(...[...lines].map(([k, { rate, belts }]) => el('li', {},
+  // An item nothing of leaves (a product all taken along the way) is no line.
+  list.replaceChildren(...[...lines].filter(([, { rate }]) => !block || rate >= 0.05).map(([k, { rate, belts }]) => el('li', {},
     el('span', { textContent: belts > 1 ? `${k} ×${belts}` : k }), el('span', { textContent: `${fmt(rate)}/min` }))));
 }
 

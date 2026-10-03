@@ -22,6 +22,8 @@ export async function encodeBlueprint(block, catalog, city = null, { circuit = '
     const modules = e.kind === 'building' ? block.subBlocks[e.subBlock]?.modules ?? [] : [];
     if (modules.length) out.items = moduleRequests(modules);
     if (e.underground && e.kind === 'underground-belt') out.type = e.underground;
+    // A Recipe Loop's splitter gives its feedback side priority.
+    if (e.priority) out.output_priority = e.priority;
     // 90° inserters (Inserter_Config): vectors relative to the inserter, in world axes.
     if (e.vectors) {
       out.pickup_position = { ...e.vectors.pickup };

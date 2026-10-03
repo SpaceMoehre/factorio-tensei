@@ -128,21 +128,10 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     const kind = ({ variant }) => `${variant.rowLength}|${variant.pipes.length > 0}|${variant.belts.some(b => b.routeIds.length > 1)}|${(variant.sides?.length ?? 0) + (variant.heads?.length ?? 0) > 0}|${variant.belts.some(b => b.load)}`;
     const leaders = ranked.filter((v, i) => ranked.findIndex(w => kind(w) === kind(v)) === i);
     for (const { variant, core } of [...leaders, ...ranked.filter(v => !leaders.includes(v))].slice(0, ROUTE_TRIES)) {
+      const spec = { core, variant, machines: sb.count, whole };
       candidates.push({
         estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }), w: core.w, h: core.h }, variant,
-        build: () => {
-          let failure = null;
-          for (const margin of margins(core)) {
-            try {
-              const module = routeModule(core, moduleOptions(ctx, links, margin, sb));
-              return { kinds: [{ module, count: 1 }], variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module, whole), area: module.area.w * module.area.h };
-            } catch (e) {
-              if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
-              failure = e;
-            }
-          }
-          throw failure;
-        },
+        spec, build: () => buildSpec(ctx, index, spec, rng),
       });
     }
   }
@@ -242,19 +231,48 @@ function copyCandidates(ctx, index, shape, rng) {
     // Estimated by the machines' footprint with a band per row; a squarer stack ranks first.
     const stack = { w: n * pitch, h: count * rows * depth };
     const aspect = Math.max(stack.w / stack.h, stack.h / stack.w);
+    const spec = { copies: { m, n, count, rest } };
     out.push({
       estimate: { trouble: 0, area: sb.count * pitch * depth * (1 + 0.1 * aspect), w: n * pitch, h: rows * depth }, copies: count,
-      build: () => {
-        const main = repeatable(ctx, index, m, n, rng, count + (rest ? 1 : 0));
-        const kinds = [{ ...main, count }];
-        if (rest) kinds.push({ ...repeatable(ctx, index, rest, n, rng, count + 1, main.chained), count: 1 });
-        const area = kinds.reduce((sum, k) => sum + k.count * k.module.area.w * k.module.area.h, 0);
-        const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds);
-        return { kinds, trouble, area, copies: count };
-      },
+      spec, build: () => buildSpec(ctx, index, spec, rng),
     });
   }
   return out;
+}
+
+// A candidate's design from what it is (spec): a core routed as one module ({ core, whole }, the
+// Sub-Block's own machines or a share of them, `machines`), or copies of a repeated module
+// ({ copies: { m, n, count, rest } }). Throws RoutingError or PowerError where it does not route.
+function buildSpec(ctx, index, spec, rng) {
+  if (spec.copies) {
+    const { m, n, count, rest } = spec.copies;
+    const main = repeatable(ctx, index, m, n, rng, count + (rest ? 1 : 0));
+    const kinds = [{ ...main, count }];
+    if (rest) kinds.push({ ...repeatable(ctx, index, rest, n, rng, count + 1, main.chained), count: 1 });
+    const area = kinds.reduce((sum, k) => sum + k.count * k.module.area.w * k.module.area.h, 0);
+    const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds);
+    return { kinds, trouble, area, copies: count };
+  }
+  const { core, variant, machines, whole } = spec;
+  const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
+  const links = coreLinks(sb, index, ctx.routes);
+  let failure = null;
+  for (const margin of margins(core)) {
+    try {
+      const module = routeModule(core, moduleOptions(ctx, links, margin, sb));
+      return { kinds: [{ module, count: 1 }], variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module, whole), area: module.area.w * module.area.h };
+    } catch (e) {
+      if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+      failure = e;
+    }
+  }
+  throw failure;
+}
+
+// Candidates come back from another worker (structured clone) without their build: each given
+// back one from what it is, those built kept as they were.
+export function revive(ctx, index, list, rng) {
+  return list.map(c => ({ ...c, build: () => buildSpec(ctx, index, c.spec, rng) }));
 }
 
 // A module of `m` machines in rows of `n`, routed both ways. `copies` modules share each belt
@@ -449,6 +467,8 @@ export function moduleOptions(ctx, links, margin, sb = null) {
   const belt = catalog.belts[logistics.belt];
   return {
     margin, fluids: links.fluids,
+    // A Recipe Loop's feedback comes from its producer, east of here: it enters from the east.
+    west: new Set(ctx.routes.filter(r => r.loop).map(r => r.id)),
     belt: { belt: belt.name, underground: belt.underground.name, reach: belt.underground.maxDistance },
     pipe: { pipe: logistics.plainPipe ?? 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance },
     pole: catalog.poles[logistics.pole], inserters: catalog.inserters,
@@ -661,7 +681,7 @@ export function shapeOf(ctx, sb, index, links, rest = false) {
     const internal = typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output';
     const splittable = internal || (isOutput ? route.consumers.length === 0 : route.source === 'side-input' && route.consumers.length === 1);
     // A single-item Side Input that may split can share parallel belts with another: one lane each.
-    const perLane = !isOutput && splittable && route.source === 'side-input' && items.length === 1
+    const perLane = !isOutput && splittable && route.source === 'side-input' && !route.loop && items.length === 1
       ? Math.floor(ctx.env.laneCapacity / (items[0].rate / sb.count) + 1e-9) : 0;
     // Both ends of an Internal Path cut it into the same number of parallel belts, as many as its
     // producer's lanes need (and each end has machines for), so each belt links a part of the
@@ -734,7 +754,10 @@ function pathBelts(ctx, route) {
   const each = route.items.reduce((sum, i) => sum + (consumer.inputs.find(x => x.name === i.item)?.rate ?? 0), 0) / consumer.count;
   const fed = Math.max(1, Math.floor(belt / each + 1e-9));
   const need = Math.max(1, Math.ceil(rate / belt - 1e-9), Math.ceil(producer.count / outputBelt(ctx, producer) - 1e-9), Math.ceil(consumer.count / fed - 1e-9));
-  return Math.min(need, producer.count, consumer.count);
+  // A consumer built only from copies takes its belts by whole copies, not machines: belts that
+  // nearly fill leave no room for a run a copy longer than its share; one belt more does.
+  const spare = consumer.count > ONLY_COPIES && rate > 0.85 * need * belt ? 1 : 0;
+  return Math.min(need + spare, producer.count, consumer.count);
 }
 
 // Rows cut into exactly `parts` runs of neighbours, about equal by machines: the last row of

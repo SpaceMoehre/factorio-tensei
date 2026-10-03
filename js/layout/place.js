@@ -63,7 +63,18 @@ export function placeBlocks(ctx, prepared, params = {}) {
       const used = Math.max(...column.map(inst => at.get(inst.index).y + inst.module.area.h));
       for (const inst of column) at.get(inst.index).y += h - used;
     }
-    return { step: i, instances: mine, at, w: columns * mw + (columns - 1) * cross, h, entries: [] };
+    // East of a Recipe Loop's producer, room for the splitters sending its feedback off; east of
+    // the Sub-Block it feeds back into, room for the feedback to come down to its entries.
+    const taps = Math.max(0, ...routes.filter(r => r.taps && r.source === i).map(r => r.taps.length));
+    const tapRoom = taps ? 3 + 2 * taps : 0;
+    const loopRoom = routes.some(r => r.tapOf !== undefined && r.consumers.includes(i)) ? 2 : 0;
+    // Room the search made round it (`pad`: tiles on every side) where a link found none.
+    const pad = params.pad?.[i] ?? 0;
+    for (const p of at.values()) {
+      p.x += pad;
+      p.y += pad;
+    }
+    return { step: i, instances: mine, at, w: columns * mw + (columns - 1) * cross + tapRoom + loopRoom + 2 * pad, h: h + 2 * pad, entries: [] };
   });
   // Links from a producer's exit to a consumer's entry, by where each sits in its block; and the
   // rows each block's Side Inputs arrive on.
@@ -124,6 +135,16 @@ export function placeBlocks(ctx, prepared, params = {}) {
   for (const [i, p] of columns ?? []) placed.set(i, p);
   for (const i of columns ? [] : order) {
     const b = blocks[i];
+    // A Sub-Block the search moved into empty room (`at`, where its box stands) stands there, when
+    // it is clear of the others (and, in a City Block, fits).
+    const wanted = params.at?.[i];
+    if (wanted) {
+      const me = { ...wanted, w: b.w, h: b.h };
+      if (![...placed.keys()].some(j => overlaps(me, box(j), gap)) && (!site || site.fits(blockTiles(i), me))) {
+        placed.set(i, { x: wanted.x, y: wanted.y });
+        continue;
+      }
+    }
     const mine = links.filter(l => l.from === i && placed.has(l.to));
     const lift = params.lift?.[i] ?? 0;
     // Level with the entries it feeds; west of every consumer, with a corridor between.
@@ -192,6 +213,8 @@ export function placeBlocks(ctx, prepared, params = {}) {
   }
   // In a City Block, the whole block slides west as far as it fits: the Side Inputs, its many
   // belts, come in short; only its outputs run on to the east edge.
+  // Where each Sub-Block was placed, as `at` takes it.
+  const unslid = new Map([...placed].map(([i, p]) => [i, { ...p }]));
   if (site) {
     const slack = Math.min(...steps.map(i => placed.get(i).x)) - site.inner.x;
     for (let dx = slack; dx > 0; dx--) {
@@ -228,6 +251,13 @@ export function placeBlocks(ctx, prepared, params = {}) {
   out.bounds = {
     x: left, y: top, w: Math.max(...boxes.map(b => b.x + b.w)) - x0 - left, h: Math.max(...boxes.map(b => b.y + b.h)) - y0 - top,
   };
+  // Each Sub-Block's box where `at` would place it (its slide included), for the search to find
+  // empty room by.
+  out.boxes = blocks.map(b => {
+    const [dx, dy] = params.shift?.[b.step] ?? [0, 0];
+    const p = unslid.get(b.step) ?? placed.get(b.step);
+    return { step: b.step, x: p.x + dx, y: p.y + dy, w: b.w, h: b.h };
+  });
   return out;
 
   // Tiles of a Sub-Block's stack that no Fixture may stand on, by where they lie in its box.

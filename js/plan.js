@@ -1,9 +1,10 @@
 import { machineEffect, defaultModules } from './modules.js';
 
 // logistics.fuel: the Fuel item burner machines burn.
+// An entry's byTrain: items it takes by train though a Sub-Block makes them (a Recipe Loop's).
 export function planSubBlocks(entries, catalog, logistics = {}) {
   const seen = new Set();
-  return entries.map(({ goal, selection }) => {
+  return entries.map(({ goal, selection, byTrain = [] }) => {
     if (!(goal.rate > 0)) throw new Error(`${goal.item}: the rate must be above 0`);
     if (seen.has(goal.item)) throw new Error(`${goal.item} is a Goal more than once; combine them into one Goal`);
     seen.add(goal.item);
@@ -42,6 +43,7 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       inputs,
       outputs,
       byproducts: outputs.filter(o => o.name !== goal.item),
+      ...(byTrain.length ? { byTrain } : {}),
     };
   });
 }

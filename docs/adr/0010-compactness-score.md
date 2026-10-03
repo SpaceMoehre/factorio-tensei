@@ -13,3 +13,5 @@ A belt or pipe does not fill the tiles it runs through. If it did, a belt windin
 In a City Block the shape is given and the block spans the Buffer's width, so the squareness term does not count there; empty tiles and bends do. Maximize stops at the first layout without Starvation, so the score does not change what it finds.
 
 Blocks get squarer and their belts straighter for a few percent more area at most. Py small parts at 1200/min went from 111 × 27 to 62 × 55; at 3000/min it is smaller as well.
+
+Later, a Recipe Loop's feedback taken by train ranks between Starvation and Compactness (ADR 0012).

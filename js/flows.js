@@ -1,28 +1,48 @@
+// Flows between Sub-Blocks: Internal Paths (internal), the Side Input and the Side Output. A
+// Recipe Loop's last link — an item taken by a Sub-Block that the item's own producer (through
+// those it takes from) takes from, or by its producer itself — is its feedback: fed back from the
+// producer's output (an item; a fluid comes by train), not part of the Dependency Order.
 export function buildFlows(plan) {
   const producerOf = new Map(plan.map((sb, i) => [sb.item, i]));
-  const internal = [];
+  const edges = [];
+  // What a Sub-Block takes by train though another makes it (the chain's choice) is no link.
+  const fromOf = (sb, name) => (sb.byTrain?.includes(name) ? undefined : producerOf.get(name));
   plan.forEach((sb, to) => {
     for (const input of sb.inputs) {
-      const from = producerOf.get(input.name);
-      if (from !== undefined && from !== to) internal.push({ from, to, item: input.name, type: input.type, rate: input.rate });
+      const from = fromOf(sb, input.name);
+      if (from !== undefined) edges.push({ from, to, item: input.name, type: input.type, rate: input.rate });
     }
   });
+  // The links that close a loop, walking from each Sub-Block (Goals first) to those it takes from.
+  const closing = new Set();
+  const state = plan.map(() => 0);
+  const walk = c => {
+    state[c] = 1;
+    for (const e of edges.filter(x => x.to === c)) {
+      if (state[e.from] === 1) closing.add(e);
+      else if (!state[e.from]) walk(e.from);
+    }
+    state[c] = 2;
+  };
+  plan.forEach((_, i) => state[i] || walk(i));
+  const internal = edges.filter(e => !closing.has(e));
+  const feedback = edges.filter(e => closing.has(e) && e.type !== 'fluid');
   const sideInput = [];
   const sideOutput = [];
-  // An input no other Sub-Block makes arrives by train — including a recipe's own Goal item.
+  // An input no Sub-Block makes arrives by train, and a fluid a loop takes back.
   plan.forEach((sb, i) => {
     for (const input of sb.inputs) {
-      const from = producerOf.get(input.name);
-      if (from === undefined || from === i) addRate(sideInput, input.name, input.type, input.rate);
+      const from = fromOf(sb, input.name);
+      if (from === undefined || (input.type === 'fluid' && [...closing].some(e => e.to === i && e.item === input.name))) addRate(sideInput, input.name, input.type, input.rate);
     }
   });
   for (const sb of plan) {
     const main = sb.outputs.find(o => o.name === sb.item);
-    const consumed = internal.filter(e => e.item === sb.item).reduce((sum, e) => sum + e.rate, 0);
-    if (main.rate - consumed > 0) addRate(sideOutput, main.name, main.type, main.rate - consumed);
+    const consumed = [...internal, ...feedback].filter(e => e.item === sb.item).reduce((sum, e) => sum + e.rate, 0);
+    if (main.rate - consumed > 1e-9) addRate(sideOutput, main.name, main.type, main.rate - consumed);
     for (const b of sb.byproducts) addRate(sideOutput, b.name, b.type, b.rate);
   }
-  return { order: dependencyOrder(plan.length, internal), internal, sideInput, sideOutput };
+  return { order: dependencyOrder(plan.length, internal), internal, feedback, sideInput, sideOutput };
 }
 
 function addRate(flows, item, type, rate) {

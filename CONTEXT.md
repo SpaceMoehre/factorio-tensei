@@ -13,11 +13,15 @@ The recipe (and building tier) currently chosen to make an item of the Productio
 _Avoid_: baking a fixed recipe into Goal identity
 
 **Production Chain**:
-The Goals plus a Sub-Block for every ingredient the user chose to make in the block, each with its Recipe Selection. By default a Goal's ingredients are Train Inputs; making one here adds its step, and its own ingredients become Train Inputs in turn. Each step's rate is its Goal rate (if any) plus what its consumers take.
-_Avoid_: recipe tree (it is not always a tree: steps share ingredients)
+The Goals plus a Sub-Block for every ingredient the user chose to make in the block, each with its Recipe Selection. By default a Goal's ingredients are Train Inputs; making one here adds its step, and its own ingredients become Train Inputs in turn. Each step's rate is its Goal rate (if any) plus what its consumers take, a Recipe Loop's included; a machine's productivity counts.
+_Avoid_: recipe tree (it is not always a tree: steps share ingredients, and loop)
+
+**Recipe Loop**:
+A step's item that a step it feeds — or the step itself — takes again (arqads for arqad eggs that make arqads). The chain sizes every step of the loop so the Goal still leaves on the train and the loop is fed besides (a loop giving back five of every six arqads makes six times its Goal). Its last link, back into the loop, is its feedback: a belt of its own from the producer's output, through a splitter whose output priority is the feedback's side, so the loop never runs short while the rest goes on. A loop that takes more than it makes, or one of fluids, comes by train instead.
+_Avoid_: cycle (the chain's word for what comes by train)
 
 **Train Input**:
-An item the Production Chain does not make but receives by train: an ingredient of a step that the user has not chosen to make here (the default), one no recipe makes, or one a recipe loop would have to make from itself. Train Inputs are what the Side Input carries.
+An item the Production Chain does not make but receives by train: an ingredient of a step that the user has not chosen to make here (the default), one no recipe makes, or a Recipe Loop's that cannot feed itself (a fluid, or one taking more than it makes). Train Inputs are what the Side Input carries.
 _Avoid_: raw material (a Train Input can be any intermediate)
 
 **Count**:
@@ -89,7 +93,7 @@ The order of Sub-Blocks derived by topologically sorting on item overlap (Sub-Bl
 _Avoid_: input order, list order
 
 **Compactness**:
-What the layout search minimizes when comparing valid Compound Blocks, a score in tiles: the strip its bounding box has beyond a square (|width − height| × the shorter side; none in a City Block, whose shape is given), plus its empty tiles (those no machine, inserter or pole stands on: a belt or pipe fills nothing, so belts running round the block never make it look compact), plus 4 for every bend of a belt or pipe (where a belt turns, or a pipe meets its own pipes on both axes); the number of entities breaks ties. Placement grows a block standing on its own toward a square. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness. Its belts' Path Flow and its inserters set the least it can starve before it is placed: a candidate that would starve more than the best is not placed at all.
+What the layout search minimizes when comparing valid Compound Blocks, a score in tiles: the strip its bounding box has beyond a square (|width − height| × the shorter side; none in a City Block, whose shape is given), plus its empty tiles (those no machine, inserter or pole stands on: a belt or pipe fills nothing, so belts running round the block never make it look compact), plus 4 for every bend of a belt or pipe (where a belt turns, or a pipe meets its own pipes on both axes); the number of entities breaks ties. Placement grows a block standing on its own toward a square. A layout whose machines get their full inserter throughput always ranks above one whose inserters fall short, whatever its Compactness, and then one feeding its Recipe Loops itself above one taking their feedback by train. Its belts' Path Flow and its inserters set the least it can starve before it is placed: a candidate that would starve more than the best is not placed at all.
 _Avoid_: size, footprint (ambiguous between area and entity count)
 
 **Band**:
@@ -158,6 +162,14 @@ _Avoid_: splitting one machine's output with a splitter
 **Path Flow**:
 What an Internal Path's belts deliver, as a max-flow: each producer machine makes up to its full rate (the Count's headroom, as far as its inputs keep up; together no more than the plan), its output inserters put up to their rate on the lanes their drops reach (a Drop Offset the module still sets, either; a drop onto the middle of a curve, the worse lane), each lane carries half a belt, Splitters join belts lane to lane, and each belt brings its run of consumers what they take. In the game backpressure settles on this: an inserter waits while its lane is full, a machine waits while its output is stuck, so items go wherever there is room. Designs are ranked by it before routing (from where their inserters drop) and after (from the lanes the routed belts give), and the Compound Block groups producers into belts, pairs them through Splitters and sets each belt's supply by it.
 _Avoid_: fixed shares per machine; summing what each belt carries on its own
+
+**Making Room**:
+What the search does when a belt cannot be connected: the same candidate is tried again with the Sub-Blocks the link runs between spaced out (padding round each, doubling), then every corridor and gap widened too, until it connects or no longer fits.
+_Avoid_: giving a candidate up because one link found no way
+
+**Strategy**:
+How the layout search picks its candidates. Search places the Sub-Blocks tightly from the start and varies that. Spread places them a wide buffer apart first, so their links find room, then ever tighter, then packs the smaller Sub-Blocks beside the biggest. A build runs every strategy at once, each in a web worker of its own, from the same designs (each Sub-Block designed in a worker of its own first), and keeps the best layout any finds.
+_Avoid_: algorithm, mode
 
 **Refinement**:
 Once a layout stands, each Sub-Block is slid 8, 4, 2 or 1 tiles every way, its box free to reach into a neighbour's empty corner (its entities never landing on another's), the Links routed again; a slide that shrinks the Compound Block is the new best, refined in turn. Breakouts take turns with the slides, and the machines they stand apart take their next best spots or slide on their own. The search keeps trying other designs and placements after.

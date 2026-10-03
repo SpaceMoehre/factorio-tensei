@@ -20,7 +20,8 @@ const REROUTES = 3;
 // opts: { margin: { w, e, n, s }, fluids: [{ routeId, fluid, role }], belt: { belt, underground,
 //         reach }, pipe: { pipe, underground, reach }, pole, inserters: { [name]: spec },
 //         electric: entity => boolean, order: [part or fluid key] (routing order),
-//         reverse: Set of part keys, made: items/min each machine makes (output lanes are
+//         reverse: Set of part keys, west: Set of route ids whose parts run east to west
+//         (reverse turns them back), made: items/min each machine makes (output lanes are
 //         chosen by it), full: what each makes at full speed (its lanes are chosen to carry
 //         that), lane: items/min a lane carries, offsets: every output inserter whose
 //         prototype allows custom vectors picks its lane by its drop point (Inserter_Config) }
@@ -31,8 +32,9 @@ export function routeModule(core, opts) {
   const parts = core.parts.map((p, id) => ({
     ...p, id, key: partKey(p), canEnter: p.canEnter ?? true, canExit: p.canExit ?? true,
     lines: core.rows.filter(r => partKey(r) === partKey(p)),
-    // Head-on belts meet their machine one way only.
-    dir: opts.reverse?.has(partKey(p)) && p.kind !== 'head' ? W : E,
+    // Head-on belts meet their machine one way only. A Recipe Loop's feedback (opts.west) comes
+    // back from the east.
+    dir: Boolean(opts.reverse?.has(partKey(p))) !== p.routeIds.every(id => opts.west?.has(id)) && p.kind !== 'head' ? W : E,
   }));
   const fromX = p => (p.dir === W ? area.x + area.w - 1 : p.canEnter ? area.x : null);
   const fluidIds = [...new Set([...core.ports.map(p => p.routeId), ...core.pipeRows.map(p => p.routeId)])];

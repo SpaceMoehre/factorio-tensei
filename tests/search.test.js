@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { solve } from '../js/solve.js';
+import { search, spacedOut } from '../js/search.js';
 import { context, designStep, designOf, random, shapeOf, stackVariant, moduleOptions } from '../js/design.js';
 import { coreLinks } from '../js/routes.js';
 import { buildCore } from '../js/layout/core.js';
@@ -293,4 +294,88 @@ test('a huge Sub-Block repeats one module: 500 moss farms, about square, nothing
   assert.ok(Math.max(w / h, h / w) <= 2, `${w}×${h}`);
   assert.deepEqual(simulate(block).starvation, []);
   assertValid(block, pyCatalog, logistics);
+});
+
+// Spread (ADR 0013): the Sub-Blocks first a wide buffer apart, so their links find room, then
+// ever tighter; the best then packs the smaller Sub-Blocks beside the biggest. It finds a valid
+// layout first try, and what it settles on is no worse than where it started.
+test('Spread: a wide buffer first, then tighter; every layout valid', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 600 }], pyCatalog, { made: items.slice(1), selections });
+  const hands = { ...logistics, handSize: 3 };
+  const run = search(entries, pyCatalog, hands, { seed: 1, strategy: 'spread', maxCandidates: 12 });
+  const found = [];
+  for (let step = run.next(); !step.done; step = run.next()) found.push(step.value);
+  assert.ok(found.length, 'a layout');
+  assert.equal(found[0].tried, 1, 'the first, widest, routes');
+  for (const { block } of found) assertValid(block, pyCatalog, hands);
+  assert.ok(found.at(-1).score[2] <= found[0].score[2]);
+});
+
+// Placement stands a Sub-Block where the search asks (`at`, its box's corner, where `boxes` says
+// it stood), when clear of the others.
+test('placement stands a Sub-Block where the search moves it, clear of the others', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 600 }], pyCatalog, { made: items.slice(1), selections });
+  const ctx = context(entries, pyCatalog, logistics);
+  const rng = random(1);
+  const designs = [];
+  for (const i of ctx.flows.order) designs[i] = designOf(designStep(ctx, i, rng, { draws: 0 })[0]);
+  const ready = prepare(ctx, designs);
+  const { boxes } = placeBlocks(ctx, ready, {});
+  const gears = ctx.plan.findIndex(sb => sb.item === 'iron-gear-wheel');
+  const far = { x: Math.max(...boxes.map(b => b.x + b.w)) + 10, y: Math.max(...boxes.map(b => b.y + b.h)) + 10 };
+  const moved = placeBlocks(ctx, ready, { at: { [gears]: far } });
+  assert.deepEqual((({ x, y }) => ({ x, y }))(moved.boxes.find(b => b.step === gears)), far);
+  // Onto another Sub-Block it stays where placement puts it.
+  const other = boxes.find(b => b.step !== gears);
+  const kept = placeBlocks(ctx, ready, { at: { [gears]: { x: other.x, y: other.y } } }).boxes.find(b => b.step === gears);
+  assert.notDeepEqual({ x: kept.x, y: kept.y }, { x: other.x, y: other.y });
+});
+
+// Each Sub-Block designed on its own elsewhere (a worker of its own): its candidates handed over
+// as plain data, built ones and not; the search builds the others itself.
+test('designs made elsewhere: the search takes them, building the rest itself', () => {
+  const entries = [asm2('electronic-circuit', 300), asm2('copper-cable', 900)];
+  const ctx = context(entries, catalog, logistics);
+  const designs = ctx.plan.map((_, i) => structuredClone(designStep(ctx, i, random(1 + i)).map(({ build, ...c }) => c)));
+  assert.ok(designs.every(list => list.some(c => !c.design && !c.failed)), 'some not built yet');
+  const run = search(entries, catalog, logistics, { seed: 1, designs, maxCandidates: 20 });
+  let block = null;
+  for (let step = run.next(); !step.done; step = run.next()) block = step.value.block;
+  assert.ok(block);
+  assertValid(block, catalog, logistics);
+});
+
+// A belt that cannot be connected spaces the blocks out (the user's rule): the Sub-Blocks its link
+// runs between get 4 tiles more on every side, then 8, then 16; past that every corridor and gap
+// widens by 4 too, each time, six times in all.
+test('a link that finds no room spaces its Sub-Blocks out, then every corridor and gap', () => {
+  let c = { corridor: 2, gap: 1, shift: {} };
+  const pads = [], corridors = [];
+  for (;;) {
+    const next = spacedOut(c, [1]);
+    if (!next) break;
+    pads.push(next.pad[1]);
+    corridors.push(next.corridor);
+    c = next;
+  }
+  assert.deepEqual(pads, [4, 8, 16, 32, 64, 128]);
+  assert.deepEqual(corridors, [2, 2, 2, 6, 10, 14]);
+  // Not knowing where, everything widens.
+  assert.equal(spacedOut({ corridor: 2, gap: 1 }, []).gap, 5);
+  // Placement stands the padded Sub-Block's machines as far in from its box's edges.
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 600 }], pyCatalog, { made: items.slice(1), selections });
+  const ctx = context(entries, pyCatalog, logistics);
+  const rng = random(1);
+  const designs = [];
+  for (const i of ctx.flows.order) designs[i] = designOf(designStep(ctx, i, rng, { draws: 0 })[0]);
+  const ready = prepare(ctx, designs);
+  const plain = placeBlocks(ctx, ready, {}).boxes, padded = placeBlocks(ctx, ready, { pad: { 0: 5 } }).boxes;
+  const [a, b] = [plain, padded].map(list => list.find(x => x.step === 0));
+  assert.deepEqual([b.w - a.w, b.h - a.h], [10, 10]);
 });

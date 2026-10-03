@@ -106,7 +106,9 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   const chainOf = list => expandChain(list, catalog, { made, selections, index });
   const lead = goals[0];
   const sb = planSubBlocks(chainOf(goals).entries, catalog, logistics).find(s => s.item === lead.item);
-  const perMachine = sb.rate * sb.headroom / sb.count;
+  // What one of its machines adds to the Goal at full speed: its share of what the step makes,
+  // less what goes back into a Recipe Loop.
+  const perMachine = sb.rate * sb.headroom / sb.count * Math.min(1, lead.rate / sb.rate);
   const goalsFor = n => {
     const rate = Math.floor(n * perMachine * 100) / 100;
     return goals.map(g => ({ ...g, rate: g === lead ? rate : Math.max(0.01, Math.floor(g.rate * rate / lead.rate * 100) / 100) }));
