@@ -1,0 +1,160 @@
+function expectedAmount(p) {
+  const base = p.amount ?? (p.amount_min + p.amount_max) / 2;
+  return (p.probability ?? 1) * (base + (p.extra_count_fraction ?? 0));
+}
+
+export function buildCatalog(raw) {
+  const recipes = {};
+  for (const r of Object.values(raw.recipe)) {
+    if (r.hidden || r.parameter) continue;
+    recipes[r.name] = {
+      name: r.name,
+      category: r.category ?? 'crafting',
+      time: r.energy_required ?? 0.5,
+      ingredients: list(r.ingredients).map(({ type, name, amount }) => ({ type, name, amount })),
+      products: list(r.results).map(p => ({ type: p.type, name: p.name, amount: expectedAmount(p) })),
+      ...(r.allowed_module_categories && { allowedModuleCategories: list(r.allowed_module_categories) }),
+      ...(r.allow_productivity && { allowProductivity: true }),
+    };
+  }
+  const buildings = {};
+  for (const b of [...Object.values(raw['assembling-machine']), ...Object.values(raw.furnace)]) {
+    buildings[b.name] = {
+      name: b.name,
+      size: footprint(b.collision_box),
+      craftingSpeed: b.crafting_speed,
+      categories: b.crafting_categories,
+      energy: b.energy_source.type,
+      energyUsage: energy(b.energy_usage),
+      ...(b.energy_source.type === 'burner' && {
+        effectivity: b.energy_source.effectivity ?? 1,
+        fuelCategories: fuelCategories(b.energy_source),
+      }),
+      // Modules: slots, which effects and categories fit, and the effect the machine has built in
+      // (Py farms: -100% speed, so they run only on their plant and animal modules).
+      ...(b.module_slots > 0 && {
+        moduleSlots: b.module_slots,
+        ...(b.allowed_effects && { allowedEffects: [b.allowed_effects].flat() }),
+        ...(b.allowed_module_categories && { allowedModuleCategories: list(b.allowed_module_categories) }),
+        ...(b.effect_receiver?.base_effect && { baseEffect: b.effect_receiver.base_effect }),
+        ...(b.effect_receiver?.speed_limits?.low !== undefined && { speedLow: b.effect_receiver.speed_limits.low }),
+      }),
+      fluidBoxes: (b.fluid_boxes ?? []).map(fb => ({
+        production: fb.production_type,
+        connections: fb.pipe_connections
+          .filter(c => !c.connection_type || c.connection_type === 'normal')
+          .map(c => {
+            const [x, y] = c.position ?? c.positions[0];
+            return { x, y, direction: c.direction };
+          }),
+      })),
+    };
+  }
+  const poles = {};
+  for (const p of Object.values(raw['electric-pole'])) {
+    poles[p.name] = {
+      name: p.name, size: footprint(p.collision_box),
+      supplyRadius: p.supply_area_distance, wireReach: p.maximum_wire_distance,
+    };
+  }
+  const belts = {};
+  for (const b of Object.values(raw['transport-belt'])) {
+    const ug = raw['underground-belt'][b.related_underground_belt];
+    belts[b.name] = {
+      name: b.name,
+      itemsPerSecond: b.speed * 480,
+      underground: ug ? { name: ug.name, maxDistance: ug.max_distance } : null,
+    };
+  }
+  const pipes = {};
+  for (const p of Object.values(raw['pipe-to-ground'])) {
+    const ug = p.fluid_box.pipe_connections.find(c => c.connection_type === 'underground');
+    pipes[p.name] = { name: p.name, maxDistance: ug.max_underground_distance };
+  }
+  const plainPipes = Object.values(raw.pipe ?? {}).filter(p => !p.hidden).map(p => p.name).sort();
+  const modules = {};
+  for (const m of Object.values(raw.module ?? {})) {
+    if (!m.hidden) modules[m.name] = { name: m.name, category: m.category, tier: m.tier ?? 1, effect: m.effect ?? {} };
+  }
+  const inserters = {};
+  for (const i of Object.values(raw.inserter ?? {})) {
+    inserters[i.name] = {
+      name: i.name,
+      pickup: vector(i.pickup_position ?? [0, -1]),
+      insert: vector(i.insert_position ?? [0, 1.2]),
+      rotationSpeed: i.rotation_speed,
+      extensionSpeed: i.extension_speed,
+      energy: i.energy_source.type,
+      customVectors: i.allow_custom_vectors ?? false,
+    };
+  }
+  const fuels = {};
+  for (const type of ITEM_TYPES) {
+    for (const p of Object.values(raw[type] ?? {})) {
+      if (p.fuel_value) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
+    }
+  }
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, modules, icons: spriteIcons(raw), footprints: footprints(raw) };
+}
+
+// Every entity's tile footprint facing north, so a City Block's blueprint can hold anything:
+// from its collision box, or the tile size it names.
+function footprints(raw) {
+  const out = {};
+  for (const group of Object.values(raw)) {
+    for (const p of Object.values(group ?? {})) {
+      if (!p?.name || !Array.isArray(p.collision_box) || out[p.name]) continue;
+      const size = footprint(p.collision_box);
+      out[p.name] = { w: p.tile_width ?? Math.max(1, size.w), h: p.tile_height ?? Math.max(1, size.h) };
+    }
+  }
+  return out;
+}
+
+// Factorio 2.0 names one fuel category per item and a list per burner; mods may use either form.
+function fuelCategories(p) {
+  return p.fuel_categories ?? [p.fuel_category ?? 'chemical'];
+}
+
+// Vectors are dumped as [x, y] or { x, y }.
+function vector(v) {
+  return Array.isArray(v) ? { x: v[0], y: v[1] } : { x: v.x, y: v.y };
+}
+
+const SI = { '': 1, k: 1e3, M: 1e6, G: 1e9, T: 1e12, P: 1e15 };
+
+// "150kW" → 150000 (watts), "4MJ" → 4000000 (joules).
+function energy(text) {
+  if (text === undefined) return undefined;
+  const [, value, prefix] = /^([\d.]+)\s*([kMGTP]?)[WJ]$/.exec(text) ?? [];
+  if (value === undefined) throw new Error(`unreadable energy value "${text}"`);
+  return Math.round(Number(value) * SI[prefix]);
+}
+
+const ITEM_TYPES = [
+  'item', 'fluid', 'tool', 'module', 'ammo', 'capsule', 'armor', 'gun', 'item-with-entity-data',
+  'rail-planner', 'repair-tool', 'space-platform-starter-pack',
+];
+// Icons as files under sprites/: "__pyhightechgraphics__/graphics/icons/pcb1.png" becomes
+// "pyhightechgraphics/graphics/icons/pcb1.png" (scripts/build-sprites.mjs extracts them from the
+// game and the mod zips). Layered icons show their first layer.
+function spriteIcons(raw) {
+  const icons = {};
+  for (const type of ITEM_TYPES) {
+    for (const p of Object.values(raw[type] ?? {})) {
+      const path = p.icon ?? p.icons?.[0]?.icon;
+      const match = /^__([^/]+)__\/(.+)$/.exec(path ?? '');
+      if (match) icons[p.name] = `${match[1]}/${match[2]}`;
+    }
+  }
+  return icons;
+}
+
+// The data-raw dump serializes empty Lua tables as {} rather than [].
+function list(v) {
+  return Array.isArray(v) ? v : [];
+}
+
+function footprint([[x1, y1], [x2, y2]]) {
+  return { w: Math.ceil(x2 - x1), h: Math.ceil(y2 - y1) };
+}

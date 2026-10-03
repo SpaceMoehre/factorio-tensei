@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factory Block Planner</title>
+<style>
+  :root {
+    --bg: #111318; --panel: #1a1d24; --panel-2: #22262f; --border: #343a46;
+    --text: #e6e6e6; --muted: #9aa3b2; --accent: #e0c097; --danger: #ff6b6b; --ok: #6fcf97;
+    --map-bg: #14161b; --map-grid: #20232b; --map-machine: #3b4658; --map-machine-edge: #8aa0c0;
+    --map-text: #e8e8e8; --map-starve: #ff5c5c; --map-subblock: #e0c097;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
+  .app { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; height: 100vh; }
+  /* Safari sizes a select by its longest option and will not shrink it in a grid track: keep
+     every control within its column so nothing runs off a phone screen. */
+  .selection select, .settings select, .module select { width: 100%; min-width: 0; max-width: 100%; }
+  .step, .step-head, .modules, .module, .goal-head { min-width: 0; }
+  aside { min-width: 0; overflow-x: hidden; }
+  aside { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 16px; }
+  main { position: relative; min-width: 0; }
+  h1 { font-size: 18px; margin: 0 0 4px; color: var(--accent); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 8px; }
+  .hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
+  .goal { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+  .goal-head { display: flex; gap: 6px; align-items: center; }
+  .sprite { flex: none; width: 28px; height: 28px; background: left center / auto 100% no-repeat; }
+  .step { border-bottom: 1px dashed var(--border); padding: 6px 0; }
+  .step-head { display: flex; gap: 6px; align-items: center; }
+  .step-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .step-head .rate { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .step-head .sprite { width: 24px; height: 24px; }
+  .step.train .hint { margin: 2px 0 0 30px; }
+  [hidden] { display: none !important; }
+  .goal-head input[type=text] { flex: 1; min-width: 0; }
+  .goal-head input[type=number] { width: 80px; }
+  .modules { display: flex; flex-direction: column; gap: 4px; }
+  .module { display: flex; gap: 4px; align-items: center; }
+  .module select { flex: 1; min-width: 0; }
+  .module input[type=number] { width: 56px; }
+  .module .sprite { width: 20px; height: 20px; flex: none; }
+  .selection { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
+  input, select, button, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+  select { width: 100%; min-width: 0; }
+  button { cursor: pointer; background: var(--panel-2); }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #1b1b1b; border-color: var(--accent); font-weight: 600; width: 100%; padding: 8px; }
+  button.icon { padding: 4px 9px; }
+  .settings { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 8px; align-items: center; }
+  .status { margin-top: 12px; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
+  .status.error { background: rgba(255,107,107,.12); border: 1px solid var(--danger); color: var(--danger); }
+  .status.ok { background: rgba(111,207,151,.1); border: 1px solid var(--ok); color: var(--ok); }
+  .status.warn { background: rgba(255,107,107,.08); border: 1px solid var(--danger); }
+  ul.flows { list-style: none; padding: 0; margin: 0; font-size: 13px; }
+  ul.flows li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-bottom: 1px dashed var(--border); }
+  textarea { width: 100%; height: 72px; font: 11px/1.3 ui-monospace, monospace; resize: vertical; }
+  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 6px; }
+  .row { display: flex; gap: 6px; margin-top: 6px; }
+  .swap { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
+  .row.build { margin-top: 0; }
+  .row.build .primary { flex: 1; width: auto; }
+  button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
+  .check { display: flex; gap: 6px; align-items: center; }
+  .check .hint, .budget .hint { margin: 0; }
+  .budget input { width: 80px; }
+  #city-bp { height: 56px; }
+  #city > .settings { margin-top: 8px; }
+  .area { position: absolute; top: 12px; left: 12px; background: rgba(17,19,24,.92); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--accent); z-index: 2; }
+  .area[hidden] { display: none; }
+  .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
+  .tooltip { position: absolute; left: 12px; bottom: 12px; background: rgba(17,19,24,.92); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; pointer-events: none; max-width: 60%; }
+  .tooltip:empty { display: none; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
+  .empty[hidden] { display: none; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas:active { cursor: grabbing; }
+  @media (max-width: 800px) {
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 70vh; height: auto; }
+    aside { border-right: none; border-bottom: 1px solid var(--border); }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Factory Block Planner</h1>
+    <p class="hint">Set item-rate Goals and pick their recipes; their ingredients arrive by train unless you choose to make them here. The tool then builds a compact block with its blueprint.</p>
+
+    <h2>Goals</h2>
+    <div id="goals"></div>
+    <button id="add-goal" type="button">+ Add goal</button>
+    <datalist id="items"></datalist>
+
+    <h2>Production chain</h2>
+    <p class="hint">A Goal's ingredients come by train. <em>Make here</em> builds one in the block instead, and its own ingredients then come by train.</p>
+    <div id="chain"></div>
+
+    <h2>Logistics</h2>
+    <div class="settings">
+      <label for="belt">Belt</label><select id="belt"></select>
+      <label for="plainPipe">Pipe</label><select id="plainPipe"></select>
+      <label for="pipe">Pipe-to-ground</label><select id="pipe"></select>
+      <label for="pole">Pole</label><select id="pole"></select>
+      <label for="inserter">Inserter</label><select id="inserter"></select>
+      <label for="longInserter">Long inserter</label><select id="longInserter"></select>
+      <label for="handSize">Hand size</label>
+      <span class="budget"><input type="number" id="handSize" min="1" max="12" step="1" aria-label="Items an inserter moves per swing"> <span class="hint">items per swing (inserter capacity research)</span></span>
+      <label for="fuel">Fuel</label><select id="fuel"></select>
+      <label for="circuit">Circuit wires</label>
+      <span class="budget"><select id="circuit" aria-label="Circuit wires joining every pole and inserter"><option value="none">None</option><option value="red">Red</option><option value="green">Green</option><option value="both">Red and green</option></select> <span class="hint">join every pole and inserter</span></span>
+      <label for="right-angle">90° inserters</label>
+      <label class="check"><input type="checkbox" id="right-angle"> <span class="hint">needs the Inserter_Config mod</span></label>
+      <label for="budget">Search time</label>
+      <span class="budget"><input type="number" id="budget" min="1" step="1" aria-label="Search time in seconds"> <span class="hint">s</span></span>
+    </div>
+
+    <h2>City block</h2>
+    <label class="check"><input type="checkbox" id="city-on"> <span>Build inside a city block</span></label>
+    <div id="city" hidden>
+      <p class="hint">Paste the city block's blueprint, or load it from a file: its poles, roboports, radars and everything else stay where they are, the factory is built around them and their poles power it. Without a blueprint, give the block's size.</p>
+      <textarea id="city-bp" aria-label="City block blueprint string" placeholder="Blueprint string (0eN…)"></textarea>
+      <div class="row">
+        <button id="city-load" type="button">Load file…</button>
+        <input type="file" id="city-file" accept=".txt,.json,text/plain,application/json" hidden>
+        <button id="city-clear" type="button">Clear</button>
+      </div>
+      <p class="hint" id="city-info"></p>
+      <div class="settings">
+        <label for="city-w">Size</label>
+        <span class="budget"><input type="number" id="city-w" min="8" step="1" aria-label="City block width"> × <input type="number" id="city-h" min="8" step="1" aria-label="City block height"> <span class="hint">tiles</span></span>
+        <label for="city-buffer">Buffer</label>
+        <span class="budget"><input type="number" id="city-buffer" min="0" step="1" aria-label="Buffer in tiles"> <span class="hint">tiles kept free inside the border, to wire the inputs (west) and outputs (east)</span></span>
+        <label for="maximize">Maximize</label>
+        <label class="check"><input type="checkbox" id="maximize"> <span class="hint">the highest goal rate that fits; goals keep their ratio, the first try is what the Foretelling says fits, each try gets the search time at most</span></label>
+      </div>
+      <p class="hint" id="city-foretell" hidden></p>
+    </div>
+
+    <h2>Build</h2>
+    <div class="row build">
+      <button id="calculate" class="primary" type="button">Build factory block</button>
+      <button id="stop" type="button" hidden>Stop</button>
+    </div>
+    <div id="status"></div>
+    <div class="row" id="apply-row" hidden><button id="apply-rate" type="button">Use this rate</button></div>
+    <div class="row"><button id="copy-setup" type="button" title="The goals, production chain, logistics, city block and what the last build said, as JSON: paste it when describing a problem">Copy setup</button></div>
+    <details id="setup">
+      <summary>Setup JSON</summary>
+      <textarea id="setup-json" readonly aria-label="Setup JSON" style="height:160px"></textarea>
+    </details>
+    <div id="results" hidden>
+      <h2>Side Input (train in)</h2>
+      <ul class="flows" id="side-input"></ul>
+      <h2>Side Output (train out)</h2>
+      <ul class="flows" id="side-output"></ul>
+      <h2>Blueprint</h2>
+      <textarea id="bp-string" readonly aria-label="Blueprint string"></textarea>
+      <div class="row"><button id="copy-string" type="button">Copy blueprint string</button></div>
+      <details>
+        <summary>Blueprint JSON</summary>
+        <textarea id="bp-json" readonly aria-label="Blueprint JSON" style="height:160px"></textarea>
+        <div class="row"><button id="copy-json" type="button">Copy JSON</button></div>
+      </details>
+    </div>
+  </aside>
+  <main>
+    <canvas id="map" aria-label="Factory block map"></canvas>
+    <div class="toolbar">
+      <button class="icon" id="zoom-in" type="button" title="Zoom in">+</button>
+      <button class="icon" id="zoom-out" type="button" title="Zoom out">−</button>
+      <button id="fit" type="button" title="Fit to view">Fit</button>
+    </div>
+    <div class="area" id="area" hidden></div>
+    <div class="tooltip" id="tooltip"></div>
+    <div class="empty" id="empty">Loading catalog…</div>
+  </main>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
