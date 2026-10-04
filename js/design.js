@@ -270,6 +270,10 @@ export function designOf(candidate) {
 
 const trouble = c => c.shortfall + c.overload + (c.pathShort ?? 0);
 
+// How much of a City Block's height a narrow stack of copies may take (the rest for Fixtures and
+// the belts crossing its column).
+const TALL = 0.8;
+
 // Huge Sub-Blocks repeat one module (ADR 0005): a pair of rows facing the belt between them, or
 // one row, as long as its busiest belt can feed — one chain exhausting its belt, copied rather
 // than routed again. Belts the module does not exhaust run through every copy: the copies
@@ -286,7 +290,10 @@ function copyCandidates(ctx, index, shape, rng) {
   const square = Math.max(1, Math.min(shape.rowCap, Math.round(Math.sqrt(sb.count * depth / pitch))));
   // Machines with an Output Drop also in rows as long as their drops fill a lane.
   const drops = dropRotations(shape).length ? Math.max(1, shape.belts.find(b => b.isOutput).dropLane) : 0;
-  const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)]];
+  // In a City Block also rows as short as keep the stack within most of its height: narrow stacks
+  // stand side by side in its columns (Layers) where square ones are too wide together.
+  const tall = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.ceil(sb.count * depth / (TALL * ctx.site.inner.h)))) : 0;
+  const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)], ...(tall ? [[1, tall], [2, tall]] : [])];
   // Two-Way Copies: where whole machines cannot fill an Internal Path's belts evenly, a Copy of
   // as few machines as fill some of them whole, each machine dropping onto the belts either side
   // of it.
@@ -416,10 +423,19 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
         let keys = new Set(module.parts.filter(p => p.routeIds.every(id => through.has(id))).map(p => p.key));
         // Belts snaking through the copies turn beside the stack, each in a lane of its own; a
         // belt crossing to an outer lane dives under the inner ones (lanes two apart) in one hop.
-        // More than fit: every copy gets belts of its own instead.
+        // More than fit: Internal Paths first, those whose other end has the fewest machines
+        // first (a path has no more belts than the runs that end cuts it into: one water-barrel
+        // machine feeds no stack of vrauks paddocks whose copies each want a belt of their own),
+        // then outputs (Side Inputs fan out); every copy gets belts of its own for the rest.
         if (keys.size > maxSnaking(ctx)) {
-          through = new Set();
-          keys = new Set();
+          const rank = p => {
+            const route = ctx.routes[p.routeIds[0]];
+            return internalPath(route) ? [0, ctx.plan[route.source === index ? route.consumers[0] : route.source].count] : [route.source === index ? 1 : 2, 0];
+          };
+          const snaking = module.parts.filter(p => keys.has(p.key))
+            .sort((a, b) => rank(a)[0] - rank(b)[0] || rank(a)[1] - rank(b)[1]).slice(0, maxSnaking(ctx));
+          through = new Set(snaking.flatMap(p => p.routeIds));
+          keys = new Set(snaking.map(p => p.key));
         }
         const reverse = keys.size ? routeModule(core, { ...moduleOptions(ctx, links, margin, sb), reverse: keys }) : null;
         return { module, reverse, chained: through, variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module, false, wants) };
@@ -431,6 +447,9 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   }
   throw failure ?? new LayoutError(`${full.recipe}: no module of ${m} routes`);
 }
+
+// A belt route from one Sub-Block to one other.
+const internalPath = route => typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output';
 
 // How many belts may snake through a stack of copies.
 export function maxSnaking(ctx) {
@@ -449,7 +468,7 @@ function chainedRoutes(ctx, index, module, copies, share = false) {
     const route = ctx.routes[part.routeIds[0]];
     if (part.kind === 'head' || (share && route.source === index)) continue;
     // An Internal Path's belts snake through runs of copies, as many runs as it has belts.
-    if (typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output') {
+    if (internalPath(route)) {
       part.routeIds.forEach(id => out.add(id));
       continue;
     }

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { solve } from '../js/solve.js';
 import { search, spacedOut } from '../js/search.js';
 import { context, designStep, designOf, random, shapeOf, stackVariant, moduleOptions } from '../js/design.js';
@@ -294,6 +295,30 @@ test('a huge Sub-Block repeats one module: 500 moss farms, about square, nothing
   assert.ok(Math.max(w / h, h / w) <= 2, `${w}×${h}`);
   assert.deepEqual(simulate(block).starvation, []);
   assertValid(block, pyCatalog, logistics);
+});
+
+// Py vrauks at 22.9/min (the shipped catalog): 32 paddocks in copies of six take water barrels from
+// one barrel machine, cocoons from one module of incubators, and put vrauks out for the train.
+// Four of a copy's belts would snake through the stack and three fit beside it (yellow belts):
+// the two Internal Paths and the output snake, the Side Input fans out. With none snaking, each
+// copy wanted a water-barrel belt of its own, more than one machine's belt can split into.
+test('copies with more belts to snake than fit snake their Internal Paths first: one water-barrel belt feeds every copy', () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const selections = {
+    vrauks: { recipe: 'vrauks-1', building: 'vrauks-paddock-mk01', modules: [{ name: 'vrauks-mk02', count: 10 }] },
+    cocoon: { recipe: 'vrauks-cocoon-1-no-water', building: 'rc-mk01', modules: [{ name: 'vrauks-mk02', count: 2 }] },
+    saps: { recipe: 'sap-01', building: 'sap-extractor-mk01', modules: [{ name: 'sap-tree-mk02', count: 2 }] },
+  };
+  const { entries } = expandChain([{ item: 'vrauks', rate: 22.9 }], shipped, { made: ['water-barrel', 'cocoon', 'saps'], selections });
+  const ctx = context(entries, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe' });
+  const vrauks = ctx.plan.findIndex(sb => sb.item === 'vrauks');
+  assert.equal(ctx.plan[vrauks].count, 32);
+  const copies = designStep(ctx, vrauks, random(1)).find(c => c.spec?.copies?.m === 6);
+  const designs = ctx.plan.map((_, i) => designOf(i === vrauks ? copies : designStep(ctx, i, random(1), { draws: 0 })[0]));
+  assert.ok(designs[vrauks].kinds.every(k => k.reverse), 'the copies alternate with the module routed the other way round');
+  const belts = item => prepare(ctx, designs).routes.filter(r => r.kind === 'belt' && r.items.some(i => i.item === item));
+  for (const item of ['water-barrel', 'cocoon', 'vrauks']) assert.equal(belts(item).length, 1, item);
+  assert.equal(belts('water-barrel')[0].slots.length, 1 + designs[vrauks].kinds.reduce((sum, k) => sum + k.count, 0));
 });
 
 // Spread (ADR 0013): the Sub-Blocks first a wide buffer apart, so their links find room, then

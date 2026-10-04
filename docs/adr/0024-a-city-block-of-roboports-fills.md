@@ -1,0 +1,15 @@
+---
+status: accepted — refines ADR 0005, ADR 0009, ADR 0017 and ADR 0019
+---
+
+# What kept a City Block of roboports from filling
+
+Py vrauks in a 236 × 236 City Block whose roboports and big poles stand in a grid (every 59 tiles or so, a cross of poles down the middle), Buffer 4, on yellow belts: water barrels, cocoons and saps made here, the rest by train. Maximize stopped at 22.2/min (31 paddocks), its layout 228 × 176 with 29,900 empty tiles. Three causes, each found in a try that should have fitted:
+
+- **Copies that each wanted a belt from one machine.** Above 31 paddocks every design was a stack of copies, six paddocks each. Four of a copy's belts would snake through the stack (water barrels and cocoons in, vrauks out, native flora and moss in), and yellow belts leave room beside it for three. More than fit, none snaked: every copy got belts of its own. One barrel machine makes all the water barrels, and its belt splits into two at most (a splitter), not six. Every candidate failed to chain them, and Maximize took that for no room. Now, where more would snake than fit, an Internal Path's belts snake first, those whose other end has the fewest machines first (they cannot be cut into more belts than that end has runs), then outputs; Side Inputs fan out.
+- **Square stacks too wide side by side.** Stacks of copies came out about square: paddocks 109 wide, incubators 106, sap extractors in a row 87 wide. In Layers they did not fit 228 together. Narrower designs existed for each, but the structured candidates change one Sub-Block's design at a time (with four Sub-Blocks, pairings are too many to try), so the narrow ones were never together. Now, in a City Block, copies also come in rows as short as keep the stack within 80% of its height, and one more candidate takes every Sub-Block's narrowest design that routes and stands no taller than the room.
+- **Fixtures on the copies' belts.** A stack of paddocks 185 tall crosses five rows of Fixtures; at every spot its column offered, some roboport or pole stood on a belt, and a Fixture may stand only on machines (Making Way, ADR 0017). Now, in Layers, where no spot keeps the Fixtures off a stack's belts, the stack parts round them (Parting): from the top, each copy moves down as few rows as keep the Fixtures off its belts, the copies below with it, so the Fixtures stand in the gaps between copies. A copy moves no more than its own height and six; a parted stack keeps no Nooks and must still fit the room. Only stacks in one column part: the gaps of a column of copies beside another would not line up.
+
+Py vrauks in that City Block, five minutes a try: 35.8/min (50 paddocks), not 22.2/min.
+
+What still stays empty: the same City Block without its Fixtures fits 70 paddocks (50.1/min). With them, the paddocks' one column is as tall as Parting lets it; more paddocks need a second column of copies, and two columns side by side with the incubators and sap extractors do not fit the width. Maximize climbs one paddock a try here, since the Foretelling learns how loosely a layout packs from the box round all its Sub-Blocks, which in Layers spans nearly the whole City Block.

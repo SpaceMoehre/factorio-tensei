@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { deflateSync, inflateSync } from 'node:zlib';
+import { readFileSync } from 'node:fs';
 import { decodeBlueprint, readCityBlock, siteOf } from '../js/city.js';
 import { search } from '../js/search.js';
-import { maximize, planner } from '../js/maximize.js';
+import { maximize, planner, attempt } from '../js/maximize.js';
 import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
 import { simulate } from '../js/sim.js';
@@ -333,6 +334,32 @@ test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min and m
   // parts factories, 64 machines): it stopped at 2400/min.
   assert.ok(step.value.rate >= 3000, `${step.value.rate}/min`);
   assertValid(block, pyCatalog, logistics);
+  assertInside(block);
+  assert.equal(simulate(block).starvation.length, 0);
+});
+
+// Py vrauks (the shipped catalog) in a 236 × 236 City Block with roboports and big poles in a
+// grid, water barrels, cocoons and saps made here: 50 paddocks (35.79/min) fit, the Sub-Blocks'
+// narrowest designs side by side in columns (paddocks, incubators and sap extractors in stacks of
+// copies as tall as most of the room), the stacks parted round the Fixtures that would stand on
+// their belts, the paddocks' copies snaking their Internal Paths. Before, Maximize stopped at 31
+// paddocks: above them the paddocks stood in copies that each wanted a belt of water barrels, more
+// than one barrel machine's belt splits into, and the squarer designs were too wide side by side.
+test('a City Block of roboports: 50 vrauks paddocks fit, in narrow stacks side by side, parted round the Fixtures', async () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
+  const site = siteOf(readCityBlock(blueprint, shipped), 4);
+  const settings = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
+  const selections = {
+    vrauks: { recipe: 'vrauks-1', building: 'vrauks-paddock-mk01', modules: [{ name: 'vrauks-mk02', count: 10 }] },
+    cocoon: { recipe: 'vrauks-cocoon-1-no-water', building: 'rc-mk01', modules: [{ name: 'vrauks-mk02', count: 2 }] },
+    saps: { recipe: 'sap-01', building: 'sap-extractor-mk01', modules: [{ name: 'sap-tree-mk02', count: 2 }] },
+  };
+  const plan = planner([{ item: 'vrauks', rate: 450 }], shipped, settings, { made: ['water-barrel', 'cocoon', 'saps'], selections, site });
+  const { block, failure } = attempt(plan, 50, { site, budgetMs: 120000 });
+  assert.ok(block, failure?.message);
+  assert.equal(block.subBlocks.find(sb => sb.item === 'vrauks').count, 50);
+  assertValid(block, shipped, settings);
   assertInside(block);
   assert.equal(simulate(block).starvation.length, 0);
 });

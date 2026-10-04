@@ -395,11 +395,24 @@ function packs(base, boxes, buffer) {
   return out;
 }
 
-// First the best design of every Sub-Block with roomier and tighter placements, then each
-// Sub-Block's other designs in turn. In a City Block, each also with its Sub-Blocks in columns
-// (Layers), right after it.
+// First the best design of every Sub-Block with roomier and tighter placements (in a City Block,
+// also every Sub-Block's narrowest design together), then each Sub-Block's other designs in turn.
+// In a City Block, each also with its Sub-Blocks in columns (Layers), right after it.
 function sweep(first, designs, site = null) {
   const list = [first];
+  // In a City Block, each Sub-Block's narrowest design that routes, no taller than its room (a
+  // stack of copies counted whole): side by side in columns they fit its width where the best
+  // ones, squarer, do not together — a choice no change of one Sub-Block's design at a time reaches.
+  if (site) {
+    const narrowest = designs.map((options, i) => {
+      const tall = c => c.estimate.h * (c.spec?.copies ? c.spec.copies.count + (c.spec.copies.rest ? 1 : 0) : 1);
+      const narrow = options.map((_, k) => k)
+        .filter(k => options[k].estimate.w !== undefined && options[k].estimate.trouble <= 1e-6 && tall(options[k]) <= site.inner.h)
+        .sort((a, b) => options[a].estimate.w - options[b].estimate.w);
+      return narrow.find(k => (designOf(options[k])?.trouble ?? Infinity) <= 1e-6) ?? first.choice[i];
+    });
+    if (narrowest.join() !== first.choice.join()) list.push({ ...first, choice: narrowest });
+  }
   for (const corridor of [3, 1]) list.push({ ...first, corridor });
   list.push({ ...first, gap: 2 }, { ...first, weight: 1 }, { ...first, weight: 12 });
   designs.forEach((d, i) => {
