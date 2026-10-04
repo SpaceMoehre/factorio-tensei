@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { deflateRawSync, crc32 } from 'node:zlib';
-import { buildSprites, findIcons } from '../scripts/sprites.mjs';
+import { buildSprites, findIcons, dumpedSprites } from '../scripts/sprites.mjs';
 
 // A minimal zip archive (deflated entries), laid out the way Factorio mod zips are.
 function zip(files) {
@@ -72,4 +72,27 @@ test('icons without a path are found by name in the mod zips', () => {
   const out = join(root, 'sprites');
   buildSprites(findIcons(['moss'], mods), { game: join(root, 'no-game'), mods, out });
   assert.equal(readFileSync(join(out, 'pyalienlifegraphics/graphics/icons/moss.png'), 'utf8'), 'MOSS');
+});
+
+// Without the game: factorio --dump-icon-sprites draws every prototype into script-output/<type>/.
+// Only the icons sprites/ lacks are written, where the catalog names them; an item's picture wins
+// over an entity's of the same name.
+test('icons sprites/ lacks come from an icon dump, where the catalog names them', () => {
+  const root = mkdtempSync(join(tmpdir(), 'sprites-'));
+  const dump = join(root, 'script-output'), out = join(root, 'sprites');
+  for (const [folder, name, content] of [['item', 'casting-unit-mk01', 'ITEM'], ['entity', 'casting-unit-mk01', 'ENTITY'], ['virtual-signal', 'signal-A', 'A'], ['fluid', 'water', 'WATER']]) {
+    mkdirSync(join(dump, folder), { recursive: true });
+    writeFileSync(join(dump, folder, `${name}.png`), content);
+  }
+  mkdirSync(join(out, 'base/graphics/icons/fluid'), { recursive: true });
+  writeFileSync(join(out, 'base/graphics/icons/fluid/water.png'), 'MOD');
+  const icons = {
+    'casting-unit-mk01': 'pyraworesgraphics/graphics/icons/casting-unit-mk01.png', 'signal-A': 'base/graphics/icons/signal/signal_A.png',
+    water: 'base/graphics/icons/fluid/water.png', 'signal-heart': 'base/graphics/icons/signal/signal_heart.png',
+  };
+  assert.deepEqual(dumpedSprites(icons, { dump, out }), { written: 2, missing: ['signal-heart'] });
+  assert.equal(readFileSync(join(out, 'pyraworesgraphics/graphics/icons/casting-unit-mk01.png'), 'utf8'), 'ITEM');
+  assert.equal(readFileSync(join(out, 'base/graphics/icons/signal/signal_A.png'), 'utf8'), 'A');
+  assert.equal(readFileSync(join(out, 'base/graphics/icons/fluid/water.png'), 'utf8'), 'MOD');
+  assert.ok(!existsSync(join(out, 'base/graphics/icons/signal/signal_heart.png')));
 });

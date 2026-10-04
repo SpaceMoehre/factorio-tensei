@@ -3,7 +3,7 @@ import { LayoutError } from './layout/core.js';
 import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
 import { placeBlocks, roomFor } from './layout/place.js';
 import { finishBlock } from './layout/compact.js';
-import { validateBlock } from './layout/validity.js';
+import { validateBlock, supporting } from './layout/validity.js';
 import { simulate } from './sim.js';
 import { compactness } from './layout/score.js';
 
@@ -12,8 +12,9 @@ import { compactness } from './layout/score.js';
 // belts, each routed once as a Module (huge Sub-Blocks repeat one module). Then Compound Blocks
 // are put together from those designs: placed, linked, powered and checked. Each one that beats
 // the best so far is yielded — Starvation first (a layout whose machines starve, for want of
-// belts, lanes or inserters, is no answer), then Compactness (score.js: square first, then empty
-// tiles, then the bends of its belts and pipes), then entity count — and
+// belts, lanes or inserters, is no answer), then Recipe Loops fed by train, then output inserters
+// at machines with an Output Drop, then Compactness (score.js: square first, then empty tiles,
+// then the bends of its belts and pipes), then entity count — and
 // refined: its Sub-Blocks slid, and machines broken out of them into gaps (Breakout, ADR 0006).
 // Later candidates try other designs and placements. Deterministic for a given seed and
 // candidate count.
@@ -289,7 +290,9 @@ export function* search(entries, catalog, logistics, options = {}) {
     const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
     // A Recipe Loop's feedback by train (no room for its splitter) counts before Compactness.
     const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
-    const score = [Math.round(starving * 1000) / 1000, loopsByTrain, compactness(block).value, block.entities.length];
+    // Then machines that put their products on a belt themselves (Output Drop) rather than
+    // through inserters: the fewest inserters at them.
+    const score = [Math.round(starving * 1000) / 1000, loopsByTrain, supporting(block), compactness(block).value, block.entities.length];
     if (perfect && score[0] > 0) {
       solidly();
       failure = new Error(`the layout starves ${score[0]}/min`);

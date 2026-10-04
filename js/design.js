@@ -3,7 +3,7 @@
 import { planSubBlocks } from './plan.js';
 import { buildFlows } from './flows.js';
 import { buildRoutes, coreLinks } from './routes.js';
-import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides } from './layout/core.js';
+import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides, dropOf } from './layout/core.js';
 import { N, S } from './layout/grid.js';
 import { routeModule, RoutingError, PowerError } from './layout/module.js';
 import { maxFlow } from './layout/compose.js';
@@ -123,8 +123,10 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
       && core.ports.some(p => p.tiles.some(([, , d]) => d === N || d === S)) ? 1 : 0);
     // Side Belts route round their stack: of cores alike, those with fewer first.
     const sides = ({ variant }) => variant.sides?.length ?? 0;
+    // Machines that drop their products themselves (Output Drop) rather than through inserters
+    // come first, starving no more: the fewest output inserters at them.
     const ranked = [...cores.values()].sort((a, b) => stuck(a) - stuck(b) || trouble(a.core) - trouble(b.core)
-      || areaOf(a.core) - areaOf(b.core) || sides(a) - sides(b));
+      || a.core.supporting - b.core.supporting || areaOf(a.core) - areaOf(b.core) || sides(a) - sides(b));
     // The best of each kind first (row length, pipe rows, merged belts, side belts, Two-Way
     // Output), so a bigger
     // kind that routes where the smallest cannot still gets a turn.
@@ -133,13 +135,14 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     for (const { variant, core } of [...leaders, ...ranked.filter(v => !leaders.includes(v))].slice(0, ROUTE_TRIES)) {
       const spec = { core, variant, machines: sb.count, whole };
       candidates.push({
-        estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }), w: core.w, h: core.h }, variant,
+        estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }), supporting: core.supporting, w: core.w, h: core.h }, variant,
         spec, build: () => buildSpec(ctx, index, spec, rng),
       });
     }
   }
   // Whole modules by their estimate, best first; repeated ones after the best whole one.
-  const rank = (a, b) => (a.estimate.stuck ?? 0) - (b.estimate.stuck ?? 0) || a.estimate.trouble - b.estimate.trouble || a.estimate.area - b.estimate.area;
+  const rank = (a, b) => (a.estimate.stuck ?? 0) - (b.estimate.stuck ?? 0) || a.estimate.trouble - b.estimate.trouble
+    || (a.estimate.supporting ?? 0) - (b.estimate.supporting ?? 0) || a.estimate.area - b.estimate.area;
   const single = candidates.filter(c => !c.copies).sort(rank), repeated = candidates.filter(c => c.copies).sort(rank);
   // Past 40 machines a whole module takes long to route and seldom does: copies first.
   const first = sb.count > 40 ? [...repeated, ...single] : [...single.slice(0, 1), ...repeated, ...single.slice(1)];
@@ -281,7 +284,9 @@ function copyCandidates(ctx, index, shape, rng) {
   const { w, h } = shape.building.size;
   const pitch = Math.min(w, h), depth = Math.max(w, h) + 3;
   const square = Math.max(1, Math.min(shape.rowCap, Math.round(Math.sqrt(sb.count * depth / pitch))));
-  const sizes = [[2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)]];
+  // Machines with an Output Drop also in rows as long as their drops fill a lane.
+  const drops = dropRotations(shape).length ? Math.max(1, shape.belts.find(b => b.isOutput).dropLane) : 0;
+  const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)]];
   for (const [rows, n] of sizes.filter((s, i) => sizes.findIndex(t => t[0] * t[1] === s[0] * s[1] && t[1] === s[1]) === i)) {
     const m = rows * n;
     const count = Math.floor(sb.count / m);
@@ -344,19 +349,29 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null) {
   const links = coreLinks(full, index, ctx.routes);
   const shape = shapeOf(ctx, sb, index, links);
   const found = [];
+  const attempt = variant => {
+    if (!variant) return;
+    try {
+      const core = buildCore(sb, building, links, variant, ctx.env);
+      core.pathShort = corePathShort(ctx, sb, core, false);
+      found.push({ variant, core });
+    } catch (e) {
+      if (!(e instanceof LayoutError)) throw e;
+    }
+  };
+  // Output Drop: each row onto a belt of its own, or two rows onto one between them.
+  for (const rotation of dropRotations(shape)) {
+    for (const middle of n < m ? [1, 4, 5, 6] : [4]) {
+      for (const pipes of links.fluids.length ? [true, false] : [false]) {
+        for (const gap of [0, 1]) attempt(stackVariant(shape, { rotation, rowLength: n, flip: true, plain: true, pipes, middle, drop: true, gap }, rng));
+      }
+    }
+  }
   for (const rotation of rotationsFor(shape, links)) {
     for (const merge of [false, true]) {
       for (const middle of n < m ? [4, 5, 6] : [4]) {
         for (const [pipes, dual] of (links.fluids.length ? [true, false] : [false]).flatMap(p => [[p, false], ...(merge || !twoWayLengths(shape, sb).length ? [] : [[p, true]])])) {
-          const variant = stackVariant(shape, { rotation, rowLength: n, flip: true, plain: true, pipes, merge, middle, dual }, rng);
-          if (!variant) continue;
-          try {
-            const core = buildCore(sb, building, links, variant, ctx.env);
-            core.pathShort = corePathShort(ctx, sb, core, false);
-            found.push({ variant, core });
-          } catch (e) {
-            if (!(e instanceof LayoutError)) throw e;
-          }
+          attempt(stackVariant(shape, { rotation, rowLength: n, flip: true, plain: true, pipes, merge, middle, dual }, rng));
         }
       }
     }
@@ -364,7 +379,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null) {
   // Stacked rows whose fluids have no pipe rows rarely route; those come after.
   const stuck = ({ variant, core }) => (variant.rowLength < m && !variant.pipes.length
     && core.ports.some(p => p.tiles.some(([, , d]) => d === N || d === S)) ? 1 : 0);
-  found.sort((a, b) => trouble(a.core) - trouble(b.core) || stuck(a) - stuck(b) || areaOf(a.core) - areaOf(b.core));
+  found.sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || areaOf(a.core) - areaOf(b.core));
   let failure = null;
   for (const { variant, core } of found.slice(0, 8)) {
     for (const margin of margins(core)) {
@@ -559,6 +574,20 @@ const areaOf = core => core.w * core.h;
 // room: in a City Block, how wide it is inside its Buffer.
 function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null) {
   const rotations = rotationsFor(shape, links);
+  // Output Drop first (machines that put their products on a belt themselves prefer to): rows as
+  // long as their drops fill a lane (one machine where it alone makes more, its inserters taking
+  // the rest), each dropping onto a belt of its own or two onto one between them.
+  const dropping = dropRotations(shape);
+  const out = shape.belts.find(b => b.isOutput);
+  for (const rotation of dropping) {
+    const rowLength = Math.min(sb.count, Math.max(1, out.dropLane));
+    for (const middle of [1, 4, 5, 6]) {
+      for (const pipes of links.fluids.length ? [false, true] : [false]) {
+        // Connections on the machines' sides need a gap between them.
+        for (const gap of [0, 1]) yield stackVariant(shape, { rotation, rowLength, flip: true, plain: true, pipes, middle, drop: true, gap }, rng);
+      }
+    }
+  }
   for (const rotation of rotations) {
     yield stackVariant(shape, { rotation, rowLength: sb.count, plain: true }, rng);
     // Rows as long as the busiest belt allows, half that (pairs of rows facing a belt fill both
@@ -598,8 +627,10 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null) 
     const merge = rng() < 0.3;
     const cap = merge ? shape.mergeCap : shape.rowCap;
     const lengths = [sb.count, Math.ceil(sb.count / 2), cap, Math.max(1, cap - 1), Math.ceil(cap / 2), squareRow(shape, sb), 1 + Math.floor(rng() * sb.count)];
+    const drop = dropping.length > 0 && rng() < 0.5;
     const variant = stackVariant(shape, {
-      rotation: choose(rotations, rng), rowLength: choose(lengths, rng), flip: rng() < 0.5, pipes: links.fluids.length > 0 && rng() < 0.5, merge,
+      rotation: choose(drop ? dropping : rotations, rng), rowLength: choose(drop ? [...lengths, Math.max(1, out.dropLane)] : lengths, rng), flip: rng() < 0.5,
+      pipes: links.fluids.length > 0 && rng() < 0.5, merge, drop,
     }, rng);
     // Which connection each fluid uses, where its box has several.
     if (variant && rng() < 0.5) /** @type {any} */ (variant).ports = links.fluids.map(() => Math.floor(rng() * 8));
@@ -625,11 +656,19 @@ function twoWayLengths(shape, sb) {
   return [...new Set(list.map(n => Math.min(n, most)))].filter(n => n >= 1 && Math.ceil(sb.count / n) >= rows);
 }
 
-// Machines without fluids look the same every half turn: two rotations do.
+// Machines without fluids look the same every half turn: two rotations do — but for an Output
+// Drop, which turns with them: the rotations that put it on a face the bands run along come too.
 function rotationsFor(shape, links) {
   if (links.fluids.length) return ROTATIONS;
   const { w, h } = shape.building.size;
-  return w === h ? [0] : [0, 4];
+  return [...new Set([...(w === h ? [0] : [0, 4]), ...dropRotations(shape)])];
+}
+
+// The rotations that put a machine's Output Drop on its top or bottom face, where belt rows run
+// past it (none without one, or without an item output).
+function dropRotations(shape) {
+  if (!shape.belts.some(b => b.isOutput)) return [];
+  return ROTATIONS.filter(r => ['top', 'bottom'].includes(dropOf(shape.building, r)?.side));
 }
 
 // The row length that makes a Sub-Block about square (rows stacked in pairs facing their belts),
@@ -754,7 +793,7 @@ export function shapeOf(ctx, sb, index, links, rest = false) {
       const belts = pathBelts(ctx, route);
       return {
         routeIds: [routeId], perBelt: producerPart(sb.count, belts), parts: whole || (rest && sb.count >= belts) ? belts : null, splittable, perLane, isOutput, items,
-        outLane: isOutput ? outputLane(ctx, sb) : 0, oneSide: isOutput ? oneSide(ctx, sb) : 0, oneBelt: false,
+        outLane: isOutput ? outputLane(ctx, sb) : 0, oneSide: isOutput ? oneSide(ctx, sb) : 0, oneBelt: false, dropLane: isOutput ? dropLane(ctx, sb) : 0,
         // What each belt brings its consumers (a Two-Way Output's belts are cut to match).
         wants: whole && isOutput ? pathWants(ctx, route, belts) : null,
       };
@@ -764,7 +803,7 @@ export function shapeOf(ctx, sb, index, links, rest = false) {
       : Math.min(...items.map(i => route.items.find(x => x.item === i.name).capacity / (i.rate / sb.count)));
     return {
       routeIds: [routeId], perBelt: Math.max(1, Math.floor(perBelt + 1e-9)), parts: null, splittable, perLane, isOutput, items,
-      outLane: isOutput ? outputLane(ctx, sb) : 0, oneSide: isOutput ? oneSide(ctx, sb) : 0, oneBelt: !splittable,
+      outLane: isOutput ? outputLane(ctx, sb) : 0, oneSide: isOutput ? oneSide(ctx, sb) : 0, oneBelt: !splittable, dropLane: isOutput ? dropLane(ctx, sb) : 0,
     };
   });
   const depths = ctx.env.rightAngle ? [1, 2, 3, 4] : [2, 3, 4];
@@ -789,6 +828,13 @@ function producerPart(count, belts) {
 function outputLane(ctx, sb) {
   const perMachine = sb.outputs.filter(o => o.type === 'item').reduce((sum, o) => sum + o.rate, 0) / sb.count;
   return Math.max(1, Math.floor(ctx.env.laneCapacity / perMachine + 1e-9));
+}
+
+// Machines whose Output Drops one lane takes, whatever comes down it first: as many as it
+// carries for (none where one machine alone makes more than a lane).
+function dropLane(ctx, sb) {
+  const perMachine = sb.outputs.filter(o => o.type === 'item').reduce((sum, o) => sum + o.rate, 0) / sb.count;
+  return Math.floor(ctx.env.laneCapacity / perMachine + 1e-9);
 }
 
 // Machines one output belt takes: as many as fit a lane on either side of it (a straight
@@ -863,7 +909,8 @@ function pairUp(belts) {
 // its lanes. With `dual`, every row drops its output on both bands beside it (Two-Way Output): a
 // belt row per half row, or ('shared') one per band where a belt takes both rows' halves; with
 // `deep`, the half rows' belts lie two tiles out (straight inserters), clear of the inserter row.
-export function stackVariant(shape, { rotation, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null }, rng) {
+// With `drop`, every row's output belt runs past its machines' drop tiles (Output Drop).
+export function stackVariant(shape, { rotation, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null, drop = false }, rng) {
   const { sb, depths } = shape;
   const belts = merge ? pairUp(shape.belts) : shape.belts;
   const rows = Math.ceil(sb.count / rowLength);
@@ -906,11 +953,13 @@ export function stackVariant(shape, { rotation, rowLength, flip = false, plain =
     return [...top, ...bottom].sort((a, b) => face(a) - face(b) || shareable(a) - shareable(b) || load(a) - load(b) || depth(a) - depth(b));
   };
   const shareable = ([band, j]) => (band > 0 && band < rows && ok(j) && ok(middle + 1 - j) ? 1 : 0);
-  // Rows grouped for one belt: pairs sharing a band, the odd row alone.
+  // Rows grouped for one belt: pairs sharing a band, the odd row alone — beside drop belts, only
+  // where the band has a row both reach left.
+  const pairable = band => !drop || [...Array(middle).keys()].some(k => ok(k + 1) && ok(middle - k) && !taken.has(`${band},${k + 1}`));
   const groupsOf = (from, to, offset) => {
     const groups = [];
     for (let r = from; r <= to;) {
-      const pair = r + 1 <= to && (r - offset) % 2 === 0;
+      const pair = r + 1 <= to && (r - offset) % 2 === 0 && pairable(r + 1);
       groups.push(pair ? [r, r + 1] : [r]);
       r += pair ? 2 : 1;
     }
@@ -922,7 +971,37 @@ export function stackVariant(shape, { rotation, rowLength, flip = false, plain =
   // belts.
   const twoWay = b => dual && b.isOutput && b.splittable;
   if (belts.some(b => b.parts && (twoWay(b) ? 2 : 1) * rows < b.parts)) return null;
+  // Output Drop: each row's output belt runs past its drop tiles on the face they lie against —
+  // a belt row of its own, or one two rows drop onto from either side (a middle band one row
+  // high). One part per belt row where the route may split (an Internal Path's parts: runs of
+  // them), else one part.
+  const dropped = [];
+  if (drop) {
+    const out = belts.find(b => b.isOutput);
+    if (!out) return null;
+    const at = new Map();
+    for (let r = 0; r < rows; r++) {
+      const d = dropOf(shape.building, flip && r % 2 ? (rotation + 8) % 16 : rotation);
+      if (d?.side !== 'top' && d?.side !== 'bottom') return null;
+      const band = d.side === 'top' ? r : r + 1;
+      const row = d.side === 'top' && r > 0 ? middle + 1 - d.depth : d.depth;
+      if (row < 1 || row > bandHeight(band)) return null;
+      at.set(`${band},${row}`, [...(at.get(`${band},${row}`) ?? []), r]);
+    }
+    const lines = [...at].map(([k, serves]) => ({ band: Number(k.split(',')[0]), row: Number(k.split(',')[1]), serves }));
+    const cuts = out.parts ? exactCuts(lines.map(l => l.serves.reduce((sum, r) => sum + counts[r], 0)), out.parts) : null;
+    if (out.parts && !cuts) return null;
+    let part = 0;
+    lines.forEach((l, k) => {
+      taken.add(`${l.band},${l.row}`);
+      used.set(l.band, (used.get(l.band) ?? 0) + 1);
+      for (const r of l.serves) faces.set(`${r}|${l.band}`, (faces.get(`${r}|${l.band}`) ?? 0) + 1);
+      dropped.push({ routeIds: out.routeIds, part, serves: l.serves, band: l.band, row: l.row });
+      if (cuts ? cuts.includes(k) : out.splittable) part++;
+    });
+  }
   (plain ? lead : shuffle(belts, rng)).forEach((b, n) => {
+    if (drop && b.isOutput) return;
     if (twoWay(b)) {
       const full = b.items.reduce((sum, i) => sum + i.rate, 0) / sb.count * (sb.headroom ?? 1);
       wanted.push(...twoWayParts(b, counts, { full, lane: shape.lane, shared: dual === 'shared', depth: deep ? 2 : undefined }));
@@ -989,7 +1068,7 @@ export function stackVariant(shape, { rotation, rowLength, flip = false, plain =
   const sideways = shift ?? (rows > 1 && !plain && rng() < 0.3 ? choose([-4, -3, -2, -1, 1, 2, 3, 4], rng) : 0);
   const gap = Math.max(Math.abs(sideways), wide ?? (plain || rng() < 0.6 ? 0 : 1 + Math.floor(rng() * 2)));
   return {
-    rotation, rowLength, ...(twoWayPath ? { counts } : {}), flip, middle, belts: placed, pipes: pipeRows, shift: sideways, gap,
+    rotation, rowLength, ...(twoWayPath ? { counts } : {}), flip, middle, belts: [...dropped, ...placed], pipes: pipeRows, shift: sideways, gap,
     columns: plain ? 'center' : choose(['center', 'left', 'right'], rng),
     poleSlot: plain || rng() < 0.5 ? null : { band: Math.floor(rng() * (rows + 1)), row: 1 + Math.floor(rng() * 2) },
   };

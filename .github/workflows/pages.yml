@@ -1,5 +1,6 @@
 # Publishes the planner to GitHub Pages: the page, its modules and the catalog, with icons
-# extracted from the zips attached to the Pyanodons repositories' releases. The site is built on
+# extracted from the zips attached to the Pyanodons repositories' releases (the repository's
+# sprites/ giving the rest: base-game icons, those filled in from an icon dump). The site is built on
 # every push to master and to claude/ branches (to check it); master's goes to the gh-pages branch,
 # which Pages serves.
 name: Pages
@@ -45,7 +46,7 @@ jobs:
       - name: Collect the site
         run: |
           mkdir site
-          cp -r index.html js data site/
+          cp -r index.html js data sprites site/
           node scripts/site-sprites.mjs mods site
       # Pages serves the gh-pages branch: master's site replaces it, as one commit.
       - name: Publish to gh-pages

@@ -5,7 +5,7 @@ import { machineEffect } from './modules.js';
 // machine an inserter moves its share of every item on its belt the machine takes (they add up:
 // 1 iron and 2 copper in 3 s are 1 in 1 s); out of one, its share of the machine's products.
 // Inserters on one belt into a machine, or out of one machine, share it evenly (two of them:
-// 1 in 2 s each).
+// 1 in 2 s each). Those supporting a machine's Output Drop share what the drop leaves them.
 
 // A block → each inserter's clock (`of`: entity → key, "items/seconds"), and every clock with how
 // many inserters run on it and the items they move, fastest first.
@@ -17,7 +17,9 @@ export function clocksOf(block, catalog) {
     const rates = e.kind === 'inserter' && e.sharing ? full[e.subBlock]?.[e.role] : null;
     if (!rates) continue;
     const moved = e.moves.filter(name => rates.has(name));
-    const perSecond = moved.reduce((sum, name) => sum + rates.get(name), 0) / e.sharing;
+    // Beside a machine's Output Drop, its supporting inserters move only what the drop surely
+    // cannot (dropping: items/s its lane surely takes).
+    const perSecond = (moved.reduce((sum, name) => sum + rates.get(name), 0) - (e.dropping ?? 0)) / e.sharing;
     if (!(perSecond > 0)) continue;
     const [items, seconds] = fraction(perSecond);
     const key = `${items}/${seconds}`;

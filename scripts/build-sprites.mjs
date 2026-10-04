@@ -1,12 +1,17 @@
 // Extracts every icon the catalog uses into sprites/:
 //   npm run build-sprites -- <Factorio install folder> [mods folder]
+// or, without the game, fills in the icons sprites/ lacks from an icon dump
+// (factorio --dump-icon-sprites writes script-output/<type>/<name>.png):
+//   npm run build-sprites -- --dump <script-output folder>
 import { readFileSync, lstatSync, readlinkSync, unlinkSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { buildSprites } from './sprites.mjs';
+import { buildSprites, dumpedSprites } from './sprites.mjs';
 
-const [game, mods = `${process.env.HOME}/.factorio/mods`] = process.argv.slice(2);
-if (!game) {
-  console.error('usage: npm run build-sprites -- <Factorio install folder, the one holding data/> [mods folder]');
+const args = process.argv.slice(2);
+const dump = args[0] === '--dump' ? args[1] : null;
+const [game, mods = `${process.env.HOME}/.factorio/mods`] = dump ? [] : args;
+if (!game && !dump) {
+  console.error('usage: npm run build-sprites -- <Factorio install folder, the one holding data/> [mods folder]\n       npm run build-sprites -- --dump <script-output folder of factorio --dump-icon-sprites>');
   process.exit(1);
 }
 const catalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
@@ -24,5 +29,10 @@ if (lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink()) {
   unlinkSync(link);
 }
 const out = fileURLToPath(new URL('../sprites/', import.meta.url));
+if (dump) {
+  const { written, missing } = dumpedSprites(catalog.icons, { dump, out });
+  console.log(`sprites/: ${written} icons from the dump${missing.length ? `, ${missing.length} it has none for (e.g. ${missing.slice(0, 3).join(', ')})` : ''}`);
+  process.exit(0);
+}
 const { written, missing } = buildSprites(catalog.icons, { game, mods, out });
 console.log(`sprites/: ${written} icons${missing.length ? `, ${missing.length} not found (e.g. ${missing.slice(0, 3).join(', ')})` : ''}`);

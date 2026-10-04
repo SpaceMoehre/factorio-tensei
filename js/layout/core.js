@@ -70,6 +70,8 @@ export function buildCore(sb, building, links, variant, env) {
   const pipes = variant.pipes ?? [];
   const connections = counts.map((_, r) => pickConnections(sb, building, links.fluids, rotationOf(r), variant));
   const ported = (r, side) => connections[r].some(c => c.routeId !== undefined && c.side === side);
+  // Output Drop: where each row's machines put their products themselves.
+  const drops = counts.map((_, r) => dropOf(building, rotationOf(r)));
 
   // Faces: a row's top face looks into band r, its bottom face into band r + 1. A band row is
   // counted from the row above, so the row below sees it at depth middle + 1 - row.
@@ -104,16 +106,22 @@ export function buildCore(sb, building, links, variant, env) {
         }
         if (access.some(a => a.r === r && a.belt === belt)) continue;
         const depth = depthIn(belt.band, belt.row, r);
-        if (!allowed(depth)) throw new LayoutError(depth === 1 ? 'a belt against the machine needs 90° inserters' : 'a machine row cannot reach its belt');
-        access.push({ r, belt, depth, side: belt.band === r ? 'top' : 'bottom', share: 1 / serving.length });
+        const side = belt.band === r ? 'top' : 'bottom';
+        // An output belt past the machines' drop tiles takes their drops (no inserter needed).
+        const drop = routeId === links.output && drops[r]?.side === side && drops[r].depth === depth;
+        if (!allowed(depth) && !drop) throw new LayoutError(depth === 1 ? 'a belt against the machine needs 90° inserters' : 'a machine row cannot reach its belt');
+        access.push({ r, belt, depth, side, share: 1 / serving.length, drop });
       }
     }
   }
 
+  // An outer band reaches as far as its belts and pipes, its connections' pipes and its drop
+  // tiles (kept clear of other belts even where no belt takes the drops).
   const outerHeight = band => {
     const r = band === 0 ? 0 : rowCount - 1;
     const side = band === 0 ? 'top' : 'bottom';
-    return Math.max(ported(r, side) ? 1 : 0, ...[...belts, ...pipes].filter(b => b.band === band).map(b => b.row));
+    const drop = drops[r]?.side === side ? drops[r].depth : 0;
+    return Math.max(ported(r, side) ? 1 : 0, drop, ...[...belts, ...pipes].filter(b => b.band === band).map(b => b.row));
   };
   // Belts lie within inserter reach; outside the stack, pipe rows may lie further out.
   for (const [list, outer] of [[belts, 4], [pipes, 8]]) {
@@ -195,10 +203,21 @@ export function buildCore(sb, building, links, variant, env) {
     const demand = load !== undefined ? load / counts[a.r] : a.share * items.reduce((sum, i) => sum + i.rate, 0) / sb.count;
     return {
       ...a, spec, rate, short, free: env.rightAngle && spec.customVectors, isOutput, items, demand, id: belts.indexOf(a.belt),
-      needed: Math.max(1, Math.ceil(demand / rate - 1e-9)),
+      needed: a.drop ? 0 : Math.max(1, Math.ceil(demand / rate - 1e-9)), twin: false,
       insY: faceY(a.r, a.side, reach.row), beltY: faceY(a.r, a.side, a.depth), columns: [],
     };
   });
+  // Output Drop: a row's machines drop onto the lane of their belt nearer them, whatever comes
+  // down it before them. Where that lane may be full before a machine's turn (its row makes more
+  // than it carries), 90° inserters support it, onto the other lane: enough that it gets its
+  // output away even behind every other machine of its row. Two rows dropping onto one belt
+  // from either side fill both its lanes, and leave no lane for inserters.
+  for (const s of slots.filter(s => s.drop)) {
+    const twin = access.some(a => a.drop && a.belt === s.belt && a.r !== s.r);
+    const sure = Math.max(0, env.laneCapacity - (counts[s.r] - 1) * s.demand);
+    s.twin = twin;
+    if (env.rightAngle && !twin) s.needed = Math.ceil(Math.max(0, s.demand - sure) / s.rate - 1e-9);
+  }
   // An output belt's drops pick their lanes (Drop Offset), but a lane fills by whole inserters:
   // enough of them that they split onto the two lanes carrying what the belt's rows make (all
   // the belt rows of its part) — one more per machine where it adds the most.
@@ -206,6 +225,8 @@ export function buildCore(sb, building, links, variant, env) {
     const outputs = belts.filter(b => b.routeIds.includes(links.output));
     for (const part of new Set(outputs.map(b => b.part))) {
       const mine = slots.filter(s => outputs.includes(s.belt) && s.belt.part === part);
+      // Drops fill their lane themselves: their supporting inserters are counted above.
+      if (mine.some(s => s.drop)) continue;
       const want = Math.min(2 * env.laneCapacity, mine.reduce((sum, s) => sum + s.demand * counts[s.r], 0));
       const carried = () => onTwoLanes(mine.flatMap(s => Array(counts[s.r] * s.needed).fill(s.rate)), env.laneCapacity);
       for (let more = 0; more < 2 * mine.length && carried() < want - 1e-9; more++) {
@@ -220,6 +241,19 @@ export function buildCore(sb, building, links, variant, env) {
       }
     }
   }
+  // Drop tiles: an output belt row past them has a waypoint there, so its belt surfaces on them;
+  // any other is kept clear, so no other belt takes the drops (and no inserter stands there).
+  for (let r = 0; r < rowCount; r++) {
+    const d = drops[r];
+    const c = d ? mxOff + off(r) + d.tileX : -1;
+    if (c < 0 || c >= pitch) continue;
+    const y = machineY[r] + d.tileY, here = period.get(c, y);
+    const used = slots.find(s => s.drop && s.r === r);
+    if (used) {
+      if (here && here.type !== 'unused' && here.belt !== used.id) throw new LayoutError('a drop tile holds a fluid connection');
+      period.set(c, y, { type: 'waypoint', belt: used.id, drop: true });
+    } else if (!here || here.type === 'unused') period.set(c, y, { type: 'drop' });
+  }
   const beltRows = belts.map((b, id) => ({ ...b, id, y: bandY(b.band, b.row) }));
   const pipeRows = pipes.map(p => ({ ...p, y: bandY(p.band, p.row) }));
   // Pipe rows meet the connections: beside a connection lying in a pipe row no inserter stands
@@ -232,7 +266,7 @@ export function buildCore(sb, building, links, variant, env) {
   const surfaceAt = (c, y, route) => {
     for (const n of [c - 1, c + 1]) {
       const v = period.get(n, y);
-      if (v?.type === 'unused' || (v?.type === 'port' && v.route !== route)) throw new LayoutError('a pipe row is cut');
+      if (v?.type === 'unused' || v?.type === 'drop' || (v?.type === 'port' && v.route !== route)) throw new LayoutError('a pipe row is cut');
       keep(n, y);
     }
   };
@@ -294,6 +328,9 @@ export function buildCore(sb, building, links, variant, env) {
   const joins = [];
   const taps = [];
   const supply = new Map();
+  // Drop tiles no belt takes: no belt may pass over them (the Module and the Compound Block
+  // hold them too).
+  const dropTiles = [];
   let shortfall = 0;
   // Each machine and its inserters carry its number (`machine`, in the order the machines stand
   // in the entities), and so does what its inserters move: a Fixture standing on one leaves it
@@ -308,17 +345,34 @@ export function buildCore(sb, building, links, variant, env) {
       const x0 = i * pitch;
       // What this machine's inserters move per belt route (a Two-Way Output's two belts add up).
       const movedBy = new Map();
-      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine });
+      // A machine with an Output Drop carries its drop point (relative to its corner).
+      const d = drops[r];
+      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine, ...(d && { drop: d.point }) });
       const first = entities.length;
+      // Its drop tile: a waypoint of the output belt past it, else kept clear.
+      if (d) {
+        const [x, y] = [x0 + mxOff + off(r) + d.tileX, machineY[r] + d.tileY];
+        const used = slots.find(s => s.drop && s.r === r);
+        if (used) stamped.set(key(x, y), { waypoint: used.id });
+        else {
+          dropTiles.push([x, y]);
+          if (!stamped.has(key(x, y))) stamped.set(key(x, y), 'drop');
+        }
+      }
       for (const s of slots.filter(s => s.r === r)) {
         const placed = columns.get(s);
+        // A machine's drop takes its share of the lane; supporting inserters move the rest, and
+        // their clock counts only that (what the drop surely takes, items/s).
+        const dropped = s.drop ? Math.min(s.demand, env.laneCapacity / counts[r]) : 0;
+        const dropping = s.drop ? { dropping: Math.max(0, env.laneCapacity - (counts[r] - 1) * s.demand) / 60 } : {};
         for (const { column, side } of placed) {
-          entities.push({ ...inserter(s, x0 + column, side), flow: s.demand / placed.length, machine, ...moving(s.isOutput, s.items, placed.length) });
+          entities.push({ ...inserter(s, x0 + column, side), flow: (s.demand - dropped) / placed.length, machine, ...moving(s.isOutput, s.items, placed.length), ...dropping });
           stamped.set(key(x0 + column, s.insY), 'inserter');
           stamped.set(key(x0 + column + side, s.beltY), { waypoint: s.id });
         }
-        const moved = placed.length * s.rate;
-        shortfall += Math.max(0, s.demand - moved);
+        const moved = placed.length * s.rate + dropped;
+        // What a row's drops and their inserters cannot move is its belt's (see the parts).
+        if (!s.drop) shortfall += Math.max(0, s.demand - moved);
         const supplyKey = s.belt.routeIds.join('+');
         if (!supply.has(supplyKey)) supply.set(supplyKey, { route: s.belt.routeIds[0], role: s.isOutput ? 'output' : 'input', items: s.items.map(i => i.name), perMachine: [], machines: [] });
         movedBy.set(supplyKey, (movedBy.get(supplyKey) ?? 0) + moved);
@@ -387,7 +441,7 @@ export function buildCore(sb, building, links, variant, env) {
   // takes; the tiles its inserters reach are its waypoints. Pipe rows are held the same way.
   const held = y => [...Array(width).keys()].filter(x => {
     const v = stamped.get(key(x, y));
-    return v !== 'inserter' && v !== 'port' && v !== 'pole' && v !== 'tap';
+    return v !== 'inserter' && v !== 'port' && v !== 'pole' && v !== 'tap' && v !== 'drop';
   });
   const rowsOut = beltRows.map(b => ({
     routeIds: b.routeIds, part: b.part, y: b.y, reserve: held(b.y).map(x => [x, b.y]),
@@ -410,7 +464,7 @@ export function buildCore(sb, building, links, variant, env) {
   const parts = [];
   for (const b of belts) {
     let part = parts.find(p => p.routeIds.join() === b.routeIds.join() && p.part === b.part);
-    if (!part) parts.push(part = { routeIds: b.routeIds, part: b.part, rows: [], machines: 0, lanes: 2, output: b.routeIds.includes(links.output) });
+    if (!part) parts.push(part = { routeIds: b.routeIds, part: b.part, rows: [], machines: 0, lanes: 2, output: b.routeIds.includes(links.output), dropped: false });
     // A row dropping its output on two belts gives each half its machines.
     for (const r of b.serves) {
       const share = access.find(a => a.r === r && a.belt === b)?.share ?? 1;
@@ -425,6 +479,13 @@ export function buildCore(sb, building, links, variant, env) {
     // lanes filled, a belt beside one row only one. With custom vectors every output drop
     // chooses its lane (Drop Offset).
     if (!(env.rightAngle && b.routeIds.includes(links.output)) && b.serves.length < 2) part.lanes = 1;
+    // Output Drops fill the lane nearer their machines: one row's, its supporting inserters the
+    // other; two rows' from either side both.
+    const dropping = slots.filter(s => s.drop && s.belt === b);
+    if (dropping.length) {
+      part.dropped = true;
+      part.lanes = dropping.some(s => s.twin || s.needed > 0) ? 2 : 1;
+    }
   }
   // A Side Belt fills one lane (an output with custom vectors both); a Head-on Belt both, from
   // inserters either side of it. Nothing
@@ -474,6 +535,16 @@ export function buildCore(sb, building, links, variant, env) {
       const items = routeItems(sb, route, routeId === links.output);
       if (routeId === links.output) {
         if (internal) continue;
+        // A row's Output Drops put up to a lane on its belt, its supporting inserters up to a
+        // lane more.
+        if (part.dropped) {
+          for (const s of slots.filter(s => s.drop && partOf(s.belt) === part)) {
+            const made = counts[s.r] * s.demand, dropped = Math.min(made, env.laneCapacity);
+            const supported = counts[s.r] * columns.get(s).length * s.rate;
+            overload += made - dropped - Math.min(env.laneCapacity, supported, made - dropped);
+          }
+          continue;
+        }
         // Output inserters fill the far lane, which the products share: one lane, or both where
         // rows on either side drop onto the belt or every drop picks its lane (Drop Offset).
         const load = items.reduce((sum, i) => sum + i.rate, 0) * part.machines / sb.count;
@@ -492,13 +563,17 @@ export function buildCore(sb, building, links, variant, env) {
   const poleSlots = [...stamped].filter(([, v]) => v === 'pole').map(([k]) => k.split(',').map(Number));
   return {
     w: width, h: height, entities, rows: rowsOut, pipeRows: pipeRowsOut, parts, ports, pipeBlocked, surfacePorts: [...surfacePorts, ...joins], taps, poleSlots,
-    supply: [...supply.values()], shortfall, overload, pathDrops: internal ? { routeId: links.output, parts: pathDrops() } : null,
+    dropTiles, supply: [...supply.values()], shortfall, overload, pathDrops: internal ? { routeId: links.output, parts: pathDrops() } : null,
+    // Output inserters at machines with an Output Drop: the fewer, the more the drops do.
+    supporting: building.drop ? entities.filter(e => e.role === 'output').length : 0,
   };
 
   // An Internal Path's output parts, for its Path Flow: what each part makes at the plan's rate,
   // and per machine row (machines: how many) what its inserters together can put on the part's
   // lanes — on the far lane where a straight drop decides it (the rows either side of a band fill
-  // different lanes), on either lane (free) where custom vectors let the module choose.
+  // different lanes), on either lane (free) where custom vectors let the module choose. A row's
+  // Output Drops go on the near lane (the right lane of a belt above them running east, the left
+  // of one below), up to a lane.
   function pathDrops() {
     const total = routeItems(sb, outRoute, true).reduce((sum, i) => sum + i.rate, 0);
     return parts.filter(p => p.routeIds.includes(links.output)).map(part => ({
@@ -507,6 +582,7 @@ export function buildCore(sb, building, links, variant, env) {
         ...slots.filter(s => s.isOutput && partOf(s.belt) === part).map(s => {
           const moved = counts[s.r] * columns.get(s).length * s.rate;
           const row = { machine: s.r, machines: counts[s.r], left: 0, right: 0 };
+          if (s.drop) return { ...row, [s.side === 'top' ? 'right' : 'left']: env.laneCapacity, free: moved };
           if (s.free) return { ...row, free: moved };
           return s.side === 'top' ? { ...row, left: moved } : { ...row, right: moved };
         }),
@@ -878,6 +954,22 @@ export function fluidSides(sb, building, fluids, rotation) {
 
 function rotatedSize({ w, h }, rotation) {
   return rotation === 4 || rotation === 12 ? { w: h, h: w } : { w, h };
+}
+
+// Output Drop: where a machine puts its products itself once rotated — the tile beside it its
+// drop point lies on (relative to its top-left corner), the face that tile lies against and how
+// many tiles out, and the point itself. Null for a machine without one.
+export function dropOf(building, rotation) {
+  if (!building.drop) return null;
+  let { x, y } = building.drop;
+  for (let r = 0; r < rotation; r += 4) [x, y] = [-y, x];
+  const { w, h } = rotatedSize(building.size, rotation);
+  const point = { x: w / 2 + x, y: h / 2 + y };
+  const tileX = Math.floor(point.x), tileY = Math.floor(point.y);
+  const side = tileY < 0 ? 'top' : tileY >= h ? 'bottom' : tileX < 0 ? 'left' : tileX >= w ? 'right' : null;
+  if (!side) return null;
+  const depth = { top: -tileY, bottom: tileY - h + 1, left: -tileX, right: tileX - w + 1 }[side];
+  return { side, depth, tileX, tileY, point };
 }
 
 // Where a connection's pipe tile lies relative to the machine's top-left corner once rotated.

@@ -214,10 +214,15 @@ function removable(u, at, axis, v0, v1) {
   return true;
 }
 
-// The span each inserter covers along each axis (its tile to where it picks up and drops): a
-// line inside a span, or at either end of it, cannot come out.
+// The span each inserter covers along each axis (its tile to where it picks up and drops), and
+// each machine with an Output Drop (it and its drop tile): a line inside a span, or at either end
+// of it, cannot come out — a drop tile stays beside its machine, and nothing moves onto it.
 function inserterReach(entities) {
-  return entities.filter(e => e.kind === 'inserter').flatMap(e => {
+  const drops = entities.filter(e => e.kind === 'building' && e.drop).map(e => {
+    const x = Math.floor(e.x + e.drop.x), y = Math.floor(e.y + e.drop.y);
+    return { x: [Math.min(e.x, x), Math.max(e.x + e.w - 1, x)], y: [Math.min(e.y, y), Math.max(e.y + e.h - 1, y)] };
+  });
+  return [...drops, ...entities.filter(e => e.kind === 'inserter').flatMap(e => {
     const v = e.vectors ?? null;
     // Straight inserters reach along their direction: 1 tile (2 for long-handed) each way.
     const r = e.name.startsWith('long') ? 2 : 1;
@@ -231,7 +236,7 @@ function inserterReach(entities) {
       ys.push(e.y - r, e.y + r);
     }
     return [{ x: [Math.min(...xs), Math.max(...xs)], y: [Math.min(...ys), Math.max(...ys)] }];
-  });
+  })];
 }
 
 // The entities off the lines (highest first, none next to another), everything past each moved

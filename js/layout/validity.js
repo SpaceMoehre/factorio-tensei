@@ -132,11 +132,39 @@ export function feedsEveryMachine(block, route, machines, catalog) {
     .map(m => `no inserter moves route ${route.id} into machine at ${m.x},${m.y}`);
 }
 
+// A machine with an Output Drop puts its products on its drop tile itself.
+const dropTile = m => key(Math.floor(m.x + m.drop.x), Math.floor(m.y + m.drop.y));
+
 export function drainsEveryMachine(block, route, machines, catalog) {
   const tiles = routeTiles(route);
   const { outOf } = inserterReach(block.entities, catalog);
-  return machines.filter(m => !(outOf.get(m) ?? []).some(({ drop }) => tiles.has(drop)))
+  return machines.filter(m => !(m.drop && tiles.has(dropTile(m))) && !(outOf.get(m) ?? []).some(({ drop }) => tiles.has(drop)))
     .map(m => `no inserter moves output of machine at ${m.x},${m.y} onto route ${route.id}`);
+}
+
+// A machine with an Output Drop puts its products on whatever belt lies on its drop tile: only
+// a belt of its own output may lie there.
+export function dropsOnItsOwnBelt(block) {
+  const belts = beltTiles(block.entities);
+  return block.entities.filter(m => m.kind === 'building' && m.drop).flatMap(m => {
+    const belt = belts.get(dropTile(m));
+    return belt && block.routes[belt.route]?.source !== m.subBlock ? [`${m.name} at ${m.x},${m.y} drops its products on route ${belt.route}`] : [];
+  });
+}
+
+// Output inserters at machines with an Output Drop: supporting their drops, or doing their work
+// where no belt takes them.
+export function supporting(block) {
+  const dropping = new Set(block.entities.filter(e => e.kind === 'building' && e.drop).map(e => e.subBlock));
+  return block.entities.filter(e => e.kind === 'inserter' && e.role === 'output' && dropping.has(e.subBlock)).length;
+}
+
+function beltTiles(entities) {
+  const belts = new Map();
+  for (const e of entities.filter(e => e.route !== undefined && ['belt', 'underground-belt', 'splitter'].includes(e.kind))) {
+    for (const t of tilesOf(e)) belts.set(t, e);
+  }
+  return belts;
 }
 
 // Only inserters with allow_custom_vectors may carry custom vectors, and none at all when 90°
@@ -431,6 +459,7 @@ export function validateBlock(block, catalog, logistics) {
     ...noFluidMixing(block, catalog, logistics),
     ...separateNetworks(block, catalog, logistics),
     ...customVectors(block, catalog, logistics),
+    ...dropsOnItsOwnBelt(block),
     ...insideSite(block),
   ];
   for (const route of block.routes) {

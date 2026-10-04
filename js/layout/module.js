@@ -55,6 +55,9 @@ export function routeModule(core, opts) {
     for (const [x, y] of core.surfacePorts) grid.surfaceOnly.add(key(x, y));
     for (const { routeId, tile: [x, y] } of core.taps ?? []) grid.reserve(x, y, pipeId(routeId));
     for (const [x, y] of core.poleSlots) grid.reserve(x, y, -1);
+    // A drop tile no belt of the machine's output takes stays clear: a belt there would get its
+    // products.
+    for (const [x, y] of core.dropTiles ?? []) if (!grid.occupied.has(key(x, y)) && grid.holder(x, y) === undefined) grid.reserve(x, y, -1);
     // A fluid with pipe rows in several bands joins them in a riser column beside the core: the
     // first such fluid on the west, the next on the east, then further out.
     const risers = fluidIds.filter(id => core.pipeRows.filter(p => p.routeId === id).length > 1);
@@ -172,7 +175,8 @@ export function routeModule(core, opts) {
     const consumers = entities.filter(e => e.kind === 'inserter' || (e.kind === 'building' && opts.electric(e)));
     const poles = powered(grid, kept, consumers);
     const machines = entities.filter(e => e.kind === 'building');
-    const inserters = entities.filter(e => e.kind === 'inserter');
+    // A machine's Output Drop moves its products like an inserter fixed on one lane.
+    const inserters = [...entities.filter(e => e.kind === 'inserter'), ...machineDrops(machines, opts.lane ?? Infinity)];
     // How each machine's output splits between the belts it drops on, then the lanes.
     const split = outputSplit(parts.map(p => listOf(p.key)), inserters, machines, opts.inserters, opts.made ?? Infinity);
     parts.forEach((p, k) => chooseLanes(listOf(p.key), inserters, machines, opts.inserters, p.dir === W ? 'right' : 'left', {
@@ -200,7 +204,7 @@ export function routeModule(core, opts) {
     const squeezedCore = {
       ...core,
       ports: core.ports.map(p => ({ ...p, tiles: tiles(p.tiles) })),
-      pipeBlocked: tiles(core.pipeBlocked), surfacePorts: tiles(core.surfacePorts), poleSlots: tiles(core.poleSlots),
+      pipeBlocked: tiles(core.pipeBlocked), surfacePorts: tiles(core.surfacePorts), poleSlots: tiles(core.poleSlots), dropTiles: tiles(core.dropTiles ?? []),
       taps: (core.taps ?? []).map(t => ({ ...t, tile: moved(...t.tile) })).filter(t => t.tile),
     };
     // Poles placed in a margin the routing left empty belong to the module too.
@@ -322,7 +326,7 @@ function chooseLanes(pieces, inserters, machines, specs, first, { made, lane, sh
     const m = machines.findIndex(e => inside(pickup, e));
     if (i === undefined || m < 0) continue;
     if (!here.has(m)) here.set(m, { left: 0, right: 0, either: 0, share: share(m) });
-    if (ins.vectors || (offsets && specs[ins.name]?.customVectors)) open.push({ ins, m, i, pickup, side: null });
+    if (!ins.fixed && (ins.vectors || (offsets && specs[ins.name]?.customVectors))) open.push({ ins, m, i, pickup, side: null });
     else here.get(m)[laneOf(pieces, i, drop).lane] += ins.rate ?? 0;
   }
   const other = first === 'left' ? 'right' : 'left';
@@ -362,6 +366,19 @@ function chooseLanes(pieces, inserters, machines, specs, first, { made, lane, sh
     const cx = ins.x + 0.5, cy = ins.y + 0.5;
     ins.vectors = { pickup: ins.vectors?.pickup ?? { x: pickup.x - cx, y: pickup.y - cy }, drop: { x: to.x - cx, y: to.y - cy } };
   }
+}
+
+// Each machine's Output Drop as an inserter would be (fixed: no drop offset moves it): from the
+// machine's centre to its drop point, moving a lane's worth at most (its lane holds no more).
+function machineDrops(machines, lane) {
+  return machines.filter(m => m.drop).map(m => {
+    const x = Math.floor(m.x + m.drop.x), y = Math.floor(m.y + m.drop.y);
+    const from = (px, py) => ({ x: px - x - 0.5, y: py - y - 0.5 });
+    return {
+      kind: 'drop', x, y, w: 1, h: 1, fixed: true, rate: Number.isFinite(lane) ? lane : 1e9,
+      vectors: { pickup: from(m.x + m.w / 2, m.y + m.h / 2), drop: from(m.x + m.drop.x, m.y + m.drop.y) },
+    };
+  });
 }
 
 // Where on piece i a drop lands on `side` (relative to the belt's travel): a quarter tile off a

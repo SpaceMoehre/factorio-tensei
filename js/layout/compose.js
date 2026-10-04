@@ -124,6 +124,8 @@ export function compose(ctx, prepared, positions, layout) {
       for (const [x, y] of core.surfacePorts) grid.surfaceOnly.add(key(x + ox, y + oy));
       for (const p of inst.module.poles) grid.reserve(p.x + ox, p.y + oy, -1);
       for (const [x, y] of core.poleSlots) if (!grid.occupied.has(key(x + ox, y + oy))) grid.reserve(x + ox, y + oy, -1);
+      // Drop tiles no belt takes stay clear: a link there would get the machine's products.
+      for (const [x, y] of core.dropTiles ?? []) if (!grid.occupied.has(key(x + ox, y + oy))) grid.reserve(x + ox, y + oy, -1);
       for (const f of inst.module.fluids) {
         const id = pipeRouteOf(routes, f.routeId);
         const abs = f.pieces.map(p => ({ ...move(p), route: id }));

@@ -264,6 +264,16 @@ export const pyCatalog = {
       ingredients: [{ type: 'fluid', name: 'muddy-sludge', amount: 100 }, { type: 'fluid', name: 'carbon-dioxide', amount: 100 }],
       products: [{ type: 'item', name: 'moss', amount: 8 }],
     },
+    soil: {
+      name: 'soil', category: 'soil-extraction', time: 8,
+      ingredients: [{ type: 'fluid', name: 'water', amount: 800 }],
+      products: [{ type: 'item', name: 'soil', amount: 16 }], allowProductivity: true,
+    },
+    'iron-plate-1': {
+      name: 'iron-plate-1', category: 'casting', time: 4,
+      ingredients: [{ type: 'fluid', name: 'molten-iron', amount: 100 }, { type: 'item', name: 'borax', amount: 3 }, { type: 'item', name: 'sand-casting', amount: 1 }],
+      products: [{ type: 'item', name: 'iron-plate', amount: 60 }], allowProductivity: true,
+    },
   },
   // Py farms run on plant and animal modules; module data as pyalienlife defines it
   // (prototypes/items/items.lua, prototypes/buildings/moss-farm.lua), with the 16 slots that the
@@ -318,6 +328,24 @@ export const pyCatalog = {
         { production: 'input', connections: [{ x: 0, y: 3, direction: 8 }] },
         { production: 'input', connections: [{ x: 0, y: -3, direction: 0 }] },
         { production: 'output', connections: [{ x: 2, y: 3, direction: 8 }] },
+      ],
+    },
+    // Output Drops: the soil extractor puts its soil on the tile south of it, the casting unit its
+    // plates on the tile west of its second row.
+    'soil-extractor-mk01': {
+      name: 'soil-extractor-mk01', size: { w: 7, h: 7 }, craftingSpeed: 1, categories: ['soil-extraction'], energy: 'electric', energyUsage: 400000,
+      drop: { x: 0, y: 3.51 },
+      fluidBoxes: [{ production: 'input', connections: [{ x: 3, y: 0, direction: 4 }, { x: -3, y: 0, direction: 12 }] }],
+    },
+    'casting-unit-mk01': {
+      name: 'casting-unit-mk01', size: { w: 7, h: 7 }, craftingSpeed: 1, categories: ['casting'], energy: 'electric', energyUsage: 500000,
+      drop: { x: -3.51, y: -2 },
+      fluidBoxes: [
+        { production: 'input', connections: [{ x: 0, y: -3, direction: 0 }] },
+        { production: 'input', connections: [{ x: 0, y: 3, direction: 8 }] },
+        { production: 'input', connections: [{ x: 3, y: 0, direction: 4 }] },
+        { production: 'input', connections: [{ x: 3, y: 2, direction: 4 }] },
+        { production: 'output', connections: [{ x: -3, y: 0, direction: 12 }] },
       ],
     },
   },

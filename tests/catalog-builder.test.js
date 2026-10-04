@@ -69,6 +69,25 @@ test('building: footprint from collision box, speed, categories, energy type and
   assert.equal(buildings['stone-furnace'].energy, 'burner');
 });
 
+// Py's soil extractor puts its soil on the tile south of it; its legacy twin has no drop, and a
+// derrick's drop point at its centre is none.
+test('building: the point beside it where a machine puts its products itself (Output Drop)', () => {
+  const machine = (name, vector) => ({
+    name, collision_box: [[-3.3, -3.3], [3.3, 3.3]], crafting_speed: 1, crafting_categories: ['soil-extraction'],
+    energy_usage: '400kW', energy_source: { type: 'electric' }, ...(vector && { vector_to_place_result: vector }),
+  });
+  const { buildings } = buildCatalog(dataRaw({
+    'assembling-machine': {
+      'soil-extractor-mk01': machine('soil-extractor-mk01', [0, 3.51]),
+      'soil-extractor-mk01-legacy': machine('soil-extractor-mk01-legacy'),
+      'oil-derrick-mk01': machine('oil-derrick-mk01', [0, 0]),
+    },
+  }));
+  assert.deepEqual(buildings['soil-extractor-mk01'].drop, { x: 0, y: 3.51 });
+  assert.equal(buildings['soil-extractor-mk01-legacy'].drop, undefined);
+  assert.equal(buildings['oil-derrick-mk01'].drop, undefined);
+});
+
 test('logistics: poles, belt tiers with throughput and underground reach, pipe-to-ground reach', () => {
   const catalog = buildCatalog(dataRaw({
     'electric-pole': {
@@ -110,6 +129,7 @@ test('icons: every item, fluid and virtual signal maps to its icon file under sp
       'iron-gear-wheel': { name: 'iron-gear-wheel', icon: '__base__/graphics/icons/iron-gear-wheel.png' },
       pcb1: { name: 'pcb1', icon: '__pyhightechgraphics__/graphics/icons/pcb1.png' },
       blank: { name: 'blank' },
+      'sap-extractor-mk01': { name: 'sap-extractor-mk01', icon: '__pyalienlifegraphics__/graphics/icons//sap-extractor-mk01.png' },
     },
     fluid: { water: { name: 'water', icon: '__base__/graphics/icons/fluid/water.png' } },
     tool: {
@@ -120,6 +140,7 @@ test('icons: every item, fluid and virtual signal maps to its icon file under sp
   assert.deepEqual(icons, {
     'iron-gear-wheel': 'base/graphics/icons/iron-gear-wheel.png',
     pcb1: 'pyhightechgraphics/graphics/icons/pcb1.png',
+    'sap-extractor-mk01': 'pyalienlifegraphics/graphics/icons/sap-extractor-mk01.png',
     water: 'base/graphics/icons/fluid/water.png',
     'automation-science-pack': 'base/graphics/icons/automation-science-pack.png',
     'signal-A': 'base/graphics/icons/signal/signal_A.png',
@@ -139,6 +160,8 @@ test('signals: every virtual signal a condition may name, in the game\'s order',
       'signal-everything': { name: 'signal-everything', subgroup: 'shapes', order: 'a' },
       'signal-unknown': { name: 'signal-unknown', hidden: true },
       'signal-item-parameter': { name: 'signal-item-parameter', parameter: true },
+      // Factorio 2.0's blueprint parameters: in their own subgroup.
+      'signal-fuel-parameter': { name: 'signal-fuel-parameter', subgroup: 'parameters' },
     },
   }));
   assert.deepEqual(signals, ['signal-heart', 'signal-1', 'signal-A', 'signal-B']);

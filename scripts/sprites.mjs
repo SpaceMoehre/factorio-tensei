@@ -36,6 +36,31 @@ export function buildSprites(icons, { game, mods, out }) {
   return { written, missing };
 }
 
+// Icons from an icon dump instead (`factorio --dump-icon-sprites`: script-output/<type>/<name>.png,
+// each prototype drawn once, no game install needed): every icon of the catalog that sprites/
+// lacks, written where the catalog names it — an item's picture first, then a fluid's, a virtual
+// signal's, any other's. Returns how many were written and the names the dump has no icon for.
+export function dumpedSprites(icons, { dump, out }) {
+  const first = ['item', 'fluid', 'virtual-signal'];
+  const folders = readdirSync(dump, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
+    .sort((a, b) => (first.indexOf(a) + 1 || first.length + 1) - (first.indexOf(b) + 1 || first.length + 1) || a.localeCompare(b));
+  let written = 0;
+  const missing = [];
+  for (const [name, path] of Object.entries(icons)) {
+    const target = join(out, path);
+    if (existsSync(target)) continue;
+    const source = folders.map(f => join(dump, f, `${name}.png`)).find(f => existsSync(f));
+    if (!source) {
+      missing.push(name);
+      continue;
+    }
+    mkdirSync(dirname(target), { recursive: true });
+    copyFileSync(source, target);
+    written++;
+  }
+  return { written, missing };
+}
+
 // For a catalog without icon paths: each name's icon, found as graphics/icons/**/<name>.png in
 // the newest version of each mod in mods/ (zips or folders). Where several mods draw one, the
 // first by mod name wins, and within a mod the shallowest path. Returns { name: '<mod>/<path>' }

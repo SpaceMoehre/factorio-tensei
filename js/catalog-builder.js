@@ -39,6 +39,7 @@ export function buildCatalog(raw) {
         ...(b.effect_receiver?.base_effect && { baseEffect: b.effect_receiver.base_effect }),
         ...(b.effect_receiver?.speed_limits?.low !== undefined && { speedLow: b.effect_receiver.speed_limits.low }),
       }),
+      ...(dropPoint(b) && { drop: dropPoint(b) }),
       fluidBoxes: (b.fluid_boxes ?? []).map(fb => ({
         production: fb.production_type,
         connections: fb.pipe_connections
@@ -98,13 +99,13 @@ export function buildCatalog(raw) {
 }
 
 // The virtual signals an Inserter Clock may take, in the game's order (by subgroup, then their
-// own order): not the wildcards, nor hidden or parameter signals.
+// own order): not the wildcards, nor hidden or parameter signals (a blueprint's parameters).
 const WILDCARDS = ['signal-everything', 'signal-anything', 'signal-each'];
 function virtualSignals(raw) {
   const ordered = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
   const group = s => raw['item-subgroup']?.[s.subgroup]?.order ?? '';
   return Object.values(raw['virtual-signal'] ?? {})
-    .filter(s => !s.hidden && !s.parameter && !WILDCARDS.includes(s.name))
+    .filter(s => !s.hidden && !s.parameter && s.subgroup !== 'parameters' && !WILDCARDS.includes(s.name))
     .sort((a, b) => ordered(group(a), group(b)) || ordered(a.order ?? '', b.order ?? '') || ordered(a.name, b.name))
     .map(s => s.name);
 }
@@ -121,6 +122,16 @@ function footprints(raw) {
     }
   }
   return out;
+}
+
+// Where a machine puts its products itself (Output Drop: vector_to_place_result, Py's soil
+// extractors and casting units), from its centre facing north: only a point beside the machine,
+// where a belt can take them.
+function dropPoint(b) {
+  if (!b.vector_to_place_result) return null;
+  const { x, y } = vector(b.vector_to_place_result);
+  const { w, h } = footprint(b.collision_box);
+  return Math.abs(x) >= w / 2 || Math.abs(y) >= h / 2 ? { x, y } : null;
 }
 
 // Factorio 2.0 names one fuel category per item and a list per burner; mods may use either form.
@@ -157,7 +168,8 @@ function spriteIcons(raw) {
     for (const p of Object.values(raw[type] ?? {})) {
       const path = p.icon ?? p.icons?.[0]?.icon;
       const match = /^__([^/]+)__\/(.+)$/.exec(path ?? '');
-      if (match) icons[p.name] = `${match[1]}/${match[2]}`;
+      // (Some mods name a folder twice: graphics/icons//sap-extractor-mk01.png.)
+      if (match) icons[p.name] = `${match[1]}/${match[2].replace(/\/{2,}/g, '/')}`;
     }
   }
   return icons;

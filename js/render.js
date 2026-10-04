@@ -220,6 +220,23 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
       }
     }
 
+    // Output Drops, as the game shows them: a yellow arrow out of the machine, across its edge
+    // onto the tile it puts its products on.
+    if (s >= 8) {
+      ctx.fillStyle = '#f0c419';
+      for (const e of block.entities.filter(m => m.kind === 'building' && m.drop)) {
+        const [dx, dy] = ARROW[directionOf({ x: e.drop.x - e.w / 2, y: e.drop.y - e.h / 2 })];
+        // The edge point it crosses, and the arrow's tip a third of a tile out from it.
+        const ex = sx(e.x + e.drop.x), ey = sy(e.y + e.drop.y);
+        const r = s * 0.22;
+        ctx.beginPath();
+        ctx.moveTo(ex + dx * r, ey + dy * r);
+        ctx.lineTo(ex - dx * r * 0.2 - dy * r, ey - dy * r * 0.2 + dx * r);
+        ctx.lineTo(ex - dx * r * 0.2 + dy * r, ey - dy * r * 0.2 - dx * r);
+        ctx.fill();
+      }
+    }
+
     // Copper wires between poles (on to the City Block's: indices past the entities), then the
     // circuit wires, red and green side by side.
     const wire = (pairs, style, width, shift) => {

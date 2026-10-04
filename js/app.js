@@ -808,6 +808,14 @@ function describe(entity, block) {
   }
   if (entity.underground) parts.push(`tunnel ${entity.underground === 'input' ? 'entrance' : 'exit'}`);
   if (entity.vectors) parts.push(turnsSideways(entity) ? '90° (Inserter_Config)' : 'drop offset (Inserter_Config)');
+  // Output Drop: the machine puts its products on the belt beside it, its inserters (if any)
+  // take what that lane cannot.
+  if (entity.drop) {
+    const tile = `${Math.floor(entity.x + entity.drop.x)},${Math.floor(entity.y + entity.drop.y)}`;
+    const belt = block.entities.some(e => (e.kind === 'belt' || e.kind === 'underground-belt') && `${e.x},${e.y}` === tile);
+    parts.push(belt ? 'drops its products onto the belt beside it' : 'no belt at its drop: inserters take its products');
+  }
+  if (entity.dropping !== undefined) parts.push('supports its machine\'s drop');
   if (entity.kind === 'fixture') parts.push('city block (stays)');
   const clock = clocks?.of.get(entity);
   if (clock) parts.push(`clock: ${clockLabel(clock)}${state.clocks[clock] ? ` while ${state.clocks[clock].name} > 0` : ''}`);
