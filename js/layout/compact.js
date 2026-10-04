@@ -1,4 +1,4 @@
-import { Grid, N, E, S, W, key } from './grid.js';
+import { Grid, N, E, S, W, VEC, key, opposite } from './grid.js';
 import { placePoles, PowerError } from './poles.js';
 import { wirePairs } from './wires.js';
 
@@ -6,18 +6,106 @@ import { wirePairs } from './wires.js';
 // pipes running straight across it, and empty tiles, comes out, and everything beyond moves in
 // by one. Belts and pipes just get shorter; tunnels too. A column stays when removing it would
 // join what must stay apart (a belt pointing into the gap, two pipes, an inserter's reach), or
-// when it holds anything else. Then poles are placed on the result. Returns a new block.
+// when it holds anything else. Straight pipe runs then go underground, and poles are placed on
+// the result. Returns a new block.
 // A block in a City Block is not squeezed: its Fixtures stay where they are, and so does the rest.
 export function finishBlock(block, catalog, logistics) {
-  if (block.site) return power(clone(block), catalog, logistics);
+  const bury = b => buryPipes(b, catalog, logistics);
+  if (block.site) return power(bury(clone(block)), catalog, logistics);
   const squeezed = compact(block);
   try {
-    return power(squeezed, catalog, logistics);
+    return power(bury(squeezed), catalog, logistics);
   } catch (e) {
     if (!(e instanceof PowerError)) throw e;
     // Squeezing took the room a pole needed: power the block as routed.
-    return power(clone(block), catalog, logistics);
+    return power(bury(clone(block)), catalog, logistics);
   }
+}
+
+// Three plain pipes or more in a straight line go underground (ADR 0021): a run of pipes that
+// each join only the pipe (or machine connection) before and after them on one line, no branch
+// and no machine beside them, becomes a pipe-to-ground at each end, facing out, and nothing in
+// between; as many tunnels as the pipe-to-ground's reach needs. A run that a tunnel of another
+// network crosses along its line stays above ground. Changes the block in place.
+export function buryPipes(block, catalog, logistics) {
+  const reach = catalog.pipes?.[logistics.pipe]?.maxDistance ?? 0;
+  const fluid = new Map(block.entities.filter(e => e.kind === 'pipe' || e.kind === 'pipe-to-ground').map(e => [key(e.x, e.y), e]));
+  if (reach < 2 || !fluid.size) return block;
+  // The sides of each tile a machine's fluid connection meets it from (used or not: a pipe there
+  // connects either way).
+  const ports = new Map();
+  const rotate = ({ x, y }, turns) => (turns === 0 ? [x, y] : rotate({ x: -y, y: x }, turns - 1));
+  for (const m of block.entities.filter(e => e.kind === 'building')) {
+    const cx = m.x + m.w / 2, cy = m.y + m.h / 2;
+    for (const box of catalog.buildings[m.name]?.fluidBoxes ?? []) {
+      for (const c of box.connections) {
+        const [rx, ry] = rotate(c, (m.direction ?? 0) / 4);
+        const dir = (c.direction + (m.direction ?? 0)) % 16;
+        const tile = key(Math.floor(cx + rx + VEC[dir][0]), Math.floor(cy + ry + VEC[dir][1]));
+        if (!ports.has(tile)) ports.set(tile, new Set());
+        ports.get(tile).add(opposite(dir));
+      }
+    }
+  }
+  // The sides a plain pipe connects on: a pipe, a pipe-to-ground facing it, a machine connection.
+  const joins = p => [N, E, S, W].filter(d => {
+    const n = fluid.get(key(p.x + VEC[d][0], p.y + VEC[d][1]));
+    return n?.kind === 'pipe' || n?.direction === opposite(d) || ports.get(key(p.x, p.y))?.has(d);
+  });
+  const straight = (p, axis) => p?.kind === 'pipe' && joins(p).join() === axis.join();
+  // A pipe-to-ground pairs with the nearest one facing it within reach (validity.js).
+  const partner = t => {
+    const [dx, dy] = VEC[opposite(t.direction)];
+    for (let i = 1; i <= reach; i++) {
+      const b = fluid.get(key(t.x + dx * i, t.y + dy * i));
+      if (b?.kind === 'pipe-to-ground' && b.direction === opposite(t.direction)) return b;
+    }
+    return null;
+  };
+  // The tunnels along each line, as spans of the coordinate along it.
+  const lineOf = (p, d) => (d === E || d === W ? `y${p.y}` : `x${p.x}`);
+  const along = (p, d) => (d === E || d === W ? p.x : p.y);
+  const tunnels = new Map();
+  const addTunnel = (a, b, d) => {
+    const line = lineOf(a, d);
+    if (!tunnels.has(line)) tunnels.set(line, []);
+    tunnels.get(line).push([Math.min(along(a, d), along(b, d)), Math.max(along(a, d), along(b, d))]);
+  };
+  for (const t of fluid.values()) {
+    const b = t.kind === 'pipe-to-ground' ? partner(t) : null;
+    if (b) addTunnel(t, b, t.direction);
+  }
+  const removed = new Set();
+  for (const [axis, d] of [[[E, W], E], [[N, S], S]]) {
+    const [dx, dy] = VEC[d];
+    for (const p of [...fluid.values()]) {
+      // Each run from its first pipe, along d.
+      if (!straight(p, axis) || straight(fluid.get(key(p.x - dx, p.y - dy)), axis)) continue;
+      const run = [p];
+      for (let n = fluid.get(key(p.x + dx, p.y + dy)); straight(n, axis); n = fluid.get(key(n.x + dx, n.y + dy))) run.push(n);
+      // As few tunnels as the reach allows, of even lengths.
+      const count = Math.ceil(run.length / (reach + 1));
+      for (let k = 0, start = 0; k < count; k++) {
+        const size = Math.floor(run.length / count) + (k < run.length % count ? 1 : 0);
+        const a = run[start], b = run[start + size - 1];
+        start += size;
+        if (size < 3) continue;
+        const [lo, hi] = [along(a, d), along(b, d)];
+        if ((tunnels.get(lineOf(a, d)) ?? []).some(([s, t]) => s < hi && lo < t)) continue;
+        Object.assign(a, { name: logistics.pipe, kind: 'pipe-to-ground', direction: opposite(d), underground: 'input', travel: d });
+        Object.assign(b, { name: logistics.pipe, kind: 'pipe-to-ground', direction: d, underground: 'output', travel: d });
+        for (const q of run.slice(run.indexOf(a) + 1, run.indexOf(b))) {
+          removed.add(q);
+          fluid.delete(key(q.x, q.y));
+        }
+        addTunnel(a, b, d);
+      }
+    }
+  }
+  if (!removed.size) return block;
+  block.entities = block.entities.filter(e => !removed.has(e));
+  for (const r of block.routes) if (r.kind === 'pipe') r.pieces = r.pieces.filter(p => !removed.has(p));
+  return block;
 }
 
 export function compact(block) {

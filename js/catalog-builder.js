@@ -94,7 +94,19 @@ export function buildCatalog(raw) {
       if (p.fuel_value) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
     }
   }
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, modules, icons: spriteIcons(raw), footprints: footprints(raw) };
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), footprints: footprints(raw) };
+}
+
+// The virtual signals an Inserter Clock may take, in the game's order (by subgroup, then their
+// own order): not the wildcards, nor hidden or parameter signals.
+const WILDCARDS = ['signal-everything', 'signal-anything', 'signal-each'];
+function virtualSignals(raw) {
+  const ordered = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const group = s => raw['item-subgroup']?.[s.subgroup]?.order ?? '';
+  return Object.values(raw['virtual-signal'] ?? {})
+    .filter(s => !s.hidden && !s.parameter && !WILDCARDS.includes(s.name))
+    .sort((a, b) => ordered(group(a), group(b)) || ordered(a.order ?? '', b.order ?? '') || ordered(a.name, b.name))
+    .map(s => s.name);
 }
 
 // Every entity's tile footprint facing north, so a City Block's blueprint can hold anything:

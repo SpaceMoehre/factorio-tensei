@@ -126,6 +126,24 @@ test('icons: every item, fluid and virtual signal maps to its icon file under sp
   });
 });
 
+// The game's virtual signals in its order: by subgroup, then each signal's own; never the
+// wildcards, nor hidden or parameter ones.
+test('signals: every virtual signal a condition may name, in the game\'s order', () => {
+  const { signals } = buildCatalog(dataRaw({
+    'item-subgroup': { 'virtual-signal-number': { name: 'virtual-signal-number', order: 'b' }, 'virtual-signal-letter': { name: 'virtual-signal-letter', order: 'c' }, shapes: { name: 'shapes', order: 'a' } },
+    'virtual-signal': {
+      'signal-B': { name: 'signal-B', subgroup: 'virtual-signal-letter', order: 'b' },
+      'signal-A': { name: 'signal-A', subgroup: 'virtual-signal-letter', order: 'a' },
+      'signal-1': { name: 'signal-1', subgroup: 'virtual-signal-number', order: 'b' },
+      'signal-heart': { name: 'signal-heart', subgroup: 'shapes', order: 'x' },
+      'signal-everything': { name: 'signal-everything', subgroup: 'shapes', order: 'a' },
+      'signal-unknown': { name: 'signal-unknown', hidden: true },
+      'signal-item-parameter': { name: 'signal-item-parameter', parameter: true },
+    },
+  }));
+  assert.deepEqual(signals, ['signal-heart', 'signal-1', 'signal-A', 'signal-B']);
+});
+
 test('hidden and parameter recipes are not in the catalog', () => {
   const { recipes } = buildCatalog(dataRaw({
     recipe: {

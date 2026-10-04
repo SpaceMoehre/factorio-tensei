@@ -86,6 +86,7 @@
   .signal img { width: 28px; height: 28px; object-fit: contain; }
   .glyph { font: 700 19px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 2px #000; }
   .unset .glyph { color: var(--muted); text-shadow: none; font-weight: 400; }
+  .glyph.named { max-width: 32px; max-height: 32px; overflow: hidden; font-size: 8px; line-height: 1.1; text-align: center; overflow-wrap: anywhere; text-shadow: none; }
   .swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); }
   dialog#picker { width: min(640px, calc(100vw - 32px)); max-height: min(80vh, 720px); padding: 0; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; }
   dialog#picker::backdrop { background: rgba(0,0,0,.6); }
@@ -123,8 +124,7 @@
     <h2>Logistics</h2>
     <div class="settings">
       <label for="belt">Belt</label><select id="belt"></select>
-      <label for="plainPipe">Pipe</label><select id="plainPipe"></select>
-      <label for="pipe">Pipe-to-ground</label><select id="pipe"></select>
+      <label for="pipe">Pipe</label><select id="pipe" title="Plain pipes and pipe-to-grounds of one material: pipes of different materials do not connect"></select>
       <label for="pole">Pole</label><select id="pole"></select>
       <label for="inserter">Inserter</label><select id="inserter"></select>
       <label for="longInserter">Long inserter</label><select id="longInserter"></select>

@@ -10,11 +10,12 @@ import { planner } from './maximize.js';
 import { compactness, SQUARE, BEND } from './layout/score.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
-const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
-// Virtual signals a clock may take (Factorio 2.0): letters, digits, colours and a few symbols,
-// drawn as a glyph or a swatch where the catalog has no icon for them.
+const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
+// Virtual signals a clock may take: the catalog's (every one the game has), else the letters,
+// digits, colours and a few symbols of Factorio 2.0. Without an icon, a letter, digit or colour
+// is drawn as a glyph or a swatch.
 /** @type {{ type: string, name: string, glyph?: string, swatch?: string }[]} */
-const VIRTUAL = [
+const DRAWN = [
   ...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].map(c => ({ name: `signal-${c}`, glyph: c })),
   ...Object.entries({ red: '#e53935', green: '#43a047', blue: '#1e88e5', yellow: '#fdd835', pink: '#ec407a', cyan: '#26c6da', white: '#f5f5f5', grey: '#9e9e9e', black: '#212121' })
     .map(([colour, swatch]) => ({ name: `signal-${colour}`, swatch })),
@@ -32,14 +33,20 @@ crypto.subtle?.digest('SHA-256', raw).then(d => { catalogId = [...new Uint8Array
 const outdated = !catalog.inserters || !catalog.fuels;
 if (outdated) Object.assign(catalog, { inserters: {}, fuels: {} });
 const index = recipeOptions(catalog);
+// A pipe-to-ground's plain pipe: the one named like it. Pipes of different materials do not
+// connect, so the block takes both of one material (`pipe`, the pipe-to-ground, chosen; its
+// `plainPipe` follows).
+const plainOf = name => name.replace(/-to-ground$/, '');
 const choices = {
-  belt: Object.keys(catalog.belts), pipe: Object.keys(catalog.pipes), pole: Object.keys(catalog.poles),
-  // A catalog built before plain pipes were recorded: the pipe named like each pipe-to-ground.
-  plainPipe: catalog.plainPipes ?? Object.keys(catalog.pipes).map(name => name.replace(/-to-ground$/, '')),
+  belt: Object.keys(catalog.belts), pole: Object.keys(catalog.poles),
+  // Pipe-to-grounds with a plain pipe of their material (every one, in a catalog built before
+  // plain pipes were recorded).
+  pipe: Object.keys(catalog.pipes).filter(name => !catalog.plainPipes || catalog.plainPipes.includes(plainOf(name))),
   inserter: inserterNames(1), longInserter: inserterNames(2), fuel: Object.keys(catalog.fuels).sort(),
 };
 const state = load() ?? { goals: [], logistics: {} };
 state.logistics = { ...defaultLogistics(), ...state.logistics };
+state.logistics.plainPipe = plainOf(state.logistics.pipe);
 // What comes by train follows from the Goals' recipes; `made` lists the imports the user chose to
 // make in the block instead. (Saves from before listed Train Inputs instead; that list is dropped.)
 state.made ??= [];
@@ -88,8 +95,12 @@ let built = null;
 
 $('items').replaceChildren(...[...index.producers.keys()].sort().map(name => new Option(name)));
 for (const key of SELECTS) {
-  fillSelect($(key), choices[key], state.logistics[key]);
-  $(key).addEventListener('change', () => { state.logistics[key] = $(key).value; save(); });
+  fillSelect($(key), choices[key], state.logistics[key], key === 'pipe' ? plainOf : undefined);
+  $(key).addEventListener('change', () => {
+    state.logistics[key] = $(key).value;
+    if (key === 'pipe') state.logistics.plainPipe = plainOf($(key).value);
+    save();
+  });
 }
 $('circuit').value = state.logistics.circuit;
 $('circuit').addEventListener('change', () => {
@@ -174,7 +185,6 @@ function defaultLogistics() {
   const prefer = (list, name) => (list.includes(name) ? name : list[0]);
   return {
     belt: prefer(choices.belt, 'transport-belt'),
-    plainPipe: prefer(choices.plainPipe, 'pipe'),
     pipe: prefer(choices.pipe, 'pipe-to-ground'),
     pole: poles[0].name,
     inserter: prefer(choices.inserter, 'fast-inserter'),
@@ -645,7 +655,7 @@ function openPicker(key) {
     for (const r of Object.values(catalog.recipes)) for (const x of [...r.ingredients, ...r.products]) if (!named.has(x.name)) named.set(x.name, x.type);
     const all = [...named].sort((a, b) => a[0].localeCompare(b[0])).map(([name, type]) => ({ type, name }));
     $('picker-list').replaceChildren(
-      el('h4', { textContent: 'Virtual signals' }), el('div', { className: 'signals' }, ...VIRTUAL.map(signalTile)),
+      el('h4', { textContent: 'Virtual signals' }), el('div', { className: 'signals' }, ...virtualSignals().map(signalTile)),
       el('h4', { textContent: 'In this block' }), blockSignals,
       el('h4', { textContent: 'All items and fluids' }), el('div', { className: 'signals' }, ...all.map(signalTile)));
   }
@@ -671,16 +681,21 @@ function signalTile(signal) {
   return tile;
 }
 
-// A signal's icon: the catalog's, else a virtual signal's glyph or swatch.
+// A signal's icon: the catalog's, else a drawn glyph or swatch, else its name.
 function signalFace(signal) {
   if (catalog.icons[signal.name]) return el('img', { src: `sprites/${catalog.icons[signal.name]}`, alt: '', loading: 'lazy' });
-  const virtual = VIRTUAL.find(v => v.name === signal.name);
-  if (virtual?.swatch) {
+  const drawn = DRAWN.find(v => v.name === signal.name);
+  if (drawn?.swatch) {
     const swatch = el('span', { className: 'swatch' });
-    swatch.style.background = virtual.swatch;
+    swatch.style.background = drawn.swatch;
     return swatch;
   }
-  return el('span', { className: 'glyph', textContent: virtual?.glyph ?? '?' });
+  return el('span', drawn ? { className: 'glyph', textContent: drawn.glyph } : { className: 'glyph named', textContent: signal.name.replace(/^signal-/, '') });
+}
+
+// The virtual signals the picker offers: every one the catalog lists, else the drawn ones.
+function virtualSignals() {
+  return catalog.signals?.length ? catalog.signals.map(name => ({ type: 'virtual', name })) : DRAWN;
 }
 
 // Signals whose name holds the filter's words; a section with none left is hidden.
@@ -839,8 +854,8 @@ function flash(button, text) {
   setTimeout(() => { button.textContent = original; }, 1500);
 }
 
-function fillSelect(select, values, selected) {
-  select.replaceChildren(...values.map(v => new Option(v, v, false, v === selected)));
+function fillSelect(select, values, selected, label = v => v) {
+  select.replaceChildren(...values.map(v => new Option(label(v), v, false, v === selected)));
 }
 
 function el(tag, props = {}, ...children) {
