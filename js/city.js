@@ -69,8 +69,9 @@ function pick(node) {
 }
 
 // A blueprint → the City Block: its area (the blueprint's snap grid when it has one and
-// everything lies on it, else the extent of its entities and tiles), its Fixtures (each entity
-// as the tiles it covers) and the entities whose footprint is unknown (taken as one tile).
+// everything lies on it, or straddles its border, else the extent of its entities and tiles), its
+// Fixtures (each entity as the tiles it covers) and the entities whose footprint is unknown (taken
+// as one tile).
 export function readCityBlock(blueprint, catalog) {
   if ((blueprint.version ?? VERSION_2) < VERSION_2) throw new Error('the blueprint is from Factorio 1.x: import it in 2.0 and export it again');
   const unknown = new Set();
@@ -96,7 +97,12 @@ export function readCityBlock(blueprint, catalog) {
   const extent = extentOf(all);
   const grid = blueprint['snap-to-grid'];
   const cell = grid && { x: 0, y: 0, w: grid.x, h: grid.y };
-  const area = cell && all.every(b => b.x >= 0 && b.y >= 0 && b.x + b.w <= cell.w && b.y + b.h <= cell.h) ? cell : extent;
+  // The grid's cell holds the city block when what the blueprint holds lies on it, some of it
+  // perhaps straddling its border or just beyond (poles, walls or rails shared with the
+  // neighbouring city blocks: a twentieth of the cell at most); a grid much smaller than that
+  // (a rail grid) only aligns it.
+  const beyond = cell && Math.max(-extent.x, -extent.y, extent.x + extent.w - cell.w, extent.y + extent.h - cell.h);
+  const area = cell && beyond <= Math.ceil(Math.min(cell.w, cell.h) / 20) ? cell : extent;
   return { area, fixtures, unknown: [...unknown].sort() };
 }
 

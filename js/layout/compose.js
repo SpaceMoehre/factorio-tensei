@@ -167,6 +167,11 @@ export function compose(ctx, prepared, positions, layout) {
       }
     }
     if (!site) feeds.forEach((r, k) => { for (let x = area.x; x < area.x + area.w; x++) hold(grid, x, area.y + k, r.id); });
+    // The tile where each copy's pipes leave it belongs to their network: a belt routed first
+    // (after a link failed) must not take it.
+    for (const route of routes.filter(r => r.kind === 'pipe')) {
+      for (const { inst, x, y, side } of route.stubs) hold(grid, x + placed[inst.index].x + (side === 'W' ? -1 : 1), y + placed[inst.index].y, route.id);
+    }
     // The tile before each copy's entry and after its exit belongs to the link that meets it
     // there: no other link may pass in front of it.
     for (const route of routes.filter(r => r.kind === 'belt')) {
@@ -378,8 +383,22 @@ export function compose(ctx, prepared, positions, layout) {
   function link(grid, task) {
     const ends = endsOf(task);
     if (!ends) return [];
-    return task.slot === 0 && approach > area.x ? approached(grid, task.route.id, ends.goal)
-      : routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal }, belts);
+    const keepOff = meetsOf(task);
+    return task.slot === 0 && approach > area.x ? approached(grid, task.route.id, ends.goal, keepOff)
+      : routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal, keepOff }, belts);
+  }
+
+  // The tiles where the other links of a task's route meet their copies (before an entry, after
+  // an exit): held for its route, they are no way for this link.
+  function meetsOf({ route, slot: k }) {
+    const out = new Set();
+    route.slots.forEach((slot, j) => {
+      const first = slot.pieces[0], last = slot.pieces.at(-1);
+      const [ex, ey] = VEC[slot.part.dir ?? E], [dx, dy] = VEC[last.travel];
+      if (j !== k && (j > 0 || route.source === 'side-input')) out.add(key(first.x - ex, first.y - ey));
+      if (j !== k - 1 && (j < route.slots.length - 1 || route.sink === 'side-output')) out.add(key(last.x + dx, last.y + dy));
+    });
+    return out;
   }
 
   // A Recipe Loop's feedback: the producer's output belt's link after its producers (task) runs
@@ -633,7 +652,7 @@ export function compose(ctx, prepared, positions, layout) {
   // from the west edge is free, then from the west edge to where that leg starts (entering it
   // heading east). Without such a row, or where the legs do not meet, in one leg from the west
   // edge.
-  function approached(grid, id, goal) {
+  function approached(grid, id, goal, keepOff) {
     const rows = westEdge(area).filter(s => {
       for (let x = area.x; x <= approach; x++) if (!grid.freeFor(x, s.y, id)) return false;
       return true;
@@ -641,16 +660,16 @@ export function compose(ctx, prepared, positions, layout) {
     if (rows.length) {
       const saved = grid.snapshot();
       try {
-        const inside = routeLink(grid, { id, starts: rows.map(s => ({ ...s, x: approach })), goal }, belts);
+        const inside = routeLink(grid, { id, starts: rows.map(s => ({ ...s, x: approach })), goal, keepOff }, belts);
         const [first] = inside;
-        const outside = routeLink(grid, { id, starts: westEdge(area), goal: first ? { x: first.x, y: first.y, a: E } : goal }, belts);
+        const outside = routeLink(grid, { id, starts: westEdge(area), goal: first ? { x: first.x, y: first.y, a: E } : goal, keepOff }, belts);
         return [...outside, ...inside];
       } catch (e) {
         if (!(e instanceof RoutingError)) throw e;
         grid.restore(saved);
       }
     }
-    return routeLink(grid, { id, starts: westEdge(area), goal }, belts);
+    return routeLink(grid, { id, starts: westEdge(area), goal, keepOff }, belts);
   }
 
   // Two belts of one Internal Path through a splitter, each in its own lane of it: 2 to 2 (each

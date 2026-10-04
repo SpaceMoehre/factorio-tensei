@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Grid, N, E, S, W } from '../js/layout/grid.js';
-import { routeBelt, routePipe } from '../js/layout/router.js';
+import { Grid, N, E, S, W, key } from '../js/layout/grid.js';
+import { routeBelt, routeLink, routePipe } from '../js/layout/router.js';
 
 const belts = { belt: 'transport-belt', underground: 'underground-belt', reach: 5 };
 const pipes = { pipe: 'pipe', underground: 'pipe-to-ground', reach: 10 };
@@ -92,4 +92,19 @@ test('an enclosed fluid connection dives out under the inserters and belts throu
   assert.deepEqual([entrance.x, entrance.y], [2, 4]);
   assert.ok(exit.x === 2 && exit.y < 3, `surfaces at ${exit.x},${exit.y}`);
   assert.ok(pieces.some(p => p.x === 0), 'the pipe reaches the west edge');
+});
+
+// A link from (0,1) to the east edge, the tile before it at (3,1) held for another link of its own
+// route (where that one meets its copy): it goes round that tile, not through it.
+test("a link keeps off the tiles where its route's other links meet their copies", () => {
+  const held = () => {
+    const grid = new Grid({ x: 0, y: 0, w: 7, h: 3 });
+    grid.reserve(3, 1, 0);
+    return grid;
+  };
+  const straight = routeLink(held(), { id: 0, starts: [{ x: 0, y: 1, a: E }], goal: 'east' }, belts);
+  assert.ok(straight.every(p => p.y === 1), 'without it, straight on');
+  const pieces = routeLink(held(), { id: 0, starts: [{ x: 0, y: 1, a: E }], goal: 'east', keepOff: new Set([key(3, 1)]) }, belts);
+  assert.ok(!pieces.some(p => p.x === 3 && p.y === 1), JSON.stringify(pieces.map(p => [p.x, p.y])));
+  assert.equal(pieces.at(-1).x, 6);
 });

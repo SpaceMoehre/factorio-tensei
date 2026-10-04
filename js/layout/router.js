@@ -121,16 +121,18 @@ function edgeGoal(grid, side) {
 // A belt in one leg from any of the start states to the goal: a tile reached with a heading
 // (where the next piece, already placed, carries on), or off the east or west edge. Joins the
 // routed pieces of two modules, or a module and the train.
-// spec: { id, starts: [{ x, y, a }], goal: { x, y, a } | 'east' | 'west' }
+// spec: { id, starts: [{ x, y, a }], goal: { x, y, a } | 'east' | 'west', keepOff (tile keys held
+// for its route's other links, where they meet their copies: it does not take them) }
 export function routeLink(grid, spec, names) {
   const pieces = [];
-  const moves = beltMoves(grid, spec, names, new Set(), { key: null, last: false });
+  const keepOff = spec.keepOff ?? new Set();
+  const moves = beltMoves(grid, spec, names, keepOff, { key: null, last: false });
   const { goal } = spec;
   const [isGoal, heuristic] = typeof goal === 'string' ? edgeGoal(grid, goal)
     : [s => s.x === goal.x && s.y === goal.y && s.a === goal.a, (x, y) => GREED * (Math.abs(x - goal.x) + Math.abs(y - goal.y))];
   if (spec.starts.some(s => isGoal(s))) return pieces;
   const leg = search(grid, spec.starts, isGoal, heuristic, moves,
-    typeof goal === 'string' ? undefined : () => !reachable(grid, spec.id, spec.starts, goal.x, goal.y, names.reach, new Set()));
+    typeof goal === 'string' ? undefined : () => !reachable(grid, spec.id, spec.starts, goal.x, goal.y, names.reach, keepOff));
   if (!leg) throw new RoutingError(`belt ${spec.id}: no path from ${spec.starts[0].x},${spec.starts[0].y} to ${typeof goal === 'string' ? `the ${goal} edge` : `${goal.x},${goal.y}`}`);
   commitLeg(grid, spec, names.underground, leg, pieces);
   return pieces;

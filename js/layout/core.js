@@ -295,30 +295,37 @@ export function buildCore(sb, building, links, variant, env) {
   const taps = [];
   const supply = new Map();
   let shortfall = 0;
+  // Each machine and its inserters carry its number (`machine`, in the order the machines stand
+  // in the entities), and so does what its inserters move: a Fixture standing on one leaves it
+  // out (place.js).
+  let machine = 0;
   for (let r = 0; r < rowCount; r++) {
-    for (let i = 0; i < counts[r]; i++) {
+    for (let i = 0; i < counts[r]; i++, machine++) {
       const x0 = i * pitch;
       // What this machine's inserters move per belt route (a Two-Way Output's two belts add up).
       const movedBy = new Map();
-      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r });
+      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine });
       for (const s of slots.filter(s => s.r === r)) {
         const placed = columns.get(s);
         for (const { column, side } of placed) {
-          entities.push({ ...inserter(s, x0 + column, side), flow: s.demand / placed.length });
+          entities.push({ ...inserter(s, x0 + column, side), flow: s.demand / placed.length, machine });
           stamped.set(key(x0 + column, s.insY), 'inserter');
           stamped.set(key(x0 + column + side, s.beltY), { waypoint: s.id });
         }
         const moved = placed.length * s.rate;
         shortfall += Math.max(0, s.demand - moved);
         const supplyKey = s.belt.routeIds.join('+');
-        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: s.belt.routeIds[0], role: s.isOutput ? 'output' : 'input', items: s.items.map(i => i.name), perMachine: [] });
+        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: s.belt.routeIds[0], role: s.isOutput ? 'output' : 'input', items: s.items.map(i => i.name), perMachine: [], machines: [] });
         movedBy.set(supplyKey, (movedBy.get(supplyKey) ?? 0) + moved);
       }
-      for (const [k, moved] of movedBy) supply.get(k).perMachine.push(moved);
+      for (const [k, moved] of movedBy) {
+        supply.get(k).perMachine.push(moved);
+        supply.get(k).machines.push(machine);
+      }
       for (const a of lineAccess.filter(a => a.r === r)) {
         const l = lineSlots.get(a);
         for (const ins of l.inserters) {
-          entities.push({ ...ins.entity, x: x0 + ins.entity.x, flow: l.demand / l.inserters.length });
+          entities.push({ ...ins.entity, x: x0 + ins.entity.x, flow: l.demand / l.inserters.length, machine });
           stamped.set(key(x0 + ins.entity.x, ins.entity.y), 'inserter');
           stamped.set(key(x0 + ins.pick[0], ins.pick[1]), { waypoint: l.id });
         }
@@ -326,8 +333,9 @@ export function buildCore(sb, building, links, variant, env) {
         const moved = l.inserters.reduce((sum, ins) => sum + ins.rate, 0);
         shortfall += Math.max(0, l.demand - moved);
         const supplyKey = a.line.routeIds.join('+');
-        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: a.line.routeIds[0], role: l.isOutput ? 'output' : 'input', items: l.items.map(i => i.name), perMachine: [] });
+        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: a.line.routeIds[0], role: l.isOutput ? 'output' : 'input', items: l.items.map(i => i.name), perMachine: [], machines: [] });
         supply.get(supplyKey).perMachine.push(moved);
+        supply.get(supplyKey).machines.push(machine);
       }
       for (const [c, y] of period.all(v => v.type === 'tap' && v.row === r)) {
         stamped.set(key(x0 + c, y), 'tap');

@@ -8,7 +8,7 @@ import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
 import { simulate } from '../js/sim.js';
 import { context, designStep, designOf, random } from '../js/design.js';
-import { prepare, compose } from '../js/layout/compose.js';
+import { prepare, compose, RoutingError } from '../js/layout/compose.js';
 import { placeBlocks } from '../js/layout/place.js';
 import { finishBlock } from '../js/layout/compact.js';
 import { catalog as vanilla, logistics, pyCatalog } from './fixtures/catalog.js';
@@ -63,6 +63,16 @@ test('a city block blueprint string is read as its snap grid and the tiles its e
   assert.deepEqual(city.unknown, []);
   // Inside a Buffer of 2.
   assert.deepEqual(siteOf(city, 2).inner, { x: 2, y: 2, w: 56, h: 36 });
+});
+
+// Poles shared with the neighbouring city blocks stand on the grid's border, half outside it.
+test("a city block's snap grid holds it though poles shared with its neighbours straddle its border; a grid far smaller only aligns it", async () => {
+  const shared = { entity_number: 6, name: 'substation', position: { x: 60, y: 20 } }, top = { entity_number: 7, name: 'substation', position: { x: 30, y: 0 } };
+  const straddling = { ...cityBlueprint, entities: [...cityBlueprint.entities, shared, top] };
+  assert.deepEqual(readCityBlock(await decodeBlueprint(encode({ blueprint: straddling })), catalog).area, { x: 0, y: 0, w: 60, h: 40 });
+  // A 2 × 2 grid (rails): the extent of what it holds.
+  const railGrid = { ...straddling, 'snap-to-grid': { x: 2, y: 2 } };
+  assert.deepEqual(readCityBlock(await decodeBlueprint(encode({ blueprint: railGrid })), catalog).area, { x: 0, y: -1, w: 61, h: 41 });
 });
 
 test('a blueprint book gives the blueprint it shows; entities turned east swap their sides; unknown ones count as one tile', async () => {
@@ -159,6 +169,43 @@ test("in a City Block a Sub-Block stands in another's Nook: beside a narrower co
     assertInside(block);
     assert.equal(simulate(block).starvation.length, 0);
   }
+});
+
+// Making Way: eleven assembling machines 2 of gears stand as two copies of a row of five and the
+// one left over, the only design low enough for a City Block 19 tiles high inside its Buffer. A
+// substation stands in the copies' row of machines wherever the stack goes: the machine it stands
+// on is left out and built apart beside the stack, so all eleven still run.
+test('in a City Block a Fixture standing where a machine would leaves that machine out; it is built apart', () => {
+  const substation = { name: 'substation', kind: 'fixture', number: 1, x: 14, y: 3, w: 2, h: 2 };
+  const site = siteOf({ area: { x: 0, y: 0, w: 37, h: 21 }, fixtures: [substation] }, 1);
+  const block = inBlock([asm2('iron-gear-wheel', 960)], site, 1);
+  assert.ok(block, 'a layout');
+  assertValid(block, catalog, logistics);
+  assertInside(block);
+  assert.equal(simulate(block).starvation.length, 0);
+  assert.equal(block.entities.filter(e => e.kind === 'building').length, 11);
+  const [gears] = block.subBlocks;
+  assert.equal(gears.apart?.length, 1);
+  // The substation stands among the stack's machines.
+  assert.ok(substation.x >= gears.x && substation.x + substation.w <= gears.x + gears.w && substation.y >= gears.y && substation.y + substation.h <= gears.y + gears.h,
+    `${JSON.stringify(gears)}`);
+});
+
+// Backtracking: ten assembling machines 2 of circuits and the fifteen of copper cable feeding them
+// in a 44 × 44 City Block, two substations across it. Standing at the top between the
+// substations, the circuits leave the cable no room; placed one by one, they try another spot.
+test('in a City Block, where a Sub-Block finds no room, the ones placed before it try other spots', () => {
+  const substations = [11, 33].map((x, n) => ({ name: 'substation', kind: 'fixture', number: n + 1, x, y: 10, w: 2, h: 2 }));
+  const site = siteOf({ area: { x: 0, y: 0, w: 44, h: 44 }, fixtures: substations }, 1);
+  const selections = Object.fromEntries(['electronic-circuit', 'copper-cable'].map(item => [item, { recipe: item, building: 'assembling-machine-2' }]));
+  const { entries } = expandChain([{ item: 'electronic-circuit', rate: 900 }], catalog, { made: ['copper-cable'], selections });
+  const ctx = context(entries, catalog, logistics, site);
+  const ready = prepare(ctx, ctx.plan.map((_, i) => designOf(designStep(ctx, i, random(1), { draws: 0 })[0])));
+  const [circuits, cable] = ['electronic-circuit', 'copper-cable'].map(item => ctx.plan.findIndex(sb => sb.item === item));
+  assert.throws(() => placeBlocks(ctx, ready, { at: { [circuits]: { x: 16, y: 1 } } }), RoutingError);
+  const { boxes } = placeBlocks(ctx, ready, {});
+  // The cable west of the circuits it feeds.
+  assert.ok(boxes[cable].x + boxes[cable].w <= boxes[circuits].x, JSON.stringify(boxes));
 });
 
 test('nothing fits a city block too small for the machines', () => {

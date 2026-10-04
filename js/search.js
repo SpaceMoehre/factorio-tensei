@@ -1,4 +1,4 @@
-import { context, designStep, designOf, revive, random, breakoutDesign, detachCopy } from './design.js';
+import { context, designStep, designOf, revive, random, breakoutDesign, detachCopy, leaveOut, grownDesign } from './design.js';
 import { LayoutError } from './layout/core.js';
 import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
 import { placeBlocks, roomFor } from './layout/place.js';
@@ -104,6 +104,53 @@ export function* search(entries, catalog, logistics, options = {}) {
   let failure = null;
   let tried = 0;
   const prepared = new Map();
+  // Making Way: the candidate's designs (prepared under `key`) with the machines Fixtures stand on
+  // left out of their copies and built elsewhere, prepared; and the layout placed again, every
+  // Sub-Block where it stood. A Sub-Block's machines left out go on the end of its last row where
+  // it has room for them (a core's; `end`), else stand apart together, one module and one link
+  // (else each on its own). Null where they find no design or room, or the belts do not chain.
+  const ways = new Map();
+  const grown = new Map();
+  const grownFor = (i, c, more) => {
+    const k = `${i}:${c}:${more}`;
+    if (!grown.has(k)) grown.set(k, grownDesign(ctx, i, designs[i][c], more));
+    return grown.get(k);
+  };
+  const makeWay = (candidate, key, ready, positions) => {
+    const holes = ctx.plan.map(() => []);
+    for (const inst of ready.instances) if (!inst.detached) holes[inst.step].push(positions.holes.get(inst.index) ?? null);
+    const wayKey = `${key}|${holes.map(list => list.map(s => (s ? [...s].sort((a, b) => a - b).join('.') : '')).join(',')).join(';')}`;
+    const modes = ['end', 'together', 'apart'];
+    for (const mode of modes) {
+      const k = `${wayKey}|${mode}`;
+      if (!ways.has(k)) {
+        let made = null;
+        const chosen = candidate.choice.map((c, i) => {
+          const count = holes[i].reduce((n, s) => n + (s?.size ?? 0), 0);
+          const base = designFor(candidate, i);
+          if (!count || !base) return base;
+          const end = mode === 'end' && !candidate.breakout?.[i] && grownFor(i, Math.min(c, designs[i].length - 1), count);
+          if (end) return leaveOut(end, holes[i], null, 0);
+          const piece = (shareOf(i, mode === 'apart' ? 1 : count, false) ?? []).map(designOf).find(Boolean);
+          return piece ? leaveOut(base, holes[i], piece, mode === 'apart' ? count : 1) : null;
+        });
+        try {
+          if (chosen.every(Boolean)) made = prepare(ctx, chosen, candidate.columns);
+        } catch (e) {
+          if (!(e instanceof RoutingError)) throw e;
+        }
+        ways.set(k, made);
+      }
+      const made = ways.get(k);
+      if (!made) continue;
+      try {
+        return { ready: made, positions: placeBlocks(ctx, made, { ...candidate, at: positions.at, stay: true, solid: true }) };
+      } catch (e) {
+        if (!(e instanceof RoutingError) || mode === modes.at(-1)) throw e;
+      }
+    }
+    return null;
+  };
   // Breakout trials, each with the Sub-Block and spec it tries: routed only where they look
   // promising once placed.
   const trials = new WeakMap();
@@ -180,8 +227,23 @@ export function* search(entries, catalog, logistics, options = {}) {
       queue.unshift(roomier);
       structured++;
     };
+    // Fixtures standing on machines leave them out (Making Way); where that layout fails, the same
+    // candidate is tried next with every Fixture kept off its machines (`solid`).
+    let way = false;
+    const solidly = () => {
+      if (!way || candidate.solid) return;
+      queue.unshift({ ...candidate, solid: true });
+      structured++;
+    };
+    let work = ready;
     try {
-      const positions = placeBlocks(ctx, ready, candidate);
+      let positions = placeBlocks(ctx, ready, candidate);
+      if (positions.holes?.size) {
+        way = true;
+        const made = makeWay(candidate, k, ready, positions);
+        if (!made) throw new RoutingError('no machine to build apart where a Fixture stands on one');
+        ({ ready: work, positions } = made);
+      }
       placed = positions.bounds.w * positions.bounds.h;
       boxes = positions.boxes;
       // A Breakout trial packs no looser than the best, or it is not worth routing. Where one
@@ -192,18 +254,18 @@ export function* search(entries, catalog, logistics, options = {}) {
       // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
       const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => now() > deadline : null };
       try {
-        composed = compose(ctx, ready, positions, layout);
+        composed = compose(ctx, work, positions, layout);
       } catch (e) {
         if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
         // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
         // else without splitters (a Recipe Loop's feedback by train) — and the roomier one next.
-        if (!(e instanceof RoutingError) || !ready.routes.some(r => r.splitter || r.fan || r.taps)) throw e;
+        if (!(e instanceof RoutingError) || !work.routes.some(r => r.splitter || r.fan || r.taps)) throw e;
         try {
-          if (!ready.routes.some(r => r.fan)) throw e;
-          composed = compose(ctx, ready, positions, { ...layout, fansLast: true });
+          if (!work.routes.some(r => r.fan)) throw e;
+          composed = compose(ctx, work, positions, { ...layout, fansLast: true });
         } catch (again) {
           if (!(again instanceof RoutingError)) throw again;
-          composed = compose(ctx, ready, positions, { ...layout, plain: true });
+          composed = compose(ctx, work, positions, { ...layout, plain: true });
         }
       }
       block = finishBlock(composed, catalog, logistics);
@@ -212,12 +274,14 @@ export function* search(entries, catalog, logistics, options = {}) {
       // No pole for a machine there: room round the Sub-Blocks about it.
       if (e instanceof PowerError && e.at && composed) makeRoom(near(composed.subBlocks, e.at));
       else if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
+      solidly();
       failure = e;
       trace(candidate, e);
       continue;
     }
     const problems = validateBlock(block, catalog, logistics);
     if (problems.length) {
+      solidly();
       failure = new Error(`invalid layout: ${problems[0]}`);
       trace(candidate, failure);
       continue;
@@ -227,6 +291,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
     const score = [Math.round(starving * 1000) / 1000, loopsByTrain, compactness(block).value, block.entities.length];
     if (perfect && score[0] > 0) {
+      solidly();
       failure = new Error(`the layout starves ${score[0]}/min`);
       trace(candidate, failure);
       continue;
@@ -341,8 +406,25 @@ function sweep(first, designs, site = null) {
     if (!d[first.choice[i]]?.copies) return;
     for (const k of [0, 2]) list.push({ ...first, columns: first.columns.map((v, j) => (j === i ? k : v)) });
   });
+  // In a City Block of few Sub-Blocks, every pairing of their best designs too, the smallest
+  // first: the shapes that fit its room together are seldom each one's best.
+  if (site) {
+    const options = designs.map(d => Math.min(d.length, PAIRED));
+    if (options.reduce((n, k) => n * k, 1) <= PAIRINGS) {
+      let all = [[]];
+      for (const k of options) all = all.flatMap(choice => Array.from({ length: k }, (_, c) => [...choice, c]));
+      const area = choice => choice.reduce((sum, c, i) => sum + (designs[i][c].estimate.area ?? 0), 0);
+      const tried = new Set(list.map(c => c.choice.join()));
+      for (const choice of all.filter(c => !tried.has(c.join())).sort((a, b) => area(a) - area(b))) list.push({ ...first, choice });
+    }
+  }
   return (site ? list.flatMap(c => [c, { ...c, layers: LAYER_SPREAD }]) : list).slice(1);
 }
+
+// In a City Block, every pairing of the best PAIRED designs of each Sub-Block is tried where
+// there are no more than PAIRINGS.
+const PAIRED = 8;
+const PAIRINGS = 80;
 
 // How many columns further west than its consumers let it a Sub-Block may stand in Layers.
 const LAYER_SPREAD = 2;

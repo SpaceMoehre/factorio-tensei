@@ -16,6 +16,9 @@ const RANDOM_VARIANTS = 60;
 // ONLY_COPIES is only ever built from repeated modules (routing it whole takes too long). Up to
 // that, a whole module usually packs tighter: it is tried first.
 const COPIES_FROM = 8;
+// In a City Block, the room rows as long as it is wide leave beside them: for the links to and
+// from their ends and the turns of a stack.
+const CITY_SIDES = 12;
 const ONLY_COPIES = 120;
 // Machines a column with belts beside them (Side and Head-on Belts) takes at most; in a City
 // Block as many as stand in a column as tall as its room (a machine with a belt row above and
@@ -107,7 +110,7 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
         errors.set(e.message, (errors.get(e.message) ?? 0) + 1);
       }
     };
-    for (const variant of variants(shape, links, sb, rng, draws)) attempt(variant);
+    for (const variant of variants(shape, links, sb, rng, draws, ctx.site?.inner.w)) attempt(variant);
     // Machines whose belts above and below cannot feed them take belts on their sides too; in a
     // City Block with Fixtures in its room, columns that narrow are candidates anyway (they fit
     // between Fixtures where rows of machines do not).
@@ -177,6 +180,62 @@ export function breakoutDesign(rest, piece, count) {
   return {
     kinds: [...main.kinds, { module: out.kinds[0].module, count, detached: true }],
     trouble: main.trouble + count * out.trouble, area: main.area + count * out.area,
+  };
+}
+
+// Making Way: a design whose copies leave out the machines Fixtures stand on (holes: per copy in
+// the order they stack, the machine numbers left out, or none), and as many machines standing
+// apart instead, downstream of the stack like a Breakout's: `count` of `piece`, a design for
+// all of them together or for one (none where the design has them already: grownDesign).
+export function leaveOut(design, holes, piece, count) {
+  const kinds = [];
+  let j = 0;
+  for (const kind of design.kinds.filter(k => !k.detached)) {
+    for (let c = 0; c < kind.count; c++, j++) {
+      const out = holes[j];
+      const last = kinds.at(-1);
+      if (out?.size) kinds.push({ ...kind, count: 1, module: without(kind.module, out), ...(kind.reverse ? { reverse: without(kind.reverse, out) } : {}) });
+      else if (last?.of === kind) last.count++;
+      else kinds.push({ ...kind, count: 1, of: kind });
+    }
+  }
+  return {
+    ...design,
+    kinds: [...kinds.map(({ of, ...k }) => k), ...design.kinds.filter(k => k.detached), ...(piece?.kinds ?? []).map(k => ({ module: k.module, count: k.count * count, detached: true }))],
+    trouble: design.trouble + count * (piece?.trouble ?? 0), area: design.area + count * (piece?.area ?? 0),
+  };
+}
+
+// Making Way, the left-out machines added at the end: a core candidate's design with `more`
+// machines, its last row taking them, every other machine standing where it did. Null where the
+// last row has no room for them (the core would grow a row), or it does not route.
+export function grownDesign(ctx, index, candidate, more) {
+  const { spec } = candidate;
+  if (!spec?.core || !spec.variant || spec.variant.counts) return null;
+  const { variant, machines } = spec;
+  if (Math.ceil((machines + more) / variant.rowLength) > Math.ceil(machines / variant.rowLength)) return null;
+  const sb = scaled(ctx.plan[index], machines + more);
+  try {
+    const core = buildCore(sb, ctx.catalog.buildings[sb.building], coreLinks(sb, index, ctx.routes), variant, ctx.env);
+    return buildSpec(ctx, index, { core, variant, machines: machines + more, whole: false }, null);
+  } catch (e) {
+    if (!(e instanceof LayoutError || e instanceof RoutingError || e instanceof PowerError)) throw e;
+    return null;
+  }
+}
+
+// A module without some of its machines (their numbers): their inserters go too, and with them
+// what those moved and dropped, and the share of each belt's machines.
+function without(module, out) {
+  const rows = module.entities.filter(e => e.kind === 'building' && out.has(e.machine)).map(e => e.row);
+  return {
+    ...module,
+    entities: module.entities.filter(e => !out.has(e.machine)),
+    parts: module.parts.map(p => ({ ...p, machines: p.machines - rows.filter(r => p.rows.includes(r)).length, drops: p.drops.filter(d => !out.has(d.machine)) })),
+    core: {
+      ...module.core,
+      supply: module.core.supply.map(s => ({ ...s, perMachine: s.perMachine.filter((_, k) => !out.has(s.machines[k])), machines: s.machines.filter(m => !out.has(m)) })),
+    },
   };
 }
 
@@ -497,14 +556,17 @@ const areaOf = core => core.w * core.h;
 
 // The plainest variants first (one row, nearest belt rows, belts split between the faces, rows
 // as long as the busiest belt allows, pairs of rows facing a shared belt), then random draws.
-function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS) {
+// room: in a City Block, how wide it is inside its Buffer.
+function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null) {
   const rotations = rotationsFor(shape, links);
   for (const rotation of rotations) {
     yield stackVariant(shape, { rotation, rowLength: sb.count, plain: true }, rng);
     // Rows as long as the busiest belt allows, half that (pairs of rows facing a belt fill both
-    // its lanes), as many as fill one output lane, and about square.
+    // its lanes), as many as fill one output lane, and about square; in a City Block also as
+    // long as its room is wide, less room for the links beside them.
     const outLane = Math.max(0, ...shape.belts.map(b => b.outLane));
-    for (const { merge, cap } of [{ merge: false, cap: shape.rowCap }, { merge: true, cap: shape.mergeCap }, { merge: false, cap: Math.ceil(shape.rowCap / 2) }, { merge: false, cap: squareRow(shape, sb) }, { merge: false, cap: outLane }]) {
+    const wide = room ? Math.min(shape.rowCap, Math.floor((room - CITY_SIDES) / Math.min(shape.building.size.w, shape.building.size.h))) : 0;
+    for (const { merge, cap } of [{ merge: false, cap: shape.rowCap }, { merge: true, cap: shape.mergeCap }, { merge: false, cap: Math.ceil(shape.rowCap / 2) }, { merge: false, cap: squareRow(shape, sb) }, { merge: false, cap: outLane }, { merge: false, cap: wide }]) {
       if (!cap) continue;
       if (cap >= sb.count || (merge && cap === shape.rowCap)) continue;
       for (const middle of [4, 5, 6]) {
