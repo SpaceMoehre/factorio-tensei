@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { moduleOptions, defaultModules, machineEffect } from '../js/modules.js';
+import { moduleOptions, defaultModules, machineEffect, needsModules } from '../js/modules.js';
 import { planSubBlocks } from '../js/plan.js';
 import { pyCatalog, catalog } from './fixtures/catalog.js';
 
@@ -15,6 +15,20 @@ test('a building takes the modules its categories, effects and recipe allow', ()
 test('a farm that cannot run without modules starts full of its first plant; other buildings start empty', () => {
   assert.deepEqual(defaultModules(pyCatalog, 'Moss-1', 'moss-farm-mk01'), [{ name: 'moss', count: 16 }]);
   assert.deepEqual(defaultModules(catalog, 'iron-gear-wheel', 'assembling-machine-2'), []);
+});
+
+// Py for Factorio 2.0 gives a farm no base effect but stops it by script while its slots are
+// empty; they take nothing but its plants, and its crafting speed counts the farm as one more:
+// 1/17 × (1 + 16 × 100%) = 1.
+test('a farm without -100% base speed (Py for Factorio 2.0) is one whose slots take only plants or animals', () => {
+  const farm = { ...pyCatalog.buildings['moss-farm-mk01'], baseEffect: undefined, speedLow: undefined, craftingSpeed: 1 / 17 };
+  const py2 = { ...pyCatalog, buildings: { ...pyCatalog.buildings, 'moss-farm-mk01': farm } };
+  assert.ok(needsModules(farm));
+  assert.deepEqual(defaultModules(py2, 'Moss-1', 'moss-farm-mk01'), [{ name: 'moss', count: 16 }]);
+  assert.equal(planSubBlocks(moss(undefined), py2)[0].count, 10);
+  // Taking the game's own modules too, or any, it is no farm.
+  assert.equal(needsModules({ ...farm, allowedModuleCategories: ['moss', 'speed'] }), false);
+  assert.equal(needsModules({ ...farm, allowedModuleCategories: undefined }), false);
 });
 
 // Speed = 1/16 × (1 − 100% base + 16 × 100%) = 1: 8 moss per 100 s is 4.8/min a farm, so

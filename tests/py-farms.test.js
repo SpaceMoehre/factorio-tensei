@@ -4,22 +4,23 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { execFileSync } from 'node:child_process';
-import { moduleOptions, defaultModules, machineEffect } from '../js/modules.js';
+import { moduleOptions, defaultModules, machineEffect, needsModules } from '../js/modules.js';
 
-// The shipped catalog carries the Py farms from pyalienlife (scripts/py-farms.mjs): a moss farm
-// mk01 has 15 slots and -100% speed of its own, so moss is what runs it; 15 moss (+100% each)
-// make it run at its crafting speed of 1/15 × 15 = 1, 15 moss-mk04 (+400% each) at 4.
+// The shipped catalog is the game's own dump (Factorio 2.0 with Py for 2.0): a moss farm mk01 has
+// 15 slots and no base effect, Py's script stopping it while they are empty, and a crafting speed
+// of 1/16 (py.farm_speed: the farm counts as one moss), so 15 moss (+100% each) run it at
+// 1/16 × (1 + 15) = 1, 5 moss at 6/16, 15 moss-mk04 (+400% each) at 61/16.
 test('the shipped catalog: moss in a moss farm\'s module slots speeds it up', () => {
   const catalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const farm = catalog.buildings['moss-farm-mk01'];
   assert.equal(farm.moduleSlots, 15);
-  assert.deepEqual(farm.baseEffect, { speed: -1 });
+  assert.ok(needsModules(farm));
   assert.deepEqual(moduleOptions(catalog, 'Moss-1', 'moss-farm-mk01'), ['moss', 'moss-mk02', 'moss-mk03', 'moss-mk04']);
   assert.deepEqual(defaultModules(catalog, 'Moss-1', 'moss-farm-mk01'), [{ name: 'moss', count: 15 }]);
   const speed = modules => farm.craftingSpeed * machineEffect(catalog, 'Moss-1', 'moss-farm-mk01', modules).speed;
   assert.ok(Math.abs(speed([{ name: 'moss', count: 15 }]) - 1) < 1e-9);
-  assert.ok(Math.abs(speed([{ name: 'moss', count: 5 }]) - 1 / 3) < 1e-9);
-  assert.ok(Math.abs(speed([{ name: 'moss-mk04', count: 15 }]) - 4) < 1e-9);
+  assert.ok(Math.abs(speed([{ name: 'moss', count: 5 }]) - 6 / 16) < 1e-9);
+  assert.ok(Math.abs(speed([{ name: 'moss-mk04', count: 15 }]) - 61 / 16) < 1e-9);
 });
 
 // Every building that cannot run without modules offers its plants or animals for every recipe
@@ -29,7 +30,7 @@ test('the shipped catalog: every farm offers its plants or animals as modules', 
   const catalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const missing = [];
   for (const [name, b] of Object.entries(catalog.buildings)) {
-    if (b.baseEffect?.speed !== -1) continue;
+    if (!needsModules(b)) continue;
     for (const r of Object.values(catalog.recipes).filter(r => b.categories.includes(r.category))) {
       if (!moduleOptions(catalog, r.name, name).length) missing.push(`${name}: ${r.name}`);
     }

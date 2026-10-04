@@ -22,11 +22,23 @@ function fits(module, building, recipe) {
     (!building.allowedEffects || building.allowedEffects.includes(effect)) && (effect !== 'productivity' || value < 0 || recipe?.allowProductivity)));
 }
 
-// A step starts without modules, unless its building cannot run without them (Py farms: -100%
-// base speed); then every slot holds the lowest tier that speeds it up — the farm's first plant.
+// Factorio's own module categories.
+const GAME_CATEGORIES = new Set(['speed', 'productivity', 'efficiency', 'quality']);
+
+// A building that cannot run without modules: a Py farm. For Factorio 2.1 Py gives a farm -100%
+// base speed; for 2.0 it gives it no base effect but stops it by script while its slots are
+// empty, and a farm's slots take nothing but its plants or animals, none of the game's own modules.
+export function needsModules(building) {
+  if (!building?.moduleSlots) return false;
+  if ((building.baseEffect?.speed ?? 0) <= -1) return true;
+  return !!building.allowedModuleCategories?.length && building.allowedModuleCategories.every(c => !GAME_CATEGORIES.has(c));
+}
+
+// A step starts without modules, unless its building cannot run without them; then every slot
+// holds the lowest tier that speeds it up — the farm's first plant.
 export function defaultModules(catalog, recipeName, buildingName) {
   const building = catalog.buildings[buildingName];
-  if (!building?.moduleSlots || (building.baseEffect?.speed ?? 0) > -1) return [];
+  if (!needsModules(building)) return [];
   const first = moduleOptions(catalog, recipeName, buildingName).find(name => catalog.modules[name].effect.speed > 0);
   return first ? [{ name: first, count: building.moduleSlots }] : [];
 }
