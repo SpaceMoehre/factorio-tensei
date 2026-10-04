@@ -5,6 +5,7 @@
 // itself (a fluid comes back by train instead).
 
 import { defaultModules, moduleOptions, machineEffect } from './modules.js';
+import { assignFluidBoxes } from './fluidboxes.js';
 
 const MAX_STEPS = 60;
 
@@ -14,23 +15,22 @@ const MAX_STEPS = 60;
 const optionsOf = new WeakMap();
 export function recipeOptions(catalog) {
   if (optionsOf.has(catalog)) return optionsOf.get(catalog);
-  // Buildings by crafting category, slowest first, with how many fluid boxes take in and give out.
+  // Buildings by crafting category, slowest first.
   const byCategory = new Map();
   const sorted = Object.values(catalog.buildings).sort((a, b) => a.craftingSpeed - b.craftingSpeed || a.name.localeCompare(b.name));
   for (const b of sorted) {
-    const boxes = { building: b, inputs: b.fluidBoxes.filter(x => x.production !== 'output').length, outputs: b.fluidBoxes.filter(x => x.production !== 'input').length };
     for (const category of new Set(b.categories)) {
       if (!byCategory.has(category)) byCategory.set(category, []);
-      byCategory.get(category).push(boxes);
+      byCategory.get(category).push(b);
     }
   }
   const buildingsFor = new Map();
   const producers = new Map();
   for (const recipe of Object.values(catalog.recipes)) {
-    const fluidsIn = recipe.ingredients.filter(i => i.type === 'fluid').length, fluidsOut = recipe.products.filter(p => p.type === 'fluid').length;
-    const buildings = (byCategory.get(recipe.category) ?? []).filter(b => fluidsIn <= b.inputs && fluidsOut <= b.outputs);
+    // A building runs the recipe where its fluid boxes take the recipe's fluids.
+    const buildings = (byCategory.get(recipe.category) ?? []).filter(b => assignFluidBoxes(recipe, b));
     if (!buildings.length || !recipe.products.length) continue;
-    buildingsFor.set(recipe.name, buildings.map(b => b.building.name));
+    buildingsFor.set(recipe.name, buildings.map(b => b.name));
     for (const p of recipe.products) {
       if (!producers.has(p.name)) producers.set(p.name, []);
       producers.get(p.name).push(recipe.name);

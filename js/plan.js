@@ -1,4 +1,5 @@
 import { machineEffect, defaultModules } from './modules.js';
+import { assignFluidBoxes } from './fluidboxes.js';
 
 // logistics.fuel: the Fuel item burner machines burn.
 // An entry's byTrain: items it takes by train though a Sub-Block makes them (a Recipe Loop's).
@@ -10,6 +11,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
     seen.add(goal.item);
     const recipe = catalog.recipes[selection.recipe];
     const building = catalog.buildings[selection.building];
+    const boxes = assignFluidBoxes(recipe, building);
+    if (!boxes) throw new Error(`${selection.building} cannot take the fluids of ${selection.recipe}`);
     // A selection that names no modules gets the step's default (a Py farm full of its first plant).
     const modules = selection.modules ?? defaultModules(catalog, selection.recipe, selection.building);
     const effect = machineEffect(catalog, selection.recipe, selection.building, modules);
@@ -35,6 +38,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       recipe: selection.recipe,
       building: selection.building,
       modules,
+      // Which of the building's fluid boxes each fluid takes (fluidboxes.js).
+      boxes,
       count,
       // How much faster than the plan needs its machines can run (the Count is rounded up): a
       // machine makes its share of every flow times this at full speed (as far as its inputs

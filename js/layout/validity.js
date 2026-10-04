@@ -2,6 +2,8 @@
 // validateBlock finds no problem, and the tests assert the same rules. Each check returns a list
 // of problems (empty when the rule holds).
 
+import { assignFluidBoxes } from '../fluidboxes.js';
+
 const DIR = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
 const OPPOSITE = { 0: 8, 4: 12, 8: 0, 12: 4 };
 const key = (x, y) => `${x},${y}`;
@@ -341,17 +343,15 @@ function tunnelPartner(at, a, reach) {
   return null;
 }
 
+// The tiles where a pipe meets a machine's connections for a fluid: those of every box the
+// fluid takes.
 function portTiles(machine, catalog, fluid, role) {
   const building = catalog.buildings[machine.name];
-  const recipe = catalog.recipes[machine.recipe];
-  const isInput = role === 'input';
-  const list = (isInput ? recipe.ingredients : recipe.products).filter(i => i.type === 'fluid');
-  const boxes = building.fluidBoxes.filter(b => (isInput ? b.production !== 'output' : b.production !== 'input'));
-  const box = boxes[list.findIndex(i => i.name === fluid)];
+  const boxes = assignFluidBoxes(catalog.recipes[machine.recipe], building)[role === 'input' ? 'inputs' : 'outputs'][fluid];
   // Rotating clockwise by a quarter turn maps (x, y) to (-y, x).
   const rotate = ({ x, y }, turns) => (turns === 0 ? [x, y] : rotate({ x: -y, y: x }, turns - 1));
   const cx = machine.x + machine.w / 2, cy = machine.y + machine.h / 2;
-  return box.connections.map(c => {
+  return boxes.flatMap(b => building.fluidBoxes[b].connections).map(c => {
     const [rx, ry] = rotate(c, machine.direction / 4);
     const dir = (c.direction + machine.direction) % 16;
     const [dx, dy] = DIR[dir];

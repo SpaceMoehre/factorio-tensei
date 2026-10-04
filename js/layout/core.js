@@ -40,7 +40,7 @@ export class LayoutError extends Error {}
 //   columns    'center' | 'left' | 'right': which inserter columns are tried first
 //   shift      columns every second row sits to the side (|shift| ≤ gap)
 //   poleSlot   null or { band, row }: a tile per machine kept free for a pole
-//   ports      for each fluid, which of its box's connections to use (index, wrapping; the
+//   ports      for each fluid, which of its boxes' connections to use (index, wrapping; the
 //              first when absent)
 //   sides      [{ routeIds, part, face: 'W' | 'E', slot: 1 | 2, serves: [row] }]: a Side Belt,
 //              running along the machine's west or east side `slot` tiles out, its inserters
@@ -54,7 +54,8 @@ export class LayoutError extends Error {}
 // Every machine gets enough inserters for its share of each belt, from real swing rates; where
 // fewer fit, the core records the shortfall (items/min its machines cannot get), which the
 // search ranks below any layout that fits and Starvation reports.
-// links: { inputs: [routeId], output: routeId | null, fluids: [{ routeId, fluid, role, index }] }
+// links: { inputs: [routeId], output: routeId | null, fluids: [{ routeId, fluid, role, boxes }] }, a
+// fluid's boxes the indices of the building's fluid boxes it takes (fluidboxes.js)
 // env: { routes, inserters: { short, long }, rightAngle, beltReach, pipeReach, laneCapacity, handSize }
 export function buildCore(sb, building, links, variant, env) {
   const belts = variant.belts.map(b => ({ ...b, routeIds: b.routeIds ?? [b.routeId] }));
@@ -930,14 +931,12 @@ function columnOrder(Wm, mode) {
   return order;
 }
 
-// One connection per used fluid box, as the variant picks it (by default its first), plus every
-// connection the recipe leaves unused.
+// One connection per fluid among its boxes', as the variant picks it (by default the first), plus
+// every connection left unused.
 function pickConnections(sb, building, fluids, rotation, variant) {
-  const boxesFor = role => building.fluidBoxes.filter(b => (role === 'input' ? b.production !== 'output' : b.production !== 'input'));
   const picks = fluids.map((f, i) => {
-    const box = boxesFor(f.role)[f.index];
-    if (!box) throw new Error(`${sb.building} has no ${f.role} fluid box for ${f.fluid}`);
-    const options = box.connections.map(c => placeConnection(c, rotation, building));
+    const options = (f.boxes ?? []).flatMap(b => building.fluidBoxes[b].connections).map(c => placeConnection(c, rotation, building));
+    if (!options.length) throw new Error(`${sb.building} has no ${f.role} fluid box for ${f.fluid}`);
     return { ...options[(variant.ports?.[i] ?? 0) % options.length], routeId: f.routeId, fluid: f.fluid };
   });
   const taken = new Set(picks.map(c => `${c.tileX},${c.tileY}`));

@@ -84,11 +84,10 @@ function mergeGroups(inputs, laneCapacity) {
 }
 
 export function coreLinks(sb, i, routes) {
-  const fluidIndex = (list, name) => list.filter(x => x.type === 'fluid').findIndex(x => x.name === name);
   const fluids = [];
   for (const r of routes.filter(r => r.kind === 'pipe')) {
-    if (r.consumers.includes(i)) fluids.push({ routeId: r.id, fluid: r.fluid, role: 'input', index: fluidIndex(sb.inputs, r.fluid) });
-    if (r.source === i) fluids.push({ routeId: r.id, fluid: r.fluid, role: 'output', index: fluidIndex(sb.outputs, r.fluid) });
+    if (r.consumers.includes(i)) fluids.push({ routeId: r.id, fluid: r.fluid, role: 'input', boxes: sb.boxes.inputs[r.fluid] });
+    if (r.source === i) fluids.push({ routeId: r.id, fluid: r.fluid, role: 'output', boxes: sb.boxes.outputs[r.fluid] });
   }
   return {
     inputs: routes.filter(r => r.kind === 'belt' && r.consumers.includes(i)).map(r => r.id),

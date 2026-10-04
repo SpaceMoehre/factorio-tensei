@@ -41,14 +41,29 @@ test('recipe: probabilistic, ranged and extra-count products become expected amo
   assert.deepEqual(recipes.sift.products.map(p => p.amount), [0.4, 1, 2.25]);
 });
 
-test('building: footprint from collision box, speed, categories, energy type and fluid connections', () => {
+// Base basic-oil-processing: crude oil into the refinery's second input box, petroleum gas out of its third output.
+test('recipe: a fluid\'s fluidbox_index is kept', () => {
+  const { recipes } = buildCatalog(dataRaw({
+    recipe: {
+      'basic-oil-processing': {
+        name: 'basic-oil-processing', category: 'oil-processing', energy_required: 5,
+        ingredients: [{ type: 'fluid', name: 'crude-oil', amount: 100, fluidbox_index: 2 }],
+        results: [{ type: 'fluid', name: 'petroleum-gas', amount: 45, fluidbox_index: 3 }],
+      },
+    },
+  }));
+  assert.deepEqual(recipes['basic-oil-processing'].ingredients, [{ type: 'fluid', name: 'crude-oil', amount: 100, fluidboxIndex: 2 }]);
+  assert.deepEqual(recipes['basic-oil-processing'].products, [{ type: 'fluid', name: 'petroleum-gas', amount: 45, fluidboxIndex: 3 }]);
+});
+
+test('building: footprint from collision box, speed, categories, energy type, fluid connections and filters', () => {
   const { buildings } = buildCatalog(dataRaw({
     'assembling-machine': {
       'py-cultivator': {
         name: 'py-cultivator', collision_box: [[-2.9, -2.4], [2.9, 2.4]], crafting_speed: 1.5,
         crafting_categories: ['cultivation'], energy_usage: '200kW', energy_source: { type: 'electric' },
         fluid_boxes: [{
-          production_type: 'input',
+          production_type: 'input', filter: 'water',
           pipe_connections: [{ flow_direction: 'input', direction: 0, position: [0, -2] }],
         }],
       },
@@ -63,7 +78,7 @@ test('building: footprint from collision box, speed, categories, energy type and
   assert.deepEqual(buildings['py-cultivator'], {
     name: 'py-cultivator', size: { w: 6, h: 5 }, craftingSpeed: 1.5, categories: ['cultivation'],
     energy: 'electric', energyUsage: 200000,
-    fluidBoxes: [{ production: 'input', connections: [{ x: 0, y: -2, direction: 0 }] }],
+    fluidBoxes: [{ production: 'input', filter: 'water', connections: [{ x: 0, y: -2, direction: 0 }] }],
   });
   assert.deepEqual(buildings['stone-furnace'].size, { w: 2, h: 2 });
   assert.equal(buildings['stone-furnace'].energy, 'burner');

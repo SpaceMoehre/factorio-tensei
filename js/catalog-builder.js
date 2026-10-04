@@ -11,8 +11,9 @@ export function buildCatalog(raw) {
       name: r.name,
       category: r.category ?? 'crafting',
       time: r.energy_required ?? 0.5,
-      ingredients: list(r.ingredients).map(({ type, name, amount }) => ({ type, name, amount })),
-      products: list(r.results).map(p => ({ type: p.type, name: p.name, amount: expectedAmount(p) })),
+      // A fluid's fluidbox_index: the one input (output) box it takes, counted from 1 (fluidboxes.js).
+      ingredients: list(r.ingredients).map(i => ({ type: i.type, name: i.name, amount: i.amount, ...(i.fluidbox_index && { fluidboxIndex: i.fluidbox_index }) })),
+      products: list(r.results).map(p => ({ type: p.type, name: p.name, amount: expectedAmount(p), ...(p.fluidbox_index && { fluidboxIndex: p.fluidbox_index }) })),
       ...(r.allowed_module_categories && { allowedModuleCategories: list(r.allowed_module_categories) }),
       ...(r.allow_productivity && { allowProductivity: true }),
     };
@@ -42,6 +43,7 @@ export function buildCatalog(raw) {
       ...(dropPoint(b) && { drop: dropPoint(b) }),
       fluidBoxes: (b.fluid_boxes ?? []).map(fb => ({
         production: fb.production_type,
+        ...(fb.filter && { filter: fb.filter }),
         connections: fb.pipe_connections
           .filter(c => !c.connection_type || c.connection_type === 'normal')
           .map(c => {
