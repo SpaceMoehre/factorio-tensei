@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { context, shapeOf, stackVariant, random } from '../js/design.js';
+import { context, shapeOf, stackVariant, random, designStep, designOf } from '../js/design.js';
+import { siteOf } from '../js/city.js';
 import { coreLinks } from '../js/routes.js';
 import { buildCore } from '../js/layout/core.js';
 import { expandChain } from '../js/chain.js';
@@ -51,4 +52,35 @@ test('headroom: only Sub-Blocks whose inputs keep up run faster than the plan', 
   assert.equal(of('bolts').headroom, 1);
   // 1350 iron sticks/min from 6 factories of 240: 1.067 as fast, on iron plates from the train.
   assert.ok(Math.abs(of('iron-stick').headroom - 1440 / 1350) < 1e-9);
+});
+
+// Py small parts at 8400/min in a 230 × 230 City Block: 21 bolt factories for 14 belts. One stack
+// of them, a machine a row, is taller than the City Block; Copies of one or two machines cut the
+// belts unevenly (a factory left with a belt of 600 bolts where it takes 900). Two-Way Copies: 3
+// machines fill 2 belts, each dropping onto the belts either side of it, and their Copies stand in
+// columns.
+test('Two-Way Copies: 21 bolt factories in Copies of 3, each filling 2 belts, none starving', () => {
+  const items = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
+  const selections = Object.fromEntries(items.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
+  const { entries } = expandChain([{ item: 'small-parts-01', rate: 8400 }], pyCatalog, { made: items.slice(1), selections });
+  const site = siteOf({ area: { x: 0, y: 0, w: 230, h: 230 }, fixtures: [] }, 1);
+  const ctx = context(entries, pyCatalog, logistics, site);
+  const index = ctx.plan.findIndex(sb => sb.recipe === 'bolts');
+  assert.equal(ctx.plan[index].count, 21);
+  const list = designStep(ctx, index, random(1), { draws: 0 });
+  const two = list.find(c => c.spec.copies?.share);
+  assert.ok(two, 'no Two-Way Copies');
+  assert.deepEqual([two.spec.copies.m, two.spec.copies.count, two.spec.copies.rest], [3, 7, 0]);
+  const design = designOf(two);
+  assert.equal(design.trouble, 0);
+  const [kind] = design.kinds;
+  assert.ok(kind.module.area.h < site.inner.h / 2, `${kind.module.area.h} tall`);
+  // Each Copy's two belts out take one and a half machines each, and run on to the small parts
+  // factories on their own (not through the other Copies).
+  const out = kind.module.parts.filter(p => p.drops.length);
+  assert.deepEqual(out.map(p => p.machines), [1.5, 1.5]);
+  assert.equal(kind.reverse, null);
+  // The whole stack is taller than the City Block; Copies of one or two machines starve.
+  assert.ok(list.filter(c => !c.copies && designOf(c)?.trouble === 0).every(c => designOf(c).kinds[0].module.area.h > site.inner.h));
+  for (const c of list.filter(c => c.copies && !c.spec.copies.share && c.spec.copies.m <= 2)) assert.ok(designOf(c).trouble > 0);
 });

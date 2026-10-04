@@ -421,7 +421,7 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
     });
     const lanes = n => corridor + Math.floor(turning[n] / 2);
     const span = width.reduce((sum, w) => sum + w, 0) + width.slice(1).reduce((sum, _, n) => sum + lanes(n), 0);
-    return { members, width, height, crossing, lanes, span };
+    return { members, width, height, crossing, lanes, span, k };
   };
   // A column's Sub-Blocks as tight as their Nooks let them: the tallest at the top, each next as
   // high as it stands clear of those above, its east side in line with the column's or in a corner
@@ -481,13 +481,13 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
   // with Fixtures, a column moves on west (as far as the room left lets it) to where its
   // Sub-Blocks stand clear of them.
   function stand(cols) {
-    const { members, width, lanes, span } = shape(cols);
+    const { members, width, lanes, span, crossing, k } = shape(cols);
     const at = new Map();
     let x = inner.x + inner.w, slack = inner.w - span;
     for (const [n, list] of members.entries()) {
       x -= width[n] + (n > 0 ? lanes(n - 1) : 0);
       let d = 0, done = null;
-      for (; d <= slack && !done; d++) done = column(list, x - d, width[n], at);
+      for (; d <= slack && !done; d++) done = column(list, x - d, width[n], at, n);
       if (!done) return null;
       x -= d - 1;
       slack -= d - 1;
@@ -495,20 +495,44 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
     }
     return at;
 
-    // A column's Sub-Blocks with its west side at cx: each level with what it feeds (the Goals
-    // at the top), pushed apart and into the room, then up or down to the nearest spot clear of
-    // the Fixtures and the others. Null when one finds none.
-    function column(list, cx, w, placed) {
+    // A column's Sub-Blocks with its west side at cx (the n-th column from the east): each level
+    // with what it feeds (the Goals at the top), pushed apart and into the room, then up or down
+    // to the nearest spot clear of the Fixtures and the others. Null when one finds none.
+    function column(list, cx, w, placed, n) {
       const want = i => {
         const mine = links.filter(l => l.from === i && placed.has(l.to));
         return mine.length ? Math.round(mine.reduce((sum, l) => sum + placed.get(l.to).y + l.toY - l.fromY, 0) / mine.length) : inner.y;
       };
       const items = list.map(i => ({ i, y: want(i), h: blocks[i].h, x: cx + w - blocks[i].w })).sort((a, b) => a.y - b.y || a.i - b.i);
-      if (items.reduce((sum, it) => sum + it.h, 0) + gap * (items.length - 1) <= inner.h) {
+      const height = items.reduce((sum, it) => sum + it.h, 0) + gap * (items.length - 1);
+      // Each where it wants to stand, pushed apart and into the room.
+      const settle = all => {
         let bottom = inner.y - gap;
-        for (const it of items) bottom = (it.y = Math.max(it.y, bottom + gap)) + it.h;
+        for (const it of all) bottom = (it.y = Math.max(it.y, bottom + gap)) + it.h;
         let top = inner.y + inner.h + gap;
-        for (const it of [...items].reverse()) top = it.y = Math.min(it.y, top - gap - it.h);
+        for (const it of [...all].reverse()) top = it.y = Math.min(it.y, top - gap - it.h);
+      };
+      if (height <= inner.h) {
+        const wanted = items.map(it => it.y);
+        settle(items);
+        // The belts crossing a column of several (links between columns either side of it, Side
+        // Inputs on to columns east of it) get a corridor across it, a row each where the room
+        // lets them: above its Sub-Blocks, between two or below them, whichever lies nearest
+        // where those already placed arrive. (Through the gaps between them, the last ones
+        // found no way.)
+        const ys = [
+          ...links.filter(l => placed.has(l.to) && k.get(cols.get(l.to)) < n && k.get(cols.get(l.from)) > n).map(l => placed.get(l.to).y + l.toY),
+          ...steps.filter(i => placed.has(i) && k.get(cols.get(i)) < n).flatMap(i => blocks[i].entries.map(e => placed.get(i).y + e)),
+        ].sort((a, b) => a - b);
+        const rows = Math.min(crossing[n], inner.h - height - gap);
+        if (items.length > 1 && ys.length && rows > 0) {
+          const mid = ys[Math.floor(ys.length / 2)];
+          const spot = j => (j === 0 ? items[0].y : j === items.length ? items[j - 1].y + items[j - 1].h : (items[j - 1].y + items[j - 1].h + items[j].y) / 2);
+          let at = 0;
+          for (let j = 1; j <= items.length; j++) if (Math.abs(spot(j) - mid) < Math.abs(spot(at) - mid)) at = j;
+          items.forEach((it, m) => { it.y = wanted[m]; });
+          settle([...items.slice(0, at), { y: mid - Math.floor(rows / 2), h: rows }, ...items.slice(at)]);
+        }
       } else {
         // Too tall one below the other: in each other's Nooks, the stack as level with what it
         // feeds as the room lets it.

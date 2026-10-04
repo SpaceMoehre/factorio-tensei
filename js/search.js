@@ -24,9 +24,10 @@ import { compactness } from './layout/score.js';
 //            and `patience` more fits, the search gives up), perfect (only a layout without
 //            Starvation counts: designs and layouts that starve are passed over unbuilt, and the
 //            search gives up `patience` candidates after the structured ones; it ends at once, with
-//            `starves` set, when a Sub-Block cannot be designed without), precheck (with perfect:
-//            the Side Output's Sub-Blocks are checked first), designed (called once the
-//            Sub-Blocks are designed, with each one's item, Count and its best design's area) }
+//            `starves` set, when a Sub-Block cannot be designed without, or not to fit the City
+//            Block), precheck (with perfect: the Side Output's Sub-Blocks are checked first),
+//            designed (called once the Sub-Blocks are designed, with each one's item, Count and
+//            its best design's area) }
 // Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }.
 export function* search(entries, catalog, logistics, options = {}) {
   const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null, strategy = 'search' } = options;
@@ -60,7 +61,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     // alone is too big, or that starves before it is routed) until one does.
     const fitting = c => !(c.estimate.trouble > 1e-6 || (c.estimate.w !== undefined && !within(site, c.estimate)))
       && (designOf(c)?.trouble ?? Infinity) <= 1e-6 && c.design.kinds.every(k => within(site, k.module.area));
-    if (perfect && site && !designs[i].some(fitting)) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: no design without starvation fits the city block`) };
+    if (perfect && site && !designs[i].some(fitting)) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: no design without starvation fits the city block`), starves: true };
   }
   designed?.(ctx.plan.map((sb, i) => ({ item: sb.item, count: sb.count, area: designOf(designs[i][0])?.area ?? null })));
 

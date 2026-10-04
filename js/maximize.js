@@ -10,18 +10,22 @@ import { LayoutError } from './layout/core.js';
 // starves nothing; a try ends as soon as a Sub-Block cannot be designed without Starvation, and
 // soon after its structured candidates when none fits (one whose first layouts do not fit seldom
 // finds one later). Which n to try comes from the Foretelling (planner below), then the bounds
-// close in from the outcomes; then Filling tries more machines than fit, ten at a time, halving.
+// close in from the outcomes (a number whose designs starve bounds them only for a while: the
+// next whole number up may not starve); then Filling tries more machines than fit, ten at a time,
+// halving.
 // Yields { type: 'foretell', rate, machines } (the highest rate foretold to fit, again whenever
 // the outcomes change it), { type: 'try', rate, machines, more } before each try (`more`: while
 // Filling, how many machines more than the highest that fit) and { type: 'best',
 // block, score, tried, rate, machines, goals } for each that fits; returns { rate, machines,
 // goals, tried, failure, above } of the highest that fit (machines 0 when none did), `above` the
-// lowest rate tried that did not fit and why ({ rate, machines, reason }, null when none did not).
+// lowest rate tried above it that did not fit and why ({ rate, machines, reason }, null when none
+// did not).
 // options: { made, selections, index, site, budgetMs (each try's), maxCandidates (each try's),
 //            seed, now }
 export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
-  let tried = 0, failure = null, best = null, told = null, above = null;
+  let tried = 0, failure = null, best = null, told = null;
+  const misses = [];
   for (;;) {
     const foretold = plan.foretold();
     if (foretold.machines !== told) {
@@ -40,15 +44,18 @@ export function* maximize(goals, catalog, logistics, options) {
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
     } else {
       failure = outcome.failure;
-      if (!above || list[0].rate < above.rate) above = { rate: list[0].rate, machines: Math.ceil(n), reason: outcome.failure?.message ?? null };
+      misses.push({ rate: list[0].rate, machines: Math.ceil(n), reason: outcome.failure?.message ?? null });
     }
   }
+  // (A number that starved may lie below the highest that fit.)
+  const above = misses.filter(m => m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
   return { ...(best ?? { rate: 0, machines: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above };
 }
 
 // One try: the layout search for n of the first Goal's machines, to its first layout without
 // Starvation. Returns { block, score, placed, tried, designed, starves, failure }: block null
-// when none fits, `starves` when that is for want of a design without Starvation (not of room);
+// when none fits, `starves` when that is for want of a design without Starvation (or of one that
+// fits the City Block: a Count's designs come and go like its Starvation), not of room;
 // `designed` lists each Sub-Block's item, Count and best design's area.
 // precheck: the Side Output's Sub-Blocks are checked for Starvation first (worth it above the
 // highest n whose Sub-Blocks were all designed without).
@@ -90,10 +97,11 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
 // goalsFor(n): the Goals with n of the first Goal's machines at full speed (rates rounded down to
 // 1/100 a minute, so its Count stays n; n need not be whole: the last of them runs slower).
 // next(): the n to try next, strictly between the highest that fit and the lowest that did not:
-// the highest whole number foretold to fit (right after a try that did not fit, or below one
-// whose designs starved, no more than halfway: the Foretelling knows nothing of designs that
-// starve, and was wrong); once it foretells no more, Filling: FILL machines more than the
-// highest that fit, again while they fit, half as many after each that does not; null after.
+// the highest whole number foretold to fit (after a try that found no room, or two in a row whose
+// designs starved, no more than halfway; right after one that starved, the number below it);
+// with none left below a number that starved, the one above it, once; then Filling: FILL
+// machines more than the highest that fit, again while they fit, half as many after each that
+// does not; null after.
 // filling: how many more Filling adds (null before it starts).
 // record(n, outcome): a try's outcome (attempt's). foretold(): { rate, machines }. span(n): the
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
@@ -150,7 +158,17 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   const reach = 0.95 * room * (1 - broken(site, 2 * (largest + 5)) / 2);
   const fits = n => loose * modules(n) <= reach;
 
-  let lo = 0, hi = upper, failed = false, starves = false, fill = null, designable = 0;
+  // The highest n that fit, the lowest that did not for want of room (more machines never take
+  // less room) and the numbers whose designs starved. Starvation comes and goes with the Count
+  // (how a Sub-Block's machines cut into the belts of its Internal Paths: 14 bolts machines may
+  // starve where 13 and 15 do not), so a number that starved bounds the tries only until the
+  // whole numbers below it are done; then the one above it is tried (`passed`).
+  let lo = 0, ceiling = upper, fill = null, designable = 0;
+  const starved = new Set(), passed = new Set();
+  // Whether the last try did not fit, and how many tries in a row starved.
+  let failed = false, streak = 0;
+  // The lowest number above the highest that fit that did not fit.
+  const hiOf = () => Math.min(ceiling, ...[...starved].filter(s => s > lo));
   // The least looseness the tries that found no room show (one at least that loose did not fit).
   let tightest = 0;
   // Once a layout found shows how loosely this City Block packs (its Sub-Blocks spanning so much
@@ -162,7 +180,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   const overflows = n => !crowded && spread !== null && spread * modules(n) > 1.05 * room;
   // The highest n foretold to fit (more machines never take less room), and no fewer than fit.
   const foretold = () => {
-    let a = Math.floor(lo), b = Math.ceil(hi);
+    let a = Math.floor(lo), b = Math.ceil(hiOf());
     while (b - a > 1) {
       const mid = Math.floor((a + b) / 2);
       if (fits(mid)) a = mid;
@@ -178,12 +196,13 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     asked: sb.count,
     span: n => Math.round(loose * modules(n)),
     get lo() { return lo; },
-    get hi() { return hi; },
+    get hi() { return hiOf(); },
     // The highest n whose Sub-Blocks were all designed without Starvation.
     get designable() { return designable; },
     get filling() { return fill; },
     foretold,
     next() {
+      const hi = hiOf();
       if (fill === null) {
         // Whole numbers above the highest that fit, below the lowest that did not and the first
         // that would overflow the room (more machines never take less room).
@@ -196,9 +215,18 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
         const low = Math.floor(lo) + 1;
         if (low < top) {
           // Only a try tells whether the one above the highest that fit does: at least that one.
+          // After a try that found no room, or the second in a row that starved, no more than
+          // halfway down (the Foretelling knows nothing of designs that starve, and was wrong);
+          // right after the first that starved, the number just below it.
           let want = Math.max(low, foretold().machines);
-          if (failed || starves) want = Math.min(want, Math.ceil((lo + hi) / 2));
+          if (failed && streak !== 1) want = Math.min(want, Math.ceil((lo + hi) / 2));
           return Math.min(want, top - 1);
+        }
+        // None left below the lowest that starved: the whole number above it, once — not where
+        // that one starved too, found no room or would overflow it.
+        if (hi < ceiling && Number.isInteger(hi) && !passed.has(hi)) {
+          passed.add(hi);
+          if (hi + 1 < ceiling && !starved.has(hi + 1) && !overflows(hi + 1)) return hi + 1;
         }
         fill = FILL;
       }
@@ -209,22 +237,27 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
       // slower). Never held back by the Foretelling: a layout found may pack looser than the
       // next, and only a try tells.
       const rate = n => goalsFor(n)[0].rate;
-      for (; fill >= LEAST; fill /= 2) if (lo + fill < hi && rate(lo + fill) > rate(lo)) return lo + fill;
+      for (; fill >= LEAST; fill /= 2) if (lo + fill < hiOf() && rate(lo + fill) > rate(lo)) return lo + fill;
       return null;
     },
     record(n, outcome) {
       for (const d of outcome.designed ?? []) if (d.area) tiles.set(d.item, d.area / d.count);
       if (outcome.designed) designable = Math.max(designable, n);
       failed = !outcome.block;
+      streak = !outcome.block && outcome.starves ? streak + 1 : 0;
       if (outcome.block) {
         lo = Math.max(lo, n);
         if (outcome.placed) loose = Math.max(spread = outcome.placed / modules(n), tightest);
         return;
       }
-      if (n < hi) [hi, starves] = [n, Boolean(outcome.starves)];
+      if (outcome.starves) {
+        starved.add(n);
+        return;
+      }
+      ceiling = Math.min(ceiling, n);
       // It did not fit for want of room: the Foretelling must not say it does (nor again after a
       // layout found below it).
-      if (!outcome.starves) tightest = Math.max(tightest, 1.02 * reach / modules(n));
+      tightest = Math.max(tightest, 1.02 * reach / modules(n));
       loose = Math.max(loose, tightest);
     },
   };

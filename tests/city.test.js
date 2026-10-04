@@ -293,6 +293,36 @@ test("the Foretelling: the first try is the most machines it foretells to fit; l
   assert.ok(broken.foretold().machines < first, `${broken.foretold().machines} of ${first}`);
 });
 
+test('Maximize passes a number whose designs starve: Starvation comes and goes with the Count', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
+  const options = { made: pyItems.slice(1), selections: pySelections, site };
+  const plan = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, options);
+  const starve = n => plan.record(n, { block: null, starves: true, designed: null, tried: 0 });
+  const fit = n => plan.record(n, { block: {}, placed: Math.round(plan.room / 2), designed: null, tried: 1 });
+  const first = plan.next();
+  assert.ok(first > 3, `foretold ${first}`);
+  // The first try starves: the next is the number just below it, not halfway down.
+  starve(first);
+  assert.equal(plan.hi, first);
+  assert.equal(plan.next(), first - 1);
+  // That one fits: the number above the one that starved is tried next, once.
+  fit(first - 1);
+  assert.equal(plan.next(), first + 1);
+  // It starves too: Filling, below the lowest that starved.
+  starve(first + 1);
+  const n = plan.next();
+  assert.ok(n > first - 1 && n < first, `${n}`);
+
+  // Two in a row that starve: then halfway down.
+  const again = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, options);
+  const a = again.next();
+  again.record(a, { block: null, starves: true, designed: null, tried: 0 });
+  const b = again.next();
+  assert.equal(b, a - 1);
+  again.record(b, { block: null, starves: true, designed: null, tried: 0 });
+  assert.ok(again.next() <= Math.ceil(b / 2));
+});
+
 test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min and more, its Sub-Blocks in columns', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
   // (Each try's time generous: tests run side by side.)

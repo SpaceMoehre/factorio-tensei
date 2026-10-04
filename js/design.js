@@ -287,7 +287,12 @@ function copyCandidates(ctx, index, shape, rng) {
   // Machines with an Output Drop also in rows as long as their drops fill a lane.
   const drops = dropRotations(shape).length ? Math.max(1, shape.belts.find(b => b.isOutput).dropLane) : 0;
   const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)]];
-  for (const [rows, n] of sizes.filter((s, i) => sizes.findIndex(t => t[0] * t[1] === s[0] * s[1] && t[1] === s[1]) === i)) {
+  // Two-Way Copies: where whole machines cannot fill an Internal Path's belts evenly, a Copy of
+  // as few machines as fill some of them whole, each machine dropping onto the belts either side
+  // of it.
+  const shared = twoWayCopy(ctx, index, shape).map(([rows, n]) => ({ rows, n, share: true }));
+  const plain = sizes.filter((s, i) => sizes.findIndex(t => t[0] * t[1] === s[0] * s[1] && t[1] === s[1]) === i).map(([rows, n]) => ({ rows, n, share: false }));
+  for (const { rows, n, share } of [...shared, ...plain]) {
     const m = rows * n;
     const count = Math.floor(sb.count / m);
     if (count < 2) continue;
@@ -295,7 +300,7 @@ function copyCandidates(ctx, index, shape, rng) {
     // Estimated by the machines' footprint with a band per row; a squarer stack ranks first.
     const stack = { w: n * pitch, h: count * rows * depth };
     const aspect = Math.max(stack.w / stack.h, stack.h / stack.w);
-    const spec = { copies: { m, n, count, rest } };
+    const spec = { copies: { m, n, count, rest, ...(share ? { share } : {}) } };
     out.push({
       estimate: { trouble: 0, area: sb.count * pitch * depth * (1 + 0.1 * aspect), w: n * pitch, h: rows * depth }, copies: count,
       spec, build: () => buildSpec(ctx, index, spec, rng),
@@ -309,10 +314,10 @@ function copyCandidates(ctx, index, shape, rng) {
 // ({ copies: { m, n, count, rest } }). Throws RoutingError or PowerError where it does not route.
 function buildSpec(ctx, index, spec, rng) {
   if (spec.copies) {
-    const { m, n, count, rest } = spec.copies;
-    const main = repeatable(ctx, index, m, n, rng, count + (rest ? 1 : 0));
+    const { m, n, count, rest, share = false } = spec.copies;
+    const main = repeatable(ctx, index, m, n, rng, count + (rest ? 1 : 0), null, share);
     const kinds = [{ ...main, count }];
-    if (rest) kinds.push({ ...repeatable(ctx, index, rest, n, rng, count + 1, main.chained), count: 1 });
+    if (rest) kinds.push({ ...repeatable(ctx, index, rest, share ? Math.min(n, rest) : n, rng, count + 1, main.chained, share), count: 1 });
     const area = kinds.reduce((sum, k) => sum + k.count * k.module.area.w * k.module.area.h, 0);
     const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds);
     return { kinds, trouble, area, copies: count };
@@ -341,19 +346,23 @@ export function revive(ctx, index, list, rng) {
 
 // A module of `m` machines in rows of `n`, routed both ways. `copies` modules share each belt
 // that runs through them all: a route is chained when every copy's share fits on one belt
-// (`chained` fixes the set, for the leftover module).
-function repeatable(ctx, index, m, n, rng, copies, chained = null) {
+// (`chained` fixes the set, for the leftover module). With `share` (Two-Way Copies), its
+// Internal Path out runs on belts of its own, as many as its machines fill (shapeOf), each
+// machine dropping onto the belts either side of it.
+function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false) {
   const full = ctx.plan[index];
   const sb = scaled(full, m);
   const building = ctx.catalog.buildings[sb.building];
   const links = coreLinks(full, index, ctx.routes);
-  const shape = shapeOf(ctx, sb, index, links);
+  const shape = shapeOf(ctx, sb, index, links, false, share);
+  // A Two-Way Copy's belts out: what each is wanted for.
+  const wants = share ? shape.belts.find(b => b.isOutput)?.wants ?? null : null;
   const found = [];
   const attempt = variant => {
     if (!variant) return;
     try {
       const core = buildCore(sb, building, links, variant, ctx.env);
-      core.pathShort = corePathShort(ctx, sb, core, false);
+      core.pathShort = corePathShort(ctx, sb, core, false, wants);
       found.push({ variant, core });
     } catch (e) {
       if (!(e instanceof LayoutError)) throw e;
@@ -367,6 +376,21 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null) {
       }
     }
   }
+  if (wants) {
+    // Two-Way Copies: half rows on belts of their own or shared, straight on or the output's
+    // bands first.
+    for (const rotation of rotationsFor(shape, links)) {
+      for (const middle of n < m ? [4, 5, 6] : [4]) {
+        for (const pipes of links.fluids.length ? [true, false] : [false]) {
+          for (const gap of [0, 1]) {
+            for (const dual of /** @type {const} */ ([true, 'shared'])) {
+              for (const outputFirst of [false, true]) attempt(stackVariant(shape, { rotation, rowLength: n, flip: true, plain: true, pipes, middle, dual, outputFirst, gap }, rng));
+            }
+          }
+        }
+      }
+    }
+  }
   for (const rotation of rotationsFor(shape, links)) {
     for (const merge of [false, true]) {
       for (const middle of n < m ? [4, 5, 6] : [4]) {
@@ -376,6 +400,9 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null) {
       }
     }
   }
+  // Single machines whose belts above and below cannot feed them take belts on their sides too
+  // (Side and Head-on Belts), as a whole module's do.
+  if (n === 1 && !(Math.min(...found.map(f => trouble(f.core))) <= 1e-6)) for (const variant of sideVariants(shape, links, sb, rng, m)) attempt(variant);
   // Stacked rows whose fluids have no pipe rows rarely route; those come after.
   const stuck = ({ variant, core }) => (variant.rowLength < m && !variant.pipes.length
     && core.ports.some(p => p.tiles.some(([, , d]) => d === N || d === S)) ? 1 : 0);
@@ -385,7 +412,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null) {
     for (const margin of margins(core)) {
       try {
         const module = routeModule(core, moduleOptions(ctx, links, margin, sb));
-        let through = chained ?? chainedRoutes(ctx, index, module, copies);
+        let through = chained ?? chainedRoutes(ctx, index, module, copies, share);
         let keys = new Set(module.parts.filter(p => p.routeIds.every(id => through.has(id))).map(p => p.key));
         // Belts snaking through the copies turn beside the stack, each in a lane of its own; a
         // belt crossing to an outer lane dives under the inner ones (lanes two apart) in one hop.
@@ -395,7 +422,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null) {
           keys = new Set();
         }
         const reverse = keys.size ? routeModule(core, { ...moduleOptions(ctx, links, margin, sb), reverse: keys }) : null;
-        return { module, reverse, chained: through, variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module, false) };
+        return { module, reverse, chained: through, variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module, false, wants) };
       } catch (e) {
         if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
         failure = e;
@@ -412,14 +439,15 @@ export function maxSnaking(ctx) {
 
 // The routes whose belts run through the copies: an Internal Path, a Side Input or an output
 // whose whole rate fits one belt (each item its lane, when merged), and an output only the train
-// takes where two copies' share does.
-function chainedRoutes(ctx, index, module, copies) {
+// takes where two copies' share does — but not a Two-Way Copy's Internal Path out (`share`): each
+// of its belts is one of the path's.
+function chainedRoutes(ctx, index, module, copies, share = false) {
   const sb = ctx.plan[index];
   const lane = ctx.env.laneCapacity;
   const out = new Set();
   for (const part of module.parts) {
     const route = ctx.routes[part.routeIds[0]];
-    if (part.kind === 'head') continue;
+    if (part.kind === 'head' || (share && route.source === index)) continue;
     // An Internal Path's belts snake through runs of copies, as many runs as it has belts.
     if (typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output') {
       part.routeIds.forEach(id => out.add(id));
@@ -458,26 +486,28 @@ function scaled(sb, m) {
 // each lane holding half a belt (a drop along the belt may land on either lane). The parts of an
 // Internal Path run on as many belts as the path has, each chaining a run of parts, as the
 // Compound Block links them; in a whole module each brings its run of consumers what they take,
-// in a copy its own parts' share.
-function laneShortfall(ctx, sb, module, whole = true) {
+// in a copy its own parts' share — in a Two-Way Copy what each of its belts is wanted for
+// (`share`, shapeOf's).
+function laneShortfall(ctx, sb, module, whole = true, share = null) {
   const parts = module.parts.filter(p => p.drops.length);
   if (!parts.length) return 0;
   const route = ctx.routes[parts[0].routeIds[0]];
   const internal = isInternal(route);
   const groups = internal ? runs(parts, Math.min(parts.length, pathBelts(ctx, route))) : parts.map(p => [p]);
   const made = g => g.reduce((sum, p) => sum + p.machines, 0) * outputRate(sb) / sb.count;
-  const wants = !internal ? null : whole ? pathWants(ctx, route, groups.length) : groups.map(made);
+  const wants = !internal ? null : whole ? pathWants(ctx, route, groups.length) : share?.length === groups.length ? share : groups.map(made);
   return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), wants);
 }
 
 // A core's Internal Path, before it is routed (Path Flow on its pathDrops): in a whole module each
 // part is one of the path's belts, bringing its run of consumers what they take; in a copy each
-// part brings its own share.
-function corePathShort(ctx, sb, core, whole) {
+// part brings its own share (in a Two-Way Copy what it is wanted for: `share`).
+function corePathShort(ctx, sb, core, whole, share = null) {
   if (!core.pathDrops) return 0;
   const { parts } = core.pathDrops;
   const route = ctx.routes[core.pathDrops.routeId];
-  const wants = whole && parts.length === pathBelts(ctx, route) ? pathWants(ctx, route, parts.length) : parts.map(p => p.made);
+  const wants = whole && parts.length === pathBelts(ctx, route) ? pathWants(ctx, route, parts.length)
+    : share?.length === parts.length ? share : parts.map(p => p.made);
   return pathShortfall(ctx, sb, parts.map(p => p.drops), wants);
 }
 
@@ -774,7 +804,9 @@ const sbHeight = (shape, rotation) => (rotation === 4 || rotation === 12 ? shape
 // nothing else takes, or an Internal Path between it and one other Sub-Block), and its fluids.
 // rest: sb is the machines a Breakout leaves; they keep an Internal Path's parts, as many as the
 // whole Sub-Block's where they have the machines, and each broken-out machine joins one.
-export function shapeOf(ctx, sb, index, links, rest = false) {
+// share: sb is a Two-Way Copy's machines; its Internal Path out runs on as many belts as they
+// fill (pathShare).
+export function shapeOf(ctx, sb, index, links, rest = false, share = false) {
   const belts = [...links.inputs, ...(links.output !== null ? [links.output] : [])].map(routeId => {
     const route = ctx.routes[routeId];
     const isOutput = routeId === links.output;
@@ -791,11 +823,12 @@ export function shapeOf(ctx, sb, index, links, rest = false) {
     const whole = sb.count === ctx.plan[index].count;
     if (internal) {
       const belts = pathBelts(ctx, route);
+      const own = share && isOutput && !whole ? pathShare(ctx, sb, route) : null;
       return {
-        routeIds: [routeId], perBelt: producerPart(sb.count, belts), parts: whole || (rest && sb.count >= belts) ? belts : null, splittable, perLane, isOutput, items,
+        routeIds: [routeId], perBelt: producerPart(sb.count, belts), parts: own?.length ?? (whole || (rest && sb.count >= belts) ? belts : null), splittable, perLane, isOutput, items,
         outLane: isOutput ? outputLane(ctx, sb) : 0, oneSide: isOutput ? oneSide(ctx, sb) : 0, oneBelt: false, dropLane: isOutput ? dropLane(ctx, sb) : 0,
         // What each belt brings its consumers (a Two-Way Output's belts are cut to match).
-        wants: whole && isOutput ? pathWants(ctx, route, belts) : null,
+        wants: own ?? (whole && isOutput ? pathWants(ctx, route, belts) : null),
       };
     }
     const perBelt = isOutput
@@ -814,6 +847,40 @@ export function shapeOf(ctx, sb, index, links, rest = false) {
   // With merged pairs, rows as long as the busiest unmerged belt or merged lane allows.
   const mergeCap = Math.min(sb.count, ...pairUp(belts).filter(b => b.splittable).map(b => b.perBelt));
   return { sb, links, belts, depths, rowCap, mergeCap, building: ctx.catalog.buildings[sb.building], lane: ctx.env.laneCapacity };
+}
+
+// A Two-Way Copy's belts of an Internal Path out: as many as its machines fill at full speed,
+// each wanting the most any of the path's belts brings its consumers (a Copy may stand anywhere
+// in the path); null where they fill none.
+function pathShare(ctx, sb, route) {
+  const want = Math.min(2 * ctx.env.laneCapacity, Math.max(...pathWants(ctx, route, pathBelts(ctx, route))));
+  const belts = Math.floor(outputRate(sb) * (sb.headroom ?? 1) / want + 1e-9);
+  return belts >= 1 ? Array(belts).fill(want) : null;
+}
+
+// Two-Way Copies (copyCandidates): where a Sub-Block's machines cannot fill its Internal Path
+// out's belts evenly (Two-Way Output: 21 bolts machines for 14 belts), the fewest machines whose
+// Copies, a whole number of them and the leftover module, fill at least as many belts as the
+// path has (3 bolts machines fill 2 belts at 900 a minute). Its sizes [rows, row length]: rows as
+// long as the module's other belts feed, and a column; none where no Copy does (only the whole).
+const TWO_WAY_COPY = 16;
+function twoWayCopy(ctx, index, shape) {
+  const sb = ctx.plan[index];
+  const out = shape.belts.find(b => b.isOutput && b.parts && b.wants);
+  if (!out || !twoWayLengths(shape, sb).length) return [];
+  const links = coreLinks(sb, index, ctx.routes);
+  for (let m = 2; m <= Math.min(TWO_WAY_COPY, sb.count / 2); m++) {
+    const count = Math.floor(sb.count / m), rest = sb.count - count * m;
+    const own = shapeOf(ctx, scaled(sb, m), index, links, false, true);
+    const k = own.belts.find(b => b.isOutput).parts ?? 0;
+    const left = rest ? pathShare(ctx, scaled(sb, rest), ctx.routes[out.routeIds[0]])?.length ?? 0 : 0;
+    if (!k || count * k + left < out.parts) continue;
+    // A row no longer than one of the other belts feeds.
+    const most = Math.min(m, ...own.belts.filter(b => !b.isOutput && b.splittable).map(b => b.perBelt));
+    const n = Math.max(...[...Array(most).keys()].map(j => j + 1).filter(j => m % j === 0));
+    return n > 1 ? [[m / n, n], [m, 1]] : [[m, 1]];
+  }
+  return [];
 }
 
 // The most machines a producer's part may have so its `count` machines make at least `belts`
