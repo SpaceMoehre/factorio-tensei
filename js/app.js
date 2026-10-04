@@ -2,6 +2,7 @@ import { simulate } from './sim.js';
 import { expandChain, recipeOptions } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
+import { clocksOf, clockLabel } from './clocks.js';
 import { circuitPairs } from './layout/wires.js';
 import { createMap, turnsSideways } from './render.js';
 import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
@@ -10,6 +11,15 @@ import { compactness, SQUARE, BEND } from './layout/score.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'plainPipe', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
+// Virtual signals a clock may take (Factorio 2.0): letters, digits, colours and a few symbols,
+// drawn as a glyph or a swatch where the catalog has no icon for them.
+/** @type {{ type: string, name: string, glyph?: string, swatch?: string }[]} */
+const VIRTUAL = [
+  ...[...'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'].map(c => ({ name: `signal-${c}`, glyph: c })),
+  ...Object.entries({ red: '#e53935', green: '#43a047', blue: '#1e88e5', yellow: '#fdd835', pink: '#ec407a', cyan: '#26c6da', white: '#f5f5f5', grey: '#9e9e9e', black: '#212121' })
+    .map(([colour, swatch]) => ({ name: `signal-${colour}`, swatch })),
+  { name: 'signal-check', glyph: '✓' }, { name: 'signal-info', glyph: 'i' }, { name: 'signal-dot', glyph: '•' },
+].map(v => ({ ...v, type: 'virtual' }));
 const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop that cannot feed itself (a fluid, or one taking more than it makes)' };
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
@@ -35,6 +45,9 @@ state.logistics = { ...defaultLogistics(), ...state.logistics };
 state.made ??= [];
 delete state.inputs;
 state.selections ??= {};
+// Inserter Clocks: the signal chosen for each clock (by its key, "items/seconds"), kept from one
+// build to the next.
+state.clocks ??= {};
 // The City Block to build in: its blueprint string (or a size, without one), the Buffer and
 // whether to look for the highest rate that fits.
 state.city = { on: false, blueprint: '', w: 100, h: 100, buffer: 2, maximize: false, ...state.city };
@@ -64,6 +77,11 @@ let best = null;
 // null without one; and what the running (or last) build used: the blueprint its Fixtures came
 // from, whether it maximizes, and the try in progress.
 let city = null;
+// The shown block's Inserter Clocks (clocks.js), the clock whose signal is being picked, and the
+// blueprint encoding last started.
+let clocks = null;
+let picking = null;
+let encoding = 0;
 let reading = 0;
 let cityRead = Promise.resolve();
 let built = null;
@@ -128,6 +146,11 @@ $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('c
 $('copy-json').addEventListener('click', () => copy($('bp-json').value, $('copy-json')));
 $('copy-setup').addEventListener('click', () => copy($('setup-json').value = setupText(), $('copy-setup')));
 $('setup').addEventListener('toggle', () => { if ($('setup').open) $('setup-json').value = setupText(); });
+$('picker-close').addEventListener('click', () => $('picker').close());
+$('picker-none').addEventListener('click', () => choose(null));
+$('picker-filter').addEventListener('input', filterPicker);
+// A click on the backdrop closes it.
+$('picker').addEventListener('click', e => { if (e.target === $('picker')) $('picker').close(); });
 $('zoom-in').addEventListener('click', () => map?.zoom(1.4));
 $('zoom-out').addEventListener('click', () => map?.zoom(1 / 1.4));
 $('fit').addEventListener('click', () => map?.fit());
@@ -434,6 +457,7 @@ async function build() {
   built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && state.city.maximize), trying: null, foretold: null };
   map?.destroy();
   map = null;
+  clocks = null;
   $('area').hidden = true;
   $('results').hidden = true;
   $('apply-row').hidden = true;
@@ -573,11 +597,113 @@ async function show(block, tried, found = null, rank = null) {
   // A Recipe Loop's feedback fed in the block is no Side Input.
   fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input' && !(r.loop && r.fedBy !== undefined)));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
-  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null, { circuit });
+  clocks = clocksOf(block, catalog);
+  renderClocks();
+  await writeBlueprint(block);
   if (best?.block !== block) return;
+  $('results').hidden = false;
+}
+
+// The shown block's blueprint, with its Circuit Wires and the signals its inserters' clocks take.
+async function writeBlueprint(block) {
+  const mine = ++encoding;
+  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null, { circuit: state.logistics.circuit, signals: state.clocks });
+  if (mine !== encoding || best?.block !== block) return;
   $('bp-string').value = string;
   $('bp-json').value = JSON.stringify(JSON.parse(json), null, 2);
-  $('results').hidden = false;
+}
+
+// Every clock of the shown block (fastest first): its signal (a button opening the picker), what
+// it moves, the items its inserters move and how many run on it.
+function renderClocks() {
+  const ratios = clocks?.ratios ?? [];
+  $('clocks-box').hidden = !ratios.length;
+  $('clocks').replaceChildren(...ratios.map(r => {
+    const signal = state.clocks[r.key];
+    const label = clockLabel(r.key);
+    const pick = el('button', {
+      type: 'button', className: signal ? 'signal' : 'signal unset', title: signal ? `${signal.name} > 0` : 'Pick a signal',
+      ariaLabel: `Signal for ${label}: ${signal?.name ?? 'none'}`,
+    }, signal ? signalFace(signal) : el('span', { className: 'glyph', textContent: '+' }));
+    pick.addEventListener('click', () => openPicker(r.key));
+    return el('li', { title: `${fmt(r.items / r.seconds * 60)}/min each: ${r.names.join(', ')}` },
+      pick, el('span', { className: 'label', textContent: label }), el('span', { className: 'what' }, ...r.names.map(iconOf)),
+      el('span', { className: 'count', textContent: count(r.inserters, 'inserter') }));
+  }));
+  // Without Circuit Wires the signals reach no inserter until it is wired.
+  $('clocks-wires').hidden = state.logistics.circuit !== 'none' || !ratios.some(r => state.clocks[r.key]);
+}
+
+// The signal picker: a modal of signal icons, virtual signals first, then the block's items and
+// fluids, then every item and fluid the catalog's recipes name.
+let blockSignals = null;
+function openPicker(key) {
+  picking = key;
+  if (!blockSignals) {
+    blockSignals = el('div', { className: 'signals' });
+    const named = new Map();
+    for (const r of Object.values(catalog.recipes)) for (const x of [...r.ingredients, ...r.products]) if (!named.has(x.name)) named.set(x.name, x.type);
+    const all = [...named].sort((a, b) => a[0].localeCompare(b[0])).map(([name, type]) => ({ type, name }));
+    $('picker-list').replaceChildren(
+      el('h4', { textContent: 'Virtual signals' }), el('div', { className: 'signals' }, ...VIRTUAL.map(signalTile)),
+      el('h4', { textContent: 'In this block' }), blockSignals,
+      el('h4', { textContent: 'All items and fluids' }), el('div', { className: 'signals' }, ...all.map(signalTile)));
+  }
+  // Each name once, where it first comes (a Map keeps its first key's place).
+  const mine = new Map((best?.block.subBlocks ?? []).flatMap(sb => [...sb.outputs, ...sb.inputs])
+    .map(f => [f.name, { type: f.type === 'fluid' ? 'fluid' : 'item', name: f.name }]));
+  blockSignals.replaceChildren(...[...mine.values()].map(signalTile));
+  const chosen = state.clocks[key];
+  for (const tile of $('picker-list').querySelectorAll('button.signal')) {
+    tile.setAttribute('aria-pressed', String(Boolean(chosen && tile.dataset.type === chosen.type && tile.dataset.name === chosen.name)));
+  }
+  $('picker-title').textContent = `Signal for ${clockLabel(key)}`;
+  $('picker-none').disabled = !chosen;
+  $('picker-filter').value = '';
+  filterPicker();
+  $('picker').showModal();
+}
+
+function signalTile(signal) {
+  const tile = el('button', { type: 'button', className: 'signal', title: signal.name, ariaLabel: signal.name }, signalFace(signal));
+  Object.assign(tile.dataset, { type: signal.type, name: signal.name });
+  tile.addEventListener('click', () => choose(signal));
+  return tile;
+}
+
+// A signal's icon: the catalog's, else a virtual signal's glyph or swatch.
+function signalFace(signal) {
+  if (catalog.icons[signal.name]) return el('img', { src: `sprites/${catalog.icons[signal.name]}`, alt: '', loading: 'lazy' });
+  const virtual = VIRTUAL.find(v => v.name === signal.name);
+  if (virtual?.swatch) {
+    const swatch = el('span', { className: 'swatch' });
+    swatch.style.background = virtual.swatch;
+    return swatch;
+  }
+  return el('span', { className: 'glyph', textContent: virtual?.glyph ?? '?' });
+}
+
+// Signals whose name holds the filter's words; a section with none left is hidden.
+function filterPicker() {
+  const words = $('picker-filter').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  for (const grid of $('picker-list').querySelectorAll('.signals')) {
+    let shown = 0;
+    for (const tile of grid.children) {
+      tile.hidden = !words.every(w => tile.dataset.name.toLowerCase().includes(w));
+      if (!tile.hidden) shown++;
+    }
+    grid.hidden = grid.previousElementSibling.hidden = !shown;
+  }
+}
+
+// The picked clock takes this signal (null: none, its inserters run freely).
+function choose(signal) {
+  if (signal) state.clocks[picking] = { type: signal.type, name: signal.name };
+  else delete state.clocks[picking];
+  save();
+  $('picker').close();
+  renderClocks();
+  if (best) writeBlueprint(best.block);
 }
 
 function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (best?.tried ?? 0), error = null, above = null) {
@@ -668,6 +794,8 @@ function describe(entity, block) {
   if (entity.underground) parts.push(`tunnel ${entity.underground === 'input' ? 'entrance' : 'exit'}`);
   if (entity.vectors) parts.push(turnsSideways(entity) ? '90° (Inserter_Config)' : 'drop offset (Inserter_Config)');
   if (entity.kind === 'fixture') parts.push('city block (stays)');
+  const clock = clocks?.of.get(entity);
+  if (clock) parts.push(`clock: ${clockLabel(clock)}${state.clocks[clock] ? ` while ${state.clocks[clock].name} > 0` : ''}`);
   tip.textContent = parts.join(' · ');
 }
 

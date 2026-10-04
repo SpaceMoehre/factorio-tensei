@@ -1,4 +1,5 @@
 import { wirePairs, circuitPairs } from './layout/wires.js';
+import { clocksOf } from './clocks.js';
 
 // Factorio 2.0.0 as the packed 64-bit version number blueprints carry.
 const VERSION = 562949953421312;
@@ -12,8 +13,11 @@ const CIRCUIT = { red: [1], green: [2], both: [1, 2] };
 // the Compound Block added: its entities, tiles, wires and grid snapping as they were, and
 // copper wires joining the block's poles to its own. circuit: 'red', 'green' or 'both' wires
 // every pole and inserter of the block onto one circuit network (circuitPairs); 'none' none.
-export async function encodeBlueprint(block, catalog, city = null, { circuit = 'none' } = {}) {
+// signals: an Inserter Clock's signal by its key (clocks.js): its inserters work while the signal
+// is above 0; the others run freely.
+export async function encodeBlueprint(block, catalog, city = null, { circuit = 'none', signals = {} } = {}) {
   const kept = city?.entities ?? [];
+  const clocks = Object.keys(signals).length ? clocksOf(block, catalog).of : new Map();
   const numberOf = new Map(kept.map((e, i) => [e.entity_number, i + 1]));
   const entities = [...block.entities, ...markers(block)].map((e, i) => {
     const out = { entity_number: kept.length + i + 1, name: e.name, position: { x: e.x + e.w / 2, y: e.y + e.h / 2 } };
@@ -28,6 +32,13 @@ export async function encodeBlueprint(block, catalog, city = null, { circuit = '
     if (e.vectors) {
       out.pickup_position = { ...e.vectors.pickup };
       out.drop_position = { ...e.vectors.drop };
+    }
+    const signal = signals[clocks.get(e)];
+    if (signal) {
+      out.control_behavior = {
+        circuit_enabled: true,
+        circuit_condition: { first_signal: { type: signal.type, name: signal.name }, comparator: '>', constant: 0 },
+      };
     }
     if (e.kind === 'marker') Object.assign(out, { icon: e.icon, text: e.text, always_show: true, show_in_chart: true });
     return out;

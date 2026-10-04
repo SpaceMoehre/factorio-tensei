@@ -159,6 +159,10 @@ _Avoid_: balancer; a belt of its own from the train for every copy that takes a 
 **Circuit Wires**:
 Red or green wires (or both) putting every pole and inserter of the block on one circuit network, the shortest that join them within reach (an inserter's 9 tiles, a pole's wire reach). A City Block's poles may carry it across. Only the blueprint and the map have them; the layout is the same.
 
+**Inserter Clock**:
+What an inserter moves while its machine runs at full speed, as whole items in whole seconds, in lowest terms: into a machine, every item on its belt the machine takes, added up (1 iron and 2 copper in 3 s: 1 in 1 s); out of one, the machine's products. Inserters on one belt into a machine, or out of one machine, share it evenly (two of them: 1 in 2 s each). The user gives a clock a signal; its inserters then work while that signal is above 0, a clock circuit outside the block driving it over the Circuit Wires. A clock without a signal leaves its inserters running freely.
+_Avoid_: a clock per item (items on one belt add up); the plan's rate (the Count is rounded up, so machines run below full speed)
+
 **Two-Way Output**:
 A machine row dropping its output onto belts in both bands beside it, so a belt may take part of a row: nine machines fill six belts in rows of one, a belt taking a machine's whole output and half the next one's. The split is not fixed: an output inserter whose lane is full waits, so the machine's output goes to whichever belt has room (Path Flow). Rows are cut into belts so each belt can bring its consumers what they take, each row planned to give each of its belts a share (its load), its inserters sized for it; the short row stands where that works. A band between two rows holds a belt row for each row's half, or one both rows reach. Tried only where an Internal Path's belts cannot take a whole row each. Machines standing alone in their rows may also put the half rows two tiles out (straight inserters), clear of the inserter row, so each belt runs straight past its drops.
 _Avoid_: splitting one machine's output with a splitter

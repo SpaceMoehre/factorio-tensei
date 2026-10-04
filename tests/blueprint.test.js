@@ -82,6 +82,32 @@ test('custom pickup and drop vectors appear only on 90° inserters', async () =>
   });
 });
 
+// Inserter Clocks: an inserter whose clock has a signal works while that signal is above 0
+// (InserterBlueprintControlBehavior: circuit_enabled, circuit_condition); one whose clock has
+// none runs freely. Gears take 2 iron and 0.5 s at speed 0.75: 3 iron in 1 s in, 3 gears in 2 s
+// out.
+test('an inserter whose clock has a signal works while it is above 0', async () => {
+  const clocked = {
+    ...catalog,
+    recipes: { 'iron-gear-wheel': { name: 'iron-gear-wheel', time: 0.5, ingredients: [{ type: 'item', name: 'iron-plate', amount: 2 }], products: [{ type: 'item', name: 'iron-gear-wheel', amount: 1 }] } },
+    buildings: { 'assembling-machine-2': { name: 'assembling-machine-2', size: { w: 3, h: 3 }, craftingSpeed: 0.75 } },
+  };
+  const inserter = (x, role, moves) => ({ name: 'fast-inserter', kind: 'inserter', subBlock: 0, x, y: 3, w: 1, h: 1, direction: 0, role, moves, sharing: 1 });
+  const gears = {
+    subBlocks: [{
+      item: 'iron-gear-wheel', rate: 90, recipe: 'iron-gear-wheel', building: 'assembling-machine-2', modules: [], count: 1,
+      inputs: [{ name: 'iron-plate', type: 'item', rate: 180 }], outputs: [{ name: 'iron-gear-wheel', type: 'item', rate: 90 }],
+    }],
+    entities: [inserter(0, 'input', ['iron-plate']), inserter(1, 'output', ['iron-gear-wheel'])],
+  };
+  const when = signal => ({ circuit_enabled: true, circuit_condition: { first_signal: signal, comparator: '>', constant: 0 } });
+  const behaviors = async signals => JSON.parse((await encodeBlueprint(gears, clocked, null, { signals })).json).blueprint.entities.map(e => e.control_behavior);
+  const a = { type: 'virtual', name: 'signal-A' }, plate = { type: 'item', name: 'iron-plate' };
+  assert.deepEqual(await behaviors({ '3/2': a }), [undefined, when(a)]);
+  assert.deepEqual(await behaviors({ '3/1': plate, '3/2': a }), [when(plate), when(a)]);
+  assert.deepEqual(await behaviors({}), [undefined, undefined]);
+});
+
 // Where each train route enters and leaves: a display panel with the item's icon and name just
 // outside the block, west of a Side Input's first tile and east of a Side Output's last one.
 test('display panels mark which item every Side Input and Side Output carries', async () => {

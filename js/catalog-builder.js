@@ -137,10 +137,11 @@ const ITEM_TYPES = [
 ];
 // Icons as files under sprites/: "__pyhightechgraphics__/graphics/icons/pcb1.png" becomes
 // "pyhightechgraphics/graphics/icons/pcb1.png" (scripts/build-sprites.mjs extracts them from the
-// game and the mod zips). Layered icons show their first layer.
+// game and the mod zips). Layered icons show their first layer. Virtual signals' too, for the
+// signals an Inserter Clock may take.
 function spriteIcons(raw) {
   const icons = {};
-  for (const type of ITEM_TYPES) {
+  for (const type of [...ITEM_TYPES, 'virtual-signal']) {
     for (const p of Object.values(raw[type] ?? {})) {
       const path = p.icon ?? p.icons?.[0]?.icon;
       const match = /^__([^/]+)__\/(.+)$/.exec(path ?? '');

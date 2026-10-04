@@ -298,6 +298,10 @@ export function buildCore(sb, building, links, variant, env) {
   // Each machine and its inserters carry its number (`machine`, in the order the machines stand
   // in the entities), and so does what its inserters move: a Fixture standing on one leaves it
   // out (place.js).
+  // An inserter also carries what it moves, for its clock (clocks.js): into the machine, the
+  // items of its belt, shared by the machine's inserters on that belt; out of it, the machine's
+  // products, shared by all its output inserters (`sharing`).
+  const moving = (isOutput, items, sharing) => ({ role: isOutput ? 'output' : 'input', moves: items.map(i => i.name), sharing });
   let machine = 0;
   for (let r = 0; r < rowCount; r++) {
     for (let i = 0; i < counts[r]; i++, machine++) {
@@ -305,10 +309,11 @@ export function buildCore(sb, building, links, variant, env) {
       // What this machine's inserters move per belt route (a Two-Way Output's two belts add up).
       const movedBy = new Map();
       entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine });
+      const first = entities.length;
       for (const s of slots.filter(s => s.r === r)) {
         const placed = columns.get(s);
         for (const { column, side } of placed) {
-          entities.push({ ...inserter(s, x0 + column, side), flow: s.demand / placed.length, machine });
+          entities.push({ ...inserter(s, x0 + column, side), flow: s.demand / placed.length, machine, ...moving(s.isOutput, s.items, placed.length) });
           stamped.set(key(x0 + column, s.insY), 'inserter');
           stamped.set(key(x0 + column + side, s.beltY), { waypoint: s.id });
         }
@@ -325,7 +330,7 @@ export function buildCore(sb, building, links, variant, env) {
       for (const a of lineAccess.filter(a => a.r === r)) {
         const l = lineSlots.get(a);
         for (const ins of l.inserters) {
-          entities.push({ ...ins.entity, x: x0 + ins.entity.x, flow: l.demand / l.inserters.length, machine });
+          entities.push({ ...ins.entity, x: x0 + ins.entity.x, flow: l.demand / l.inserters.length, machine, ...moving(l.isOutput, l.items, l.inserters.length) });
           stamped.set(key(x0 + ins.entity.x, ins.entity.y), 'inserter');
           stamped.set(key(x0 + ins.pick[0], ins.pick[1]), { waypoint: l.id });
         }
@@ -337,6 +342,8 @@ export function buildCore(sb, building, links, variant, env) {
         supply.get(supplyKey).perMachine.push(moved);
         supply.get(supplyKey).machines.push(machine);
       }
+      const outputs = entities.slice(first).filter(e => e.role === 'output');
+      for (const e of outputs) e.sharing = outputs.length;
       for (const [c, y] of period.all(v => v.type === 'tap' && v.row === r)) {
         stamped.set(key(x0 + c, y), 'tap');
         taps.push({ routeId: period.get(c, y).route, tile: [x0 + c, y] });

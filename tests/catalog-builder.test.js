@@ -104,7 +104,7 @@ test('recipe: Lua empty tables dumped as {} are treated as empty lists', () => {
   assert.deepEqual([recipes.void.ingredients, recipes.void.products], [[], []]);
 });
 
-test('icons: every item and fluid maps to its icon file under sprites/<mod>/, from the first icon layer', () => {
+test('icons: every item, fluid and virtual signal maps to its icon file under sprites/<mod>/, from the first icon layer', () => {
   const { icons } = buildCatalog(dataRaw({
     item: {
       'iron-gear-wheel': { name: 'iron-gear-wheel', icon: '__base__/graphics/icons/iron-gear-wheel.png' },
@@ -115,12 +115,14 @@ test('icons: every item and fluid maps to its icon file under sprites/<mod>/, fr
     tool: {
       'automation-science-pack': { name: 'automation-science-pack', icons: [{ icon: '__base__/graphics/icons/automation-science-pack.png' }, { icon: '__core__/x.png' }] },
     },
+    'virtual-signal': { 'signal-A': { name: 'signal-A', icon: '__base__/graphics/icons/signal/signal_A.png' } },
   }));
   assert.deepEqual(icons, {
     'iron-gear-wheel': 'base/graphics/icons/iron-gear-wheel.png',
     pcb1: 'pyhightechgraphics/graphics/icons/pcb1.png',
     water: 'base/graphics/icons/fluid/water.png',
     'automation-science-pack': 'base/graphics/icons/automation-science-pack.png',
+    'signal-A': 'base/graphics/icons/signal/signal_A.png',
   });
 });
 
