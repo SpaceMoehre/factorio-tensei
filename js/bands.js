@@ -38,6 +38,8 @@ const GAP = 2;
 // Ways to choose the producer parts each consumer part takes from, tried in turn; and how many
 // choices the search for them looks at.
 const TRIES = 3, VISITS = 200000;
+// Columns between the two parts a Slot holds where a Goal's part is split in two.
+const HALVES = 2;
 
 // The rows Fixtures stand in between columns x0 and x1 (and `side` columns either side: where a
 // part's belts meet their links).
@@ -185,13 +187,30 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
       left -= machines;
     }
   }
-  // Each Sub-Block's parts in the order they stand, range by range, top to bottom: a belt chaining
-  // several runs on to the next gap down.
-  parts.sort((a, b) => a.step - b.step || a.slot.range - b.slot.range || a.slot.y - b.slot.y);
+  // Each Sub-Block's parts in the order they stand, range by range, top to bottom (west to east
+  // in one Slot): a belt chaining several runs on to the next gap down.
+  parts.sort((a, b) => a.step - b.step || a.slot.range - b.slot.range || a.slot.y - b.slot.y || a.slot.x - b.slot.x);
   // Each part of a consumer takes each item a producer makes in parts from one of its parts, with
   // room for all it takes (what the part's machines make); of the ways to choose, those whose
   // links are shortest first, tried in turn where one does not route.
-  const choices = assignments(parts, plan, split, goal);
+  let choices = assignments(parts, plan, split, goal);
+  // Where they do not (whole parts divide unevenly), a Goal's part of one row split in two side by
+  // side in its Slot, each taking from a producer part of its own: the first as wide as its
+  // machines and a column either side, the second in the rest (76 paddocks in Parts of 16, four of
+  // 8 and four of 7 divide among three incubator Parts of 27.6 paddocks' worth once a 7 is a 4 and
+  // a 3: 16 + 8 + 3, 8 + 8 + 7 + 4 and 8 + 7 + 7).
+  const pitch = Math.min(building(goal).size.w, building(goal).size.h);
+  for (const p of parts.filter(p => p.step === goal && p.machines > 1 && p.machines === p.perRow)) {
+    for (let a = Math.ceil(p.machines / 2); a < p.machines && !choices.length; a++) {
+      const w = a * pitch + 2, second = { ...p.slot, x: p.slot.x + w + HALVES, w: p.slot.w - w - HALVES };
+      if (capacity(second, building(goal)).perRow < p.machines - a) continue;
+      const halves = [{ ...p, slot: { ...p.slot, w, spill: 0 }, machines: a, perRow: a }, { ...p, slot: second, machines: p.machines - a, perRow: p.machines - a }];
+      const tried = parts.flatMap(q => (q === p ? halves : [q]));
+      choices = assignments(tried, plan, split, goal);
+      if (choices.length) parts.splice(0, parts.length, ...tried);
+    }
+    if (choices.length) break;
+  }
   if (!choices.length) return { failure: new RoutingError('the parts made do not divide among the parts taking them') };
   if (pack) return { packed: true };
   // (Packed as a try before it, with less to spare: the same layout.)

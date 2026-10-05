@@ -113,7 +113,7 @@ In a City Block whose Fixtures stand in rows, the Production Chain in Parts, eac
 _Avoid_: grid layout, template
 
 **Part**:
-One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines in one Slot, designed, placed and linked like a Sub-Block of its own. A consumer's Part takes each item from one of its producer's Parts with room for it, the Parts chosen together, those whose links are shortest first; a producer's Parts hold a little more than their consumers need.
+One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines in one Slot (a Slot holds one Part, or two of the Goal side by side where whole Parts would not divide among their producers), designed, placed and linked like a Sub-Block of its own. A consumer's Part takes each item from one of its producer's Parts with room for it, the Parts chosen together, those whose links are shortest first; a producer's Parts hold a little more than their consumers need.
 _Avoid_: Copy (a Part is designed on its own, not repeated), Breakout
 
 **Slot**:
