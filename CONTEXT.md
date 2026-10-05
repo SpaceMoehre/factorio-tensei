@@ -117,7 +117,7 @@ One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines 
 _Avoid_: Copy (a Part is designed on its own, not repeated), Breakout
 
 **Slot**:
-In Bands, a run of rows no Fixture stands in across a range of the City Block, less the room kept for links beside it: what one Part stands in.
+In Bands, a run of rows no Fixture stands in across a range of the City Block, less the room kept for links beside it (the lowest west of the corridor may lend the Goal's Part most of the corridor's columns, where the Goal does not fit): what one Part stands in.
 _Avoid_: cell, gap (any room between things)
 
 **Parting**:

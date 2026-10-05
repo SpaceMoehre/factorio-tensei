@@ -23,6 +23,8 @@ import { simulate } from './sim.js';
 const WEST = 4, EAST = 3, CORRIDOR = 16;
 // Room kept east of a Fixture column the City Block is cut at: where links come into the parts.
 const OFFSET = 2;
+// The corridor's columns left where a Slot west of it lends the rest to the Goal's part in it.
+const NARROW = 7;
 // A part's rows: a machine's depth and the belts and inserters of the band beside it.
 const BAND = 6;
 // How many machines a producer's parts hold, for those its consumers need (a consumer part takes
@@ -71,7 +73,8 @@ export function gapsOf(site, x0, x1) {
 
 // The ways to cut a City Block into Slots: its inner width whole, or cut at one Fixture column
 // (a run of columns Fixtures stand in) at least `least` columns from either edge; those holding
-// most rows of machines `pitch` wide in rows `rowH` tall first. Each Slot: { x, w, y, h, range }.
+// most rows of machines `pitch` wide in rows `rowH` tall first. Each Slot: { x, w, y, h, range,
+// spill, lend (the corridor's columns east of it it may lend a part: see NARROW) }.
 export function slotsOf(site, pitch, rowH, least = 3 * pitch) {
   const { inner } = site;
   const columns = [];
@@ -86,7 +89,8 @@ export function slotsOf(site, pitch, rowH, least = 3 * pitch) {
     // (The links crossing between ranges run west of the Fixture column cut at.)
     const x = r.x0 + (k === 0 ? WEST : OFFSET), end = r.x1 - (k === ranges.length - 1 ? EAST : CORRIDOR);
     if (end - x < pitch) return [];
-    return gapsOf(site, x, end).map(g => ({ x, w: end - x + 1, ...g, range: k, spill: k === ranges.length - 1 ? 0 : SPILL }));
+    const last = k === ranges.length - 1;
+    return gapsOf(site, x, end).map(g => ({ x, w: end - x + 1, ...g, range: k, spill: last ? 0 : SPILL, lend: last ? 0 : CORRIDOR - NARROW }));
   });
   const worth = slots => slots.reduce((sum, s) => sum + Math.floor(s.h / rowH) * Math.floor((s.w - 2) / pitch), 0);
   const ways = [slotsFor([{ x0: inner.x, x1: inner.x + inner.w - 1 }])];
@@ -139,17 +143,22 @@ function banded(entries, catalog, logistics, site, { seed, pack, spare, small, s
   // fit no gaps.)
   let failure = null, furthest = -1, repeat = false;
   for (const slots of slotsOf(site, Math.min(lead.size.w, lead.size.h), Math.max(lead.size.w, lead.size.h) + BAND)) {
-    const out = inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small, seen);
-    if (out?.block || out?.packed) return out;
-    repeat ||= !!out?.repeat;
-    if (out?.failure && (out.built ?? 0) > furthest) [failure, furthest] = [out.failure, out.built ?? 0];
+    // (Where the Goal's parts do not fit, Slots lending it the corridor: one more each try.)
+    for (let lend = 0; lend <= slots.filter(s => s.lend).length; lend++) {
+      const out = inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small, seen, lend);
+      if (out?.block || out?.packed) return out;
+      repeat ||= !!out?.repeat;
+      if (out?.failure && (out.built ?? 0) > furthest) [failure, furthest] = [out.failure, out.built ?? 0];
+      if (!out?.short) break;
+    }
   }
   return failure ? { failure, built: furthest } : repeat ? {} : null;
 }
 
-// The chain in parts in these Slots: { block }, { failure }, { repeat } (its parts as a try before
-// them packed) or null (no Sub-Block worth parts).
-function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small, seen) {
+// The chain in parts in these Slots: { block }, { failure } (with `short` where the Goal's parts
+// fit none of them), { repeat } (its parts as a try before them packed) or null (no Sub-Block worth
+// parts).
+function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small, seen, lend = 0) {
   const building = i => catalog.buildings[plan[i].building];
   const area = i => plan[i].count * building(i).size.w * building(i).size.h;
   const depth = i => Math.max(building(i).size.w, building(i).size.h);
@@ -168,22 +177,26 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
   for (const i of order) {
     // (A producer's parts with a little to spare: each consumer part takes from one.)
     let left = i === goal ? plan[i].count : Math.ceil(plan[i].count * spare);
+    // The Goal's, in the `lend` lowest Slots west of a corridor left, also in its columns but
+    // NARROW (a row of paddocks one longer): the lowest, the fewest links run down it past them.
+    const lent = new Set(i === goal ? [...free].filter(k => slots[k].lend).sort((a, b) => slots[b].y - slots[a].y).slice(0, lend) : []);
+    const slotOf = k => (lent.has(k) ? { ...slots[k], w: slots[k].w + slots[k].lend } : slots[k]);
     // The Slots that take the most of it (and waste least), until it is placed.
     while (left > 0) {
       let best = null;
       for (const k of free) {
-        const c = capacity(slots[k], building(i));
+        const c = capacity(slotOf(k), building(i));
         if (!c.machines) continue;
         const take = Math.min(left, c.machines);
-        const waste = slots[k].w * slots[k].h - take * building(i).size.w * building(i).size.h;
+        const waste = slotOf(k).w * slotOf(k).h - take * building(i).size.w * building(i).size.h;
         if (!best || take > best.take || (take === best.take && waste < best.waste)) best = { k, take, waste, c };
       }
-      if (!best) return { failure: new RoutingError(`${plan[i].item}: its parts fit no gaps between the Fixtures`) };
+      if (!best) return { failure: new RoutingError(`${plan[i].item}: its parts fit no gaps between the Fixtures`), short: i === goal };
       free.delete(best.k);
       // A producer's part fills its gap: the machines spare cost no room, and its consumers'
       // parts then find one with room for them.
       const machines = i === goal ? best.take : best.c.machines;
-      parts.push({ step: i, slot: slots[best.k], machines, perRow: Math.min(best.c.perRow, machines) });
+      parts.push({ step: i, slot: slotOf(best.k), machines, perRow: Math.min(best.c.perRow, machines) });
       left -= machines;
     }
   }
@@ -214,7 +227,7 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
   if (!choices.length) return { failure: new RoutingError('the parts made do not divide among the parts taking them') };
   if (pack) return { packed: true };
   // (Packed as a try before it, with less to spare: the same layout.)
-  const key = JSON.stringify([small, parts.map(p => [p.step, p.slot.x, p.slot.y, p.machines])]);
+  const key = JSON.stringify([small, parts.map(p => [p.step, p.slot.x, p.slot.y, p.slot.w, p.machines])]);
   if (seen.has(key)) return { repeat: true };
   seen.add(key);
   let failure = null, furthest = -1;
