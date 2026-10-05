@@ -269,20 +269,24 @@ function prune(poles, spec, coverCount, coveredBy, anchors = []) {
   for (const a of anchors) wired.set(a, [...new Set([...wired.get(a), ...anchors.filter(b => b !== a)])]);
   const holding = articulation(all, wired);
   let removed = 0;
-  for (let i = poles.length - 1; i >= 0; i--) {
-    const p = poles[i];
-    const mine = coveredBy(p);
-    if ((poles.length === 1 && !anchors.length) || mine.some(c => coverCount[c] < 2) || holding.has(p)) continue;
-    if (removed && !reconnects(p, wired)) continue;
-    for (const q of wired.get(p)) {
-      wired.set(q, wired.get(q).filter(n => n !== p));
-      // A pole holding up only this one no longer holds anything.
-      holding.delete(q);
+  // (Again while a pass removes any: one passed over as holding a pole removed after it can go.)
+  for (let before = -1; removed > before;) {
+    before = removed;
+    for (let i = poles.length - 1; i >= 0; i--) {
+      const p = poles[i];
+      const mine = coveredBy(p);
+      if ((poles.length === 1 && !anchors.length) || mine.some(c => coverCount[c] < 2) || holding.has(p)) continue;
+      if (removed && !reconnects(p, wired)) continue;
+      for (const q of wired.get(p)) {
+        wired.set(q, wired.get(q).filter(n => n !== p));
+        // A pole holding up only this one no longer holds anything.
+        holding.delete(q);
+      }
+      wired.delete(p);
+      for (const c of mine) coverCount[c]--;
+      poles.splice(i, 1);
+      removed++;
     }
-    wired.delete(p);
-    for (const c of mine) coverCount[c]--;
-    poles.splice(i, 1);
-    removed++;
   }
 }
 

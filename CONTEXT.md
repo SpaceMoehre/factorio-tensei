@@ -109,11 +109,11 @@ Placement in a City Block by columns: every Sub-Block in a column, the Goals eas
 _Avoid_: columns of copies (a Sub-Block's own stack may stand in several columns: compose.js decides)
 
 **Bands**:
-In a City Block whose Fixtures stand in rows, the Production Chain in Parts, each a row or two of machines in a Slot: a run of rows no Fixture stands in across a range of the City Block (it whole, or cut at one of its Fixture columns). The Sub-Blocks with the tallest rows take the tallest Slots first, the Goal fills what is left; small Sub-Blocks stand where Placement finds room. Maximize tries it first where its Parts hold many more machines than the Foretelling foretells.
+In a City Block whose Fixtures stand in rows, the Production Chain in Parts, each a row or two of machines in a Slot: a run of rows no Fixture stands in across a range of the City Block (it whole, or cut at one of its Fixture columns). The Sub-Blocks with the tallest rows take the tallest Slots first, the Goal fills what is left; small Sub-Blocks stand in the rows a Part's Slot has to spare, or where Placement finds room. Maximize tries it first where its Parts hold many more machines than the Foretelling foretells.
 _Avoid_: grid layout, template
 
 **Part**:
-One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines in one Slot, designed, placed and linked like a Sub-Block of its own. A consumer's Part takes each item from one of its producer's Parts (the nearest with room); a producer's Parts hold a little more than their consumers need.
+One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines in one Slot, designed, placed and linked like a Sub-Block of its own. A consumer's Part takes each item from one of its producer's Parts with room for it, the Parts chosen together, those whose links are shortest first; a producer's Parts hold a little more than their consumers need.
 _Avoid_: Copy (a Part is designed on its own, not repeated), Breakout
 
 **Slot**:
