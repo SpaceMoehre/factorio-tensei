@@ -953,9 +953,10 @@ function groupRoutes(ctx, instances, laneCapacity) {
       }
       // Copies that cannot chain at all: a belt each.
       groups = (best?.option ?? producers.map(s => [s])).map(g => ({ producers: g, consumers: [] }));
-    } else if (base.consumers.length === 1 && base.sink !== 'side-output') {
-      // An Internal Path to one consumer: parallel belts, each taking a run of producers to a run
-      // of consumers; as many as its rate needs and both ends allow. A run of producers ends at
+    } else if (base.consumers.length && base.sink !== 'side-output') {
+      // An Internal Path to its consumers (one Sub-Block, or several, their copies in turn):
+      // parallel belts, each taking a run of producers to a run of consumers; as many as its rate
+      // needs and both ends allow. A run of producers ends at
       // one that leaves east, a run of consumers starts at one entered from the west, and a belt
       // ending against a machine (a Head-on input) ends its run. The consumers' runs are about
       // equal by machines, the producers' runs make about what each takes. The fewest belts whose

@@ -141,9 +141,13 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const placed = new Map();
   const tileSets = new Map();
   const partings = new Map();
-  const box = i => ({ x: placed.get(i).x, y: placed.get(i).y, w: blocks[i].w, h: blocks[i].h });
-  // Whether Sub-Block i standing at `me` comes within `gap` tiles of placed Sub-Block j.
-  const clashes = (i, me, j) => !apart(blocks[i], me, blocks[j], placed.get(j), gap);
+  // Sub-Blocks placed parted round the Fixtures (Parting), while placing one by one: their shape.
+  const partedNow = new Map();
+  const shapeOf = i => partedNow.get(i)?.block ?? blocks[i];
+  const box = i => ({ x: placed.get(i).x, y: placed.get(i).y, w: blocks[i].w, h: shapeOf(i).h });
+  // Whether Sub-Block i standing at `me` (as `mine`, parted or not) comes within `gap` tiles of
+  // placed Sub-Block j.
+  const clashes = (i, me, j, mine = blocks[i]) => !apart(mine, me, shapeOf(j), placed.get(j), gap);
   const bounds = extra => {
     const all = [...[...placed.keys()].map(box), ...(extra ? [extra] : [])];
     if (!all.length) return { x: 0, y: 0, w: 0, h: 0 };
@@ -171,6 +175,8 @@ export function placeBlocks(ctx, prepared, params = {}) {
     if (wanted) {
       const me = { ...wanted, w: b.w, h: b.h };
       if (![...placed.keys()].some(j => clashes(i, me, j)) && (!site || lands(i, me))) return { first: { x: wanted.x, y: wanted.y }, others: () => [] };
+      const p = site && part(i, wanted.x, wanted.y);
+      if (p && ![...placed.keys()].some(j => clashes(i, { ...me, h: p.h }, j, p.block))) return { first: { x: wanted.x, y: wanted.y, parted: p }, others: () => [] };
     }
     const mine = links.filter(l => l.from === i && placed.has(l.to));
     const lift = params.lift?.[i] ?? 0;
@@ -222,16 +228,23 @@ export function placeBlocks(ctx, prepared, params = {}) {
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const o of boxes) [x0, y0, x1, y1] = [Math.min(x0, o.x), Math.min(y0, o.y), Math.max(x1, o.x + o.w), Math.max(y1, o.y + o.h)];
       for (const c of spots) {
-        const me = { x: c.x, y: c.y, w: b.w, h: b.h };
+        let me = { x: c.x, y: c.y, w: b.w, h: b.h };
         if (fedBy && c.x < site.inner.x + gap + fedBy) continue;
         if (boxes.some(o => clashes(i, me, o.step))) continue;
         let back = 0;
         for (const t of targets) back += Math.max(0, c.x + b.w + 1 - t.x);
         if (back && !anywhere) continue;
-        // In a City Block, Fixtures on none of its tiles but some of its machines: those left out.
-        const holes = site ? lands(i, me) : null;
-        if (site && !holes) continue;
-        const gw = Math.max(x1, c.x + b.w) - Math.min(x0, c.x), gh = Math.max(y1, c.y + b.h) - Math.min(y0, c.y);
+        // In a City Block, Fixtures on none of its tiles but some of its machines: those left out;
+        // else its stack parted round them (Parting), taller.
+        let holes = site ? lands(i, me) : null, parted = null;
+        if (site && !holes) {
+          parted = part(i, c.x, c.y);
+          if (!parted) continue;
+          me = { ...me, h: parted.h };
+          if (boxes.some(o => clashes(i, me, o.step, parted.block))) continue;
+          holes = parted.hits;
+        }
+        const gw = Math.max(x1, c.x + b.w) - Math.min(x0, c.x), gh = Math.max(y1, c.y + me.h) - Math.min(y0, c.y);
         // Standing on its own, the block grows toward a square (Compactness): the strip it has
         // beyond one counts too.
         const grown = gw * gh + (site ? 0 : SQUARE * Math.abs(gw - gh) * Math.min(gw, gh));
@@ -239,10 +252,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
         for (const t of targets) length += Math.abs(t.x - (c.x + b.w)) + Math.abs(t.y - c.y);
         // Side Inputs of Sub-Blocks already placed arrive from the west: keep off their rows.
         let blocking = 0;
-        for (const o of boxes) if (o.x >= c.x + b.w) for (const y of o.entries) if (y >= c.y - 1 && y <= c.y + b.h) blocking++;
-        // A link running back west goes round both boxes.
-        const cost = grown + weight * (length + 2 * back + (back ? 8 : 0)) + 40 * blocking + (holes?.size ?? 0) * b.holeCost;
-        out.push({ x: c.x, y: c.y, cost });
+        for (const o of boxes) if (o.x >= c.x + b.w) for (const y of o.entries) if (y >= c.y - 1 && y <= c.y + me.h) blocking++;
+        // A link running back west goes round both boxes. A parted stack wastes the rows it parts by.
+        const cost = grown + weight * (length + 2 * back + (back ? 8 : 0)) + 40 * blocking + (holes?.size ?? 0) * b.holeCost + (parted ? (parted.h - b.h) * b.w : 0);
+        out.push({ x: c.x, y: c.y, cost, ...(parted ? { parted } : {}) });
       }
       return out;
     };
@@ -250,7 +263,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     // In a City Block, where none of those fits: every spot inside it, west of the consumers
     // first.
     const best = pick(candidates) ?? (site && (pick(site.spots(b)) ?? pick(site.spots(b), true)));
-    const first = best && { x: best.x, y: best.y };
+    const first = best && { x: best.x, y: best.y, ...(best.parted ? { parted: best.parted } : {}) };
     // Other spots, for Backtracking: every one it fits, the cheapest first, none overlapping the
     // first or another taken by more than half its box.
     const others = () => {
@@ -259,7 +272,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
       const far = c => taken.every(t => Math.max(0, b.w - Math.abs(c.x - t.x)) * Math.max(0, b.h - Math.abs(c.y - t.y)) <= b.w * b.h / 2);
       for (const c of all) {
         if (taken.length > OTHER_SPOTS) break;
-        if (far(c)) taken.push({ x: c.x, y: c.y });
+        if (far(c)) taken.push({ x: c.x, y: c.y, ...(c.parted ? { parted: c.parted } : {}) });
       }
       return taken.slice(first ? 1 : 0);
     };
@@ -273,21 +286,36 @@ export function placeBlocks(ctx, prepared, params = {}) {
     if (k === order.length) return true;
     const i = order[k];
     const { first, others } = optionsFor(i);
-    if (first) {
-      placed.set(i, first);
-      if (placeFrom(k + 1)) return true;
+    /** @param {{ x: number, y: number, parted?: any }} spot */
+    const stand = ({ parted, ...spot }) => {
+      placed.set(i, spot);
+      if (parted) partedNow.set(i, parted);
+    };
+    const leave = () => {
       placed.delete(i);
+      partedNow.delete(i);
+    };
+    if (first) {
+      stand(first);
+      if (placeFrom(k + 1)) return true;
+      leave();
     } else stuck = i;
     if (!site) return false;
     for (const spot of others()) {
       if (backtracks++ >= BACKTRACKS) return false;
-      placed.set(i, spot);
+      stand(spot);
       if (placeFrom(k + 1)) return true;
-      placed.delete(i);
+      leave();
     }
     return false;
   };
   if (!columns && !placeFrom(0)) throw new RoutingError(`no room for ${plan[stuck ?? order[0]].item} in the city block`);
+  // Stacks placed parted stand with their copies where they part.
+  for (const [i, p] of partedNow) {
+    Object.assign(blocks[i], { at: p.at, h: p.h, nooks: [], need: null, near: undefined });
+    tileSets.delete(i);
+  }
+  partedNow.clear();
   // In a City Block, the whole block slides west as far as it fits: the Side Inputs, its many
   // belts, come in short; only its outputs run on to the east edge.
   // Where each Sub-Block was placed, as `at` takes it.
@@ -364,12 +392,13 @@ export function placeBlocks(ctx, prepared, params = {}) {
     return site.landing(blockTiles(i), box, budget(i));
   }
 
-  // Parting (Layers, in a City Block): where a Fixture would stand on the belts of a stack of
-  // copies wherever its column lets it stand, its copies part round the Fixtures: each, from the
-  // top, moves down as few rows as keep them off its belts (its height and PART at most), the
-  // copies below it with it; machines a Fixture stands on make way as before, within the
-  // Sub-Block's budget. The stack standing at x, y so parted (its copies' offsets and its height,
-  // now with no Nooks), or null where it then runs past the room. Stacks in one column only.
+  // Parting (in a City Block): where a Fixture would stand on the belts of a stack of copies
+  // wherever it may stand (in Layers, wherever its column lets it), its copies part round the
+  // Fixtures: each, from the top, moves down as few rows as keep them off its belts (its height
+  // and PART at most), the copies below it with it; machines a Fixture stands on make way as
+  // before, within the Sub-Block's budget. The stack standing at x, y so parted (its copies'
+  // offsets, its height, now with no Nooks, and the machines Fixtures stand on), or null where it
+  // then runs past the room. Stacks in one column only.
   function part(i, x, y) {
     const key = `${i}:${x}:${y}`;
     if (!partings.has(key)) partings.set(key, parting(i, x, y));
@@ -398,7 +427,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     }
     const plain = Math.max(...copies.map(inst => b.at.get(inst.index).y + inst.module.area.h));
     const h = b.h + bottom - plain;
-    return y + h <= site.inner.y + site.inner.h ? { at, h, block: { ...b, at, h, nooks: [], need: null, near: undefined } } : null;
+    return y + h <= site.inner.y + site.inner.h ? { at, h, hits: hit, block: { ...b, at, h, nooks: [], need: null, near: undefined } } : null;
   }
 
   // Machines a Fixture may stand on in a Sub-Block, each left out of its copy and built apart

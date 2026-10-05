@@ -2,6 +2,7 @@ import { expandChain, recipeOptions } from './chain.js';
 import { planSubBlocks } from './plan.js';
 import { search } from './search.js';
 import { LayoutError } from './layout/core.js';
+import { bands } from './bands.js';
 
 // Maximize (CONTEXT.md): the highest rate of the Goals whose Compound Block fits the City Block
 // without Starvation, its Recipe Selections, modules and the items made here as chosen. The
@@ -26,6 +27,35 @@ export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
   let tried = 0, failure = null, best = null, told = null;
   const misses = [];
+  // Bands, in a City Block whose Fixtures stand in rows: the most machines its parts hold, then
+  // fewer, until a layout fits (whether one routes comes and goes with the Count). First, where
+  // they hold many more than the Foretelling foretells (the search then tries above them); else
+  // after the search, where they hold more than it found.
+  const top = bandsTop(plan, options.site);
+  let banded = false;
+  function* inBands(above) {
+    banded = true;
+    for (let n = top; n > above && n > top - BAND_TRIES; n--) {
+      const list = plan.goalsFor(n);
+      yield { type: 'try', rate: list[0].rate, machines: n };
+      const { entries } = plan.chainOf(list);
+      const outcome = bands(entries, plan.catalog, plan.logistics, options.site, { seed: options.seed ?? 1 });
+      tried++;
+      if (!outcome?.block) {
+        misses.push({ rate: list[0].rate, machines: n, reason: outcome?.failure?.message ?? null });
+        continue;
+      }
+      plan.record(n, { block: outcome.block, placed: null, designed: null });
+      best = { rate: list[0].rate, machines: n, goals: list };
+      yield { type: 'best', block: outcome.block, score: [0], tried, ...best };
+      return;
+    }
+  }
+  if (top >= plan.foretold().machines + FILL) {
+    told = plan.foretold().machines;
+    yield { type: 'foretell', ...plan.foretold() };
+    yield* inBands(plan.foretold().machines);
+  }
   for (;;) {
     const foretold = plan.foretold();
     if (foretold.machines !== told) {
@@ -47,6 +77,7 @@ export function* maximize(goals, catalog, logistics, options) {
       misses.push({ rate: list[0].rate, machines: Math.ceil(n), reason: outcome.failure?.message ?? null });
     }
   }
+  if (!banded && top > (best?.machines ?? 0)) yield* inBands(best?.machines ?? 0);
   // (A number that starved may lie below the highest that fit.)
   const above = misses.filter(m => m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
   return { ...(best ?? { rate: 0, machines: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above };
@@ -285,6 +316,33 @@ function broken(site, side) {
   }
   return hit / all;
 }
+
+// The most machines Bands' parts hold in the City Block (a binary search: more machines never fit
+// fewer parts), or 0 where Bands does not apply.
+function bandsTop(plan, site) {
+  if (!site?.fixtures.some(f => overlap(f, site.inner) > 0)) return 0;
+  const packs = n => {
+    try {
+      return Boolean(bands(plan.chainOf(plan.goalsFor(n)).entries, plan.catalog, plan.logistics, site, { pack: true })?.packed);
+    } catch {
+      return false;
+    }
+  };
+  // From the Foretelling up (fewer machines than it foretells are no use, and too few fill no part).
+  let lo = 0, hi = Math.max(4, plan.foretold().machines);
+  while (hi < plan.hi && packs(hi)) [lo, hi] = [hi, hi * 2];
+  if (!lo) return 0;
+  hi = Math.min(hi, Math.ceil(plan.hi));
+  while (hi - lo > 1) {
+    const mid = Math.floor((lo + hi) / 2);
+    if (packs(mid)) lo = mid;
+    else hi = mid;
+  }
+  return lo;
+}
+
+// Bands: how many Counts below the most its parts hold Maximize tries with them.
+const BAND_TRIES = 8;
 
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;

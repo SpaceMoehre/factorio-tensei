@@ -62,3 +62,18 @@ test('Side Output carries unconsumed Goal output and Byproducts', () => {
     { item: 'light-oil', type: 'fluid', rate: 90 },
   ]);
 });
+
+// Bands: a Sub-Block in parts. Two parts of the circuits take their cable each from a part of the
+// cable named in `from`; the cable parts make what theirs take, the second with at least 5
+// machines (it runs slower).
+test('a part of a Sub-Block takes an item from the producer part named in from', () => {
+  const part = (item, rate, extra) => ({ ...asm2(item, rate), goal: { item, rate, part: true, ...extra } });
+  const plan = planSubBlocks([
+    part('electronic-circuit', 150, { from: { 'copper-cable': 3 } }), part('electronic-circuit', 150, { from: { 'copper-cable': 2 } }),
+    part('copper-cable', 450, {}), part('copper-cable', 450, { machines: 5 }),
+  ], catalog);
+  assert.deepEqual(plan.map(sb => sb.count), [2, 2, 3, 5]);
+  const { internal } = buildFlows(plan);
+  assert.deepEqual(internal.map(e => [e.from, e.to, e.item]), [[3, 0, 'copper-cable'], [2, 1, 'copper-cable']]);
+});
+

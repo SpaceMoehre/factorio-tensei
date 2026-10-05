@@ -7,7 +7,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
   const seen = new Set();
   return entries.map(({ goal, selection, byTrain = [] }) => {
     if (!(goal.rate > 0)) throw new Error(`${goal.item}: the rate must be above 0`);
-    if (seen.has(goal.item)) throw new Error(`${goal.item} is a Goal more than once; combine them into one Goal`);
+    // (A Sub-Block in parts, Bands, has an entry for each part.)
+    if (seen.has(goal.item) && !goal.part) throw new Error(`${goal.item} is a Goal more than once; combine them into one Goal`);
     seen.add(goal.item);
     const recipe = catalog.recipes[selection.recipe];
     const building = catalog.buildings[selection.building];
@@ -31,7 +32,7 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       if (fuel) fuel.rate += rate;
       else inputs.push({ name: logistics.fuel, type: 'item', rate });
     }
-    const count = Math.ceil(goal.rate / perMachinePerMinute);
+    const count = Math.max(Math.ceil(goal.rate / perMachinePerMinute), goal.machines ?? 0);
     return {
       item: goal.item,
       rate: goal.rate,
@@ -49,6 +50,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       outputs,
       byproducts: outputs.filter(o => o.name !== goal.item),
       ...(byTrain.length ? { byTrain } : {}),
+      ...(goal.part ? { part: true } : {}),
+      ...(goal.from ? { from: goal.from } : {}),
     };
   });
 }

@@ -412,6 +412,17 @@ function sweep(first, designs, site = null) {
       return narrow.find(k => (designOf(options[k])?.trouble ?? Infinity) <= 1e-6) ?? first.choice[i];
     });
     if (narrowest.join() !== first.choice.join()) list.push({ ...first, choice: narrowest });
+    // And each one's flattest design that routes and stands no wider than the room (with the room
+    // beside a stack its belts turn in): one above the other they fill its height where columns
+    // side by side leave room unused.
+    const flattest = designs.map((options, i) => {
+      const tall = c => c.estimate.h * (c.spec?.copies ? c.spec.copies.count + (c.spec.copies.rest ? 1 : 0) : 1);
+      const flat = options.map((_, k) => k)
+        .filter(k => options[k].estimate.w !== undefined && options[k].estimate.trouble <= 1e-6 && options[k].estimate.w + FLAT_SIDES <= site.inner.w)
+        .sort((a, b) => tall(options[a]) - tall(options[b]));
+      return flat.find(k => (designOf(options[k])?.trouble ?? Infinity) <= 1e-6) ?? first.choice[i];
+    });
+    if (![first.choice, narrowest].some(c => c.join() === flattest.join())) list.push({ ...first, choice: flattest });
   }
   for (const corridor of [3, 1]) list.push({ ...first, corridor });
   list.push({ ...first, gap: 2 }, { ...first, weight: 1 }, { ...first, weight: 12 });
@@ -437,6 +448,9 @@ function sweep(first, designs, site = null) {
   }
   return (site ? list.flatMap(c => [c, { ...c, layers: LAYER_SPREAD }]) : list).slice(1);
 }
+
+// The room a stack of copies needs beside its rows: where its belts turn and its links meet it.
+const FLAT_SIDES = 20;
 
 // In a City Block, every pairing of the best PAIRED designs of each Sub-Block is tried where
 // there are no more than PAIRINGS.

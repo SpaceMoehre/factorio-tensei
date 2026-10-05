@@ -17,7 +17,8 @@ export function buildRoutes(plan, flows, laneCapacity) {
   // each consumer can split it into parallel belts of its own.
   const solids = flows.sideInput.filter(i => i.type === 'item').flatMap(input => {
     const consumers = consumersOf(input.item);
-    if (consumers.length < 2 || input.rate <= 2 * laneCapacity) return [{ ...input, consumers }];
+    // (Parts of a Sub-Block standing apart, Bands, take theirs each on its own too.)
+    if (consumers.length < 2 || (input.rate <= 2 * laneCapacity && !consumers.some(c => plan[c].part))) return [{ ...input, consumers }];
     return consumers.map(c => ({ ...input, rate: plan[c].inputs.find(x => x.name === input.item).rate, consumers: [c] }));
   });
   for (const { consumers, items } of mergeGroups(solids, laneCapacity)) {

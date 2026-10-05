@@ -41,7 +41,7 @@ The modules a step's buildings hold — speed, productivity and efficiency modul
 _Avoid_: beacons (not modelled)
 
 **Sub-Block**:
-The unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. It is built from one Module, or from Copies of one Module (and a smaller Module for the machines left over), standing as one rectangle — but for machines a Breakout stands apart. The layout search chooses the arrangement.
+The unit of `count` assemblers (plus internal belts/inserters) built to satisfy one Goal's Recipe Selection. Its machines may stand in one or more rows; facing rows can share the belts between them. It is built from one Module, or from Copies of one Module (and a smaller Module for the machines left over), standing as one rectangle — but for machines a Breakout stands apart, and in Bands, where it stands in Parts. The layout search chooses the arrangement.
 _Avoid_: block (ambiguous with Compound Block)
 
 **Module**:
@@ -107,6 +107,18 @@ _Avoid_: grid layout (implies uniform cells), fixed margins
 **Layers**:
 Placement in a City Block by columns: every Sub-Block in a column, the Goals easternmost and every producer in a column west of all it feeds (up to two columns further west than it must), each column's Sub-Blocks stacked top to bottom (where that is too tall, in each other's Nooks), a column of several keeping a corridor across it for the belts that cross it (a row each, above, between or below them, nearest where those belts arrive), the columns side by side a corridor apart that widens with the belts turning in it. Of the ways to put the Sub-Blocks in columns, the one is taken that fits the City Block — no column taller than its room with a row for every belt crossing it — and spans least; with Fixtures, a column moves on west to where its Sub-Blocks stand clear of them, and where no spot does, its stacks part round them (Parting). Placing Sub-Blocks one by one, from the Goals west, can leave no room for one placed late where columns fit them all.
 _Avoid_: columns of copies (a Sub-Block's own stack may stand in several columns: compose.js decides)
+
+**Bands**:
+In a City Block whose Fixtures stand in rows, the Production Chain in Parts, each a row or two of machines in a Slot: a run of rows no Fixture stands in across a range of the City Block (it whole, or cut at one of its Fixture columns). The Sub-Blocks with the tallest rows take the tallest Slots first, the Goal fills what is left; small Sub-Blocks stand where Placement finds room. Maximize tries it first where its Parts hold many more machines than the Foretelling foretells.
+_Avoid_: grid layout, template
+
+**Part**:
+One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines in one Slot, designed, placed and linked like a Sub-Block of its own. A consumer's Part takes each item from one of its producer's Parts (the nearest with room); a producer's Parts hold a little more than their consumers need.
+_Avoid_: Copy (a Part is designed on its own, not repeated), Breakout
+
+**Slot**:
+In Bands, a run of rows no Fixture stands in across a range of the City Block, less the room kept for links beside it: what one Part stands in.
+_Avoid_: cell, gap (any room between things)
 
 **Parting**:
 In a City Block, in Layers: a stack of Copies whose belts a Fixture would stand on wherever its column lets it stand parts round the Fixtures. From the top, each Copy moves down as few rows as keep the Fixtures off its belts (no more than its own height and six), the Copies below it with it, so the Fixtures stand in the gaps between Copies; a machine a Fixture stands on makes way as before (Making Way). The stack grows by its gaps and leaves no Nooks; where it then runs past the room, it does not stand there. Only stacks in one column part.

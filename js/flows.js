@@ -6,7 +6,8 @@ export function buildFlows(plan) {
   const producerOf = new Map(plan.map((sb, i) => [sb.item, i]));
   const edges = [];
   // What a Sub-Block takes by train though another makes it (the chain's choice) is no link.
-  const fromOf = (sb, name) => (sb.byTrain?.includes(name) ? undefined : producerOf.get(name));
+  // (A part of a split Sub-Block takes an item from the part of its producer named in `from`.)
+  const fromOf = (sb, name) => (sb.byTrain?.includes(name) ? undefined : sb.from?.[name] ?? producerOf.get(name));
   plan.forEach((sb, to) => {
     for (const input of sb.inputs) {
       const from = fromOf(sb, input.name);

@@ -87,7 +87,7 @@ function spareSpeed(sb, index, routes, lane) {
 // machines: design a module of only that many of the Sub-Block's machines (a Breakout's share),
 // its belts free to chain with the other modules' (as a Copy's are); with `rest`, the machines
 // a Breakout leaves, cutting an Internal Path into as many parts as the whole would.
-export function designStep(ctx, index, rng, { now = () => Date.now(), deadline = Infinity, machines = null, rest = false, draws = RANDOM_VARIANTS } = {}) {
+export function designStep(ctx, index, rng, { now = () => Date.now(), deadline = Infinity, machines = null, rest = false, draws = RANDOM_VARIANTS, lengths = [] } = {}) {
   const whole = !machines || machines === ctx.plan[index].count;
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const building = ctx.catalog.buildings[sb.building];
@@ -110,7 +110,7 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
         errors.set(e.message, (errors.get(e.message) ?? 0) + 1);
       }
     };
-    for (const variant of variants(shape, links, sb, rng, draws, ctx.site?.inner.w)) attempt(variant);
+    for (const variant of variants(shape, links, sb, rng, draws, ctx.site?.inner.w, lengths)) attempt(variant);
     // Machines whose belts above and below cannot feed them take belts on their sides too; in a
     // City Block with Fixtures in its room, columns that narrow are candidates anyway (they fit
     // between Fixtures where rows of machines do not).
@@ -293,7 +293,12 @@ function copyCandidates(ctx, index, shape, rng) {
   // In a City Block also rows as short as keep the stack within most of its height: narrow stacks
   // stand side by side in its columns (Layers) where square ones are too wide together.
   const tall = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.ceil(sb.count * depth / (TALL * ctx.site.inner.h)))) : 0;
-  const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)], ...(tall ? [[1, tall], [2, tall]] : [])];
+  // In a City Block also rows as long as it is wide (less room for the links at their ends and the
+  // belts turning beside the stack): wide stacks stand one above the other where columns side by
+  // side leave room unused.
+  const wide = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.floor((ctx.site.inner.w - CITY_SIDES - 4 * (maxSnaking(ctx) + 1)) / pitch))) : 0;
+  const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)],
+    ...(tall ? [[1, tall], [2, tall]] : []), ...(wide ? [[1, wide], [2, wide]] : [])];
   // Two-Way Copies: where whole machines cannot fill an Internal Path's belts evenly, a Copy of
   // as few machines as fill some of them whole, each machine dropping onto the belts either side
   // of it.
@@ -333,14 +338,29 @@ function buildSpec(ctx, index, spec, rng) {
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const links = coreLinks(sb, index, ctx.routes);
   let failure = null;
-  for (const margin of margins(core)) {
+  // Rows facing a band between them whose inserters there no pole can power (big machines leave
+  // no room beside them) try again with a tile per machine kept free for a pole in that band.
+  const slotted = (variant.poleSlot || variant.rowLength >= sb.count ? [] : [1, 2]).map(row => {
     try {
-      const module = routeModule(core, moduleOptions(ctx, links, margin, sb));
-      return { kinds: [{ module, count: 1 }], variant, trouble: core.shortfall + core.overload + laneShortfall(ctx, sb, module, whole), area: module.area.w * module.area.h };
+      const v = { ...variant, poleSlot: { band: 1, row } };
+      return { core: buildCore(sb, ctx.catalog.buildings[sb.building], links, v, ctx.env), variant: v };
     } catch (e) {
-      if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
-      failure = e;
+      if (!(e instanceof LayoutError)) throw e;
+      return null;
     }
+  }).filter(Boolean);
+  for (const { core: c, variant: v } of [{ core, variant }, ...slotted]) {
+    for (const margin of margins(c)) {
+      try {
+        const module = routeModule(c, moduleOptions(ctx, links, margin, sb));
+        return { kinds: [{ module, count: 1 }], variant: v, trouble: c.shortfall + c.overload + laneShortfall(ctx, sb, module, whole), area: module.area.w * module.area.h };
+      } catch (e) {
+        if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+        failure = e;
+      }
+    }
+    // (A pole slot only where poles were what failed.)
+    if (!(failure instanceof PowerError)) break;
   }
   throw failure;
 }
@@ -430,7 +450,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
         if (keys.size > maxSnaking(ctx)) {
           const rank = p => {
             const route = ctx.routes[p.routeIds[0]];
-            return internalPath(route) ? [0, ctx.plan[route.source === index ? route.consumers[0] : route.source].count] : [route.source === index ? 1 : 2, 0];
+            return internalPath(route) ? [0, otherEnd(ctx, index, route)] : [route.source === index ? 1 : 2, 0];
           };
           const snaking = module.parts.filter(p => keys.has(p.key))
             .sort((a, b) => rank(a)[0] - rank(b)[0] || rank(a)[1] - rank(b)[1]).slice(0, maxSnaking(ctx));
@@ -448,8 +468,12 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   throw failure ?? new LayoutError(`${full.recipe}: no module of ${m} routes`);
 }
 
-// A belt route from one Sub-Block to one other.
-const internalPath = route => typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output';
+// A belt route from one Sub-Block to others (not on to the train).
+const internalPath = route => typeof route.source === 'number' && route.consumers.length > 0 && route.sink !== 'side-output';
+
+// How many machines an Internal Path has at its other end, from Sub-Block `index`'s (the fewest of
+// its consumers', from its producer).
+const otherEnd = (ctx, index, route) => (route.source === index ? Math.min(...route.consumers.map(c => ctx.plan[c].count)) : ctx.plan[route.source].count);
 
 // How many belts may snake through a stack of copies.
 export function maxSnaking(ctx) {
@@ -621,8 +645,16 @@ const areaOf = core => core.w * core.h;
 // The plainest variants first (one row, nearest belt rows, belts split between the faces, rows
 // as long as the busiest belt allows, pairs of rows facing a shared belt), then random draws.
 // room: in a City Block, how wide it is inside its Buffer.
-function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null) {
+function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, lengths = []) {
   const rotations = rotationsFor(shape, links);
+  // Rows as long as asked (a part of a Sub-Block in Bands: as many as its gap takes) first.
+  for (const rowLength of lengths) {
+    for (const rotation of rotations) {
+      for (const middle of [4, 5, 6]) {
+        for (const pipes of links.fluids.length ? [false, true] : [false]) yield stackVariant(shape, { rotation, rowLength, flip: true, plain: true, pipes, middle }, rng);
+      }
+    }
+  }
   // Output Drop first (machines that put their products on a belt themselves prefer to): rows as
   // long as their drops fill a lane (one machine where it alone makes more, its inserters taking
   // the rest), each dropping onto a belt of its own or two onto one between them.

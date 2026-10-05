@@ -1,0 +1,25 @@
+---
+status: accepted — refines ADR 0017, ADR 0019 and ADR 0024
+---
+
+# Bands: a City Block of roboports fills, part by part
+
+After ADR 0024, Maximize filled the user's 236 × 236 City Block of roboports and big poles with 50 Py vrauks paddocks (35.8/min); the search alone found 55 at best. The same City Block without its Fixtures takes 95 (a try with wide stacks one above the other, below). The Fixtures cost almost half: they stand in rows, a row about every 30 tiles where the poles and py-ze down the middle stand, every 60 tiles either side of them, and between those rows the room comes in runs of 22 to 25 rows and of 56.
+
+- **A Sub-Block was one rectangle.** The incubators' rows (rc-mk01, 22 × 22, with their belts 25 to 27 rows) fit only the runs of 56 rows, two each; the paddocks' rows (19) fit the short runs. A stack of either crossed the other's runs, parting round the Fixtures (ADR 0024) at the cost of the rows between. Interleaving them needs Sub-Blocks in parts.
+- **A belt into several Sub-Blocks was one belt** through all of them in turn: with the paddocks in parts, the one water-barrel machine's belt ran back west across the City Block from each part to the next.
+
+Now **Bands**. In a City Block whose Fixtures stand in rows, the City Block is taken whole or cut at one of its Fixture columns, whichever packs, and each range into **Slots**: the runs of rows no Fixture stands in across it (from the west edge 4 columns in, to the east edge 5 columns short of it, and 16 west of the column cut at: the links run there). Every Sub-Block whose machines fill a row of a Slot is split into **Parts**, a Part to a Slot, a row or two of its machines as long as the Slot takes: the Sub-Blocks with the tallest rows first, since only the tallest Slots take them, the Goal last, filling what is left. A producer's Parts hold a little more than its consumers need (15%: a consumer's Part takes all of an item from one Part, and whole Parts do not divide evenly), each filling its Slot; a consumer's Part takes each item from the nearest of its producer's Parts with room for it. Small Sub-Blocks (the one water-barrel machine) stand where Placement finds room. Each Part is designed with rows as long as its Slot was given, the narrowest design that fits, placed against its Slot's east end (its belts leave into the corridor or to the east edge) and in the middle of its rows; then linked, finished and checked like any layout.
+
+Maximize tries Bands first where its Parts hold many more machines than the Foretelling foretells (ten more): from the most they hold, by a binary search over the packing alone, down to eight fewer, until one routes (which counts route comes and goes: 66 routed only once Parts stood against their Slots' east ends); then the search tries above. Elsewhere Bands comes after the search, where its Parts hold more than the search found.
+
+What it took besides:
+- **Parts in the plan**: a Goal's entry may be one of several Parts of one Sub-Block (`part`), take an item from a named producer Part (`from`, which the flows follow) and ask for at least so many machines (`machines`: they run slower).
+- **Internal Paths to several consumers** run on parallel belts as those to one do, each a run of producers to a run of consumers' Parts, forked through a splitter where the producer has fewer runs than the consumers. A Side Input into Parts comes to each on its own.
+- **Wide stacks**: in a City Block, copies also come in rows as long as it is wide, and the search also tries every Sub-Block's flattest design that routes, all together: in the same City Block without Fixtures a try at 95 paddocks fits, where Maximize had stopped at 70.
+- **Parting in Placement one by one**, not only in Layers: a spot where Fixtures would stand on a stack's belts may take the stack parted; the rows it parts by cost what they waste.
+- **A pole slot for rows facing a band**: a two-row design whose inserters in the band between its rows no pole could power (incubators leave no room beside them) is routed again with a tile per machine kept free for a pole in that band.
+
+Py vrauks in that City Block, five minutes a try: Maximize 47.96/min (67 paddocks), found in 30 s, not 35.8/min (50).
+
+What it misses: Parts placed by hand in the same Slots fit 69 (48.99/min) — eight paddocks to a row in the east half's tall Slot too, its belts routed past the Fixture column down the middle. Bands' east margin of 5 leaves that Slot a column short for two rows of eight, and with a margin of 3 the link into it next to the middle column finds no way. The tall Slots set the ceiling: four of them take 32 incubators at most, which feed 110 paddocks, but the paddocks then have only the short Slots; balanced, about 80 fit, if every link finds its way.

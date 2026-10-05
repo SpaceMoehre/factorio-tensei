@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { decodeBlueprint, readCityBlock, siteOf } from '../js/city.js';
 import { search } from '../js/search.js';
 import { maximize, planner, attempt } from '../js/maximize.js';
+import { gapsOf } from '../js/bands.js';
 import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
 import { simulate } from '../js/sim.js';
@@ -359,6 +360,42 @@ test('a City Block of roboports: 50 vrauks paddocks fit, in narrow stacks side b
   const { block, failure } = attempt(plan, 50, { site, budgetMs: 120000 });
   assert.ok(block, failure?.message);
   assert.equal(block.subBlocks.find(sb => sb.item === 'vrauks').count, 50);
+  assertValid(block, shipped, settings);
+  assertInside(block);
+  assert.equal(simulate(block).starvation.length, 0);
+});
+
+// Bands: the roboport City Block's west half (the Fixture column down its middle left east of
+// it) has rows free of Fixtures in six runs between its Fixtures' rows: four of 22 to 25 (a row
+// of paddocks each) and two of 56 (two rows of incubators each).
+test('Bands: the rows free of Fixtures between them, in a column range of a City Block', async () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
+  const site = siteOf(readCityBlock(blueprint, shipped), 4);
+  assert.deepEqual(gapsOf(site, 8, 100), [{ y: 4, h: 22 }, { y: 31, h: 56 }, { y: 92, h: 22 }, { y: 119, h: 25 }, { y: 149, h: 56 }, { y: 210, h: 22 }]);
+});
+
+// Maximize in the roboport City Block starts from Bands: 67 paddocks (47.96/min) in parts, each a
+// row or two in a gap between the Fixtures' rows (incubators in parts of eight in three of the
+// tall gaps, sap extractors in two rows in a short one), where the search alone found 50.
+test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 67 vrauks paddocks', async () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
+  const site = siteOf(readCityBlock(blueprint, shipped), 4);
+  const settings = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
+  const selections = {
+    vrauks: { recipe: 'vrauks-1', building: 'vrauks-paddock-mk01', modules: [{ name: 'vrauks-mk02', count: 10 }] },
+    cocoon: { recipe: 'vrauks-cocoon-1-no-water', building: 'rc-mk01', modules: [{ name: 'vrauks-mk02', count: 2 }] },
+    saps: { recipe: 'sap-01', building: 'sap-extractor-mk01', modules: [{ name: 'sap-tree-mk02', count: 2 }] },
+  };
+  const run = maximize([{ item: 'vrauks', rate: 450 }], shipped, settings, { made: ['water-barrel', 'cocoon', 'saps'], selections, site, budgetMs: 120000 });
+  /** @type {any} */
+  let found = null;
+  for (let step = run.next(); !step.done && !found; step = run.next()) if (/** @type {any} */ (step.value).type === 'best') found = step.value;
+  assert.ok(found);
+  assert.equal(found.machines, 67);
+  const { block } = found;
+  assert.equal(block.entities.filter(e => e.kind === 'building' && e.recipe === 'vrauks-1').length, 67);
   assertValid(block, shipped, settings);
   assertInside(block);
   assert.equal(simulate(block).starvation.length, 0);
