@@ -107,16 +107,20 @@ function capacity(slot, building) {
 // options: { seed, pack }
 export function bands(entries, catalog, logistics, site, { seed = 1, pack = false } = {}) {
   let last = null;
-  // Producers' Parts with less to spare where more would leave the Goal too little room.
-  for (const spare of SPARES) {
-    const out = banded(entries, catalog, logistics, site, { seed, pack, spare });
-    if (out?.block || out?.packed || !out) return out;
-    last = out;
+  // Producers' Parts with less to spare where more would leave the Goal too little room; small
+  // machines in Parts of their own, else standing where Placement finds room (a narrow column
+  // beside the Parts), the gaps they took left to the Goal.
+  for (const small of [true, false]) {
+    for (const spare of SPARES) {
+      const out = banded(entries, catalog, logistics, site, { seed, pack, spare, small });
+      if (out?.block || out?.packed || !out) return out;
+      last = out;
+    }
   }
   return last;
 }
 
-function banded(entries, catalog, logistics, site, { seed, pack, spare }) {
+function banded(entries, catalog, logistics, site, { seed, pack, spare, small }) {
   if (!site?.fixtures.length) return null;
   const plan = planSubBlocks(entries, catalog, logistics);
   const goal = plan.findIndex(sb => sb.item === entries[0].goal.item);
@@ -125,7 +129,7 @@ function banded(entries, catalog, logistics, site, { seed, pack, spare }) {
   // fit no gaps.)
   let failure = null, furthest = -1;
   for (const slots of slotsOf(site, Math.min(lead.size.w, lead.size.h), Math.max(lead.size.w, lead.size.h) + BAND)) {
-    const out = inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare);
+    const out = inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small);
     if (out?.block || out?.packed) return out;
     if (out?.failure && (out.built ?? 0) > furthest) [failure, furthest] = [out.failure, out.built ?? 0];
   }
@@ -133,12 +137,15 @@ function banded(entries, catalog, logistics, site, { seed, pack, spare }) {
 }
 
 // The chain in parts in these Slots: { block }, { failure } or null (no Sub-Block worth parts).
-function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare) {
+function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small) {
   const building = i => catalog.buildings[plan[i].building];
   const area = i => plan[i].count * building(i).size.w * building(i).size.h;
-  // The Sub-Blocks in parts: those whose machines fill a row of a Slot; the rest stand where
+  const depth = i => Math.max(building(i).size.w, building(i).size.h);
+  // The Sub-Blocks in parts: those whose machines fill a row of a Slot (unless `small` is false:
+  // then not those whose machines are under half as deep as the Goal's); the rest stand where
   // Placement finds room.
-  const split = plan.map((sb, i) => sb.count > 2 && slots.some(s => capacity(s, building(i)).perRow >= Math.min(sb.count, 3)));
+  const split = plan.map((sb, i) => sb.count > 2 && slots.some(s => capacity(s, building(i)).perRow >= Math.min(sb.count, 3))
+    && (small || i === goal || 2 * depth(i) >= depth(goal)));
   if (!split[goal]) return null;
   // Most constrained first: the tallest rows, the Goals last.
   const order = plan.map((_, i) => i).filter(i => split[i] && i !== goal)
@@ -227,14 +234,18 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
     try {
       // (Parts of several rows also from random variants: one a column narrower may fit.)
       const rows = parts[n] ? Math.ceil(parts[n].machines / parts[n].perRow) : 1;
-      list = designStep(ctx, n, rng, { draws: rows > 1 ? DRAWS : 0, lengths: parts[n] ? [parts[n].perRow, parts[n].perRow - 1].filter(k => k > 0) : [] });
+      // (A Sub-Block kept out of the Parts also in columns one or two machines wide.)
+      const lengths = parts[n] ? [parts[n].perRow, parts[n].perRow - 1].filter(k => k > 0) : small ? [] : [1, 2];
+      list = designStep(ctx, n, rng, { draws: rows > 1 ? DRAWS : 0, lengths });
     } catch (e) {
       if (!(e instanceof LayoutError)) throw e;
       return { failure: e };
     }
     const p = parts[n];
     let design = null;
-    if (!p) design = list.map(designOf).find(Boolean);
+    // (A Sub-Block not in Parts: its narrowest design, a column beside them.)
+    const wide = d => Math.max(...d.kinds.map(k => k.module.area.w));
+    if (!p) design = small ? list.map(designOf).find(Boolean) : list.map(designOf).filter(Boolean).sort((a, b) => wide(a) - wide(b))[0];
     else {
       for (const length of [p.perRow, p.perRow - 1]) {
         // (The narrowest that fits: room either side of it for the links.)
