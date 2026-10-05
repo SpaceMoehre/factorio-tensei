@@ -375,10 +375,10 @@ test('Bands: the rows free of Fixtures between them, in a column range of a City
   assert.deepEqual(gapsOf(site, 8, 100), [{ y: 4, h: 22 }, { y: 31, h: 56 }, { y: 92, h: 22 }, { y: 119, h: 25 }, { y: 149, h: 56 }, { y: 210, h: 22 }]);
 });
 
-// Maximize in the roboport City Block starts from Bands: 67 paddocks (47.96/min) in parts, each a
+// Maximize in the roboport City Block starts from Bands: 69 paddocks (49.39/min) in parts, each a
 // row or two in a gap between the Fixtures' rows (incubators in parts of eight in three of the
 // tall gaps, sap extractors in two rows in a short one), where the search alone found 50.
-test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 67 vrauks paddocks', async () => {
+test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 69 vrauks paddocks', async () => {
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
   const site = siteOf(readCityBlock(blueprint, shipped), 4);
@@ -393,9 +393,9 @@ test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 6
   let found = null;
   for (let step = run.next(); !step.done && !found; step = run.next()) if (/** @type {any} */ (step.value).type === 'best') found = step.value;
   assert.ok(found);
-  assert.equal(found.machines, 67);
+  assert.equal(found.machines, 69);
   const { block } = found;
-  assert.equal(block.entities.filter(e => e.kind === 'building' && e.recipe === 'vrauks-1').length, 67);
+  assert.equal(block.entities.filter(e => e.kind === 'building' && e.recipe === 'vrauks-1').length, 69);
   assertValid(block, shipped, settings);
   assertInside(block);
   assert.equal(simulate(block).starvation.length, 0);

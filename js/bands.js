@@ -20,15 +20,19 @@ import { simulate } from './sim.js';
 // Room kept beside the parts: at the west edge for the belts coming in, at the east edge for
 // those going out, and west of a Fixture column the City Block is cut at, for the links crossing
 // between ranges.
-const WEST = 4, EAST = 5, CORRIDOR = 16;
+const WEST = 4, EAST = 3, CORRIDOR = 16;
+// Room kept east of a Fixture column the City Block is cut at: where links come into the parts.
+const OFFSET = 2;
 // A part's rows: a machine's depth and the belts and inserters of the band beside it.
 const BAND = 6;
 // How many machines a producer's parts hold, for those its consumers need (a consumer part takes
-// all it needs from one part: whole parts do not divide evenly).
-const SPARE = 1.15;
+// all it needs from one part: whole parts do not divide evenly), tried in turn.
+const SPARES = [1.15, 1.05, 1];
 // How far a part's design may reach past its Slot's width, into the room kept beside it (not at
 // the east edge, where its belts leave).
 const SPILL = 4;
+// Random variants tried for a part of several rows.
+const DRAWS = 60;
 
 // The rows Fixtures stand in between columns x0 and x1 (and `side` columns either side: where a
 // part's belts meet their links).
@@ -73,7 +77,7 @@ export function slotsOf(site, pitch, rowH, least = 3 * pitch) {
   }
   const slotsFor = ranges => ranges.flatMap((r, k) => {
     // (The links crossing between ranges run west of the Fixture column cut at.)
-    const x = r.x0 + (k === 0 ? WEST : 1), end = r.x1 - (k === ranges.length - 1 ? EAST : CORRIDOR);
+    const x = r.x0 + (k === 0 ? WEST : OFFSET), end = r.x1 - (k === ranges.length - 1 ? EAST : CORRIDOR);
     if (end - x < pitch) return [];
     return gapsOf(site, x, end).map(g => ({ x, w: end - x + 1, ...g, range: k, spill: k === ranges.length - 1 ? 0 : SPILL }));
   });
@@ -87,12 +91,13 @@ export function slotsOf(site, pitch, rowH, least = 3 * pitch) {
 }
 
 // Machines `building` stands in a Slot: rows of as many as its width takes, as many rows as its
-// height does (two at most), or none.
+// height does (two at most: three do not fit the gaps a third row would need), or none.
 function capacity(slot, building) {
   const pitch = Math.min(building.size.w, building.size.h), depth = Math.max(building.size.w, building.size.h);
-  const rows = slot.h >= 2 * depth + 2 * BAND - 1 ? 2 : slot.h >= depth + BAND ? 1 : 0;
-  // (Two rows take a little more room beside them.)
-  const perRow = Math.floor((slot.w + slot.spill - 2 * rows) / pitch);
+  let rows = 0;
+  while (rows < 2 && slot.h >= (rows + 1) * (depth + BAND) - rows) rows++;
+  // (A row takes a column either side of its machines, several rows one more.)
+  const perRow = Math.floor((slot.w + slot.spill - Math.min(rows, 2) - 1) / pitch);
   return { perRow, rows, machines: perRow * rows };
 }
 
@@ -101,6 +106,17 @@ function capacity(slot, building) {
 // `pack`, only whether its parts fit the gaps: { packed: true } or { failure }.
 // options: { seed, pack }
 export function bands(entries, catalog, logistics, site, { seed = 1, pack = false } = {}) {
+  let last = null;
+  // Producers' Parts with less to spare where more would leave the Goal too little room.
+  for (const spare of SPARES) {
+    const out = banded(entries, catalog, logistics, site, { seed, pack, spare });
+    if (out?.block || out?.packed || !out) return out;
+    last = out;
+  }
+  return last;
+}
+
+function banded(entries, catalog, logistics, site, { seed, pack, spare }) {
   if (!site?.fixtures.length) return null;
   const plan = planSubBlocks(entries, catalog, logistics);
   const goal = plan.findIndex(sb => sb.item === entries[0].goal.item);
@@ -109,7 +125,7 @@ export function bands(entries, catalog, logistics, site, { seed = 1, pack = fals
   // fit no gaps.)
   let failure = null, furthest = -1;
   for (const slots of slotsOf(site, Math.min(lead.size.w, lead.size.h), Math.max(lead.size.w, lead.size.h) + BAND)) {
-    const out = inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack);
+    const out = inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare);
     if (out?.block || out?.packed) return out;
     if (out?.failure && (out.built ?? 0) > furthest) [failure, furthest] = [out.failure, out.built ?? 0];
   }
@@ -117,7 +133,7 @@ export function bands(entries, catalog, logistics, site, { seed = 1, pack = fals
 }
 
 // The chain in parts in these Slots: { block }, { failure } or null (no Sub-Block worth parts).
-function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack) {
+function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare) {
   const building = i => catalog.buildings[plan[i].building];
   const area = i => plan[i].count * building(i).size.w * building(i).size.h;
   // The Sub-Blocks in parts: those whose machines fill a row of a Slot; the rest stand where
@@ -132,7 +148,7 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
   const parts = [];
   for (const i of order) {
     // (A producer's parts with a little to spare: each consumer part takes from one.)
-    let left = i === goal ? plan[i].count : Math.ceil(plan[i].count * SPARE);
+    let left = i === goal ? plan[i].count : Math.ceil(plan[i].count * spare);
     // The Slots that take the most of it (and waste least), until it is placed.
     while (left > 0) {
       let best = null;
@@ -152,6 +168,9 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
       left -= machines;
     }
   }
+  // Each Sub-Block's parts in the order they stand, range by range, top to bottom: a belt chaining
+  // several runs on to the next gap down.
+  parts.sort((a, b) => a.step - b.step || a.slot.range - b.slot.range || a.slot.y - b.slot.y);
   // Each part of a consumer takes a split producer's item from the nearest part with room for
   // it (what a producer part's machines make, in consumer machines).
   const center = p => ({ x: p.slot.x + p.slot.w / 2, y: p.slot.y + p.slot.h / 2 });
@@ -206,7 +225,9 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
   for (let n = 0; n < ctx.plan.length; n++) {
     let list;
     try {
-      list = designStep(ctx, n, rng, { draws: 0, lengths: parts[n] ? [parts[n].perRow, parts[n].perRow - 1].filter(k => k > 0) : [] });
+      // (Parts of several rows also from random variants: one a column narrower may fit.)
+      const rows = parts[n] ? Math.ceil(parts[n].machines / parts[n].perRow) : 1;
+      list = designStep(ctx, n, rng, { draws: rows > 1 ? DRAWS : 0, lengths: parts[n] ? [parts[n].perRow, parts[n].perRow - 1].filter(k => k > 0) : [] });
     } catch (e) {
       if (!(e instanceof LayoutError)) throw e;
       return { failure: e };
