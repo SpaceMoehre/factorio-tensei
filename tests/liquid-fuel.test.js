@@ -8,6 +8,7 @@ import { logistics as base } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 import { search } from '../js/search.js';
 import { expandChain } from '../js/chain.js';
+import { context, designStep, designOf, random } from '../js/design.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe', liquidFuel: 'natural-gas' };
@@ -90,4 +91,17 @@ test('a byproduct on more than one belt: each of the Internal Path\'s belts sort
   }
   assert.ok(best.block.routes.some(r => r.filter === 'stone'));
   assertValid(best.block, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
+});
+
+// Py's hydrocyclones at 400/min of molybdenum oxide: 10 make 1200/min of concentrate for 7
+// thickeners on 2 belts, cut 6 and 4 to 4 and 3 (720 for 686, 480 for 514). A splitter between
+// the belts evens them out (compose.js pairUp), so the design, judged as the Compound Block will
+// join them, starves nothing.
+test('an Internal Path cut unevenly at both ends: its design counts on a splitter joining its belts', () => {
+  const made = ['molybdenum-sulfide', 'molybdenum-pulp', 'molybdenum-concentrate', 'nitrogen', 'purest-nitrogen-gas', 'pressured-air', 'molybdenite-pulp', 'molybdenite-dust', 'crushed-molybdenite'];
+  const entries = expandChain([{ item: 'molybdenum-oxide', rate: 400 }], shipped, { made, selections: {} }).entries;
+  const ctx = context(entries, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
+  const i = ctx.plan.findIndex(sb => sb.recipe === 'molybdenum-concentrate');
+  assert.equal(ctx.plan[i].count, 10);
+  assert.ok(designOf(designStep(ctx, i, random(1))[0]).trouble < 1e-6);
 });

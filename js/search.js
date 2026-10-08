@@ -28,18 +28,22 @@ import { compactness } from './layout/score.js';
 //            Block), precheck (with perfect: the Side Output's Sub-Blocks are checked first),
 //            designed (called once the Sub-Blocks are designed, with each one's item, Count and
 //            its best design's area), routing (ms: the candidates get at least this long once the
-//            Sub-Blocks are designed, however long that took) }
+//            Sub-Blocks are designed, and no less than designing took) }
 // Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }; returns { tried,
 // failure, timedOut (it stopped for want of time, not of candidates) }.
 export function* search(entries, catalog, logistics, options = {}) {
   const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null, strategy = 'search' } = options;
   const spread = strategy === 'spread';
   const rng = random(seed);
+  const started = now();
   const ctx = context(entries, catalog, logistics, site);
   // Leaves first: every Sub-Block before the ones it feeds. Looking for a layout without
   // Starvation, once a Sub-Block's least starving design starves, no layout can do without, and
   // the search ends there.
   const order = [...ctx.flows.order];
+  // (Looking for a layout without Starvation, a Sub-Block's designs are routed past one that
+  // starves however long that takes: the search ends at the first that does.)
+  const designing = perfect ? Infinity : deadline;
   // `precheck`: first the Sub-Blocks that make the Side Output (the busiest, the likeliest to
   // starve), from structured variants only and with a random source of their own (designs as the
   // search's own are left as they were); one that starves ends the search before the rest are
@@ -47,7 +51,7 @@ export function* search(entries, catalog, logistics, options = {}) {
   if (perfect && options.precheck) {
     const checkRng = random(seed + 2);
     for (const i of order.filter(i => ctx.routes.some(r => r.source === i && r.sink === 'side-output')).reverse()) {
-      const least = designOf(designStep(ctx, i, checkRng, { now, deadline, draws: 0 })[0])?.trouble ?? 0;
+      const least = designOf(designStep(ctx, i, checkRng, { now, deadline: designing, draws: 0 })[0])?.trouble ?? 0;
       if (least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
     }
   }
@@ -55,7 +59,7 @@ export function* search(entries, catalog, logistics, options = {}) {
   for (const i of order) {
     // Designed already, each Sub-Block on its own (`designs`: the candidates of each, built
     // elsewhere and handed over): built again only where the search tries one not built yet.
-    designs[i] = options.designs?.[i] ? revive(ctx, i, options.designs[i], rng) : designStep(ctx, i, rng, { now, deadline });
+    designs[i] = options.designs?.[i] ? revive(ctx, i, options.designs[i], rng) : designStep(ctx, i, rng, { now, deadline: designing });
     const least = designOf(designs[i][0])?.trouble ?? 0;
     if (perfect && least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
     // In a City Block, a Sub-Block none of whose designs without Starvation fits inside it at all
@@ -66,7 +70,8 @@ export function* search(entries, catalog, logistics, options = {}) {
     if (perfect && site && !designs[i].some(fitting)) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: no design without starvation fits the city block`), starves: true };
   }
   designed?.(ctx.plan.map((sb, i) => ({ item: sb.item, count: sb.count, area: designOf(designs[i][0])?.area ?? null })));
-  const until = options.routing === undefined ? deadline : Math.max(deadline, now() + options.routing);
+  // (Laying out takes about as long as designing did: never less than that.)
+  const until = options.routing === undefined ? deadline : Math.max(deadline, now() + Math.max(options.routing, now() - started));
 
   // Breakout designs, built the first time the search tries them (with a random source of their
   // own, so the rest of the search draws as it would without them): a Sub-Block's designs for

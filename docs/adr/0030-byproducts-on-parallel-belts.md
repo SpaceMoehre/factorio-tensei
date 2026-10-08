@@ -19,6 +19,17 @@ What changed:
 
 Py molybdenum oxide in the 236 × 236 City Block (Buffer 4), Maximize with a 10 s budget: 199.99/min (2 furnaces), the Bands check 34 s, not 272 s. Above that, 16 ball mills to 11 agitators divide among no belts without a splitter (the milling starves), and at 400/min the hydrocyclones' concentrate starves.
 
+## Above 200/min
+
+At 200/min the City Block's layout was 228 × 178, two thirds of it empty: 400/min and more found no layout.
+
+- **Belts a splitter evens out, in the design.** Ten hydrocyclones make 1200/min of concentrate for seven thickeners on two belts, cut 6 and 4 to 4 and 3: 720 for 686 and 480 for 514. The Compound Block joins such belts through a splitter (pairUp), but the design judged each belt on its own, so every design starved (34/min short) and Maximize gave up. A design now pairs a belt short of what its consumers take with the one that makes the path deliver the most, as pairUp does, while that helps (not belts sorting a byproduct out: none joins them).
+- **Designs routed past one that starves.** Looking for a layout without Starvation, a Sub-Block's designs are routed past a first one that starves however long that takes. Before, once the try's time was up (it often was while designing), the first was all there was: the hydrocyclones' copies (300/min short) ended the try though a whole module starved nothing.
+- **A byproduct riding on where its belts cannot sort it out evenly.** Where belts sorting a byproduct out, each on its own, would starve their consumers (or chain none: four crusher copies to three runs of mills), they are joined as any Internal Path's belts are (merging, forking, a splitter between two), and the byproduct rides on through the consumers to the east edge. Each belt brings what its consumers take where its producers' lanes carry it (as an Internal Path's do), not only its producers' share at the plan's rate.
+- **Even input belts first.** Of the designs that starve alike, those whose belts of a path sorting a byproduct out take nearer an equal share each come first.
+- **Candidates get as long as designing took.** A try's candidates get its budget, and never less than designing took: here about 20 s, the first layout some 10 s after.
+
+Py molybdenum oxide in the 236 × 236 City Block, Maximize (budget 1 s or 10 s): 599.99/min (3 furnaces, 147 machines, 228 × 168) in about 6 minutes, not 199.99. At 662/min the hydrocyclones still starve 5/min (20 of them at 800/min: 60), more than one splitter per belt would even out.
+
 Still:
 - A route sorting a byproduct out gets no splitter between its belts: where its producers and consumers divide among none evenly, it starves.
-- With a 1 s budget the City Block's first layout is still out of reach: the candidates need about 5 s.

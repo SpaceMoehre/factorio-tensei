@@ -1154,7 +1154,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
       && producers.length > 0 && producers.every((slot, k) => k === 0 || chainable(producers[k - 1], slot))
       && producers.at(-1).part.canExit && exitSide(producers.at(-1)) === E
       && consumers.every((slot, k) => k === 0 || chainable(consumers[k - 1], slot)) && consumers[0].part.canEnter && entrySide(consumers[0]) === W;
-    let groups;
+    let groups, riding = false;
     if (!consumers.length) {
       // To the train: as few belts as the lanes allow, each a run of producers ending at one
       // that leaves east (a run's shortfall weighs far more than its size).
@@ -1248,25 +1248,34 @@ function groupRoutes(ctx, instances, laneCapacity) {
         if (!best || short < best.short - 1e-6) best = { option, short };
         return short < 1e-6;
       };
-      for (let count = 1; count <= Math.min(most + 1, consumers.length); count++) {
-        const cs = consumerRuns(count);
-        if (!cs) continue;
-        const targets = cs.map(wants);
-        const ps = count > most ? null : splits(producers, count, chainable, () => true, endsEast, (k, i, j) => (making(i, j) - targets[k]) ** 2)(count);
-        if (ps) {
-          const option = ps.map((run, j) => ({ producers: run, consumers: cs[j] }));
-          const short = needOf(option) - deliver(option, false).total;
-          // Belts that bring too little pair up with belts that bring too much: a splitter between
-          // them gives each what its consumers take (plain if it fails to route).
-          if (consider(option, short < 1e-6 || base.sorted ? short : pairUp(option, wantOf, deliver))) break;
+      const pick = joins => {
+        best = null;
+        for (let count = 1; count <= Math.min(most + 1, consumers.length); count++) {
+          const cs = consumerRuns(count);
+          if (!cs) continue;
+          const targets = cs.map(wants);
+          const ps = count > most ? null : splits(producers, count, chainable, () => true, endsEast, (k, i, j) => (making(i, j) - targets[k]) ** 2)(count);
+          if (ps) {
+            const option = ps.map((run, j) => ({ producers: run, consumers: cs[j] }));
+            const short = needOf(option) - deliver(option, false).total;
+            // Belts that bring too little pair up with belts that bring too much: a splitter between
+            // them gives each what its consumers take (plain if it fails to route).
+            if (consider(option, short < 1e-6 || !joins ? short : pairUp(option, wantOf, deliver))) break;
+          }
+          if (!joins) continue;
+          if (forks(cs, targets).concat(merges(cs, targets)).some(option => consider(option, needOf(option) - deliver(option, true).total))) break;
         }
-        // (Belts sorting a byproduct out each run on alone: no splitter joins them.)
-        if (base.sorted) continue;
-        if (forks(cs, targets).concat(merges(cs, targets)).some(option => consider(option, needOf(option) - deliver(option, true).total))) break;
-      }
-      groups = best?.option;
+        return best;
+      };
+      // Belts sorting a byproduct out each run on alone (no splitter joins them); where such belts
+      // starve the consumers (or chain none), they are joined as any Internal Path's where that
+      // starves them less, the byproduct riding on through the consumers to the east edge.
+      const alone = pick(!base.sorted);
+      const together = base.sorted && !(alone && alone.short < 1e-6) ? pick(true) : null;
+      riding = !!together && (!alone || together.short < alone.short - 1e-6);
+      groups = (riding ? together : alone)?.option;
       if (!groups) throw new RoutingError(`${base.items[0].item}: no belts chain ${plan[base.source].recipe}'s machines to ${plan[base.consumers[0]].recipe}'s`);
-      if (base.sorted) {
+      if (base.sorted && !riding) {
         // A byproduct sorted out of each belt: its producers' run, a filter splitter right after
         // them sending the byproduct on to the east edge, the rest into its consumers' run (as
         // below, a belt at a time). Where a splitter finds no way (`chained`), each belt runs on
@@ -1278,8 +1287,11 @@ function groupRoutes(ctx, instances, laneCapacity) {
         // machines at full speed.)
         const carried = groups.map(g => deliver([{ producers: g.producers, consumers: [] }], false).total);
         const supplied = base.items.reduce((sum, i) => sum + i.supply, 0);
+        const kept = rest.reduce((sum, i) => sum + i.rate, 0);
         groups.forEach((g, j) => {
-          const made = g.producers.reduce((sum, s) => sum + production(s), 0) / total;
+          // (Its producers run as fast as its consumers take, where its lanes carry it: as an
+          // Internal Path's belts bring what they are wanted for.)
+          const made = Math.min(carried[j], Math.max(g.producers.reduce((sum, s) => sum + production(s), 0), wants(g.consumers) * total / kept)) / total;
           const items = base.items.map(i => ({ ...i, rate: i.rate * made, supply: i.supply * made, capacity: carried[j], lane: 'out' }));
           if (through) {
             routes.push(beltRoute(routes.length, base, [base.id], items, [...g.producers, ...g.consumers], plan));
@@ -1347,15 +1359,23 @@ function groupRoutes(ctx, instances, laneCapacity) {
     const itemsOf = (expected, delivered) => base.items.map(i => ({
       ...i, rate: i.rate * expected / total, supply: i.supply * expected / total, capacity: delivered, lane: 'out',
     }));
+    const made = g => g.producers.reduce((sum, s) => sum + production(s), 0);
     const expectations = flow => {
+      // (A byproduct riding on: each belt all its producers make, or as much more as its consumers
+      // take, with the byproduct, where its lanes carry it.)
+      if (riding) {
+        const kept = base.items.filter(i => i.item !== base.sorted).reduce((sum, i) => sum + i.rate, 0);
+        return groups.map((g, j) => Math.min(flow.delivered[j], Math.max(made(g), (wantOf(g) ?? 0) * total / kept)));
+      }
       const open = groups.filter(g => wantOf(g) === null);
-      const made = g => g.producers.reduce((sum, s) => sum + production(s), 0);
       const madeOpen = open.reduce((sum, g) => sum + made(g), 0);
       const lost = Math.max(0, total - flow.total);
       return groups.map((g, j) => wantOf(g) ?? flow.delivered[j] + (madeOpen > 0 ? lost * made(g) / madeOpen : 0));
     };
-    const straight = deliver(groups, false);
-    const joined = splittersOf(groups).length ? deliver(groups, true) : straight;
+    // (A byproduct riding on: each belt carries what its lanes take, whatever its consumers do.)
+    const flowing = riding ? groups.map(g => ({ ...g, consumers: [] })) : groups;
+    const straight = deliver(flowing, false);
+    const joined = splittersOf(groups).length ? deliver(flowing, true) : straight;
     const [expectStraight, expectJoined] = [expectations(straight), expectations(joined)];
     const first = routes.length;
     groups.forEach((g, j) => {

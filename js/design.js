@@ -129,9 +129,11 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     // Side Belts route round their stack: of cores alike, those with fewer first.
     const sides = ({ variant }) => variant.sides?.length ?? 0;
     // Machines that drop their products themselves (Output Drop) rather than through inserters
-    // come first, starving no more: the fewest output inserters at them.
+    // come first, starving no more: the fewest output inserters at them. Then the cores whose
+    // belts of an Internal Path sorting a byproduct out (no splitter evens them) take the least
+    // more than an equal share of it.
     const ranked = mirrorsThatHelp([...cores.values()]).sort((a, b) => stuck(a) - stuck(b) || trouble(a.core) - trouble(b.core)
-      || a.core.supporting - b.core.supporting || areaOf(a.core) - areaOf(b.core) || sides(a) - sides(b));
+      || a.core.supporting - b.core.supporting || uneven(ctx, sb, index, a.core) - uneven(ctx, sb, index, b.core) || areaOf(a.core) - areaOf(b.core) || sides(a) - sides(b));
     // The best of each kind first (row length, pipe rows, merged belts, side belts, Two-Way
     // Output), so a bigger
     // kind that routes where the smallest cannot still gets a turn.
@@ -140,14 +142,14 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     for (const { variant, core } of [...leaders, ...ranked.filter(v => !leaders.includes(v))].slice(0, ROUTE_TRIES)) {
       const spec = { core, variant, machines: sb.count, whole };
       candidates.push({
-        estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }), supporting: core.supporting, w: core.w, h: core.h }, variant,
+        estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }), supporting: core.supporting, uneven: uneven(ctx, sb, index, core), w: core.w, h: core.h }, variant,
         spec, build: () => buildSpec(ctx, index, spec, rng),
       });
     }
   }
   // Whole modules by their estimate, best first; repeated ones after the best whole one.
   const rank = (a, b) => (a.estimate.stuck ?? 0) - (b.estimate.stuck ?? 0) || a.estimate.trouble - b.estimate.trouble
-    || (a.estimate.supporting ?? 0) - (b.estimate.supporting ?? 0) || a.estimate.area - b.estimate.area;
+    || (a.estimate.supporting ?? 0) - (b.estimate.supporting ?? 0) || (a.estimate.uneven ?? 0) - (b.estimate.uneven ?? 0) || a.estimate.area - b.estimate.area;
   const single = candidates.filter(c => !c.copies).sort(rank), repeated = candidates.filter(c => c.copies).sort(rank);
   // Past 40 machines a whole module takes long to route and seldom does: copies first.
   const first = sb.count > 40 ? [...repeated, ...single] : [...single.slice(0, 1), ...repeated, ...single.slice(1)];
@@ -274,6 +276,22 @@ export function designOf(candidate) {
 }
 
 const trouble = c => c.shortfall + c.overload + (c.pathShort ?? 0);
+
+// What a core's belts of an Internal Path in that sorts a byproduct out (route.sorted: no splitter
+// evens them out) take beyond an equal share of what the path brings: its producer's belts each
+// bring about as much.
+function uneven(ctx, sb, index, core) {
+  let over = 0;
+  for (const route of ctx.routes) {
+    if (!route.sorted || route.consumers[0] !== index) continue;
+    const parts = core.parts.filter(p => p.routeIds.includes(route.id));
+    if (parts.length < 2) continue;
+    const need = route.items.reduce((sum, i) => sum + (sb.inputs.find(x => x.name === i.item)?.rate ?? 0), 0) / sb.count;
+    const machines = parts.reduce((sum, p) => sum + p.machines, 0);
+    for (const p of parts) over += Math.max(0, (p.machines - machines / parts.length) * need);
+  }
+  return over;
+}
 
 // How much of a City Block's height a narrow stack of copies may take (the rest for Fixtures and
 // the belts crossing its column).
@@ -585,7 +603,7 @@ function laneShortfall(ctx, sb, module, whole = true, share = null) {
   const groups = internal ? runs(parts, Math.min(parts.length, pathBelts(ctx, route))) : parts.map(p => [p]);
   const made = g => g.reduce((sum, p) => sum + p.machines, 0) * outputRate(sb) / sb.count;
   const wants = !internal ? null : whole ? pathWants(ctx, route, groups.length) : share?.length === groups.length ? share : groups.map(made);
-  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), wants);
+  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), wants, internal && !route.sorted);
 }
 
 // A core's Internal Path, before it is routed (Path Flow on its pathDrops): in a whole module each
@@ -597,18 +615,40 @@ function corePathShort(ctx, sb, core, whole, share = null) {
   const route = ctx.routes[core.pathDrops.routeId];
   const wants = whole && parts.length === pathBelts(ctx, route) ? pathWants(ctx, route, parts.length)
     : share?.length === parts.length ? share : parts.map(p => p.made);
-  return pathShortfall(ctx, sb, parts.map(p => p.drops), wants);
+  return pathShortfall(ctx, sb, parts.map(p => p.drops), wants, !route.sorted);
 }
 
 // What a Sub-Block's belts cannot deliver of its output (Path Flow): every machine at its full
 // rate (its share of the plan's total at most), each belt bringing what it is wanted for (null:
-// all it carries, to the train). belts: per belt, its drops (by `machine` key).
-function pathShortfall(ctx, sb, belts, wants) {
+// all it carries, to the train). belts: per belt, its drops (by `machine` key). With `join`
+// (an Internal Path whose belts a splitter may join, compose.js pairUp), a belt short of what it
+// is wanted for is paired with the one that makes the path deliver the most, while that helps.
+function pathShortfall(ctx, sb, belts, wants, join = false) {
   const total = outputRate(sb);
   const full = total / sb.count * (sb.headroom ?? 1);
   const machines = new Map(belts.flatMap(drops => drops.map(d => [d.machine, full * (d.machines ?? 1)])));
   const want = wants ? wants.reduce((sum, w) => sum + w, 0) : total;
-  const flow = pathFlow({ lane: ctx.env.laneCapacity, total, machines, belts: belts.map((drops, k) => ({ want: wants ? wants[k] : Infinity, drops })) });
+  const spec = { lane: ctx.env.laneCapacity, total, machines, belts: belts.map((drops, k) => ({ want: wants ? wants[k] : Infinity, drops })) };
+  let flow = pathFlow(spec);
+  if (join && wants && belts.length > 1) {
+    const splitters = [], paired = new Set();
+    for (;;) {
+      const short = wants.map((w, j) => ({ j, s: w - flow.delivered[j] })).filter(x => x.s > 1e-6 && !paired.has(x.j)).sort((a, b) => b.s - a.s);
+      let pick = null;
+      for (const { j } of short) {
+        for (let k = 0; k < belts.length; k++) {
+          if (k === j || paired.has(k)) continue;
+          const tried = pathFlow({ ...spec, splitters: [...splitters, { ins: [j, k], outs: [j, k] }] });
+          if (tried.total > (pick?.flow.total ?? flow.total) + 1e-6) pick = { j, k, flow: tried };
+        }
+        if (pick) break;
+      }
+      if (!pick) break;
+      splitters.push({ ins: [pick.j, pick.k], outs: [pick.j, pick.k] });
+      paired.add(pick.j).add(pick.k);
+      flow = pick.flow;
+    }
+  }
   return Math.max(0, Math.min(total, want) - flow.total);
 }
 
@@ -622,7 +662,7 @@ function copiesShortfall(ctx, index, kinds) {
   const route = ctx.routes[parts[0].routeIds[0]];
   if (!isInternal(route)) return 0;
   const groups = runs(parts, Math.min(parts.length, pathBelts(ctx, route)));
-  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), pathWants(ctx, route, groups.length));
+  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), pathWants(ctx, route, groups.length), !route.sorted);
 }
 
 // What each of an Internal Path's n belts brings its consumer: a run of the consumer's machines
