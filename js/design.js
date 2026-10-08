@@ -110,7 +110,11 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
         errors.set(e.message, (errors.get(e.message) ?? 0) + 1);
       }
     };
-    for (const variant of variants(shape, links, sb, rng, draws, ctx.site?.inner.w, lengths)) attempt(variant);
+    // In a City Block, past 40 machines copies go first and a whole module seldom routes: its
+    // structured variants only, fewer of them (each core of so many machines takes long to build,
+    // and Maximize designs every Count it tries).
+    const lean = !!ctx.site && candidates.length > 0 && sb.count > 40;
+    for (const variant of variants(shape, links, sb, rng, lean ? 0 : draws, ctx.site?.inner.w, lengths, lean)) attempt(variant);
     // Machines whose belts above and below cannot feed them take belts on their sides too; in a
     // City Block with Fixtures in its room, columns that narrow are candidates anyway (they fit
     // between Fixtures where rows of machines do not).
@@ -297,8 +301,11 @@ function copyCandidates(ctx, index, shape, rng) {
   // belts turning beside the stack): wide stacks stand one above the other where columns side by
   // side leave room unused.
   const wide = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.floor((ctx.site.inner.w - CITY_SIDES - 4 * (maxSnaking(ctx) + 1)) / pitch))) : 0;
+  // And as long as fit with no more beside them than one belt snaking through (a column and a
+  // lane each side), a trunk per fluid and the module's margins: copies Fluids Between need little.
+  const snug = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.floor((ctx.site.inner.w - 8 - 3 * shape.links.fluids.length - 4) / pitch))) : 0;
   const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)],
-    ...(tall ? [[1, tall], [2, tall]] : []), ...(wide ? [[1, wide], [2, wide]] : [])];
+    ...(tall ? [[1, tall], [2, tall]] : []), ...(wide ? [[1, wide], [2, wide]] : []), ...(snug > wide ? [[2, snug], [1, snug]] : [])];
   // Two-Way Copies: where whole machines cannot fill an Internal Path's belts evenly, a Copy of
   // as few machines as fill some of them whole, each machine dropping onto the belts either side
   // of it.
@@ -430,9 +437,9 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   }
   // Fluids Between: a pair of rows facing each other across their pipe rows, the shared belts
   // between them or outside.
-  if (links.fluids.length && n < m) {
+  if (links.fluids.length) {
     for (const { rotation, mirror } of rotationsFor(shape, links)) {
-      for (const [between, middle] of /** @type {const} */ ([['inside', links.fluids.length + 1], ['outside', links.fluids.length]])) {
+      for (const [between, middle] of /** @type {const} */ ([['inside', links.fluids.length + 1], ['outside', links.fluids.length]]).slice(0, n < m ? 2 : 1)) {
         attempt(stackVariant(shape, { rotation, mirror, rowLength: n, flip: true, plain: true, pipes: true, middle, between }, rng));
       }
     }
@@ -467,8 +474,11 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   // Stacked rows whose fluids have no pipe rows rarely route; those come after.
   const stuck = ({ variant, core }) => (variant.rowLength < m && !variant.pipes.length
     && core.ports.some(p => p.tiles.some(([, , d]) => d === N || d === S)) ? 1 : 0);
+  // Connections above or below with no pipe rows get theirs once routed: a row per fluid.
+  const routed = ({ variant, core }) => (variant.pipes.length || !core.ports.some(p => p.tiles.some(([, , d]) => d === N || d === S))
+    ? areaOf(core) : core.w * (core.h + links.fluids.length));
   found.splice(0, found.length, ...mirrorsThatHelp(found));
-  found.sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || areaOf(a.core) - areaOf(b.core));
+  found.sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || routed(a) - routed(b));
   let failure = null;
   for (const { variant, core } of found.slice(0, 8)) {
     for (const margin of margins(core, variant)) {
@@ -685,8 +695,8 @@ const areaOf = core => core.w * core.h;
 
 // The plainest variants first (one row, nearest belt rows, belts split between the faces, rows
 // as long as the busiest belt allows, pairs of rows facing a shared belt), then random draws.
-// room: in a City Block, how wide it is inside its Buffer.
-function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, lengths = []) {
+// room: in a City Block, how wide it is inside its Buffer. lean: every second row shifted a column at most.
+function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, lengths = [], lean = false) {
   const rotations = rotationsFor(shape, links);
   // Rows as long as asked (a part of a Sub-Block in Bands: as many as its gap takes) first.
   for (const rowLength of lengths) {
@@ -722,7 +732,7 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
       if (cap >= sb.count || (merge && cap === shape.rowCap)) continue;
       for (const middle of [4, 5, 6]) {
         for (const pipes of links.fluids.length ? [false, true] : [false]) {
-          for (const shift of pipes ? [0, -1, 1, -2, 2, -3, 3, -4, 4] : [0]) {
+          for (const shift of pipes ? [0, -1, 1, -2, 2, -3, 3, -4, 4].slice(0, lean ? 3 : 9) : [0]) {
             yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng);
             yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true }, rng);
           }
@@ -1119,7 +1129,8 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
   // How row r stands: every second one turned half round (flip), and mirrored back (between).
   const standing = r => ({ building: oriented(shape.building, mirror !== (!!between && r % 2 === 1)), rotation: flip && r % 2 ? (rotation + 8) % 16 : rotation });
   if (between) {
-    if (rows < 2 || !flip || !pipes) return null;
+    // (One row only inside: its pipe rows either side of its belts, below it.)
+    if ((rows < 2 && between !== 'inside') || !flip || !pipes) return null;
     const { building, rotation: r0 } = standing(0);
     if (![...fluidSides(sb, building, shape.links.fluids, r0).values()].every(side => side === 'bottom')) return null;
   }
@@ -1257,8 +1268,9 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
         if (pipeRows.some(p => p.routeId === routeId && p.band === band)) continue;
         // Outside the stack a pipe row goes beyond the rows inserters reach; between rows, nearest
         // the connections on a band row no shared belt could use.
-        const outer = band === 0 || band === rows;
-        const h = bandHeight(band);
+        const alone = !!between && rows === 1;
+        const outer = (band === 0 || band === rows) && !alone;
+        const h = alone ? height ?? shape.links.fluids.length + 1 : bandHeight(band);
         // (Between, inside: from either end of the band in turn, nearest the machines.)
         const ends = [...Array(h).keys()].map(j => (j % 2 ? h - (j - 1) / 2 : 1 + j / 2));
         const fromPorts = outer ? [5, 7, 6, 8] : between === 'inside' ? ends : side === 'bottom' ? [...Array(h).keys()].map(j => j + 1) : [...Array(h).keys()].map(j => h - j);
@@ -1273,6 +1285,8 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
       }
     }
   }
+  // Between, one row's belts lie between its pipe rows.
+  if (between && rows === 1) for (const w of wanted) w.band = rows;
   // Shared belts first: they have the fewest rows to choose from.
   const placed = [];
   const order = (plain ? wanted : shuffle(wanted, rng)).sort((a, b) => b.serves.length - a.serves.length);

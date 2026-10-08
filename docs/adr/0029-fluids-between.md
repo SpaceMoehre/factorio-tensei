@@ -34,5 +34,15 @@ Py moss:
 | 250/min | 58 | 63 × 63 | 58 × 45 |
 | 600/min | 138 (Copies) | 93 × 94 | 92 × 71 |
 
+## Filling a City Block
+
+Maximized in a 116 × 116 City Block (Buffer 1), Py moss came out 940.8/min: seven copies of two rows of 14 farms, 84 of the 114 columns, a strip of 9 rows left below. Three things held it back:
+
+- **Rows as long as fit.** A stack of copies in a City Block was tried in rows as long as its width less 12 columns and 4 per belt that may snake through it, 28 columns in all. Copies of Fluids Between need only a column and a lane each side for the one belt snaking through, a trunk per fluid and the module's margins: 18. They are now also tried in rows that long (`snug`): 16 farms, 96 columns.
+- **One row Fluids Between.** The module of the machines left over is a single row. Its connections on one face had no pipe rows of their own: once routed, its pipes took a row each below the belt, 10 rows. Now one row may stand inside too: its pipe rows either side of its belt, below it, 9 rows: seven copies of 15 and the last row fill 114. A module's cores are ranked by the rows their connections' pipes will take once routed, not the core alone.
+- **Tries out of time.** Designing a Sub-Block of 86 farms built 1,750 cores of the whole module (each about 3 ms), though past 40 machines copies go first and a whole module seldom routes: the first try ran out of its 10 seconds and Maximize took it for want of room, stopping at 86 farms. In a City Block such a Sub-Block's whole module now takes only its structured variants, every second row shifted a column at most (a try takes 1 to 4 s); a try that runs out of time bounds the next only as one that starves does.
+
+Py moss, Maximize in 116 × 116: 1152/min, 240 farms in 114 × 114, found in 34 s (was 940.8/min, 196 in 114 × 105).
+
 Still:
 - A fluid reaches each pair's pipe band through a riser beside the stack, not by a stub of its own at the west edge.

@@ -225,7 +225,7 @@ A row of a Band kept for one fluid's pipe, joining every connection of that flui
 _Avoid_: pipe lane (a Lane is one side of a belt)
 
 **Fluids Between**:
-Two rows of machines facing each other across a Band of their fluids' Pipe Rows, the second row the first's mirror image (turned half round and Mirrored), so each fluid's connections meet column for column. Their belts lie outside the pair (one Pipe Row per fluid, side by side), or between the Pipe Rows nearest the machines on either side. Pairs stack, the Band between two of them only as tall as their shared belts (none: they stand against each other). Routed with no margin first: each fluid comes in straight along its row.
+Two rows of machines facing each other across a Band of their fluids' Pipe Rows, the second row the first's mirror image (turned half round and Mirrored), so each fluid's connections meet column for column. Their belts lie outside the pair (one Pipe Row per fluid, side by side), or between the Pipe Rows nearest the machines on either side. Pairs stack, the Band between two of them only as tall as their shared belts (none: they stand against each other). One row may stand so too, its Pipe Rows either side of its belts. Routed with no margin first: each fluid comes in straight along its row.
 _Avoid_: sandwich, back to back
 
 **Service Row**:

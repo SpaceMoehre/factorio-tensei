@@ -7,6 +7,8 @@ import { coreLinks } from '../js/routes.js';
 import { buildCore } from '../js/layout/core.js';
 import { logistics as base } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
+import { planner, attempt } from '../js/maximize.js';
+import { siteOf } from '../js/city.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
@@ -58,4 +60,18 @@ test('Fluids Between, outside: pipe rows of two fluids side by side route, the b
     assert.equal(port.tiles.length, 8);
   }
   assert.throws(() => buildCore(sb, shipped.buildings[sb.building], links, { ...variant, interleave: false }, ctx.env), /touch/);
+});
+
+// Maximized in a 116 x 116 City Block: copies of two rows of 16 farms facing their pipes (96 wide,
+// as many as fit beside one snaking belt and the fluids' trunks), seven of them and a row of 16
+// with its pipe rows either side of its belt below it (9 high): 240 farms in 114 x 114.
+test('Fluids Between in a City Block: 240 moss farms fill 116 x 116, the last row with its pipes either side of its belt', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 1);
+  const selections = { moss: moss(0)[0].selection };
+  const plan = planner([{ item: 'moss', rate: 900 }], shipped, logistics, { selections, site });
+  const { block } = attempt(plan, 240, { site, budgetMs: 60000 });
+  assert.ok(block, 'no layout');
+  assert.equal(block.entities.filter(e => e.kind === 'building').length, 240);
+  assert.ok(block.bounds.w <= 114 && block.bounds.h <= 114);
+  assertValid(block, shipped, logistics);
 });
