@@ -202,7 +202,12 @@ export function* search(entries, catalog, logistics, options = {}) {
       const chosen = perfect && starves(candidate) ? [null] : candidate.choice.map((c, i) => designFor(candidate, i));
       let ready = null;
       try {
-        if (chosen.every(Boolean) && !(perfect && chosen.some(d => d.trouble > 1e-6))) ready = prepare(ctx, chosen, candidate.columns);
+        if (chosen.every(Boolean) && !(perfect && chosen.some(d => d.trouble > 1e-6))) {
+          ready = prepare(ctx, chosen, candidate.columns);
+          // (The same with some producers' belts chained through their consumers: no byproduct
+          // sorted out after them, where its splitter finds no room.)
+          ready.chaining = chained => prepare({ ...ctx, chained }, chosen, candidate.columns);
+        }
       } catch (e) {
         // Designs whose belts cannot chain into each other.
         if (!(e instanceof RoutingError)) throw e;
@@ -255,24 +260,45 @@ export function* search(entries, catalog, logistics, options = {}) {
       if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
       // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
       const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => now() > deadline : null };
-      try {
-        composed = compose(ctx, work, positions, layout);
-      } catch (e) {
+      // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
+      // else without those across Sub-Blocks, else without splitters (a Recipe Loop's feedback
+      // by train) — and the roomier one next.
+      const fallBack = e => {
         if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
-        // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
-        // else without those across Sub-Blocks, else without splitters (a Recipe Loop's feedback
-        // by train) — and the roomier one next.
         if (!(e instanceof RoutingError) || !(e.fans || e.across || work.routes.some(r => r.splitter || r.fan || r.taps))) throw e;
         const fallbacks = [...(e.fans ? [{ fansLast: true }] : []), ...(e.across ? [{ alone: true }] : [])];
         for (const fallback of fallbacks) {
           try {
-            composed = compose(ctx, work, positions, { ...layout, ...fallback });
-            break;
+            return compose(ctx, work, positions, { ...layout, ...fallback });
           } catch (again) {
             if (!(again instanceof RoutingError)) throw again;
           }
         }
-        composed ??= compose(ctx, work, positions, { ...layout, plain: true });
+        return compose(ctx, work, positions, { ...layout, plain: true });
+      };
+      try {
+        composed = compose(ctx, work, positions, layout);
+      } catch (first) {
+        // A byproduct's splitter after its producers that finds no way: their belt chained through
+        // the consumers instead, route by route.
+        let e = first;
+        const chained = new Set();
+        while (e instanceof RoutingError && e.chain !== undefined && !chained.has(e.chain) && work === ready && ready.chaining) {
+          chained.add(e.chain);
+          const again = ready.chaining(new Set(chained));
+          const moved = placeBlocks(ctx, again, candidate);
+          if (moved.holes?.size) break;
+          try {
+            composed = compose(ctx, again, moved, layout);
+            [work, positions, e] = [again, moved, null];
+            placed = positions.bounds.w * positions.bounds.h;
+            boxes = positions.boxes;
+          } catch (next) {
+            if (!(next instanceof RoutingError)) throw next;
+            e = next;
+          }
+        }
+        if (e) composed = fallBack(first);
       }
       block = finishBlock(composed, catalog, logistics);
     } catch (e) {
@@ -295,9 +321,13 @@ export function* search(entries, catalog, logistics, options = {}) {
     const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
     // A Recipe Loop's feedback by train (no room for its splitter) counts before Compactness.
     const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
+    // So does a byproduct riding on through its producers' consumers (no room to sort it out after
+    // them): it may fill their belt.
+    const unsorted = block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length
+      && r.items.some(i => !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item)))).length;
     // Then machines that put their products on a belt themselves (Output Drop) rather than
     // through inserters: the fewest inserters at them.
-    const score = [Math.round(starving * 1000) / 1000, loopsByTrain, supporting(block), compactness(block).value, block.entities.length];
+    const score = [Math.round(starving * 1000) / 1000, loopsByTrain, unsorted, supporting(block), compactness(block).value, block.entities.length];
     if (perfect && score[0] > 0) {
       solidly();
       failure = new Error(`the layout starves ${score[0]}/min`);

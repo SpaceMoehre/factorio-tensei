@@ -31,6 +31,15 @@ export function buildCatalog(raw) {
         effectivity: b.energy_source.effectivity ?? 1,
         fuelCategories: fuelCategories(b.energy_source),
       }),
+      // Liquid Fuel: a machine burning a fluid (Py's glassworks and smelters) takes it through a
+      // box of its energy source, the last of its fluidBoxes (production 'fuel'); its filter, where
+      // it burns one fluid only. One heated by its fluid's temperature (burns_fluid false) burns
+      // none (heats).
+      ...(b.energy_source.type === 'fluid' && {
+        effectivity: b.energy_source.effectivity ?? 1,
+        ...(b.energy_source.burns_fluid ? {} : { heats: true }),
+        ...(b.energy_source.fluid_box.filter && { fuelFilter: b.energy_source.fluid_box.filter }),
+      }),
       // Modules: slots, which effects and categories fit, and the effect the machine has built in
       // (Py farms: -100% speed, so they run only on their plant and animal modules).
       ...(b.module_slots > 0 && {
@@ -41,16 +50,10 @@ export function buildCatalog(raw) {
         ...(b.effect_receiver?.speed_limits?.low !== undefined && { speedLow: b.effect_receiver.speed_limits.low }),
       }),
       ...(dropPoint(b) && { drop: dropPoint(b) }),
-      fluidBoxes: (b.fluid_boxes ?? []).map(fb => ({
-        production: fb.production_type,
-        ...(fb.filter && { filter: fb.filter }),
-        connections: fb.pipe_connections
-          .filter(c => !c.connection_type || c.connection_type === 'normal')
-          .map(c => {
-            const [x, y] = c.position ?? c.positions[0];
-            return { x, y, direction: c.direction };
-          }),
-      })),
+      fluidBoxes: [
+        ...(b.fluid_boxes ?? []).map(fb => fluidBox(fb, fb.production_type)),
+        ...(b.energy_source.type === 'fluid' ? [fluidBox(b.energy_source.fluid_box, 'fuel')] : []),
+      ],
     };
   }
   const poles = {};
@@ -92,12 +95,17 @@ export function buildCatalog(raw) {
     };
   }
   const fuels = {};
-  for (const type of ITEM_TYPES) {
+  for (const type of ITEM_TYPES.filter(t => t !== 'fluid')) {
     for (const p of Object.values(raw[type] ?? {})) {
-      if (p.fuel_value) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
+      if (p.fuel_value && energy(p.fuel_value) > 0) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
     }
   }
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), footprints: footprints(raw) };
+  // Liquid Fuels: fluids with a fuel value, burnt per unit.
+  const fluidFuels = {};
+  for (const p of Object.values(raw.fluid ?? {})) {
+    if (!p.hidden && p.fuel_value && energy(p.fuel_value) > 0) fluidFuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value) };
+  }
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), footprints: footprints(raw) };
 }
 
 // The virtual signals an Inserter Clock may take, in the game's order (by subgroup, then their
@@ -124,6 +132,22 @@ function footprints(raw) {
     }
   }
   return out;
+}
+
+// A fluid box: its production type, filter and the connections pipes meet (their tiles' offsets
+// from the centre facing north, the way they face, and `through` where fluid flows both ways
+// there: two machines whose such connections face each other join without a pipe).
+function fluidBox(fb, production) {
+  return {
+    production,
+    ...(fb.filter && { filter: fb.filter }),
+    connections: fb.pipe_connections
+      .filter(c => !c.connection_type || c.connection_type === 'normal')
+      .map(c => {
+        const [x, y] = c.position ?? c.positions[0];
+        return { x, y, direction: c.direction, ...((c.flow_direction ?? 'input-output') === 'input-output' && { through: true }) };
+      }),
+  };
 }
 
 // Where a machine puts its products itself (Output Drop: vector_to_place_result, Py's soil

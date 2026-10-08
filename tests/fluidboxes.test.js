@@ -60,9 +60,10 @@ test('the shipped catalog: every fluid of a recipe reaches its building through 
 });
 
 // The tile a connection's pipe stands on, for a machine turned `direction` (a quarter turn
-// clockwise maps (x, y) to (-y, x)).
+// clockwise maps (x, y) to (-y, x)), mirrored first where it is (east to west).
 const VEC = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
-function connectionTile(m, c) {
+function connectionTile(m, connection) {
+  const c = m.mirror ? { ...connection, x: -connection.x, direction: (16 - connection.direction) % 16 } : connection;
   let [x, y] = [c.x, c.y];
   for (let r = 0; r < m.direction; r += 4) [x, y] = [-y, x];
   const [dx, dy] = VEC[(c.direction + m.direction) % 16];

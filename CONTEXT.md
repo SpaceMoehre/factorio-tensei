@@ -29,12 +29,21 @@ The number of assembler buildings a Sub-Block needs to meet its Goal's target ra
 _Avoid_: assembler count as a user input (it's derived, not entered)
 
 **Byproduct**:
-An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow.
+An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow. Where it shares a belt with an item consumers take, a filter splitter right after its producers sorts it out on to the east edge (Splitter).
 _Avoid_: treating byproducts as satisfying other Goals automatically
 
 **Fuel**:
-The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric.
+The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item.
 _Avoid_: fuel for inserters (burner inserters are never used)
+
+**Liquid Fuel**:
+The fluid a machine burning one burns (Py's glassworks and smelters): one more fluid input of its Sub-Block, at the rate its power draw requires, by train on a pipe of its own into its energy source's box. The user's choice, unless the machine burns one fluid only; chosen only where a machine of the chain burns a fluid.
+
+**Joined Through**:
+Machines of a row standing against each other whose box for a fluid has connections on their west and east sides that let it through both ways: their boxes join without a pipe, and the row takes the fluid by one connection, east of its last machine.
+
+**Mirrored**:
+A machine standing mirrored (Factorio 2.0): its fluid connections and drop point flipped east to west before it turns. Tried where that puts them where no rotation does.
 
 **Modules**:
 The modules a step's buildings hold — speed, productivity and efficiency modules, and for Py farms the plants and animals that make them work. Chosen per step of the Production Chain; they set its Count and power draw, and the blueprint asks for them in every one of its machines.
@@ -169,7 +178,7 @@ Two belts of one Internal Path that bring their consumers too little and too muc
 _Avoid_: merging parts on one belt (a part's belt carries one run of producers)
 
 **Splitter**:
-Two belts of one Internal Path side by side through a splitter between the producers and the consumers, lane to lane: 2 to 2, each consumer run gets what it takes from both belts' supply, so a belt of three producers' parts and a belt of one no longer starve the run fed by the one (paired greedily, the belt short the most with the partner that makes the Path Flow deliver the most); 2 to 1, a second producers' belt ends in it and both carry on as one; 1 to 2, one producers' belt feeds two consumer runs, shared by what each takes. Where no splitter fits, the belts go straight on. A splitter right after a Part's producers filters off a byproduct (an item none of its consumers takes, Py's empty barrels): that item goes out of its priority side on to the east edge, the rest on to the consumers.
+Two belts of one Internal Path side by side through a splitter between the producers and the consumers, lane to lane: 2 to 2, each consumer run gets what it takes from both belts' supply, so a belt of three producers' parts and a belt of one no longer starve the run fed by the one (paired greedily, the belt short the most with the partner that makes the Path Flow deliver the most); 2 to 1, a second producers' belt ends in it and both carry on as one; 1 to 2, one producers' belt feeds two consumer runs, shared by what each takes. Where no splitter fits, the belts go straight on. A splitter right after a Sub-Block's producers (or a Part's) filters off a byproduct (an item none of its consumers takes: Py's empty barrels, the stone from quartz crushers): that item goes out of its priority side on to the east edge, the rest on to the consumers.
 _Avoid_: balancer (only pairs are joined)
 
 **Fan-out**:

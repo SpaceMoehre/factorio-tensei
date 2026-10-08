@@ -22,6 +22,8 @@ export async function encodeBlueprint(block, catalog, city = null, { circuit = '
   const entities = [...block.entities, ...markers(block)].map((e, i) => {
     const out = { entity_number: kept.length + i + 1, name: e.name, position: { x: e.x + e.w / 2, y: e.y + e.h / 2 } };
     if (e.direction) out.direction = e.direction;
+    // A mirrored machine (Factorio 2.0): its fluid connections flipped east to west.
+    if (e.mirror) out.mirror = true;
     if (e.recipe) out.recipe = e.recipe;
     const modules = e.kind === 'building' ? block.subBlocks[e.subBlock]?.modules ?? [] : [];
     if (modules.length) out.items = moduleRequests(modules);

@@ -9,10 +9,19 @@
 // Returns { inputs: { [fluid]: [box] }, outputs: { [fluid]: [box] } }, a box being its index in
 // building.fluidBoxes, or null where the building cannot take the recipe's fluids: too few boxes,
 // or one filtered for another fluid.
-export function assignFluidBoxes(recipe, building) {
+// A machine burning a Liquid Fuel (fuel, its name) takes it through its energy source's box
+// (production 'fuel'), apart from the recipe's fluids; one taking that fluid in the recipe too
+// cannot.
+export function assignFluidBoxes(recipe, building, fuel = null) {
   const inputs = assign(recipe.ingredients, building, ['input', 'input-output']);
   const outputs = assign(recipe.products, building, ['output', 'input-output']);
-  return inputs && outputs ? { inputs, outputs } : null;
+  if (!inputs || !outputs) return null;
+  const box = building.fluidBoxes.findIndex(b => b.production === 'fuel');
+  if (fuel && box >= 0) {
+    if (inputs[fuel] || outputs[fuel]) return null;
+    inputs[fuel] = [box];
+  }
+  return { inputs, outputs };
 }
 
 function assign(flows, building, types) {

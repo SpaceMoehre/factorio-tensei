@@ -1,7 +1,10 @@
 import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import { planSubBlocks } from '../js/plan.js';
 import { catalog } from './fixtures/catalog.js';
+
+const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 
 test('Count covers the Goal rate: 300 electronic-circuit/min in assembling-machine-2 needs 4 machines', () => {
   const [sb] = planSubBlocks([{
@@ -75,6 +78,21 @@ test('Fuel must suit the burner: a furnace cannot burn a nuclear fuel cell', () 
   assert.throws(() => planSubBlocks([{
     goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' },
   }], catalog, { fuel: 'nuclear-fuel-cell' }), /stone-furnace burns chemical fuel, not nuclear-fuel-cell/);
+});
+
+// Py's glassworks: 10MW at effectivity 1 on natural gas of 90kJ burns 10e6 / 90e3 = 111.1 units/s
+// while busy. Flasks take 3s for 2: 40/min keeps exactly one busy, 6666.7 gas/min.
+test('Liquid Fuel: a machine burning a fluid takes it as a fluid input into its fuel box', () => {
+  const [sb] = planSubBlocks([{
+    goal: { item: 'flask', rate: 40 }, selection: { recipe: 'flask', building: 'glassworks-mk01' },
+  }], shipped, { fuel: 'coal', liquidFuel: 'natural-gas' });
+  const gas = sb.inputs.find(i => i.name === 'natural-gas');
+  assert.equal(sb.count, 1);
+  assert.equal(gas.type, 'fluid');
+  assert.ok(Math.abs(gas.rate - 1e7 / 9e4 * 60) < 1e-6, `natural gas at ${gas.rate}/min`);
+  assert.deepEqual(sb.boxes.inputs['natural-gas'], [shipped.buildings['glassworks-mk01'].fluidBoxes.findIndex(b => b.production === 'fuel')]);
+  assert.ok(!sb.inputs.some(i => i.name === 'coal'));
+  assert.throws(() => planSubBlocks([{ goal: { item: 'flask', rate: 40 }, selection: { recipe: 'flask', building: 'glassworks-mk01' } }], shipped, {}), /glassworks-mk01 burns a fluid; choose a Liquid Fuel/);
 });
 
 test('electric machines take no Fuel', () => {

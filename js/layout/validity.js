@@ -344,18 +344,25 @@ function tunnelPartner(at, a, reach) {
 }
 
 // The tiles where a pipe meets a machine's connections for a fluid: those of every box the
-// fluid takes.
-function portTiles(machine, catalog, fluid, role) {
+// fluid takes (its Sub-Block's, a Liquid Fuel's too).
+function portTiles(machine, catalog, fluid, role, block) {
   const building = catalog.buildings[machine.name];
-  const boxes = assignFluidBoxes(catalog.recipes[machine.recipe], building)[role === 'input' ? 'inputs' : 'outputs'][fluid];
+  const all = block?.subBlocks?.[machine.subBlock]?.boxes ?? assignFluidBoxes(catalog.recipes[machine.recipe], building);
+  const boxes = all[role === 'input' ? 'inputs' : 'outputs'][fluid] ?? [];
   // Rotating clockwise by a quarter turn maps (x, y) to (-y, x).
   const rotate = ({ x, y }, turns) => (turns === 0 ? [x, y] : rotate({ x: -y, y: x }, turns - 1));
   const cx = machine.x + machine.w / 2, cy = machine.y + machine.h / 2;
-  return boxes.flatMap(b => building.fluidBoxes[b].connections).map(c => {
+  // (A mirrored machine's connections flipped east to west before it turns.)
+  const flipped = c => (machine.mirror ? { ...c, x: -c.x, direction: (16 - c.direction) % 16 } : c);
+  return boxes.flatMap(b => building.fluidBoxes[b].connections).map(flipped).map(c => {
     const [rx, ry] = rotate(c, machine.direction / 4);
     const dir = (c.direction + machine.direction) % 16;
     const [dx, dy] = DIR[dir];
-    return { tile: key(Math.floor(cx + rx + dx), Math.floor(cy + ry + dy)), towardBuilding: OPPOSITE[dir] };
+    // (from: the machine's own tile the connection lies on.)
+    return {
+      tile: key(Math.floor(cx + rx + dx), Math.floor(cy + ry + dy)), towardBuilding: OPPOSITE[dir],
+      from: key(Math.floor(cx + rx), Math.floor(cy + ry)), through: !!c.through,
+    };
   });
 }
 
@@ -377,12 +384,20 @@ export function pipeNetwork(block, route, catalog, logistics, machines) {
     if (!partner || partner.route !== p.route) problems.push(`pipe-to-ground at ${p.x},${p.y} has no partner of its own within ${reach} tiles`);
   }
   const producer = typeof route.source === 'number' ? block.subBlocks[route.source].recipe : null;
-  for (const m of machines) {
-    const role = m.recipe === producer ? 'output' : 'input';
-    if (!portTiles(m, catalog, route.fluid, role).some(({ tile, towardBuilding }) => own.has(tile) && connectsToward(own.get(tile), towardBuilding))) {
-      problems.push(`${route.fluid} does not reach ${m.name} at ${m.x},${m.y}`);
+  // A machine is reached by a pipe at one of its connections, or through a neighbour's: two
+  // connections letting fluid both ways (through) facing each other join their machines' boxes.
+  const ports = new Map(machines.map(m => [m, portTiles(m, catalog, route.fluid, m.recipe === producer ? 'output' : 'input', block)]));
+  const reached = new Set(machines.filter(m => ports.get(m).some(({ tile, towardBuilding }) => own.has(tile) && connectsToward(own.get(tile), towardBuilding))));
+  const joined = (a, b) => ports.get(a).some(p => p.through && ports.get(b).some(q => q.through && q.tile === p.from && p.tile === q.from));
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const m of machines) {
+      if (reached.has(m) || ![...reached].some(n => joined(m, n))) continue;
+      reached.add(m);
+      grew = true;
     }
   }
+  for (const m of machines.filter(m => !reached.has(m))) problems.push(`${route.fluid} does not reach ${m.name} at ${m.x},${m.y}`);
   if (route.source === 'side-input' && !pieces.some(p => p.x === block.bounds.x)) problems.push(`${route.fluid} does not start at the west edge`);
   if (route.sink === 'side-output' && !pieces.some(p => p.x === block.bounds.x + block.bounds.w - 1)) problems.push(`${route.fluid} does not reach the east edge`);
   return problems;
@@ -405,7 +420,7 @@ export function noFluidMixing(block, catalog, logistics) {
       ...recipe.products.filter(p => p.type === 'fluid').map(f => [f, 'output']),
     ];
     for (const [f, role] of used) {
-      for (const { tile, towardBuilding } of portTiles(m, catalog, f.name, role)) {
+      for (const { tile, towardBuilding } of portTiles(m, catalog, f.name, role, block)) {
         const p = at.get(tile);
         if (p && connectsToward(p, towardBuilding) && p.fluid !== f.name) problems.push(`${p.fluid} plugged into ${f.name} connection of ${m.name}`);
       }

@@ -253,6 +253,47 @@ test('energy: machine power draw in watts, burner effectivity and fuel categorie
   });
 });
 
+// Py's glassworks burns a fluid: its energy source's box joins its fluid boxes as the last
+// (production 'fuel'), its connections either side letting fluid through both ways. Fluids with
+// a fuel value are Liquid Fuels, apart from the Fuel items.
+test('Liquid Fuel: a machine burning a fluid takes it through a fuel box; fluids with a fuel value', () => {
+  const catalog = buildCatalog(dataRaw({
+    'assembling-machine': {
+      'glassworks-mk01': {
+        name: 'glassworks-mk01', collision_box: [[-3.3, -3.3], [3.3, 3.3]], crafting_speed: 1, crafting_categories: ['glassworks'],
+        energy_usage: '10MW',
+        energy_source: {
+          type: 'fluid', burns_fluid: true, effectivity: 1,
+          fluid_box: { production_type: 'input', pipe_connections: [
+            { flow_direction: 'input-output', position: [3, 0], direction: 4 },
+            { flow_direction: 'input-output', position: [-3, 0], direction: 12 },
+          ] },
+        },
+        fluid_boxes: [{ production_type: 'input', pipe_connections: [{ flow_direction: 'input', position: [1, -3], direction: 0 }] }],
+      },
+      'compost-plant': {
+        name: 'compost-plant', collision_box: [[-3.3, -3.3], [3.3, 3.3]], crafting_speed: 1, crafting_categories: ['compost'],
+        energy_usage: '1MW',
+        energy_source: { type: 'fluid', burns_fluid: false, fluid_box: { filter: 'sweet-syrup', pipe_connections: [{ position: [0, -3], direction: 0 }] } },
+      },
+    },
+    fluid: {
+      'natural-gas': { name: 'natural-gas', fuel_value: '90kJ' },
+      water: { name: 'water' },
+    },
+    item: { coal: { name: 'coal', fuel_value: '4MJ', fuel_category: 'chemical' } },
+  }));
+  const glassworks = catalog.buildings['glassworks-mk01'];
+  assert.deepEqual([glassworks.energy, glassworks.energyUsage, glassworks.effectivity], ['fluid', 10e6, 1]);
+  assert.deepEqual(glassworks.fluidBoxes, [
+    { production: 'input', connections: [{ x: 1, y: -3, direction: 0 }] },
+    { production: 'fuel', connections: [{ x: 3, y: 0, direction: 4, through: true }, { x: -3, y: 0, direction: 12, through: true }] },
+  ]);
+  assert.deepEqual([catalog.buildings['compost-plant'].heats, catalog.buildings['compost-plant'].fuelFilter], [true, 'sweet-syrup']);
+  assert.deepEqual(catalog.fluidFuels, { 'natural-gas': { name: 'natural-gas', fuelValue: 90000 } });
+  assert.deepEqual(Object.keys(catalog.fuels), ['coal']);
+});
+
 test('plain pipes: every pipe type, so the pipe can be chosen like its pipe-to-ground', () => {
   const catalog = buildCatalog(dataRaw({
     pipe: { pipe: { name: 'pipe' }, 'niobium-pipe': { name: 'niobium-pipe' }, 'hidden-pipe': { name: 'hidden-pipe', hidden: true } },

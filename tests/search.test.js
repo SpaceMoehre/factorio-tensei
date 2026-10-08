@@ -341,7 +341,7 @@ test('Spread: a wide buffer first, then tighter; every layout valid', () => {
   assert.ok(found.length, 'a layout');
   assert.equal(found[0].tried, 1, 'the first, widest, routes');
   for (const { block } of found) assertValid(block, pyCatalog, hands);
-  assert.ok(found.at(-1).score[3] <= found[0].score[3]);
+  assert.ok(found.at(-1).score[4] <= found[0].score[4]);
 });
 
 // Placement stands a Sub-Block where the search asks (`at`, its box's corner, where `boxes` says

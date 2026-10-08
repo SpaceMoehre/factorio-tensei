@@ -10,7 +10,7 @@ import { planner } from './maximize.js';
 import { compactness, SQUARE, BEND } from './layout/score.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
-const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel'];
+const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel', 'liquidFuel'];
 // Virtual signals a clock may take: the catalog's (every one the game has), else the letters,
 // digits, colours and a few symbols of Factorio 2.0. Without an icon, a letter, digit or colour
 // is drawn as a glyph or a swatch.
@@ -43,6 +43,8 @@ const choices = {
   // plain pipes were recorded).
   pipe: Object.keys(catalog.pipes).filter(name => !catalog.plainPipes || catalog.plainPipes.includes(plainOf(name))),
   inserter: inserterNames(1), longInserter: inserterNames(2), fuel: Object.keys(catalog.fuels).sort(),
+  // Liquid Fuels (a catalog built before them has none).
+  liquidFuel: Object.keys(catalog.fluidFuels ?? {}).sort(),
 };
 const state = load() ?? { goals: [], logistics: {} };
 state.logistics = { ...defaultLogistics(), ...state.logistics };
@@ -190,6 +192,7 @@ function defaultLogistics() {
     inserter: prefer(choices.inserter, 'fast-inserter'),
     longInserter: prefer(choices.longInserter, 'long-handed-inserter'),
     fuel: prefer(choices.fuel, 'coal'),
+    liquidFuel: prefer(choices.liquidFuel, choices.liquidFuel.includes('natural-gas') ? 'natural-gas' : 'petroleum-gas'),
     rightAngle: true,
     handSize: 1,
     budget: 10,
@@ -234,7 +237,22 @@ function renderChain() {
   } finally {
     drawing = false;
   }
+  showFuels();
   renderForetell();
+}
+
+// Fuel and Liquid Fuel show only where a machine of the chain burns one: an item (a burner), or a
+// fluid of the user's choice (one whose energy source takes any).
+function showFuels() {
+  const buildings = chain?.entries?.map(({ selection }) => catalog.buildings[selection.building]).filter(Boolean) ?? [];
+  const burns = {
+    fuel: buildings.some(b => b.energy === 'burner'),
+    liquidFuel: buildings.some(b => b.energy === 'fluid' && !b.fuelFilter && !b.heats),
+  };
+  for (const [id, shown] of Object.entries(burns)) {
+    $(id).hidden = !shown;
+    /** @type {HTMLElement} */ (document.querySelector(`label[for="${id}"]`)).hidden = !shown;
+  }
 }
 
 function drawChain() {

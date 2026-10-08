@@ -3,7 +3,7 @@
 import { planSubBlocks } from './plan.js';
 import { buildFlows } from './flows.js';
 import { buildRoutes, coreLinks } from './routes.js';
-import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides, dropOf } from './layout/core.js';
+import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides, dropOf, oriented, orientationKey } from './layout/core.js';
 import { N, S } from './layout/grid.js';
 import { routeModule, RoutingError, PowerError } from './layout/module.js';
 import { maxFlow } from './layout/compose.js';
@@ -125,7 +125,7 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     const sides = ({ variant }) => variant.sides?.length ?? 0;
     // Machines that drop their products themselves (Output Drop) rather than through inserters
     // come first, starving no more: the fewest output inserters at them.
-    const ranked = [...cores.values()].sort((a, b) => stuck(a) - stuck(b) || trouble(a.core) - trouble(b.core)
+    const ranked = mirrorsThatHelp([...cores.values()]).sort((a, b) => stuck(a) - stuck(b) || trouble(a.core) - trouble(b.core)
       || a.core.supporting - b.core.supporting || areaOf(a.core) - areaOf(b.core) || sides(a) - sides(b));
     // The best of each kind first (row length, pipe rows, merged belts, side belts, Two-Way
     // Output), so a bigger
@@ -421,33 +421,33 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
     }
   };
   // Output Drop: each row onto a belt of its own, or two rows onto one between them.
-  for (const rotation of dropRotations(shape)) {
+  for (const { rotation, mirror } of dropRotations(shape)) {
     for (const middle of n < m ? [1, 4, 5, 6] : [4]) {
       for (const pipes of links.fluids.length ? [true, false] : [false]) {
-        for (const gap of [0, 1]) attempt(stackVariant(shape, { rotation, rowLength: n, flip: true, plain: true, pipes, middle, drop: true, gap }, rng));
+        for (const gap of [0, 1]) attempt(stackVariant(shape, { rotation, mirror, rowLength: n, flip: true, plain: true, pipes, middle, drop: true, gap }, rng));
       }
     }
   }
   if (wants) {
     // Two-Way Copies: half rows on belts of their own or shared, straight on or the output's
     // bands first.
-    for (const rotation of rotationsFor(shape, links)) {
+    for (const { rotation, mirror } of rotationsFor(shape, links)) {
       for (const middle of n < m ? [4, 5, 6] : [4]) {
         for (const pipes of links.fluids.length ? [true, false] : [false]) {
           for (const gap of [0, 1]) {
             for (const dual of /** @type {const} */ ([true, 'shared'])) {
-              for (const outputFirst of [false, true]) attempt(stackVariant(shape, { rotation, rowLength: n, flip: true, plain: true, pipes, middle, dual, outputFirst, gap }, rng));
+              for (const outputFirst of [false, true]) attempt(stackVariant(shape, { rotation, mirror, rowLength: n, flip: true, plain: true, pipes, middle, dual, outputFirst, gap }, rng));
             }
           }
         }
       }
     }
   }
-  for (const rotation of rotationsFor(shape, links)) {
+  for (const { rotation, mirror } of rotationsFor(shape, links)) {
     for (const merge of [false, true]) {
       for (const middle of n < m ? [4, 5, 6] : [4]) {
         for (const [pipes, dual] of (links.fluids.length ? [true, false] : [false]).flatMap(p => [[p, false], ...(merge || !twoWayLengths(shape, sb).length ? [] : [[p, true]])])) {
-          attempt(stackVariant(shape, { rotation, rowLength: n, flip: true, plain: true, pipes, merge, middle, dual }, rng));
+          attempt(stackVariant(shape, { rotation, mirror, rowLength: n, flip: true, plain: true, pipes, merge, middle, dual }, rng));
         }
       }
     }
@@ -458,6 +458,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   // Stacked rows whose fluids have no pipe rows rarely route; those come after.
   const stuck = ({ variant, core }) => (variant.rowLength < m && !variant.pipes.length
     && core.ports.some(p => p.tiles.some(([, , d]) => d === N || d === S)) ? 1 : 0);
+  found.splice(0, found.length, ...mirrorsThatHelp(found));
   found.sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || areaOf(a.core) - areaOf(b.core));
   let failure = null;
   for (const { variant, core } of found.slice(0, 8)) {
@@ -674,9 +675,9 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
   const rotations = rotationsFor(shape, links);
   // Rows as long as asked (a part of a Sub-Block in Bands: as many as its gap takes) first.
   for (const rowLength of lengths) {
-    for (const rotation of rotations) {
+    for (const { rotation, mirror } of rotations) {
       for (const middle of [4, 5, 6]) {
-        for (const pipes of links.fluids.length ? [false, true] : [false]) yield stackVariant(shape, { rotation, rowLength, flip: true, plain: true, pipes, middle }, rng);
+        for (const pipes of links.fluids.length ? [false, true] : [false]) yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes, middle }, rng);
       }
     }
   }
@@ -685,17 +686,17 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
   // the rest), each dropping onto a belt of its own or two onto one between them.
   const dropping = dropRotations(shape);
   const out = shape.belts.find(b => b.isOutput);
-  for (const rotation of dropping) {
+  for (const { rotation, mirror } of dropping) {
     const rowLength = Math.min(sb.count, Math.max(1, out.dropLane));
     for (const middle of [1, 4, 5, 6]) {
       for (const pipes of links.fluids.length ? [false, true] : [false]) {
         // Connections on the machines' sides need a gap between them.
-        for (const gap of [0, 1]) yield stackVariant(shape, { rotation, rowLength, flip: true, plain: true, pipes, middle, drop: true, gap }, rng);
+        for (const gap of [0, 1]) yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes, middle, drop: true, gap }, rng);
       }
     }
   }
-  for (const rotation of rotations) {
-    yield stackVariant(shape, { rotation, rowLength: sb.count, plain: true }, rng);
+  for (const { rotation, mirror } of rotations) {
+    yield stackVariant(shape, { rotation, mirror, rowLength: sb.count, plain: true }, rng);
     // Rows as long as the busiest belt allows, half that (pairs of rows facing a belt fill both
     // its lanes), as many as fill one output lane, and about square; in a City Block also as
     // long as its room is wide, less room for the links beside them.
@@ -707,8 +708,8 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
       for (const middle of [4, 5, 6]) {
         for (const pipes of links.fluids.length ? [false, true] : [false]) {
           for (const shift of pipes ? [0, -1, 1, -2, 2, -3, 3, -4, 4] : [0]) {
-            yield stackVariant(shape, { rotation, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng);
-            yield stackVariant(shape, { rotation, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true }, rng);
+            yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng);
+            yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true }, rng);
           }
         }
       }
@@ -716,12 +717,12 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
   }
   // Two-Way Output: each row drops onto the belts either side of it, so belts take half rows.
   for (const length of twoWayLengths(shape, sb)) {
-    for (const rotation of rotations) {
+    for (const { rotation, mirror } of rotations) {
       for (const middle of [4, 5, 6]) {
         for (const pipes of links.fluids.length ? [false, true] : [false]) {
           for (const gap of [0, 1]) {
             for (const dual of /** @type {const} */ ([true, 'shared'])) {
-              for (const outputFirst of [false, true]) yield stackVariant(shape, { rotation, rowLength: length, flip: true, plain: true, pipes, middle, dual, outputFirst, gap }, rng);
+              for (const outputFirst of [false, true]) yield stackVariant(shape, { rotation, mirror, rowLength: length, flip: true, plain: true, pipes, middle, dual, outputFirst, gap }, rng);
             }
           }
         }
@@ -735,7 +736,7 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
     const lengths = [sb.count, Math.ceil(sb.count / 2), cap, Math.max(1, cap - 1), Math.ceil(cap / 2), squareRow(shape, sb), 1 + Math.floor(rng() * sb.count)];
     const drop = dropping.length > 0 && rng() < 0.5;
     const variant = stackVariant(shape, {
-      rotation: choose(drop ? dropping : rotations, rng), rowLength: choose(drop ? [...lengths, Math.max(1, out.dropLane)] : lengths, rng), flip: rng() < 0.5,
+      ...choose(drop ? dropping : rotations, rng), rowLength: choose(drop ? [...lengths, Math.max(1, out.dropLane)] : lengths, rng), flip: rng() < 0.5,
       pipes: links.fluids.length > 0 && rng() < 0.5, merge, drop,
     }, rng);
     // Which connection each fluid uses, where its box has several.
@@ -762,19 +763,44 @@ function twoWayLengths(shape, sb) {
   return [...new Set(list.map(n => Math.min(n, most)))].filter(n => n >= 1 && Math.ceil(sb.count / n) >= rows);
 }
 
-// Machines without fluids look the same every half turn: two rotations do — but for an Output
-// Drop, which turns with them: the rotations that put it on a face the bands run along come too.
+// The ways a machine stands: { rotation, mirror }. Machines without fluids look the same every
+// half turn: two rotations do — but for an Output Drop, which turns with them: the rotations that
+// put it on a face the bands run along come too. Mirrored (Factorio 2.0), a machine's fluid
+// connections and drop point may lie where no rotation puts them: those ways come after.
 function rotationsFor(shape, links) {
-  if (links.fluids.length) return ROTATIONS;
   const { w, h } = shape.building.size;
-  return [...new Set([...(w === h ? [0] : [0, 4]), ...dropRotations(shape)])];
+  const plain = links.fluids.length ? ROTATIONS : [...new Set([...(w === h ? [0] : [0, 4]), ...dropRotations(shape).filter(o => !o.mirror).map(o => o.rotation)])];
+  return withMirrored(shape.building, plain, () => links.fluids.length > 0 || !!shape.building.drop);
 }
 
-// The rotations that put a machine's Output Drop on its top or bottom face, where belt rows run
-// past it (none without one, or without an item output).
+// The ways a machine stands that put its Output Drop on its top or bottom face, where belt rows
+// run past it (none without one, or without an item output).
 function dropRotations(shape) {
   if (!shape.belts.some(b => b.isOutput)) return [];
-  return ROTATIONS.filter(r => ['top', 'bottom'].includes(dropOf(shape.building, r)?.side));
+  const faces = (b, r) => ['top', 'bottom'].includes(dropOf(b, r)?.side);
+  return withMirrored(shape.building, ROTATIONS.filter(r => faces(shape.building, r)), faces);
+}
+
+// Mirrored cores only where they help: starving less or smaller than every unmirrored one that
+// starves no more (else they only crowd out the other kinds of design).
+function mirrorsThatHelp(list) {
+  const plain = list.filter(c => !c.variant.mirror);
+  return list.filter(c => !c.variant.mirror || !plain.some(u => trouble(u.core) <= trouble(c.core) + 1e-6 && areaOf(u.core) <= areaOf(c.core)));
+}
+
+// Rotations unmirrored, then mirrored where that puts the machine's connections and drop where
+// none of them does (and `ok`).
+function withMirrored(building, rotations, ok) {
+  const out = rotations.map(rotation => ({ rotation, mirror: false }));
+  const seen = new Set(ROTATIONS.map(r => orientationKey(building, r)));
+  const mirrored = oriented(building, true);
+  for (const rotation of ROTATIONS) {
+    const k = orientationKey(mirrored, rotation);
+    if (seen.has(k) || !ok(mirrored, rotation)) continue;
+    seen.add(k);
+    out.push({ rotation, mirror: true });
+  }
+  return out;
 }
 
 // The row length that makes a Sub-Block about square (rows stacked in pairs facing their belts),
@@ -839,9 +865,9 @@ function* sideVariants(shape, links, sb, rng, upTo = SIDES_UP_TO) {
     // An output left in the bands may drop onto both of them (Two-Way Output).
     const twoWay = rest.belts.some(b => b.isOutput) && twoWayLengths(shape, sb).includes(1);
     const flavors = twoWay ? [{ dual: true, deep: true }, { dual: true, deep: false }, { dual: false, deep: false }] : [{ dual: false, deep: false }];
-    for (const { rotation, dual, deep } of rotationsFor(shape, links).flatMap(rotation => flavors.map(f => ({ rotation, ...f })))) {
-      const base = rest.belts.length ? stackVariant(rest, { rotation, rowLength: 1, flip: true, plain: true, dual, deep }, rng) : {
-        rotation, rowLength: 1, flip: true, middle: rows > 1 ? 4 : 0, belts: [], pipes: [], shift: 0, gap: 0, columns: 'center', poleSlot: null,
+    for (const { rotation, mirror, dual, deep } of rotationsFor(shape, links).flatMap(o => flavors.map(f => ({ ...o, ...f })))) {
+      const base = rest.belts.length ? stackVariant(rest, { rotation, mirror, rowLength: 1, flip: true, plain: true, dual, deep }, rng) : {
+        rotation, ...(mirror ? { mirror } : {}), rowLength: 1, flip: true, middle: rows > 1 ? 4 : 0, belts: [], pipes: [], shift: 0, gap: 0, columns: 'center', poleSlot: null,
       };
       if (!base) continue;
       const parts = new Map();
@@ -1053,7 +1079,7 @@ function pairUp(belts) {
 // belt row per half row, or ('shared') one per band where a belt takes both rows' halves; with
 // `deep`, the half rows' belts lie two tiles out (straight inserters), clear of the inserter row.
 // With `drop`, every row's output belt runs past its machines' drop tiles (Output Drop).
-export function stackVariant(shape, { rotation, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null, drop = false }, rng) {
+export function stackVariant(shape, { rotation, mirror = false, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null, drop = false }, rng) {
   const { sb, depths } = shape;
   const belts = merge ? pairUp(shape.belts) : shape.belts;
   const rows = Math.ceil(sb.count / rowLength);
@@ -1124,7 +1150,7 @@ export function stackVariant(shape, { rotation, rowLength, flip = false, plain =
     if (!out) return null;
     const at = new Map();
     for (let r = 0; r < rows; r++) {
-      const d = dropOf(shape.building, flip && r % 2 ? (rotation + 8) % 16 : rotation);
+      const d = dropOf(oriented(shape.building, mirror), flip && r % 2 ? (rotation + 8) % 16 : rotation);
       if (d?.side !== 'top' && d?.side !== 'bottom') return null;
       const band = d.side === 'top' ? r : r + 1;
       const row = d.side === 'top' && r > 0 ? middle + 1 - d.depth : d.depth;
@@ -1170,7 +1196,7 @@ export function stackVariant(shape, { rotation, rowLength, flip = false, plain =
   const pipeRows = [];
   if (pipes) {
     for (let r = 0; r < rows; r++) {
-      const sides = fluidSides(sb, shape.building, shape.links.fluids, flip && r % 2 ? (rotation + 8) % 16 : rotation);
+      const sides = fluidSides(sb, oriented(shape.building, mirror), shape.links.fluids, flip && r % 2 ? (rotation + 8) % 16 : rotation);
       for (const [routeId, side] of sides) {
         if (side !== 'top' && side !== 'bottom') continue;
         const band = side === 'top' ? r : r + 1;
@@ -1211,7 +1237,7 @@ export function stackVariant(shape, { rotation, rowLength, flip = false, plain =
   const sideways = shift ?? (rows > 1 && !plain && rng() < 0.3 ? choose([-4, -3, -2, -1, 1, 2, 3, 4], rng) : 0);
   const gap = Math.max(Math.abs(sideways), wide ?? (plain || rng() < 0.6 ? 0 : 1 + Math.floor(rng() * 2)));
   return {
-    rotation, rowLength, ...(twoWayPath ? { counts } : {}), flip, middle, belts: [...dropped, ...placed], pipes: pipeRows, shift: sideways, gap,
+    rotation, ...(mirror ? { mirror } : {}), rowLength, ...(twoWayPath ? { counts } : {}), flip, middle, belts: [...dropped, ...placed], pipes: pipeRows, shift: sideways, gap,
     columns: plain ? 'center' : choose(['center', 'left', 'right'], rng),
     poleSlot: plain || rng() < 0.5 ? null : { band: Math.floor(rng() * (rows + 1)), row: 1 + Math.floor(rng() * 2) },
   };

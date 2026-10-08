@@ -1148,6 +1148,12 @@ function groupRoutes(ctx, instances, laneCapacity) {
       && producers.at(-1).part.canExit && exitSide(producers.at(-1)) === E
       && consumers.every(slot => slot.part.canEnter && entrySide(slot) === W)
       && deliver([{ producers, consumers }], false).total >= needOf([{ producers, consumers }]) - 1e-6;
+    // A byproduct sorted out after the producers: they chain as one run that leaves east, the
+    // consumers as one entered from the west.
+    const sorts = route => ctx.chained !== 'all' && !ctx.chained?.has(route.id) && byproductOf(route) !== null
+      && producers.length > 0 && producers.every((slot, k) => k === 0 || chainable(producers[k - 1], slot))
+      && producers.at(-1).part.canExit && exitSide(producers.at(-1)) === E
+      && consumers.every((slot, k) => k === 0 || chainable(consumers[k - 1], slot)) && consumers[0].part.canEnter && entrySide(consumers[0]) === W;
     let groups;
     if (!consumers.length) {
       // To the train: as few belts as the lanes allow, each a run of producers ending at one
@@ -1277,6 +1283,24 @@ function groupRoutes(ctx, instances, laneCapacity) {
         routes.push(member);
         return member.id;
       });
+      continue;
+    } else if (base.consumers.length && sorts(base)) {
+      // Where an item of it none of its consumers takes leaves on the train (a byproduct: the
+      // stone Py's quartz crushers make with the crushed quartz), a splitter right after the
+      // producers sorts it out (`filter`) on to the east edge, so it never fills the consumers'
+      // belt: the rest goes on as one belt through every consumer (fed from it: a Fan-out from the
+      // producers into one belt), on to the east edge too where some of it is left.
+      const trunk = beltRoute(routes.length, base, [base.id], base.items.map(i => ({ ...i, lane: 'out' })), producers, plan);
+      trunk.filter = byproductOf(base);
+      routes.push(trunk);
+      ctx.fannedOut = true;
+      const rest = base.items.filter(i => i.item !== trunk.filter);
+      const left = rest.some(i => i.rate > base.consumers.reduce((sum, c) => sum + flowOf(c, i.item, 'input'), 0) + 1e-6);
+      const member = beltRoute(routes.length, { ...base, sink: left ? 'side-output' : null }, [base.id], rest.map(i => ({ ...i, lane: 'out' })), consumers, plan);
+      member.servesRows[base.source] = [];
+      member.fedFrom = trunk.id;
+      routes.push(member);
+      trunk.fanOut = [member.id];
       continue;
     } else {
       // One belt through every producer and consumer.

@@ -1,7 +1,8 @@
 import { machineEffect, defaultModules } from './modules.js';
 import { assignFluidBoxes } from './fluidboxes.js';
 
-// logistics.fuel: the Fuel item burner machines burn.
+// logistics.fuel: the Fuel item burner machines burn; logistics.liquidFuel: the Liquid Fuel
+// machines burning a fluid burn (unless their energy source takes one fluid only).
 // An entry's byTrain: items it takes by train though a Sub-Block makes them (a Recipe Loop's).
 export function planSubBlocks(entries, catalog, logistics = {}) {
   const seen = new Set();
@@ -12,8 +13,9 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
     seen.add(goal.item);
     const recipe = catalog.recipes[selection.recipe];
     const building = catalog.buildings[selection.building];
-    const boxes = assignFluidBoxes(recipe, building);
-    if (!boxes) throw new Error(`${selection.building} cannot take the fluids of ${selection.recipe}`);
+    const liquid = building.energy === 'fluid' ? liquidFuelOf(building, catalog, logistics.liquidFuel) : null;
+    const boxes = assignFluidBoxes(recipe, building, liquid?.name);
+    if (!boxes) throw new Error(`${selection.building} cannot take the fluids of ${selection.recipe}${liquid ? ` and burn ${liquid.name}` : ''}`);
     // A selection that names no modules gets the step's default (a Py farm full of its first plant).
     const modules = selection.modules ?? defaultModules(catalog, selection.recipe, selection.building);
     const effect = machineEffect(catalog, selection.recipe, selection.building, modules);
@@ -31,6 +33,11 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       const rate = perMachine * goal.rate / perMachinePerMinute;
       if (fuel) fuel.rate += rate;
       else inputs.push({ name: logistics.fuel, type: 'item', rate });
+    }
+    if (liquid) {
+      // The same for a Liquid Fuel, per unit of fluid: a pipe of its own into every machine.
+      const perMachine = building.energyUsage / (liquid.fuelValue * building.effectivity) * 60 * effect.consumption;
+      inputs.push({ name: liquid.name, type: 'fluid', rate: perMachine * goal.rate / perMachinePerMinute, fuel: true });
     }
     const count = Math.max(Math.ceil(goal.rate / perMachinePerMinute), goal.machines ?? 0);
     return {
@@ -54,6 +61,16 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(goal.from ? { from: goal.from } : {}),
     };
   });
+}
+
+// The Liquid Fuel a machine burning a fluid burns: its energy source's own fluid, else the one
+// chosen.
+function liquidFuelOf(building, catalog, name) {
+  if (!catalog.fluidFuels) throw new Error('catalog is missing liquid fuel data — regenerate it');
+  if (building.heats) throw new Error(`${building.name} is heated by its fluid's temperature, which is not supported`);
+  const fuel = catalog.fluidFuels[building.fuelFilter ?? name];
+  if (!fuel) throw new Error(building.fuelFilter ? `${building.name} burns ${building.fuelFilter}, which has no fuel value` : `${building.name} burns a fluid; choose a Liquid Fuel`);
+  return fuel;
 }
 
 // A busy burner machine burns energy_usage / (fuel_value × effectivity) fuel items per second.
