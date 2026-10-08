@@ -84,6 +84,12 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v21: Fluids Between (implemented)
+Smaller Sub-Blocks of machines taking several fluids on one face (ADR 0029); where v21 differs from v20, v21 wins.
+- **Fluids Between:** two rows of machines face each other across a band of their fluids' pipe rows, the second row the first's mirror image, so each fluid's connections meet column for column. Their belts lie outside the pair (a pipe row per fluid side by side, each diving under the other's connections), or between the pipe rows nearest the machines. Routed with no margin first: the fluids come in straight along their rows, their stubs side by side at the west edge. Pairs stack, the band between two of them only as tall as their shared belts (none: they stand against each other), their pipe bands joined by risers beside the stack; repeated modules stand so too. Py moss: 24 × 15 at 35/min (was 28 × 21), 40 × 30 at 100/min (45 × 42), 92 × 71 at 600/min (93 × 94).
+- **Inserters beside another fluid's connection:** a pipe row dives under both; only beside its own fluid's connection does it keep the tiles free.
+- **Bridging poles inside:** of the shortest links between the poles' networks, one through spots inside the block wins over one through the strips north and south of it.
+
 ## v20: Liquid Fuel, machines joined through, mirrored machines, byproducts sorted out (implemented)
 Machines burning fluids, and smaller Sub-Blocks (ADR 0028); where v20 differs from v19, v20 wins.
 - **Liquid Fuel:** a machine burning a fluid (Py's glassworks, smelters) takes it as one more fluid input, at the rate its power draw needs, by train into its energy source's box: the Liquid Fuel chosen (natural gas by default), or the one fluid its energy source takes. The Fuel and Liquid Fuel settings show only where a machine of the chain burns one.
@@ -286,6 +292,7 @@ Measured with `scripts/measure.mjs` (300 sampled Pyanodons recipes at 2–4 mach
 - Belts snaking through the Copies of a stack turn beside it, each in a lane of its own, at most (min(belt reach, pipe reach) − 2) / 2 of them per stack (one on vanilla yellow belts); beyond that the Internal Paths snake first, then outputs, and every Copy gets its own belts for the rest. Copies may stand in several columns, but each column needs its own turning room, so one column usually wins.
 - A Py farm for Factorio 2.0 whose modules are all removed is planned at its own speed, though Py's script stops it.
 - Machines heated by their fluid's temperature (Py's TURD compost plants) are not supported. Machines join through their fluid boxes only along a row. One byproduct per belt is sorted out.
+- Fluids Between in more than two rows joins each fluid's pipe bands in a riser beside the stack, not by a stub of its own per band at the west edge.
 - A Recipe Loop's feedback is tapped only off belts its producer's items leave on (to the train or the Sub-Blocks it feeds) that no splitter pair joins; standing on its own the block keeps a row along its top for each feedback, in a City Block it finds its way between the rest, and where it finds none the loop's item comes by train (the layout ranks below one that feeds itself). Fluids in a loop, byproducts a recipe takes back (Py's queens: 1 in, 0.999 out) and loops taking more than they make come by train.
 - Icons with several layers (tinted, overlaid) show only their first layer.
 - Pole placement is locally minimal (no pole can be removed), not a proven global minimum.

@@ -121,7 +121,7 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
   const free = [];
   for (let c = 0; c < cols * rows; c++) if (fitsAt[c] && !blocked[c]) free.push(pole(c));
   const greedy = poles.length;
-  connect(poles, free, spec, placed, anchors);
+  connect(poles, free, spec, placed, anchors, p => p.candidate !== undefined && outside(p.candidate));
   // Bridging poles power what lies in their reach too.
   for (const p of poles.slice(greedy)) for (const i of covers.get(p.candidate) ?? []) coverCount[i]++;
   prune(poles, spec, coverCount, p => covers.get(p.candidate) ?? [], anchors);
@@ -136,8 +136,9 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
 // breadth-first search over free pole positions, each hop within wire reach — for the nearest
 // pole of another component, and the fewest poles linking them are placed, even where the link
 // has to go around machines. Components are kept in a union-find as poles join them. Anchors (a
-// City Block's poles, each with its reach) are one component from the start.
-function connect(poles, free, spec, placed, anchors = []) {
+// City Block's poles, each with its reach) are one component from the start. Of links as short,
+// one through spots inside the block (not in the strips north and south of it: `outside`) wins.
+function connect(poles, free, spec, placed, anchors = [], outside = /** @param {any} _ */ _ => false) {
   const reach = spec.wireReach;
   // Two poles wire together within the shorter reach of the two.
   const near = (a, b) => distance(a, b) <= Math.min(a.reach ?? reach, b.reach ?? reach);
@@ -201,7 +202,8 @@ function connect(poles, free, spec, placed, anchors = []) {
       let frontier = [...start];
       while (frontier.length) {
         // A wave's poles are all asked first: one that reaches ends the search before it spreads.
-        reached = frontier.find(reaches) ?? null;
+        const reaching = frontier.filter(reaches);
+        reached = reaching.find(n => !outside(n)) ?? reaching[0] ?? null;
         if (reached) break;
         const next = [];
         for (const node of frontier) {
@@ -211,7 +213,8 @@ function connect(poles, free, spec, placed, anchors = []) {
             next.push(c);
           }
         }
-        frontier = next;
+        // (Spots inside first, so they lead the next wave.)
+        frontier = [...next.filter(n => !outside(n)), ...next.filter(outside)];
       }
     }
     if (!reached) throw new PowerError('cannot connect all poles into one network');

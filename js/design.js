@@ -346,7 +346,7 @@ function buildSpec(ctx, index, spec, rng) {
   const tried = new Set();
   while (tries.length) {
     const { core: c, variant: v } = tries.shift();
-    for (const margin of margins(c)) {
+    for (const margin of margins(c, v)) {
       try {
         const module = routeModule(c, moduleOptions(ctx, links, margin, sb));
         return { kinds: [{ module, count: 1 }], variant: v, trouble: c.shortfall + c.overload + laneShortfall(ctx, sb, module, whole), area: module.area.w * module.area.h };
@@ -428,6 +428,15 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
       }
     }
   }
+  // Fluids Between: a pair of rows facing each other across their pipe rows, the shared belts
+  // between them or outside.
+  if (links.fluids.length && n < m) {
+    for (const { rotation, mirror } of rotationsFor(shape, links)) {
+      for (const [between, middle] of /** @type {const} */ ([['inside', links.fluids.length + 1], ['outside', links.fluids.length]])) {
+        attempt(stackVariant(shape, { rotation, mirror, rowLength: n, flip: true, plain: true, pipes: true, middle, between }, rng));
+      }
+    }
+  }
   if (wants) {
     // Two-Way Copies: half rows on belts of their own or shared, straight on or the output's
     // bands first.
@@ -462,7 +471,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   found.sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || areaOf(a.core) - areaOf(b.core));
   let failure = null;
   for (const { variant, core } of found.slice(0, 8)) {
-    for (const margin of margins(core)) {
+    for (const margin of margins(core, variant)) {
       try {
         const module = routeModule(core, moduleOptions(ctx, links, margin, sb));
         let through = chained ?? chainedRoutes(ctx, index, module, copies, share);
@@ -652,17 +661,23 @@ export function moduleOptions(ctx, links, margin, sb = null) {
   };
 }
 
-// Margins to route a core in. A plain core (no fluids, no belt turning between rows) tries the
+// Margins to route a core in (its variant's). A plain core (no fluids, no belt turning between rows) tries the
 // tightest first: a column each side for the belts' ends. Others first get room for belts
 // turning between rows, risers and the pipes leaving it (the Compound Block squeezes out what
 // goes unused); then the other, then room all round.
-function margins(core) {
+function margins(core, variant) {
   const room = sideRoom(core);
   const fluid = core.ports.length ? 2 : 0;
   const tight = { w: 1, e: 1, n: 0, s: 0 };
   const roomy = { w: room.w + fluid, e: room.e + fluid, n: 1, s: 1 };
   const plain = !fluid && room.w <= 1 && room.e <= 1;
-  const list = [...(plain ? [tight, roomy] : [roomy, tight]), { w: room.w + fluid + 2, e: room.e + fluid + 2, n: 2, s: 2 }];
+  // Fluids Between: every pipe and belt row of the pair's bands reaches the edges itself, the
+  // fluids' stubs side by side there, each in its own row (in a margin one would take another's
+  // way to the edge): none first. Pairs of rows join their pipe bands in risers, one each side,
+  // and their belts pass outside them: two columns each side.
+  const risers = new Set(core.pipeRows.map(p => p.routeId)).size < core.pipeRows.length;
+  const between = variant?.reflect ? [risers ? { w: 2, e: 2, n: 0, s: 0 } : { w: 0, e: 0, n: 0, s: 0 }] : [];
+  const list = [...between, ...(plain ? [tight, roomy] : [roomy, tight]), { w: room.w + fluid + 2, e: room.e + fluid + 2, n: 2, s: 2 }];
   return list.filter((m, i) => list.findIndex(o => JSON.stringify(o) === JSON.stringify(m)) === i);
 }
 
@@ -711,6 +726,19 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
             yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng);
             yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true }, rng);
           }
+        }
+      }
+    }
+  }
+  // Fluids Between: pairs of rows facing each other across their fluids' pipe rows: a row per
+  // fluid (or one more) and the belts outside, or the shared belts between the pipe rows (a row
+  // or two): two rows or about square.
+  if (links.fluids.length && sb.count > 1) {
+    const nf = links.fluids.length;
+    for (const rowLength of new Set([Math.ceil(sb.count / 2), squareRow(shape, sb), shape.rowCap].filter(n => n >= 1 && n < sb.count))) {
+      for (const { rotation, mirror } of rotations) {
+        for (const [between, middle] of /** @type {const} */ ([['inside', nf + 1], ['outside', nf], ['inside', nf + 2], ['outside', nf + 1]])) {
+          yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes: true, middle, between }, rng);
         }
       }
     }
@@ -1079,10 +1107,22 @@ function pairUp(belts) {
 // belt row per half row, or ('shared') one per band where a belt takes both rows' halves; with
 // `deep`, the half rows' belts lie two tiles out (straight inserters), clear of the inserter row.
 // With `drop`, every row's output belt runs past its machines' drop tiles (Output Drop).
-export function stackVariant(shape, { rotation, mirror = false, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null, drop = false }, rng) {
+// With `between` (Fluids Between), pairs of rows face each other across a band of their fluids'
+// pipe rows, every second row the first's mirror image so their connections meet column for
+// column: 'outside', one pipe row per fluid side by side, the pair's belts outside it (shared with
+// the next pair's row); 'inside', the pipe rows nearest the machines either side and the pair's
+// shared belts between them.
+export function stackVariant(shape, { rotation, mirror = false, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null, drop = false, between = /** @type {false | 'outside' | 'inside'} */ (false) }, rng) {
   const { sb, depths } = shape;
   const belts = merge ? pairUp(shape.belts) : shape.belts;
   const rows = Math.ceil(sb.count / rowLength);
+  // How row r stands: every second one turned half round (flip), and mirrored back (between).
+  const standing = r => ({ building: oriented(shape.building, mirror !== (!!between && r % 2 === 1)), rotation: flip && r % 2 ? (rotation + 8) % 16 : rotation });
+  if (between) {
+    if (rows < 2 || !flip || !pipes) return null;
+    const { building, rotation: r0 } = standing(0);
+    if (![...fluidSides(sb, building, shape.links.fluids, r0).values()].every(side => side === 'bottom')) return null;
+  }
   let counts = [...Array(rows).keys()].map(r => Math.min(rowLength, sb.count - r * rowLength));
   // Two-Way Output: the short row stands where every belt still gets its share — at the end of
   // the stack, else as near it as works (an end band has only one row to feed it).
@@ -1097,7 +1137,13 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
   // A middle band of 4 rows (5 without 90° inserters) has the most rows both machine rows reach.
   const middle = rows === 1 ? 0 : height ?? (plain ? (depths[0] === 1 ? 4 : 5) : 2 + Math.floor(rng() * 5));
   const ok = d => depths.includes(d);
-  const bandHeight = band => (band === 0 || band === rows ? 4 : middle);
+  // Between, in more than two rows, the bands between pairs hold only their shared belts: a row
+  // for each that both rows reach (outside), or none, the rows standing against each other
+  // (inside: the belts lie in the pipe bands).
+  const middles = between && rows > 2
+    ? [...Array(rows + 1).keys()].map(band => (band === 0 || band === rows ? null : band % 2 ? middle : between === 'inside' ? 0 : belts.length + (ok(1) ? 0 : 1)))
+    : null;
+  const bandHeight = band => (band === 0 || band === rows ? 4 : middles?.[band] ?? middle);
   const used = new Map();
   // Belts each machine row already reaches through each of its faces (row|band): a face's
   // inserters share one row of tiles, so a row's belts spread over both its faces.
@@ -1108,23 +1154,23 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
     const out = [];
     if (serves.length === 2) {
       const band = serves[1];
-      for (let j = 1; j <= middle; j++) if (ok(j) && ok(middle + 1 - j)) out.push([band, j]);
+      for (let j = 1; j <= bandHeight(band); j++) if (ok(j) && ok(bandHeight(band) + 1 - j)) out.push([band, j]);
       return out;
     }
     const [r] = serves;
-    const top = r === 0 ? depths.map(d => [0, d]) : [...Array(middle).keys()].map(j => [r, j + 1]).filter(([, j]) => ok(middle + 1 - j));
-    const bottom = r === rows - 1 ? depths.map(d => [rows, d]) : [...Array(middle).keys()].map(j => [r + 1, j + 1]).filter(([, j]) => ok(j));
-    const depth = ([band, j]) => (band === r && band !== 0 ? middle + 1 - j : j);
+    const top = r === 0 ? depths.map(d => [0, d]) : [...Array(bandHeight(r)).keys()].map(j => [r, j + 1]).filter(([, j]) => ok(bandHeight(r) + 1 - j));
+    const bottom = r === rows - 1 ? depths.map(d => [rows, d]) : [...Array(bandHeight(r + 1)).keys()].map(j => [r + 1, j + 1]).filter(([, j]) => ok(j));
+    const depth = ([band, j]) => (band === r && band !== 0 ? bandHeight(band) + 1 - j : j);
     const load = ([band]) => (used.get(band) ?? 0) / bandHeight(band);
     const face = ([band]) => faces.get(`${r}|${band}`) ?? 0;
     // A belt only one row needs takes the face of its row with fewer belts, then a band row only
     // one row reaches, leaving the rows both reach to shared belts.
     return [...top, ...bottom].sort((a, b) => face(a) - face(b) || shareable(a) - shareable(b) || load(a) - load(b) || depth(a) - depth(b));
   };
-  const shareable = ([band, j]) => (band > 0 && band < rows && ok(j) && ok(middle + 1 - j) ? 1 : 0);
+  const shareable = ([band, j]) => (band > 0 && band < rows && ok(j) && ok(bandHeight(band) + 1 - j) ? 1 : 0);
   // Rows grouped for one belt: pairs sharing a band, the odd row alone — beside drop belts, only
   // where the band has a row both reach left.
-  const pairable = band => !drop || [...Array(middle).keys()].some(k => ok(k + 1) && ok(middle - k) && !taken.has(`${band},${k + 1}`));
+  const pairable = band => !drop || [...Array(bandHeight(band)).keys()].some(k => ok(k + 1) && ok(bandHeight(band) - k) && !taken.has(`${band},${k + 1}`));
   const groupsOf = (from, to, offset) => {
     const groups = [];
     for (let r = from; r <= to;) {
@@ -1150,10 +1196,10 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
     if (!out) return null;
     const at = new Map();
     for (let r = 0; r < rows; r++) {
-      const d = dropOf(oriented(shape.building, mirror), flip && r % 2 ? (rotation + 8) % 16 : rotation);
+      const d = dropOf(standing(r).building, standing(r).rotation);
       if (d?.side !== 'top' && d?.side !== 'bottom') return null;
       const band = d.side === 'top' ? r : r + 1;
-      const row = d.side === 'top' && r > 0 ? middle + 1 - d.depth : d.depth;
+      const row = d.side === 'top' && r > 0 ? bandHeight(band) + 1 - d.depth : d.depth;
       if (row < 1 || row > bandHeight(band)) return null;
       at.set(`${band},${row}`, [...(at.get(`${band},${row}`) ?? []), r]);
     }
@@ -1177,7 +1223,8 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
       return;
     }
     const machinesPerPart = b.splittable ? b.perBelt : Infinity;
-    const offset = rows < 2 ? 0 : plain ? n % 2 : Math.floor(rng() * 2);
+    // (Between, outside: rows pair across the belt bands, not the pipe bands.)
+    const offset = rows < 2 ? 0 : between === 'outside' ? 1 : between === 'inside' ? 0 : plain ? n % 2 : Math.floor(rng() * 2);
     const cuts = b.parts ? exactCuts(counts, b.parts) : null;
     let part = 0;
     for (let first = 0; first < rows;) {
@@ -1187,8 +1234,15 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
       else while (last + 1 < rows && machines + counts[last + 1] <= machinesPerPart) machines += counts[++last];
       // A part of a belt split into several pairs its own rows, so its belt gets both lanes.
       const split = first > 0 || last < rows - 1;
-      for (const serves of groupsOf(first, last, split && last > first ? first : offset)) wanted.push({ routeIds: b.routeIds, part, serves });
-      part++;
+      // Between, the bands a belt runs in lie apart, pipe bands or pairs of rows between them: a
+      // belt that may split takes a part per band rather than running round the rows from one to
+      // the next.
+      const apart = !!between && b.splittable && !cuts;
+      for (const serves of groupsOf(first, last, split && last > first && !apart ? first : offset)) {
+        wanted.push({ routeIds: b.routeIds, part, serves });
+        if (apart) part++;
+      }
+      if (!apart) part++;
       first = last + 1;
     }
   });
@@ -1196,7 +1250,7 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
   const pipeRows = [];
   if (pipes) {
     for (let r = 0; r < rows; r++) {
-      const sides = fluidSides(sb, oriented(shape.building, mirror), shape.links.fluids, flip && r % 2 ? (rotation + 8) % 16 : rotation);
+      const sides = fluidSides(sb, standing(r).building, shape.links.fluids, standing(r).rotation);
       for (const [routeId, side] of sides) {
         if (side !== 'top' && side !== 'bottom') continue;
         const band = side === 'top' ? r : r + 1;
@@ -1205,10 +1259,13 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
         // the connections on a band row no shared belt could use.
         const outer = band === 0 || band === rows;
         const h = bandHeight(band);
-        const fromPorts = outer ? [5, 7, 6, 8] : side === 'bottom' ? [...Array(h).keys()].map(j => j + 1) : [...Array(h).keys()].map(j => h - j);
-        // Pipes of two fluids side by side would join, so pipe rows keep a row between them.
-        const row = fromPorts.filter(j => !taken.has(`${band},${j}`) && !pipeRows.some(p => p.band === band && Math.abs(p.row - j) === 1))
-          .sort((a, b) => shareable([band, a]) - shareable([band, b]))[0];
+        // (Between, inside: from either end of the band in turn, nearest the machines.)
+        const ends = [...Array(h).keys()].map(j => (j % 2 ? h - (j - 1) / 2 : 1 + j / 2));
+        const fromPorts = outer ? [5, 7, 6, 8] : between === 'inside' ? ends : side === 'bottom' ? [...Array(h).keys()].map(j => j + 1) : [...Array(h).keys()].map(j => h - j);
+        // Pipes of two fluids side by side would join, so pipe rows keep a row between them (but
+        // between rows, where each dives under the other's connections).
+        const row = fromPorts.filter(j => !taken.has(`${band},${j}`) && (between || !pipeRows.some(p => p.band === band && Math.abs(p.row - j) === 1)))
+          .sort((a, b) => (between === 'inside' ? 0 : shareable([band, a]) - shareable([band, b])))[0];
         if (row === undefined) continue;
         taken.add(`${band},${row}`);
         used.set(band, (used.get(band) ?? 0) + 1);
@@ -1224,7 +1281,7 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
     if (!free.length) return null;
     // Half rows of a deep Two-Way Output take straight inserters (depth 2) where they can: their
     // belt row runs clear of the inserter row, straight past its drops.
-    const depthOf = ([band, j]) => (band === w.serves[0] && band !== 0 ? middle + 1 - j : j);
+    const depthOf = ([band, j]) => (band === w.serves[0] && band !== 0 ? bandHeight(band) + 1 - j : j);
     if (w.depth) free.sort((a, b) => Math.abs(depthOf(a) - w.depth) - Math.abs(depthOf(b) - w.depth));
     const [band, row] = plain || rng() < 0.7 ? free[0] : choose(free, rng);
     taken.add(`${band},${row}`);
@@ -1237,7 +1294,7 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
   const sideways = shift ?? (rows > 1 && !plain && rng() < 0.3 ? choose([-4, -3, -2, -1, 1, 2, 3, 4], rng) : 0);
   const gap = Math.max(Math.abs(sideways), wide ?? (plain || rng() < 0.6 ? 0 : 1 + Math.floor(rng() * 2)));
   return {
-    rotation, ...(mirror ? { mirror } : {}), rowLength, ...(twoWayPath ? { counts } : {}), flip, middle, belts: [...dropped, ...placed], pipes: pipeRows, shift: sideways, gap,
+    rotation, ...(mirror ? { mirror } : {}), ...(between ? { reflect: true, interleave: true } : {}), rowLength, ...(twoWayPath ? { counts } : {}), flip, middle, ...(middles ? { middles } : {}), belts: [...dropped, ...placed], pipes: pipeRows, shift: sideways, gap,
     columns: plain ? 'center' : choose(['center', 'left', 'right'], rng),
     poleSlot: plain || rng() < 0.5 ? null : { band: Math.floor(rng() * (rows + 1)), row: 1 + Math.floor(rng() * 2) },
   };

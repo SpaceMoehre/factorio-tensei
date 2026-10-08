@@ -43,7 +43,7 @@ The fluid a machine burning one burns (Py's glassworks and smelters): one more f
 Machines of a row standing against each other whose box for a fluid has connections on their west and east sides that let it through both ways: their boxes join without a pipe, and the row takes the fluid by one connection, east of its last machine.
 
 **Mirrored**:
-A machine standing mirrored (Factorio 2.0): its fluid connections and drop point flipped east to west before it turns. Tried where that puts them where no rotation does.
+A machine standing mirrored (Factorio 2.0): its fluid connections and drop point flipped east to west before it turns. Tried where that puts them where no rotation does, and every second row of Fluids Between.
 
 **Modules**:
 The modules a step's buildings hold — speed, productivity and efficiency modules, and for Py farms the plants and animals that make them work. Chosen per step of the Production Chain; they set its Count and power draw, and the blueprint asks for them in every one of its machines.
@@ -221,8 +221,12 @@ Some of a Sub-Block's machines taken out of its rectangle, so the rest packs sma
 _Avoid_: detach (code word), split (Parallel Belts split a route)
 
 **Pipe Row**:
-A row of a Band kept for one fluid's pipe, joining every connection of that fluid in the Band. A connection elsewhere in the Band dives under the belts to a tap just before the Pipe Row. Pipe Rows of one fluid in different Bands join in a riser beside the Sub-Block.
+A row of a Band kept for one fluid's pipe, joining every connection of that fluid in the Band. A connection elsewhere in the Band dives under the belts to a tap just before the Pipe Row. Pipe Rows of one fluid in different Bands join in a riser beside the Sub-Block. Pipe Rows of two fluids keep a row between them, except Between, where each dives under the other's connections.
 _Avoid_: pipe lane (a Lane is one side of a belt)
+
+**Fluids Between**:
+Two rows of machines facing each other across a Band of their fluids' Pipe Rows, the second row the first's mirror image (turned half round and Mirrored), so each fluid's connections meet column for column. Their belts lie outside the pair (one Pipe Row per fluid, side by side), or between the Pipe Rows nearest the machines on either side. Pairs stack, the Band between two of them only as tall as their shared belts (none: they stand against each other). Routed with no margin first: each fluid comes in straight along its row.
+_Avoid_: sandwich, back to back
 
 **Service Row**:
 A row of a Band with no belt in it, left open so pipes can run between machines; long-handed inserters reach over it. The layout search leaves one wherever that is more compact.

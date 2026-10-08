@@ -28,9 +28,12 @@ export class LayoutError extends Error {}
 //   rotation   machine direction; flip turns every second row half round, so rows face
 //   mirror     true: every machine mirrored (Factorio 2.0: its fluid connections and drop point
 //              flipped east to west before it turns)
+//   reflect    with flip: every second row mirrored the other way too, the row above's mirror
+//              image across the band between them
 //   rowLength  machines per row (the last row takes the rest)
 //   counts     machines per row, when the short row stands elsewhere (Two-Way Output)
-//   middle     height of each band between two rows
+//   middle     height of each band between two rows (middles: by band, where they differ; a band
+//              nothing lies in or faces may be none, its rows standing against each other)
 //   belts      [{ routeIds, part, band, row, serves: [machine rows], load? }]: a belt row in a band, its
 //              row counted from the machine row above (band 0: from row 0 upward). Belt rows of
 //              one route with the same part are one belt, visited in turn; different parts are
@@ -38,6 +41,8 @@ export class LayoutError extends Error {}
 //              single-item Side Inputs may share the parts of one belt, one per lane (Belt Merge
 //              judged per part: each must fit its lane for the machines that belt feeds).
 //   pipes      [{ routeId, band, row }]: a band row kept for a fluid's pipe
+//   interleave pipe rows of two fluids may lie side by side: each dives under the other's
+//              connections and surfaces only on its own (Fluids Between)
 //   gap        extra columns between neighbouring machines
 //   columns    'center' | 'left' | 'right': which inserter columns are tried first
 //   shift      columns every second row sits to the side (|shift| ≤ gap)
@@ -69,18 +74,23 @@ export function buildCore(sb, building, links, variant, env) {
   const rowCount = counts.length;
   const widest = Math.max(...counts);
   const middle = rowCount > 1 ? variant.middle : 0;
+  const heightOf = band => (band === 0 || band === rowCount ? null : variant.middles?.[band] ?? middle);
   const rotationOf = r => (variant.flip && r % 2 ? (variant.rotation + 8) % 16 : variant.rotation);
-  const machine_ = oriented(building, !!variant.mirror);
+  // Reflected, every second row also stands mirrored the other way: turned half round and
+  // mirrored, it is the row above's mirror image across the band between them, its connections
+  // and drop column for column below the others'.
+  const mirrorOf = r => !!variant.mirror !== !!(variant.flip && variant.reflect && r % 2);
+  const machineOf = r => oriented(building, mirrorOf(r));
   const { w: Wm, h: Hm } = rotatedSize(building.size, variant.rotation);
   const pipes = variant.pipes ?? [];
-  const connections = counts.map((_, r) => pickConnections(sb, machine_, links.fluids, rotationOf(r), variant));
+  const connections = counts.map((_, r) => pickConnections(sb, machineOf(r), links.fluids, rotationOf(r), variant));
   // Machines in a row standing against each other join a fluid's box where its connections let it
   // through both ways on their west and east sides, facing each other (Py's glassworks' Liquid
   // Fuel): the row takes that fluid by one connection, east of its last machine, and keeps no
   // column for it between them. Not where anything else stands between them.
   if (!variant.gap && !(variant.sides?.length || variant.heads?.length)) {
     const through = links.fluids.map((f, i) => {
-      const pairs = counts.map((_, r) => throughPair(machine_, f.boxes ?? [], rotationOf(r)));
+      const pairs = counts.map((_, r) => throughPair(machineOf(r), f.boxes ?? [], rotationOf(r)));
       return pairs.every(Boolean) ? i : -1;
     }).filter(i => i >= 0);
     const others = connections.some(list => list.some((c, i) => i < links.fluids.length && !through.includes(i) && (c.side === 'left' || c.side === 'right')));
@@ -88,12 +98,12 @@ export function buildCore(sb, building, links, variant, env) {
       counts.forEach((_, r) => {
         const own = connections[r].slice(0, links.fluids.length).map((c, i) => {
           if (!through.includes(i)) return c;
-          const pair = throughPair(machine_, links.fluids[i].boxes, rotationOf(r));
+          const pair = throughPair(machineOf(r), links.fluids[i].boxes, rotationOf(r));
           return { ...pair.east, routeId: c.routeId, fluid: c.fluid, through: true };
         });
         // (The east one is used; the west one stays unused, kept clear of other pipes.)
         const pairTiles = new Set(through.map(i => {
-          const { east } = throughPair(machine_, links.fluids[i].boxes, rotationOf(r));
+          const { east } = throughPair(machineOf(r), links.fluids[i].boxes, rotationOf(r));
           return `${east.tileX},${east.tileY}`;
         }));
         const taken = new Set(own.map(c => `${c.tileX},${c.tileY}`));
@@ -104,12 +114,12 @@ export function buildCore(sb, building, links, variant, env) {
   const ported = (r, side) => connections[r].some(c => c.routeId !== undefined && c.side === side && !c.through);
   const throughEnd = connections.some(list => list.some(c => c.through));
   // Output Drop: where each row's machines put their products themselves.
-  const drops = counts.map((_, r) => dropOf(machine_, rotationOf(r)));
+  const drops = counts.map((_, r) => dropOf(machineOf(r), rotationOf(r)));
 
   // Faces: a row's top face looks into band r, its bottom face into band r + 1. A band row is
   // counted from the row above, so the row below sees it at depth middle + 1 - row.
   const depthIn = (band, row, r) => {
-    if (band === r) return band === 0 ? row : middle + 1 - row;
+    if (band === r) return band === 0 ? row : heightOf(band) + 1 - row;
     if (band === r + 1) return row;
     return null;
   };
@@ -159,13 +169,18 @@ export function buildCore(sb, building, links, variant, env) {
   // Belts lie within inserter reach; outside the stack, pipe rows may lie further out.
   for (const [list, outer] of [[belts, 4], [pipes, 8]]) {
     for (const b of list) {
-      const height = b.band === 0 || b.band === rowCount ? outer : middle;
+      const height = b.band === 0 || b.band === rowCount ? outer : heightOf(b.band);
       if (b.band < 0 || b.band > rowCount || b.row < 1 || b.row > height) throw new LayoutError('a belt row outside its band');
     }
   }
-  if (rowCount > 1 && middle < 1) throw new LayoutError('rows need a band between them');
+  // A band between rows that nothing faces may be none: the rows stand against each other.
+  for (let band = 1; band < rowCount; band++) {
+    if (heightOf(band) >= 1) continue;
+    const faced = ported(band - 1, 'bottom') || ported(band, 'top') || drops[band - 1]?.side === 'bottom' || drops[band]?.side === 'top';
+    if (heightOf(band) < 0 || faced || [...belts, ...pipes].some(b => b.band === band)) throw new LayoutError('rows need a band between them');
+  }
   // Pipes of two fluids side by side would join.
-  if (pipes.some(p => pipes.some(q => q.band === p.band && q.row === p.row + 1 && q.routeId !== p.routeId))) {
+  if (!variant.interleave && pipes.some(p => pipes.some(q => q.band === p.band && q.row === p.row + 1 && q.routeId !== p.routeId))) {
     throw new LayoutError('pipe rows of two fluids touch');
   }
   const taken = new Set();
@@ -200,7 +215,8 @@ export function buildCore(sb, building, links, variant, env) {
   const off = r => (r % 2 ? shift : 0) - Math.min(0, shift);
 
   const top = outerHeight(0);
-  const machineY = counts.map((_, r) => top + r * (Hm + middle));
+  const machineY = [];
+  counts.forEach((_, r) => machineY.push(r ? machineY[r - 1] + Hm + heightOf(r) : top));
   const height = machineY[rowCount - 1] + Hm + outerHeight(rowCount);
   const bandY = (band, row) => (band === 0 ? top - row : machineY[band - 1] + Hm - 1 + row);
   const faceY = (r, side, k) => (side === 'top' ? machineY[r] - k : machineY[r] + Hm - 1 + k);
@@ -289,10 +305,11 @@ export function buildCore(sb, building, links, variant, env) {
   }
   const beltRows = belts.map((b, id) => ({ ...b, id, y: bandY(b.band, b.row) }));
   const pipeRows = pipes.map(p => ({ ...p, y: bandY(p.band, p.row) }));
-  // Pipe rows meet the connections: beside a connection lying in a pipe row no inserter stands
-  // (its own pipe carries on there, another fluid's dives round it), and a connection across the
-  // band reaches its fluid's pipe row by a pipe-to-ground surfacing just before that row (a tap,
-  // which belts dive under) with the pipe row free above it.
+  // Pipe rows meet the connections: beside a connection lying in its own fluid's pipe row no
+  // inserter stands (the pipe carries on there; another fluid's dives under it, wherever its
+  // tunnel may start), and a connection across the band reaches its fluid's pipe row by a
+  // pipe-to-ground surfacing just before that row (a tap, which belts dive under) with the pipe
+  // row free above it.
   const keep = (c, y) => { if (!period.get(c, y) || period.get(c, y).type === 'unused') period.set(c, y, { type: 'keep' }); };
   // Where a pipe row must surface (its own connections and the tiles where taps join it), both
   // neighbours in the row stay free, since a pipe-to-ground cannot surface there.
@@ -308,10 +325,7 @@ export function buildCore(sb, building, links, variant, env) {
       if (c.routeId === undefined || (c.side !== 'top' && c.side !== 'bottom')) continue;
       const [x, y] = [mxOff + off(r) + c.tileX, machineY[r] + c.tileY];
       const band = c.side === 'top' ? r : r + 1;
-      for (const p of pipeRows.filter(p => p.band === band && p.y === y)) {
-        if (p.routeId === c.routeId) surfaceAt(x, p.y, p.routeId);
-        else { keep(x - 1, p.y); keep(x + 1, p.y); }
-      }
+      for (const p of pipeRows.filter(p => p.band === band && p.y === y && p.routeId === c.routeId)) surfaceAt(x, p.y, p.routeId);
       const own = pipeRows.find(p => p.routeId === c.routeId && p.band === band);
       if (!own || own.y === y) continue;
       const d = Math.sign(own.y - y);
@@ -331,7 +345,7 @@ export function buildCore(sb, building, links, variant, env) {
     }
   }
   const kept = variant.poleSlots ?? (variant.poleSlot ? [variant.poleSlot] : []);
-  if (kept.some(slot => slot.band > rowCount || slot.row > (slot.band === 0 || slot.band === rowCount ? outerHeight(slot.band) : middle))) {
+  if (kept.some(slot => slot.band > rowCount || slot.row > (slot.band === 0 || slot.band === rowCount ? outerHeight(slot.band) : heightOf(slot.band)))) {
     throw new LayoutError('pole slot outside its band');
   }
   const poleYs = new Map(kept.map(slot => [slot.band, bandY(slot.band, slot.row)]));
@@ -381,7 +395,7 @@ export function buildCore(sb, building, links, variant, env) {
       const movedBy = new Map();
       // A machine with an Output Drop carries its drop point (relative to its corner).
       const d = drops[r];
-      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine, ...(variant.mirror && { mirror: true }), ...(d && { drop: d.point }) });
+      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine, ...(mirrorOf(r) && { mirror: true }), ...(d && { drop: d.point }) });
       const first = entities.length;
       // Its drop tile: a waypoint of the output belt past it, else kept clear.
       if (d) {
