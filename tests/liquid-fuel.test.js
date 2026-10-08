@@ -77,8 +77,9 @@ test('a byproduct is sorted out after its producers: stone off the crushed quart
 // Py's ball mills make 1800/min of molybdenite dust with 180 of gravel, more than one belt
 // carries, for agitators that take only the dust (the jaw crushers 900 of crushed molybdenite with
 // 360 of stone): an Internal Path all the same, each of its parallel belts sorting the byproduct
-// out after its producers (else running on through its consumers to the east edge). Before, the
-// route ran as one belt and every design starved.
+// out after its producers (else running on through its consumers to the east edge), the
+// byproducts joining one belt where it has room. Before, the route ran as one belt and every
+// design starved.
 test('a byproduct on more than one belt: each of the Internal Path\'s belts sorts it out, nothing starves', () => {
   const entries = expandChain([{ item: 'molybdenite-pulp', rate: 9000 }], shipped, { made: ['molybdenite-dust', 'crushed-molybdenite'], selections: {} }).entries;
   let best = null;
@@ -92,6 +93,10 @@ test('a byproduct on more than one belt: each of the Internal Path\'s belts sort
   // Every belt sorts its byproduct out: none rides on through the consumers.
   assert.equal(best.score[2], 0);
   assert.ok(best.block.routes.some(r => r.filter === 'stone') && best.block.routes.some(r => r.filter === 'gravel'));
+  // The gravel sorted out of each belt (45/min) joins one gravel belt on to the east edge,
+  // side-loading onto a lane with room, not a belt of its own each.
+  const gravel = best.block.routes.filter(r => r.filter === 'gravel');
+  assert.ok(gravel.length > 1 && gravel.filter(r => r.joins === undefined).length === 1, gravel.map(r => r.joins).join());
   assertValid(best.block, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
 });
 

@@ -127,21 +127,31 @@ function edgeGoal(grid, side) {
 // A belt in one leg from any of the start states to the goal: a tile reached with a heading
 // (where the next piece, already placed, carries on), or off the east or west edge. Joins the
 // routed pieces of two modules, or a module and the train.
-// spec: { id, starts: [{ x, y, a }], goal: { x, y, a } | 'east' | 'west', keepOff (tile keys held
+// spec: { id, starts: [{ x, y, a }], goal: { x, y, a } | 'east' | 'west' | 'join', keepOff (tile keys held
 // for its route's other links, where they meet their copies: it does not take them), most (the
-// most states it explores: a leg that may be tried elsewhere gives up sooner) }
+// most states it explores: a leg that may be tried elsewhere gives up sooner), joins (with an
+// edge goal: `x,y,a` keys of another belt's tiles it may end against instead, heading a into
+// its side: side-loading onto it) }
+// Returns the leg's pieces; `joined`, set on them, the join key it ended at.
 export function routeLink(grid, spec, names) {
   const pieces = [];
   const keepOff = spec.keepOff ?? new Set();
   const moves = beltMoves(grid, spec, names, keepOff, { key: null, last: false });
   const { goal } = spec;
-  const [isGoal, heuristic] = typeof goal === 'string' ? edgeGoal(grid, goal)
+  const joins = spec.joins ?? null;
+  const joining = s => !!joins?.has(`${s.x},${s.y},${s.a}`);
+  // ('join': only joining another belt, the nearest of them first.)
+  const targets = goal === 'join' ? [...joins ?? []].map(k => k.split(',').map(Number)) : [];
+  const [atEdge, toEdge] = goal === 'join' ? [() => false, (x, y) => GREED * Math.min(...targets.map(([u, v]) => Math.abs(x - u) + Math.abs(y - v)))]
+    : typeof goal === 'string' ? edgeGoal(grid, goal) : [null, null];
+  const [isGoal, heuristic] = typeof goal === 'string' ? [s => atEdge(s) || joining(s), toEdge]
     : [s => s.x === goal.x && s.y === goal.y && s.a === goal.a, (x, y) => GREED * (Math.abs(x - goal.x) + Math.abs(y - goal.y))];
   if (spec.starts.some(s => isGoal(s))) return pieces;
   const leg = search(grid, spec.starts, isGoal, heuristic, moves,
     typeof goal === 'string' ? undefined : () => !reachable(grid, spec.id, spec.starts, goal.x, goal.y, names.reach, keepOff), spec.most);
   if (!leg) throw new RoutingError(`belt ${spec.id}: no path from ${spec.starts[0].x},${spec.starts[0].y} to ${typeof goal === 'string' ? `the ${goal} edge` : `${goal.x},${goal.y}`}`);
   commitLeg(grid, spec, names.underground, leg, pieces);
+  if (joining(leg.state)) /** @type {any} */ (pieces).joined = `${leg.state.x},${leg.state.y},${leg.state.a}`;
   return pieces;
 }
 
@@ -554,7 +564,8 @@ function pipePiece(spec, names, x, y, d) {
 }
 
 function canBelt(grid, spec, x, y, d) {
-  return grid.freeFor(x, y, spec.id) && beltOutputAllowed(grid, spec, ...step(x, y, d)) && !fedByOther(grid, spec, x, y);
+  const [ox, oy] = step(x, y, d);
+  return grid.freeFor(x, y, spec.id) && (beltOutputAllowed(grid, spec, ox, oy) || !!spec.joins?.has(`${ox},${oy},${d}`)) && !fedByOther(grid, spec, x, y);
 }
 
 // A belt must not push items into another route's belt, or into a tile held for another belt.

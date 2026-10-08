@@ -330,6 +330,10 @@ export function compose(ctx, prepared, positions, layout) {
   let fanned = new Map();
   // A Recipe Loop's feedback belts routed from their splitters.
   let tapped = new Set();
+  // Byproducts sorted out after their producers, per item: the belts carrying one to the east
+  // edge that another may join (side-loading onto a lane with room): { route, tiles (its straight
+  // belts: x, y, travel), lanes (what each carries: left, right) }.
+  let sortedOut = new Map();
   const splitterName = beltSpec.splitter ?? beltSpec.name.replace(/transport-belt$/, 'splitter');
   for (;;) {
     const { grid, entities, pieces } = placeAll();
@@ -345,6 +349,7 @@ export function compose(ctx, prepared, positions, layout) {
     const links = new Map();
     balanced = new Set();
     fanned = new Map();
+    sortedOut = new Map();
     tapped = new Set();
     let failed = null;
     for (const task of order) {
@@ -759,6 +764,55 @@ export function compose(ctx, prepared, positions, layout) {
     return null;
   }
 
+  // Where a byproduct sorted out of `trunk` may join a belt carrying the same one to the east
+  // edge: beside one of its straight belts, heading into it, onto a lane with room for all this
+  // one carries (each lane half a belt). joins: the `x,y,a` keys; offered: per key, the line and
+  // the lane.
+  function joinsFor(trunk) {
+    const laneCapacity = catalog.belts[logistics.belt].itemsPerSecond * 30;
+    const joins = new Set(), offered = new Map();
+    const rate = trunk.items.find(i => i.item === trunk.filter)?.rate ?? 0;
+    for (const line of sortedOut.get(trunk.filter) ?? []) {
+      for (const { x, y, travel } of line.tiles) {
+        // (Heading clockwise of its travel, the belt comes in on its left; anticlockwise, right.)
+        for (const [a, lane] of [[turnRight(travel), 'left'], [turnLeft(travel), 'right']]) {
+          if (line.lanes[lane] + rate > laneCapacity + 1e-6) continue;
+          const k = `${x},${y},${a}`;
+          joins.add(k);
+          offered.set(k, { line, lane });
+        }
+      }
+    }
+    return { joins, offered };
+  }
+  // A byproduct's belt joining one that carries it on (a short way, else none: null).
+  function joinedAway(grid, trunk, out, joins) {
+    const saved = grid.snapshot({ holds: true });
+    try {
+      return routeLink(grid, { id: trunk.id, starts: [out], goal: 'join', joins, most: JOIN_STATES }, belts);
+    } catch (e) {
+      if (!(e instanceof RoutingError)) throw e;
+      grid.restore(saved);
+      return null;
+    }
+  }
+  // A byproduct's belt to the east edge routed (away): joining another, that one's lane carries
+  // it too; else others may join it, its own split between its lanes.
+  function sortedAway(trunk, away, offered) {
+    const rate = trunk.items.find(i => i.item === trunk.filter)?.rate ?? 0;
+    if (away.joined) {
+      const { line, lane } = offered.get(away.joined);
+      line.lanes[lane] += rate;
+      trunk.joins = line.route;
+      return;
+    }
+    // (Straight belts only: one each side of it and the one before it in line.)
+    const tiles = away.filter((p, k) => p.kind === 'belt' && k > 0 && away[k - 1].travel === p.travel && away[k - 1].kind === 'belt')
+      .map(p => ({ x: p.x, y: p.y, travel: p.travel }));
+    if (!sortedOut.has(trunk.filter)) sortedOut.set(trunk.filter, []);
+    sortedOut.get(trunk.filter).push({ route: trunk.id, tiles, lanes: { left: rate / 2, right: rate / 2 } });
+  }
+
   // A Fan-out from producers (task.fanOut): their line from where their belt leaves them, past
   // every consumer's entry in an order they stand in from there (lineOrders, each in turn).
   // Throws where none finds a way.
@@ -814,11 +868,16 @@ export function compose(ctx, prepared, positions, layout) {
               grid.place(splitter);
               const into = routeLink(grid, { id: trunk.id, starts: [start], goal: { x, y: y + lane, a: E } }, belts);
               if (trunk.filter) {
-                const away = routeLink(grid, { id: trunk.id, starts: [out], goal: 'east' }, belts);
+                // (To the east edge, or joining a belt that carries the same byproduct there.)
+                const { joins, offered } = joinsFor(trunk);
+                const away = (joins.size && joinedAway(grid, trunk, out, joins)) || routeLink(grid, { id: trunk.id, starts: [out], goal: 'east' }, belts);
                 for (const order of lineOrders(members, on)) {
                   splitterOf.set(order, splitter);
                   const legs = routeFan(grid, order, { start: on, trunk: order.at(-1), fedBy: trunk.id, brought: brought([]), pool });
-                  if (legs) return [[trunk.id, [...into, splitter, ...away]], ...legs.map(([id, leg]) => owner(order)(id, leg))];
+                  if (legs) {
+                    sortedAway(trunk, away, offered);
+                    return [[trunk.id, [...into, splitter, ...away]], ...legs.map(([id, leg]) => owner(order)(id, leg))];
+                  }
                 }
               } else {
                 // (A few ways each: every way of every split takes long to fail.)
@@ -1485,6 +1544,9 @@ function tapLoop(routes, feeds, base) {
     out.left -= feed.items[0].rate;
   }
 }
+
+// How many states a byproduct's belt explores looking for one carrying it on to join.
+const JOIN_STATES = 4000;
 
 // Fan-out: a Side Input's belts into the copies of a Sub-Block (each copy's own, or a run of
 // them) come from the west edge on as few belts as carry them all. In the order the copies of a

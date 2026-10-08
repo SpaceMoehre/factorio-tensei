@@ -41,5 +41,13 @@ At 400/min and more no belt sorted its byproduct out: wherever runs of producers
 
 Py molybdenite pulp at 9000/min outside a City Block: every gravel and stone belt filtered (was gravel riding). Py molybdenum oxide in the 236 × 236 City Block: at 200/min all six byproduct belts filtered; at 599.99/min (Maximize's best) no layout with filters was found within the 2 minutes, so the byproducts still ride on there.
 
+## Byproduct belts merged
+
+Each run of producers sorting its byproduct out sent it to the east edge on a belt of its own: at 600/min eight gravel belts (540/min in all) and six stone belts crossing the City Block, each one more way to find. As long as they carry no more than a belt together, they can go on as one (the user's rule):
+
+- **A byproduct's belt joins one carrying the same byproduct.** Routed first toward the straight belts of those already on their way to the east edge (`join`), a byproduct's belt ends heading into the side of one, side-loading onto the lane on that side, where that lane has room for all it brings (a lane half a belt; a belt's own byproduct counted half on each lane). Only where it finds none within a short search (`JOIN_STATES`) does it go to the east edge itself, others then joining it. The joining belt's route records the one it joins (`joins`); the checks pass it where its last belt heads into the side of one of that route's and that route reaches the east edge.
+
+Py molybdenite pulp at 9000/min: the four gravel belts one, the two stone belts one, 47 × 68 (was 49 × 69). Py molybdenum oxide at 200/min in the City Block: likewise. At 599.99/min no layout with the stone sorted out after the crusher copies was found even in 7 minutes: the byproducts still ride on there.
+
 Still:
 - A route sorting a byproduct out gets no splitter between its belts: where its producers and consumers divide among none evenly, it starves.
