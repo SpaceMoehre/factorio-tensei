@@ -86,15 +86,16 @@ function spareSpeed(sb, index, routes, lane) {
 // until the deadline. Throws LayoutError when nothing fits.
 // machines: design a module of only that many of the Sub-Block's machines (a Breakout's share),
 // its belts free to chain with the other modules' (as a Copy's are); with `rest`, the machines
-// a Breakout leaves, cutting an Internal Path into as many parts as the whole would.
-export function designStep(ctx, index, rng, { now = () => Date.now(), deadline = Infinity, machines = null, rest = false, draws = RANDOM_VARIANTS, lengths = [] } = {}) {
+// a Breakout leaves, cutting an Internal Path into as many parts as the whole would. only: rows
+// only as long as `lengths` (no copies, no Side Belts).
+export function designStep(ctx, index, rng, { now = () => Date.now(), deadline = Infinity, machines = null, rest = false, draws = RANDOM_VARIANTS, lengths = [], only = false } = {}) {
   const whole = !machines || machines === ctx.plan[index].count;
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const building = ctx.catalog.buildings[sb.building];
   const links = coreLinks(sb, index, ctx.routes);
   const shape = shapeOf(ctx, sb, index, links, rest);
   /** @type {any[]} */
-  const candidates = whole && sb.count > COPIES_FROM ? copyCandidates(ctx, index, shape, rng) : [];
+  const candidates = whole && sb.count > COPIES_FROM && !only ? copyCandidates(ctx, index, shape, rng) : [];
   const errors = new Map();
   if (sb.count <= ONLY_COPIES || !candidates.length) {
     const cores = new Map();
@@ -114,12 +115,12 @@ export function designStep(ctx, index, rng, { now = () => Date.now(), deadline =
     // structured variants only, fewer of them (each core of so many machines takes long to build,
     // and Maximize designs every Count it tries).
     const lean = !!ctx.site && candidates.length > 0 && sb.count > 40;
-    for (const variant of variants(shape, links, sb, rng, lean ? 0 : draws, ctx.site?.inner.w, lengths, lean)) attempt(variant);
+    for (const variant of variants(shape, links, sb, rng, lean ? 0 : draws, ctx.site?.inner.w, lengths, lean, only)) attempt(variant);
     // Machines whose belts above and below cannot feed them take belts on their sides too; in a
     // City Block with Fixtures in its room, columns that narrow are candidates anyway (they fit
     // between Fixtures where rows of machines do not).
     const best = Math.min(...[...cores.values()].map(c => trouble(c.core)));
-    if (!(best <= 1e-6) || ctx.site?.fixtures.length) for (const variant of sideVariants(shape, links, sb, rng, sidesUpTo(ctx, building))) attempt(variant);
+    if (!only && (!(best <= 1e-6) || ctx.site?.fixtures.length)) for (const variant of sideVariants(shape, links, sb, rng, sidesUpTo(ctx, building))) attempt(variant);
     // Stacked rows whose connections face the bands above and below but have no pipe rows rarely
     // route: their pipes must find their own way between the rows. Those come last. (Connections
     // on the machines' sides are reached through the gaps between them.)
@@ -514,7 +515,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
 }
 
 // A belt route from one Sub-Block to others (not on to the train).
-const internalPath = route => typeof route.source === 'number' && route.consumers.length > 0 && route.sink !== 'side-output';
+const internalPath = route => typeof route.source === 'number' && route.consumers.length > 0 && (route.sink !== 'side-output' || !!route.sorted);
 
 // How many machines an Internal Path has at its other end, from Sub-Block `index`'s (the fewest of
 // its consumers', from its producer).
@@ -634,7 +635,7 @@ function pathWants(ctx, route, n) {
   return cuts.map((last, k) => (last - (k ? cuts[k - 1] : -1)) * rate / consumer.count);
 }
 
-const isInternal = route => typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output';
+const isInternal = route => typeof route.source === 'number' && route.consumers.length === 1 && (route.sink !== 'side-output' || !!route.sorted);
 const outputRate = sb => sb.outputs.filter(o => o.type === 'item').reduce((sum, o) => sum + o.rate, 0);
 
 // Parts in `count` runs of neighbours with about equal machines each.
@@ -696,7 +697,8 @@ const areaOf = core => core.w * core.h;
 // The plainest variants first (one row, nearest belt rows, belts split between the faces, rows
 // as long as the busiest belt allows, pairs of rows facing a shared belt), then random draws.
 // room: in a City Block, how wide it is inside its Buffer. lean: every second row shifted a column at most.
-function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, lengths = [], lean = false) {
+// only: rows only as long as asked (`lengths`): those, Fluids Between and random draws.
+function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, lengths = [], lean = false, only = false) {
   const rotations = rotationsFor(shape, links);
   // Rows as long as asked (a part of a Sub-Block in Bands: as many as its gap takes) first.
   for (const rowLength of lengths) {
@@ -705,6 +707,15 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
         for (const pipes of links.fluids.length ? [false, true] : [false]) yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes, middle }, rng);
       }
     }
+  }
+  if (only) {
+    for (const rowLength of lengths.filter(n => n < sb.count)) yield* betweenVariants(shape, links, rowLength, rotations, rng);
+    for (let n = 0; n < (sb.count > 24 ? draws / 3 : draws); n++) {
+      const variant = stackVariant(shape, { ...choose(rotations, rng), rowLength: choose(lengths, rng), flip: rng() < 0.5, pipes: links.fluids.length > 0 && rng() < 0.5, merge: rng() < 0.3 }, rng);
+      if (variant && rng() < 0.5) /** @type {any} */ (variant).ports = links.fluids.map(() => Math.floor(rng() * 8));
+      yield variant;
+    }
+    return;
   }
   // Output Drop first (machines that put their products on a belt themselves prefer to): rows as
   // long as their drops fill a lane (one machine where it alone makes more, its inserters taking
@@ -740,17 +751,10 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
       }
     }
   }
-  // Fluids Between: pairs of rows facing each other across their fluids' pipe rows: a row per
-  // fluid (or one more) and the belts outside, or the shared belts between the pipe rows (a row
-  // or two): two rows or about square.
+  // Fluids Between: two rows or about square.
   if (links.fluids.length && sb.count > 1) {
-    const nf = links.fluids.length;
     for (const rowLength of new Set([Math.ceil(sb.count / 2), squareRow(shape, sb), shape.rowCap].filter(n => n >= 1 && n < sb.count))) {
-      for (const { rotation, mirror } of rotations) {
-        for (const [between, middle] of /** @type {const} */ ([['inside', nf + 1], ['outside', nf], ['inside', nf + 2], ['outside', nf + 1]])) {
-          yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes: true, middle, between }, rng);
-        }
-      }
+      yield* betweenVariants(shape, links, rowLength, rotations, rng);
     }
   }
   // Two-Way Output: each row drops onto the belts either side of it, so belts take half rows.
@@ -780,6 +784,18 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
     // Which connection each fluid uses, where its box has several.
     if (variant && rng() < 0.5) /** @type {any} */ (variant).ports = links.fluids.map(() => Math.floor(rng() * 8));
     yield variant;
+  }
+}
+
+// Fluids Between in rows of rowLength: a row per fluid (or one more) and the belts outside, or
+// the shared belts between the pipe rows (a row or two).
+function* betweenVariants(shape, links, rowLength, rotations, rng) {
+  if (!links.fluids.length) return;
+  const nf = links.fluids.length;
+  for (const { rotation, mirror } of rotations) {
+    for (const [between, middle] of /** @type {const} */ ([['inside', nf + 1], ['outside', nf], ['inside', nf + 2], ['outside', nf + 1]])) {
+      yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes: true, middle, between }, rng);
+    }
   }
 }
 
@@ -917,10 +933,10 @@ function* sideVariants(shape, links, sb, rng, upTo = SIDES_UP_TO) {
         return p;
       };
       // A Side Belt runs down as many machines as it can feed (an output: as fill what one row
-      // beside it fills); a Head-on Belt serves one.
+      // beside it fills; a route that runs as one belt, down all of them); a Head-on Belt serves one.
       const sides = [], heads = [];
       for (const { belt, option } of moved) {
-        const per = option.head ? 1 : Math.max(1, belt.isOutput ? belt.oneSide : belt.perBelt);
+        const per = option.head ? 1 : belt.oneBelt ? rows : Math.max(1, belt.isOutput ? belt.oneSide : belt.perBelt);
         // An Internal Path's parts: exactly as many as the path has belts (never more than rows).
         const cuts = belt.parts ? exactCuts(Array(rows).fill(1), belt.parts) : null;
         for (let r = 0, j = 0; r < rows; j++) {
@@ -951,7 +967,8 @@ export function shapeOf(ctx, sb, index, links, rest = false, share = false) {
     const route = ctx.routes[routeId];
     const isOutput = routeId === links.output;
     const items = routeItems(sb, route, isOutput);
-    const internal = typeof route.source === 'number' && route.consumers.length === 1 && route.sink !== 'side-output';
+    // (A byproduct sorted out of each of its belts leaves it an Internal Path.)
+    const internal = isInternal(route);
     const splittable = internal || (isOutput ? route.consumers.length === 0 : route.source === 'side-input' && route.consumers.length === 1);
     // A single-item Side Input that may split can share parallel belts with another: one lane each.
     const perLane = !isOutput && splittable && route.source === 'side-input' && !route.loop && items.length === 1
@@ -1072,7 +1089,16 @@ function pathBelts(ctx, route) {
   // A consumer built only from copies takes its belts by whole copies, not machines: belts that
   // nearly fill leave no room for a run a copy longer than its share; one belt more does.
   const spare = consumer.count > ONLY_COPIES && rate > 0.85 * need * belt ? 1 : 0;
-  return Math.min(need + spare, producer.count, consumer.count);
+  const most = Math.min(producer.count, consumer.count);
+  // Belts sorting a byproduct out run on alone (no splitter evens them out): as many as make the
+  // fewest producers a belt has make what the most consumers it has take (12 ball mills to 8
+  // agitators: 4 belts of 3 to 2, not 3 of 4 to 3).
+  if (route.sorted) {
+    const made = producer.outputs.find(o => o.name === producer.item).rate / producer.count;
+    const taken = consumer.inputs.find(x => x.name === producer.item).rate / consumer.count;
+    for (let k = need; k <= most; k++) if (Math.floor(producer.count / k) * made >= Math.ceil(consumer.count / k) * taken - 1e-6) return k;
+  }
+  return Math.min(need + spare, most);
 }
 
 // Rows cut into exactly `parts` runs of neighbours, about equal by machines: the last row of

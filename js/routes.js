@@ -38,11 +38,20 @@ export function buildRoutes(plan, flows, laneCapacity) {
     const leavesBlock = item => flows.sideOutput.some(o => o.item === item);
     const solidOut = sb.outputs.filter(o => o.type === 'item');
     if (solidOut.length) {
+      const consumers = internalConsumers(sb.item);
+      // A byproduct only the train takes, with more than one belt carries: an Internal Path to its
+      // one consumer all the same, each of its belts sorting the byproduct out after the producers
+      // (compose.js), so the path may run on parallel belts (Py's ball mills' molybdenite dust
+      // with gravel).
+      const left = solidOut.filter(o => leavesBlock(o.name));
+      const sorted = consumers.length === 1 && left.length === 1 && left[0].name !== sb.item
+        && !plan[consumers[0]].inputs.some(x => x.name === left[0].name)
+        && solidOut.reduce((sum, o) => sum + o.rate, 0) > 2 * laneCapacity + 1e-6;
       // Output inserters drop every product onto the far lane, so the products share it.
       add({
-        kind: 'belt', source: i, sink: solidOut.some(o => leavesBlock(o.name)) ? 'side-output' : null,
+        kind: 'belt', source: i, sink: left.length ? 'side-output' : null,
         items: solidOut.map(o => ({ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' })),
-        consumers: internalConsumers(sb.item),
+        consumers, ...(sorted ? { sorted: left[0].name } : {}),
       });
     }
     for (const o of sb.outputs.filter(o => o.type === 'fluid')) {

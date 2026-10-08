@@ -1123,7 +1123,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
     const machines = new Map(producers.flatMap(s => s.part.drops.map(d => [machineKey(s, d), full])));
     // What a belt must deliver: what its consumers take; a belt on to the train all it carries
     // (null); a belt merging into another, nothing of its own.
-    const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && base.sink !== 'side-output' ? wants(g.consumers) : null);
+    const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) ? wants(g.consumers) : null);
     // What each belt of an option delivers: its producers' machines through its lanes, joined by
     // its splitters (with `joins`) or each going straight on.
     const deliver = (option, joins) => pathFlow({
@@ -1197,7 +1197,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
         return member.id;
       });
       continue;
-    } else if (base.consumers.length && base.sink !== 'side-output') {
+    } else if (base.consumers.length && (base.sink !== 'side-output' || base.sorted)) {
       // An Internal Path to its consumers (one Sub-Block, or several, their copies in turn):
       // parallel belts, each taking a run of producers to a run of consumers; as many as its rate
       // needs and both ends allow. A run of producers ends at
@@ -1258,12 +1258,46 @@ function groupRoutes(ctx, instances, laneCapacity) {
           const short = needOf(option) - deliver(option, false).total;
           // Belts that bring too little pair up with belts that bring too much: a splitter between
           // them gives each what its consumers take (plain if it fails to route).
-          if (consider(option, short < 1e-6 ? short : pairUp(option, wantOf, deliver))) break;
+          if (consider(option, short < 1e-6 || base.sorted ? short : pairUp(option, wantOf, deliver))) break;
         }
+        // (Belts sorting a byproduct out each run on alone: no splitter joins them.)
+        if (base.sorted) continue;
         if (forks(cs, targets).concat(merges(cs, targets)).some(option => consider(option, needOf(option) - deliver(option, true).total))) break;
       }
       groups = best?.option;
       if (!groups) throw new RoutingError(`${base.items[0].item}: no belts chain ${plan[base.source].recipe}'s machines to ${plan[base.consumers[0]].recipe}'s`);
+      if (base.sorted) {
+        // A byproduct sorted out of each belt: its producers' run, a filter splitter right after
+        // them sending the byproduct on to the east edge, the rest into its consumers' run (as
+        // below, a belt at a time). Where a splitter finds no way (`chained`), each belt runs on
+        // through its consumers to the east edge, the byproduct with it.
+        const through = ctx.chained === 'all' || !!ctx.chained?.has(base.id);
+        const rest = base.items.filter(i => i.item !== base.sorted);
+        const all = wants(consumers);
+        // (What each run's lanes carry of all it makes, the byproduct too: each on its own, its
+        // machines at full speed.)
+        const carried = groups.map(g => deliver([{ producers: g.producers, consumers: [] }], false).total);
+        const supplied = base.items.reduce((sum, i) => sum + i.supply, 0);
+        groups.forEach((g, j) => {
+          const made = g.producers.reduce((sum, s) => sum + production(s), 0) / total;
+          const items = base.items.map(i => ({ ...i, rate: i.rate * made, supply: i.supply * made, capacity: carried[j], lane: 'out' }));
+          if (through) {
+            routes.push(beltRoute(routes.length, base, [base.id], items, [...g.producers, ...g.consumers], plan));
+            return;
+          }
+          const trunk = beltRoute(routes.length, base, [base.id], items, g.producers, plan);
+          trunk.filter = base.sorted;
+          routes.push(trunk);
+          const share = all > 0 ? wants(g.consumers) / all : 0;
+          const member = beltRoute(routes.length, { ...base, sink: null }, [base.id], rest.map(i => ({ ...i, rate: i.rate * share, supply: i.supply * made, capacity: carried[j] * i.supply / supplied, lane: 'out' })), g.consumers, plan);
+          member.servesRows[base.source] = [];
+          member.fedFrom = trunk.id;
+          routes.push(member);
+          trunk.fanOut = [member.id];
+        });
+        if (!through) ctx.fannedOut = true;
+        continue;
+      }
     } else if (base.consumers.length && fansOut(base) && byproductOf(base)) {
       // The same where an item of it none of them takes leaves on the train (a byproduct: Py's
       // empty barrels): a splitter right after the producers sends it on to the east edge (the

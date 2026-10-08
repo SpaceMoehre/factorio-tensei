@@ -6,6 +6,8 @@ import { encodeBlueprint } from '../js/blueprint.js';
 import { buildCore, oriented } from '../js/layout/core.js';
 import { logistics as base } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
+import { search } from '../js/search.js';
+import { expandChain } from '../js/chain.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe', liquidFuel: 'natural-gas' };
@@ -69,4 +71,23 @@ test('a byproduct is sorted out after its producers: stone off the crushed quart
   assert.deepEqual([splitter.filter, splitter.priority !== undefined], ['stone', true]);
   assert.equal(sorter.pieces.at(-1).x, block.bounds.x + block.bounds.w - 1);
   assertValid(block, shipped, logistics);
+});
+
+// Py's ball mills make 1800/min of molybdenite dust with 180 of gravel, more than one belt
+// carries, for agitators that take only the dust (the jaw crushers 900 of crushed molybdenite with
+// 360 of stone): an Internal Path all the same, each of its parallel belts sorting the byproduct
+// out after its producers (else running on through its consumers to the east edge). Before, the
+// route ran as one belt and every design starved.
+test('a byproduct on more than one belt: each of the Internal Path\'s belts sorts it out, nothing starves', () => {
+  const entries = expandChain([{ item: 'molybdenite-pulp', rate: 9000 }], shipped, { made: ['molybdenite-dust', 'crushed-molybdenite'], selections: {} }).entries;
+  let best = null;
+  const run = search(entries, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 }, { seed: 1, maxCandidates: 4 });
+  for (let step = run.next(); !step.done; step = run.next()) best = step.value;
+  assert.ok(best, 'no layout');
+  assert.equal(best.score[0], 0);
+  for (const item of ['molybdenite-dust', 'crushed-molybdenite']) {
+    assert.ok(best.block.routes.filter(r => r.kind === 'belt' && r.items.some(i => i.item === item) && !r.fedFrom).length >= 2, `${item} on one belt`);
+  }
+  assert.ok(best.block.routes.some(r => r.filter === 'stone'));
+  assertValid(best.block, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
 });

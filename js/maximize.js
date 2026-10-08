@@ -114,7 +114,8 @@ export function* maximize(goals, catalog, logistics, options) {
 // Starvation. Returns { block, score, placed, tried, designed, starves, failure }: block null
 // when none fits, `starves` when that is for want of a design without Starvation (or of one that
 // fits the City Block: a Count's designs come and go like its Starvation), not of room, or the
-// try ran out of time (designing and routing the first time take long: not for want of room);
+// try ran out of time (not for want of room either); `budgetMs` is the time its candidates get once
+// its Sub-Blocks are designed;
 // `designed` lists each Sub-Block's item, Count and best design's area.
 // precheck: the Side Output's Sub-Blocks are checked for Starvation first (worth it above the
 // highest n whose Sub-Blocks were all designed without).
@@ -127,15 +128,14 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
   } catch (e) {
     return { block: null, tried: 0, designed, starves: true, failure: e };
   }
-  const start = now();
   try {
     const run = search(entries, plan.catalog, plan.logistics, {
-      seed, site, maxCandidates, deadline: now() + budgetMs, now, perfect: true, precheck, designed: d => { designed = d; },
+      seed, site, maxCandidates, deadline: now() + budgetMs, routing: budgetMs, now, perfect: true, precheck, designed: d => { designed = d; },
     });
     for (let step = run.next(); ; step = run.next()) {
       if (step.done) {
         const failure = step.value.failure ?? new Error(`no layout without starvation fits ${list[0].rate}/min`);
-        return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves) || now() >= start + budgetMs, failure };
+        return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), failure };
       }
       if (step.value.score[0] === 0) {
         run.return(undefined);

@@ -84,6 +84,12 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v22: Byproducts on parallel belts (implemented)
+Byproducts more than one belt carries, and Maximize's budget (ADR 0030); where v22 differs from v21, v22 wins.
+- **Byproducts on parallel belts:** a producer's route to its one consumer Sub-Block, with one item left over for the train that its consumer does not take, and more than one belt's worth, is an Internal Path: parallel belts, each sorting the byproduct out after its producers with a filter splitter (or, where that finds no way, running on through its consumers to the east edge). No splitter joins those belts, so they are as many as divide producers and consumers evenly. Side Belts keep a route that runs as one belt in one.
+- **Budget after designing:** a Maximize try's candidates get its budget once the Sub-Blocks are designed; only a try that ran out of time while routing bounds the next as one that starves.
+- **Bands' two-row check:** designed once per Sub-Block and row, from rows that long only, each Slot checked against the sizes. Py molybdenum oxide in 236 × 236 among roboports: Maximize 199.99/min (none before), the check 34 s (272 s).
+
 ## v21: Fluids Between (implemented)
 Smaller Sub-Blocks of machines taking several fluids on one face (ADR 0029); where v21 differs from v20, v21 wins.
 - **Fluids Between:** two rows of machines face each other across a band of their fluids' pipe rows, the second row the first's mirror image, so each fluid's connections meet column for column. Their belts lie outside the pair (a pipe row per fluid side by side, each diving under the other's connections), or between the pipe rows nearest the machines. Routed with no margin first: the fluids come in straight along their rows, their stubs side by side at the west edge. Pairs stack, the band between two of them only as tall as their shared belts (none: they stand against each other), their pipe bands joined by risers beside the stack; repeated modules stand so too. Py moss: 24 × 15 at 35/min (was 28 × 21), 40 × 30 at 100/min (45 × 42), 92 × 71 at 600/min (93 × 94).

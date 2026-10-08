@@ -27,8 +27,10 @@ import { compactness } from './layout/score.js';
 //            `starves` set, when a Sub-Block cannot be designed without, or not to fit the City
 //            Block), precheck (with perfect: the Side Output's Sub-Blocks are checked first),
 //            designed (called once the Sub-Blocks are designed, with each one's item, Count and
-//            its best design's area) }
-// Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }.
+//            its best design's area), routing (ms: the candidates get at least this long once the
+//            Sub-Blocks are designed, however long that took) }
+// Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }; returns { tried,
+// failure, timedOut (it stopped for want of time, not of candidates) }.
 export function* search(entries, catalog, logistics, options = {}) {
   const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null, strategy = 'search' } = options;
   const spread = strategy === 'spread';
@@ -64,6 +66,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     if (perfect && site && !designs[i].some(fitting)) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: no design without starvation fits the city block`), starves: true };
   }
   designed?.(ctx.plan.map((sb, i) => ({ item: sb.item, count: sb.count, area: designOf(designs[i][0])?.area ?? null })));
+  const until = options.routing === undefined ? deadline : Math.max(deadline, now() + options.routing);
 
   // Breakout designs, built the first time the search tries them (with a random source of their
   // own, so the rest of the search draws as it would without them): a Sub-Block's designs for
@@ -190,7 +193,8 @@ export function* search(entries, catalog, logistics, options = {}) {
   });
   // Each new best is refined first: every Sub-Block slid a few tiles each way, and Breakouts.
   let refining = [];
-  while (tried < maxCandidates && (tried === 0 || now() < deadline)) {
+  let timedOut = false;
+  while (tried < maxCandidates && (tried === 0 || !(timedOut = now() >= until))) {
     // In a City Block, a search whose structured candidates found no room for a layout (or,
     // looking for one without Starvation, none of those) seldom finds one later.
     if ((perfect || (site && !best)) && tried >= structured + patience) break;
@@ -259,7 +263,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       if (trial && placed > best.placed) continue;
       if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
       // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
-      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => now() > deadline : null };
+      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => (timedOut ||= now() > until) : null };
       // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
       // else without those across Sub-Blocks, else without splitters (a Recipe Loop's feedback
       // by train) — and the roomier one next.
@@ -347,7 +351,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       yield { block, score, tried, placed };
     }
   }
-  return { tried, failure };
+  return { tried, failure, timedOut };
 
   // Breakout trials as candidates, each remembered with what it tries.
   function register(list) {

@@ -575,7 +575,7 @@ export function buildCore(sb, building, links, variant, env) {
   // Internal Path's output is judged by its Path Flow instead (design.js), from pathDrops.
   let overload = 0;
   const outRoute = links.output === null ? null : env.routes[links.output];
-  const internal = outRoute !== null && typeof outRoute.source === 'number' && outRoute.consumers.length === 1 && outRoute.sink !== 'side-output';
+  const internal = outRoute !== null && typeof outRoute.source === 'number' && outRoute.consumers.length === 1 && (outRoute.sink !== 'side-output' || !!outRoute.sorted);
   for (const part of parts) {
     for (const routeId of part.routeIds) {
       const route = env.routes[routeId];

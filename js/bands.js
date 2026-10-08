@@ -411,32 +411,34 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
 
 // Whether Sub-Block i's machines stand two rows to a Part in a Slot (a row of perRow each): some
 // design of two rows as long (or one shorter) routes without starving and fits the Slot, among
-// those a Part of them gets (its belts as a Part's; random variants too). Cached by what decides
-// it: the recipe and machine, what it takes and makes, the row and the Slot. (A Part's belts
-// visiting both bands outside its rows run round them: with many, the design outgrows the Slot,
-// Py vrauks-2 paddocks two rows of eight 112 wide.)
+// those a Part of them gets (its belts as a Part's; random variants too). The designs' sizes are
+// cached by what decides them: the recipe and machine, what it takes and makes, its Count and the
+// row; each Slot is checked against them. (A Part's belts visiting both bands outside its rows
+// run round them: with many, the design outgrows the Slot, Py vrauks-2 paddocks two rows of eight
+// 112 wide.)
 const twoRows = new Map();
 function twoRowsFit(entries, plan, catalog, logistics, site, seed, i, slot, perRow) {
   const sb = plan[i];
   const machines = Math.min(sb.count, 2 * perRow);
-  const key = JSON.stringify([sb.recipe, sb.building, sb.modules, sb.inputs.map(x => x.name), sb.outputs.map(x => x.name), perRow, slot.w + slot.spill, slot.h, logistics]);
-  if (twoRows.has(key)) return twoRows.get(key);
-  // The Sub-Block as a Part of that many machines, the rest whole.
-  const probe = entries.map(e => (e.goal.item !== sb.item ? e : { ...e, goal: { ...e.goal, rate: e.goal.rate * machines / sb.count, part: true, machines } }));
-  let fits = false;
-  try {
-    const ctx = context(probe, catalog, logistics, site);
-    const lengths = [perRow, perRow - 1].filter(k => k > 0);
-    const list = designStep(ctx, i, random(seed), { draws: DRAWS, lengths });
-    fits = list.filter(c => c.spec?.variant && !c.spec.copies && lengths.includes(c.spec.variant.rowLength)).some(c => {
-      const d = designOf(c);
-      return d && d.trouble <= 1e-6 && d.kinds.every(k => k.module.area.w <= slot.w + slot.spill && k.module.area.h <= slot.h);
-    });
-  } catch (e) {
-    if (!(e instanceof LayoutError || e instanceof RoutingError)) throw e;
+  const key = JSON.stringify([sb.recipe, sb.building, sb.modules, sb.inputs.map(x => x.name), sb.outputs.map(x => x.name), sb.count, perRow, logistics]);
+  if (!twoRows.has(key)) {
+    // The Sub-Block as a Part of that many machines, the rest whole.
+    const probe = entries.map(e => (e.goal.item !== sb.item ? e : { ...e, goal: { ...e.goal, rate: e.goal.rate * machines / sb.count, part: true, machines } }));
+    const sizes = [];
+    try {
+      const ctx = context(probe, catalog, logistics, site);
+      const lengths = [perRow, perRow - 1].filter(k => k > 0);
+      for (const c of designStep(ctx, i, random(seed), { draws: DRAWS, lengths, only: true })) {
+        if (!c.spec?.variant || c.spec.copies || !lengths.includes(c.spec.variant.rowLength)) continue;
+        const d = designOf(c);
+        if (d && d.trouble <= 1e-6) sizes.push(d.kinds.map(k => k.module.area));
+      }
+    } catch (e) {
+      if (!(e instanceof LayoutError || e instanceof RoutingError)) throw e;
+    }
+    twoRows.set(key, sizes);
   }
-  twoRows.set(key, fits);
-  return fits;
+  return twoRows.get(key).some(areas => areas.every(a => a.w <= slot.w + slot.spill && a.h <= slot.h));
 }
 
 // The ways each consumer part may take each item made in parts from one producer part with room
