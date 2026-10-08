@@ -116,6 +116,29 @@ test('a Side Belt runs down several machines as one part', () => {
   assert.equal(part.pieces.at(-1).x, module.area.x + module.area.w - 1);
 });
 
+// A tile per machine kept free for a pole in each band asked for (poleSlots): here the bands above
+// and below two rows of factories, where the belts running round them leave no tile for a pole.
+test('pole slots keep a tile per machine free in several bands', () => {
+  const setup = smallParts({ ...logistics, handSize: 3 }, 1200);
+  const { ctx, sb, links, bolts, cable, gears } = setup;
+  const variant = {
+    rotation: 0, rowLength: 1, flip: false, middle: 4, gap: 0, columns: 'center', shift: 0, poleSlot: null, pipes: [],
+    poleSlots: [{ band: 0, row: 1 }, { band: 2, row: 1 }],
+    belts: [
+      { routeIds: [bolts], part: 0, band: 1, row: 2, serves: [0, 1] },
+      { routeIds: [cable], part: 0, band: 0, row: 2, serves: [0] }, { routeIds: [cable], part: 1, band: 2, row: 2, serves: [1] },
+    ],
+    sides: [{ routeIds: [gears], part: 0, face: 'W', slot: 1, serves: [0, 1] }],
+    heads: [0, 1].map(r => ({ routeIds: [links.output], part: r, face: 'E', at: 3, serves: [r] })),
+  };
+  const core = buildCore(sb, pyCatalog.buildings[sb.building], links, variant, ctx.env);
+  const machines = core.entities.filter(e => e.kind === 'building');
+  const top = Math.min(...machines.map(m => m.y)), bottom = Math.max(...machines.map(m => m.y + m.h - 1));
+  assert.ok(core.poleSlots.some(([, y]) => y < top), 'a slot above the rows');
+  assert.ok(core.poleSlots.some(([, y]) => y > bottom), 'a slot below them');
+  assert.throws(() => buildCore(sb, pyCatalog.buildings[sb.building], links, { ...variant, poleSlots: [{ band: 3, row: 1 }] }, ctx.env), /pole slot outside its band/);
+});
+
 // 90° output inserters stand in the belt's row and drop along it: each drop point moves to the
 // side of the lane with less on it, so one row of machines fills both lanes of its belt.
 test('90° output inserters choose their lane: one row of machines fills both lanes', () => {

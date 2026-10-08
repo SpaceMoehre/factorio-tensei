@@ -253,6 +253,12 @@ test('Fan-out: belts join a run where its line falls short, as few as carry it a
   const urea = planFan(Array.from({ length: 5 }, () => ({ items: [{ item: 'urea', rate: 360, capacity: 900, supply: 900 }] })));
   assert.deepEqual(urea.joins, [2]);
   assert.deepEqual(urea.brings.map(b => b[0].rate), [900, 900]);
+  // From producers, the line carries on what they make less what the belts before take: 300
+  // water barrels a minute past belts taking 120, 90 and 60.
+  const barrels = planFan([120, 90, 60].map(rate => ({ items: [{ item: 'water-barrel', rate, capacity: rate, supply: rate }] })), new Map([['water-barrel', 300]]));
+  assert.deepEqual(barrels.joins, []);
+  assert.deepEqual(barrels.supply.map(([i]) => i.supply), [120, 90, 60]);
+  assert.ok(planFan([{ items: [{ item: 'water-barrel', rate: 320, capacity: 320, supply: 320 }] }, { items: [{ item: 'water-barrel', rate: 10, capacity: 10, supply: 10 }] }], new Map([['water-barrel', 300]])).joins.length, 'too little: a belt would have to join');
 });
 
 // Py small parts at 3600/min with fast inserters moving one item a swing: 76 automated factories,

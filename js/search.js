@@ -260,15 +260,19 @@ export function* search(entries, catalog, logistics, options = {}) {
       } catch (e) {
         if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
         // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
-        // else without splitters (a Recipe Loop's feedback by train) — and the roomier one next.
-        if (!(e instanceof RoutingError) || !work.routes.some(r => r.splitter || r.fan || r.taps)) throw e;
-        try {
-          if (!work.routes.some(r => r.fan)) throw e;
-          composed = compose(ctx, work, positions, { ...layout, fansLast: true });
-        } catch (again) {
-          if (!(again instanceof RoutingError)) throw again;
-          composed = compose(ctx, work, positions, { ...layout, plain: true });
+        // else without those across Sub-Blocks, else without splitters (a Recipe Loop's feedback
+        // by train) — and the roomier one next.
+        if (!(e instanceof RoutingError) || !(e.fans || e.across || work.routes.some(r => r.splitter || r.fan || r.taps))) throw e;
+        const fallbacks = [...(e.fans ? [{ fansLast: true }] : []), ...(e.across ? [{ alone: true }] : [])];
+        for (const fallback of fallbacks) {
+          try {
+            composed = compose(ctx, work, positions, { ...layout, ...fallback });
+            break;
+          } catch (again) {
+            if (!(again instanceof RoutingError)) throw again;
+          }
         }
+        composed ??= compose(ctx, work, positions, { ...layout, plain: true });
       }
       block = finishBlock(composed, catalog, logistics);
     } catch (e) {

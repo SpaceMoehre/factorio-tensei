@@ -46,14 +46,22 @@ export class Grid {
     return !(this.tunnelLines.get(lineKey(name, s)) ?? []).some(t => spansOverlap(t, s));
   }
 
-  // Routing may try an option and take it back: everything it changes is saved here.
-  snapshot() {
-    return { occupied: new Map(this.occupied), cells: this.cells.slice(), tunnels: this.tunnels.length };
+  // Routing may try an option and take it back: everything it changes is saved here (with
+  // `holds`, the tiles held for routes too, where what it tried held some).
+  snapshot({ holds = false } = {}) {
+    return {
+      occupied: new Map(this.occupied), cells: this.cells.slice(), tunnels: this.tunnels.length,
+      ...(holds ? { reserved: new Map(this.reserved), held: this.held.slice() } : {}),
+    };
   }
 
-  restore({ occupied, cells, tunnels }) {
+  restore({ occupied, cells, tunnels, reserved = null, held = null }) {
     this.occupied = occupied;
     this.cells = cells;
+    if (reserved && held) {
+      this.reserved = new Map(reserved);
+      this.held = held.slice();
+    }
     for (const t of this.tunnels.splice(tunnels)) {
       const list = this.tunnelLines.get(lineKey(t.name, t));
       list.splice(list.indexOf(t), 1);

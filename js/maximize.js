@@ -33,22 +33,49 @@ export function* maximize(goals, catalog, logistics, options) {
   // after the search, where they hold more than it found.
   const top = bandsTop(plan, options.site);
   let banded = false;
+  // One try in Bands: the layout, else null.
+  function* inBand(n) {
+    const list = plan.goalsFor(n);
+    yield { type: 'try', rate: list[0].rate, machines: n };
+    const { entries } = plan.chainOf(list);
+    // (As long as a try of the search may take.)
+    const deadline = (options.now ?? Date.now)() + (options.budgetMs ?? Infinity);
+    const outcome = bands(entries, plan.catalog, plan.logistics, options.site, { seed: options.seed ?? 1, until: () => (options.now ?? Date.now)() > deadline });
+    tried++;
+    if (!outcome?.block) {
+      misses.push({ rate: list[0].rate, machines: n, reason: outcome?.failure?.message ?? null });
+      return null;
+    }
+    plan.record(n, { block: outcome.block, placed: null, designed: null });
+    best = { rate: list[0].rate, machines: n, goals: list };
+    yield { type: 'best', block: outcome.block, score: [0], tried, ...best };
+    return outcome.block;
+  }
+  // From the most its parts hold down, BAND_TRIES Counts one by one; then (with many machines'
+  // belts to link, the parts hold far more than route) halfway between the highest known to fit
+  // (`above`, or none) and the lowest above it that did not, while a gap is left; then, once,
+  // two above the highest that fit (whether one routes comes and goes with the Count), and on
+  // halfway from there.
   function* inBands(above) {
     banded = true;
+    const missed = new Set();
+    let fit = above, skipped = false;
     for (let n = top; n > above && n > top - BAND_TRIES; n--) {
-      const list = plan.goalsFor(n);
-      yield { type: 'try', rate: list[0].rate, machines: n };
-      const { entries } = plan.chainOf(list);
-      const outcome = bands(entries, plan.catalog, plan.logistics, options.site, { seed: options.seed ?? 1 });
-      tried++;
-      if (!outcome?.block) {
-        misses.push({ rate: list[0].rate, machines: n, reason: outcome?.failure?.message ?? null });
-        continue;
+      if (yield* inBand(n)) return;
+      missed.add(n);
+    }
+    for (;;) {
+      const miss = Math.min(...[...missed].filter(m => m > fit));
+      if (!Number.isFinite(miss)) break;
+      let n = Math.floor((fit + miss) / 2);
+      if (miss - fit <= 1) {
+        if (skipped || fit + 2 >= top - BAND_TRIES + 1) break;
+        skipped = true;
+        n = fit + 2;
       }
-      plan.record(n, { block: outcome.block, placed: null, designed: null });
-      best = { rate: list[0].rate, machines: n, goals: list };
-      yield { type: 'best', block: outcome.block, score: [0], tried, ...best };
-      return;
+      if (missed.has(n)) break;
+      if (yield* inBand(n)) fit = n;
+      else missed.add(n);
     }
   }
   if (top >= plan.foretold().machines + FILL) {
@@ -341,8 +368,9 @@ function bandsTop(plan, site) {
   return lo;
 }
 
-// Bands: how many Counts below the most its parts hold Maximize tries with them.
-const BAND_TRIES = 8;
+// Bands: how many Counts below the most its parts hold Maximize tries with them one by one,
+// before halving the gap down to the highest known to fit.
+const BAND_TRIES = 2;
 
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;

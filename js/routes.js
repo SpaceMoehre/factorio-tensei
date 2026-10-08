@@ -17,14 +17,15 @@ export function buildRoutes(plan, flows, laneCapacity) {
   // each consumer can split it into parallel belts of its own.
   const solids = flows.sideInput.filter(i => i.type === 'item').flatMap(input => {
     const consumers = consumersOf(input.item);
-    // (Parts of a Sub-Block standing apart, Bands, take theirs each on its own too.)
+    // (Parts of a Sub-Block standing apart, Bands, take theirs each on its own too.) Their belts
+    // still share belts from the west edge through splitters (compose.js: a Fan-out across them).
     if (consumers.length < 2 || (input.rate <= 2 * laneCapacity && !consumers.some(c => plan[c].part))) return [{ ...input, consumers }];
-    return consumers.map(c => ({ ...input, rate: plan[c].inputs.find(x => x.name === input.item).rate, consumers: [c] }));
+    return consumers.map(c => ({ ...input, rate: plan[c].inputs.find(x => x.name === input.item).rate, consumers: [c], perConsumer: true }));
   });
-  for (const { consumers, items } of mergeGroups(solids, laneCapacity)) {
+  for (const { consumers, items, perConsumer } of mergeGroups(solids, laneCapacity)) {
     // A merged belt gives each item one lane; a lone item fills both.
     const capacity = items.length === 2 ? laneCapacity : 2 * laneCapacity;
-    add({ kind: 'belt', source: 'side-input', sink: null, consumers, items: items.map(i => saturated(i.item, i.rate, capacity)) });
+    add({ kind: 'belt', source: 'side-input', sink: null, consumers, items: items.map(i => saturated(i.item, i.rate, capacity)), ...(perConsumer ? { perConsumer } : {}) });
   }
   for (const input of flows.sideInput.filter(i => i.type === 'fluid')) {
     add({
@@ -73,13 +74,14 @@ function mergeGroups(inputs, laneCapacity) {
     const { consumers } = input;
     const k = consumers.join(',');
     if (!byConsumers.has(k)) byConsumers.set(k, { consumers, items: [] });
-    byConsumers.get(k).items.push({ item: input.item, rate: input.rate });
+    byConsumers.get(k).items.push({ item: input.item, rate: input.rate, perConsumer: !!input.perConsumer });
   }
   const groups = [];
+  const group = (consumers, items) => ({ consumers, items, perConsumer: items.some(i => i.perConsumer) });
   for (const { consumers, items } of byConsumers.values()) {
     const fits = items.filter(i => i.rate <= laneCapacity);
-    for (const i of items) if (i.rate > laneCapacity) groups.push({ consumers, items: [i] });
-    for (let i = 0; i < fits.length; i += 2) groups.push({ consumers, items: fits.slice(i, i + 2) });
+    for (const i of items) if (i.rate > laneCapacity) groups.push(group(consumers, [i]));
+    for (let i = 0; i < fits.length; i += 2) groups.push(group(consumers, fits.slice(i, i + 2)));
   }
   return groups;
 }

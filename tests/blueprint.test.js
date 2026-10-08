@@ -146,6 +146,16 @@ test('a Fan-out has a display panel for each of its belts from the west edge', a
   assert.deepEqual(panels, [{ position: { x: -0.5, y: 0.5 }, text: 'urea 660/min' }]);
 });
 
+// A splitter sending a byproduct away (Py's empty barrels off a belt of cocoons) carries its filter
+// and the output side it goes to.
+test('a splitter sending a byproduct away carries its filter and output priority', async () => {
+  const splitter = { name: 'splitter', kind: 'splitter', x: 1, y: 0, w: 1, h: 2, direction: 4, priority: 'left', filter: 'barrel' };
+  const { json } = await encodeBlueprint({ subBlocks: [], entities: [splitter], routes: [] }, catalog);
+  const [out] = JSON.parse(json).blueprint.entities;
+  assert.equal(out.output_priority, 'left');
+  assert.deepEqual(out.filter, { name: 'barrel' });
+});
+
 // Module requests fill the machine's module inventory (4 in Factorio 2.0), one slot each, so
 // construction robots bring the plants along with the farm.
 test("every building requests its Sub-Block's modules, slot by slot", async () => {

@@ -16,6 +16,12 @@ const EXPANSIONS_PER_STEP = 100;
 export class RoutingError extends Error {
   /** @type {number[] | undefined} the Sub-Blocks a link that found no room runs between */
   steps;
+  /** @type {boolean | undefined} whether the layout had Fan-outs (the caller may route it again) */
+  fans;
+  /** @type {boolean | undefined} whether any ran across Sub-Blocks */
+  across;
+  /** @type {number | undefined} a route a Fan-out from producers found no way for (chain it) */
+  chain;
 }
 
 // Routes a belt through its waypoints (a chain), committing each leg to the grid as it goes.
@@ -122,7 +128,8 @@ function edgeGoal(grid, side) {
 // (where the next piece, already placed, carries on), or off the east or west edge. Joins the
 // routed pieces of two modules, or a module and the train.
 // spec: { id, starts: [{ x, y, a }], goal: { x, y, a } | 'east' | 'west', keepOff (tile keys held
-// for its route's other links, where they meet their copies: it does not take them) }
+// for its route's other links, where they meet their copies: it does not take them), most (the
+// most states it explores: a leg that may be tried elsewhere gives up sooner) }
 export function routeLink(grid, spec, names) {
   const pieces = [];
   const keepOff = spec.keepOff ?? new Set();
@@ -132,7 +139,7 @@ export function routeLink(grid, spec, names) {
     : [s => s.x === goal.x && s.y === goal.y && s.a === goal.a, (x, y) => GREED * (Math.abs(x - goal.x) + Math.abs(y - goal.y))];
   if (spec.starts.some(s => isGoal(s))) return pieces;
   const leg = search(grid, spec.starts, isGoal, heuristic, moves,
-    typeof goal === 'string' ? undefined : () => !reachable(grid, spec.id, spec.starts, goal.x, goal.y, names.reach, keepOff));
+    typeof goal === 'string' ? undefined : () => !reachable(grid, spec.id, spec.starts, goal.x, goal.y, names.reach, keepOff), spec.most);
   if (!leg) throw new RoutingError(`belt ${spec.id}: no path from ${spec.starts[0].x},${spec.starts[0].y} to ${typeof goal === 'string' ? `the ${goal} edge` : `${goal.x},${goal.y}`}`);
   commitLeg(grid, spec, names.underground, leg, pieces);
   return pieces;
@@ -283,16 +290,17 @@ function commitLeg(grid, spec, undergroundName, leg, pieces) {
 // hopeless(): a cheap check that the goal cannot be reached at all, asked once a leg has taken
 // longer than a direct path would, so a waypoint walled in fails fast instead of spending the
 // whole budget.
-function search(grid, starts, isGoal, heuristic, moves, hopeless = () => false) {
+function search(grid, starts, isGoal, heuristic, moves, hopeless = () => false, most = Infinity) {
   const open = new Heap();
   const best = bestCosts(grid.area);
   for (const s of starts) {
     open.push({ ...s, reached: false, g: 0, prev: null, pieces: [] }, heuristic(s.x, s.y));
     best.set(s, 0);
   }
-  // A leg that has not found its goal after exploring every tile many times over has none.
+  // A leg that has not found its goal after exploring every tile many times over has none (nor
+  // after `most`: a leg that may be tried elsewhere).
   const distance = Math.min(...starts.map(s => heuristic(s.x, s.y)));
-  let budget = Math.min(EXPANSIONS_PER_TILE * grid.area.w * grid.area.h, EXPANSIONS_MAX + EXPANSIONS_PER_STEP * distance);
+  let budget = Math.min(EXPANSIONS_PER_TILE * grid.area.w * grid.area.h, EXPANSIONS_MAX + EXPANSIONS_PER_STEP * distance, most);
   let check = 200 + 20 * distance;
   while (open.size && budget-- > 0) {
     if (check-- === 0 && hopeless()) return null;

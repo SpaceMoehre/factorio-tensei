@@ -5,7 +5,7 @@ import { readFileSync } from 'node:fs';
 import { decodeBlueprint, readCityBlock, siteOf } from '../js/city.js';
 import { search } from '../js/search.js';
 import { maximize, planner, attempt } from '../js/maximize.js';
-import { gapsOf } from '../js/bands.js';
+import { gapsOf, bands } from '../js/bands.js';
 import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
 import { simulate } from '../js/sim.js';
@@ -379,7 +379,9 @@ test('Bands: the rows free of Fixtures between them, in a column range of a City
 // row or two in a gap between the Fixtures' rows (incubators in parts of eight in three of the
 // tall gaps, each feeding paddock parts chosen together, one gap's row of seven two parts of four
 // and three, the two lowest west rows eight long into the corridor), the sap extractors two rows
-// below the paddocks' two in the last tall gap, where the search alone found 50.
+// below the paddocks' two in the last tall gap, where the search alone found 50. Every part takes
+// native flora and moss merged on a belt of its own, sent off through a splitter on one of two
+// belts from the west edge (Fan-out across Sub-Blocks: 698 a minute of each, not 13 belts).
 test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 78 vrauks paddocks', async () => {
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
@@ -398,6 +400,50 @@ test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 7
   assert.equal(found.machines, 78);
   const { block } = found;
   assert.equal(block.entities.filter(e => e.kind === 'building' && e.recipe === 'vrauks-1').length, 78);
+  const flora = block.routes.filter(r => r.kind === 'belt' && r.source === 'side-input' && r.items.some(i => i.item === 'native-flora'));
+  assert.equal(flora.length, 13);
+  assert.equal(flora.filter(r => r.fedBy === undefined).length, 2, 'belts of native flora and moss from the west edge');
+  for (const r of flora.filter(r => r.fedBy !== undefined)) {
+    assert.equal(r.pieces[0].kind, 'splitter');
+    assert.ok(block.routes[r.fedBy].pieces.includes(r.pieces[0]), 'sent off the belt from the west edge');
+  }
+  assertValid(block, shipped, settings);
+  assertInside(block);
+  assert.equal(simulate(block).starvation.length, 0);
+});
+
+// Py vrauks-2, its incubators by vrauks-cocoon-2: paddocks and incubators each take five items
+// (saps and water barrels among them) and give back the empty barrels. In Bands the incubators
+// stand in Parts of two rows (a design of two fits a tall Slot, a pole kept a tile in the bands
+// outside its rows), the paddocks in Parts of one (none of two fits: two Parts one above the
+// other in a tall Slot); the saps and water barrels come on lines past the Parts they feed
+// (Fan-outs from producers), and the empty barrels the incubators give back leave through a
+// filter splitter. Before, Bands found no design and the search stopped at 30 paddocks.
+test('Bands: Py vrauks-2 fits 52 paddocks, lines from producers past their Parts', async () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
+  const site = siteOf(readCityBlock(blueprint, shipped), 4);
+  const settings = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
+  const selections = {
+    vrauks: { recipe: 'vrauks-2', building: 'vrauks-paddock-mk01', modules: [{ name: 'vrauks', count: 10 }] },
+    cocoon: { recipe: 'vrauks-cocoon-2', building: 'rc-mk01', modules: [{ name: 'vrauks', count: 2 }] },
+    saps: { recipe: 'sap-01', building: 'sap-extractor-mk01', modules: [{ name: 'sap-tree-mk02', count: 2 }] },
+  };
+  const plan = planner([{ item: 'vrauks', rate: 60 }], shipped, settings, { made: ['water-barrel', 'cocoon', 'saps'], selections, site });
+  const out = bands(plan.chainOf(plan.goalsFor(52)).entries, shipped, settings, site);
+  assert.ok(out?.block, out?.failure?.message);
+  const { block } = out;
+  assert.equal(block.entities.filter(e => e.kind === 'building' && e.recipe === 'vrauks-2').length, 52);
+  // Incubators in Parts of two rows, paddocks of one.
+  const rowsOf = sb => new Set(block.entities.filter(e => e.kind === 'building' && e.subBlock === sb.index).map(e => e.y)).size;
+  assert.ok(block.subBlocks.filter(sb => sb.item === 'cocoon').every(sb => rowsOf(sb) === 2));
+  assert.ok(block.subBlocks.filter(sb => sb.item === 'vrauks').every(sb => rowsOf(sb) === 1));
+  // A line from producers feeds several Parts, each through a splitter on it.
+  const fanned = block.routes.filter(r => r.fanOut);
+  assert.ok(fanned.length, 'a Fan-out from producers');
+  for (const trunk of fanned) {
+    for (const id of trunk.fanOut) assert.equal(block.routes[id].pieces[0].kind, 'splitter');
+  }
   assertValid(block, shipped, settings);
   assertInside(block);
   assert.equal(simulate(block).starvation.length, 0);

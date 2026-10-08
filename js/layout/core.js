@@ -39,7 +39,8 @@ export class LayoutError extends Error {}
 //   gap        extra columns between neighbouring machines
 //   columns    'center' | 'left' | 'right': which inserter columns are tried first
 //   shift      columns every second row sits to the side (|shift| ≤ gap)
-//   poleSlot   null or { band, row }: a tile per machine kept free for a pole
+//   poleSlot   null or { band, row }: a tile per machine kept free for a pole (poleSlots: one
+//              in each of several bands)
 //   ports      for each fluid, which of its boxes' connections to use (index, wrapping; the
 //              first when absent)
 //   sides      [{ routeIds, part, face: 'W' | 'E', slot: 1 | 2, serves: [row] }]: a Side Belt,
@@ -298,17 +299,18 @@ export function buildCore(sb, building, links, variant, env) {
       }
     }
   }
-  if (variant.poleSlot && (variant.poleSlot.band > rowCount || variant.poleSlot.row > (variant.poleSlot.band === 0 || variant.poleSlot.band === rowCount ? outerHeight(variant.poleSlot.band) : middle))) {
+  const kept = variant.poleSlots ?? (variant.poleSlot ? [variant.poleSlot] : []);
+  if (kept.some(slot => slot.band > rowCount || slot.row > (slot.band === 0 || slot.band === rowCount ? outerHeight(slot.band) : middle))) {
     throw new LayoutError('pole slot outside its band');
   }
-  const poleY = variant.poleSlot ? bandY(variant.poleSlot.band, variant.poleSlot.row) : null;
+  const poleYs = new Map(kept.map(slot => [slot.band, bandY(slot.band, slot.row)]));
   // Bands do not share tiles, so each band's inserters are placed on their own.
   const machineColumns = columnOrder(Wm, variant.columns).map(c => c + mxOff);
   for (const s of slots) s.columns = machineColumns.map(c => c + off(s.r));
   const columns = new Map();
   for (let band = 0; band <= rowCount; band++) {
     const inBand = s => s.belt.band === band;
-    const y = poleY !== null && variant.poleSlot.band === band ? poleY : null;
+    const y = poleYs.get(band) ?? null;
     // Pipe rows must stay passable too: their pipes dive under the inserters standing in them.
     const passRows = [
       ...beltRows.filter(b => b.band === band).map(b => ({ y: b.y, reach: env.beltReach })),
@@ -404,10 +406,7 @@ export function buildCore(sb, building, links, variant, env) {
         taps.push({ routeId: period.get(c, y).route, tile: [x0 + c, y] });
       }
       for (const [c, y] of period.all(v => v.join && v.row === r)) joins.push([x0 + c, y]);
-      if (poleY !== null) {
-        const [c] = period.find(v => v.type === 'pole');
-        if (r === 0) stamped.set(key(x0 + c, poleY), 'pole');
-      }
+      if (r === 0) for (const [c, y] of period.all(v => v.type === 'pole')) stamped.set(key(x0 + c, y), 'pole');
     }
   }
 

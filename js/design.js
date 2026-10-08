@@ -338,18 +338,14 @@ function buildSpec(ctx, index, spec, rng) {
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const links = coreLinks(sb, index, ctx.routes);
   let failure = null;
-  // Rows facing a band between them whose inserters there no pole can power (big machines leave
-  // no room beside them) try again with a tile per machine kept free for a pole in that band.
-  const slotted = (variant.poleSlot || variant.rowLength >= sb.count ? [] : [1, 2]).map(row => {
-    try {
-      const v = { ...variant, poleSlot: { band: 1, row } };
-      return { core: buildCore(sb, ctx.catalog.buildings[sb.building], links, v, ctx.env), variant: v };
-    } catch (e) {
-      if (!(e instanceof LayoutError)) throw e;
-      return null;
-    }
-  }).filter(Boolean);
-  for (const { core: c, variant: v } of [{ core, variant }, ...slotted]) {
+  // Rows whose inserters in a band no pole can power (big machines leave no room beside them,
+  // belts visiting several bands take the margins round them) try again with a tile per machine
+  // kept free for a pole in that band, nearest the machines first; band by band where power
+  // fails (a pole slot only where poles were what failed).
+  const tries = [{ core, variant }];
+  const tried = new Set();
+  while (tries.length) {
+    const { core: c, variant: v } = tries.shift();
     for (const margin of margins(c)) {
       try {
         const module = routeModule(c, moduleOptions(ctx, links, margin, sb));
@@ -359,10 +355,39 @@ function buildSpec(ctx, index, spec, rng) {
         failure = e;
       }
     }
-    // (A pole slot only where poles were what failed.)
-    if (!(failure instanceof PowerError)) break;
+    const band = failure instanceof PowerError && failure.at ? bandAt(c, failure.at.y) : null;
+    if (band === null) continue;
+    const slots = v.poleSlots ?? (v.poleSlot ? [v.poleSlot] : []);
+    for (const row of [1, 2]) {
+      if (slots.some(slot => slot.band === band && slot.row >= row)) continue;
+      const poleSlots = [...slots.filter(slot => slot.band !== band), { band, row }];
+      if (tried.has(JSON.stringify(poleSlots))) continue;
+      tried.add(JSON.stringify(poleSlots));
+      try {
+        const next = { ...v, poleSlot: null, poleSlots };
+        tries.push({ core: buildCore(sb, ctx.catalog.buildings[sb.building], links, next, ctx.env), variant: next });
+      } catch (e) {
+        if (!(e instanceof LayoutError)) throw e;
+      }
+    }
   }
   throw failure;
+}
+
+// The band of a core's tile row y: 0 above its first row of machines, k between rows k - 1 and
+// k, the number of rows below the last; null within a row of machines.
+function bandAt(core, y) {
+  const rows = [];
+  for (const e of core.entities.filter(e => e.kind === 'building')) {
+    const r = rows[e.row] ??= { top: e.y, bottom: e.y + e.h - 1 };
+    r.top = Math.min(r.top, e.y);
+    r.bottom = Math.max(r.bottom, e.y + e.h - 1);
+  }
+  for (let band = 0; band <= rows.length; band++) {
+    const above = rows[band - 1], below = rows[band];
+    if ((!above || y > above.bottom) && (!below || y < below.top)) return band;
+  }
+  return null;
 }
 
 // Candidates come back from another worker (structured clone) without their build: each given
