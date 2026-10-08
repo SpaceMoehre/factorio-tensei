@@ -416,7 +416,7 @@ export function compose(ctx, prepared, positions, layout) {
     // without, else none. A Fan-out from producers that finds no way has no other: routing it
     // again is no use, the caller may chain the route instead, `chain` its base.)
     if (tried.has(order.map(keyOf).join()) || tried.size > REROUTES || failed.task.fanOut) {
-      const chain = failed.task.fanOut ? { chain: failed.task.route.base } : {};
+      const chain = failed.task.fanOut ? { chain: failed.task.route.chainKey ?? failed.task.route.base } : {};
       throw Object.assign(failed.error, { steps: stepsOf(failed.task), fans: fans.size > 0, across: across.length > 0, ...chain });
     }
   }
@@ -1208,6 +1208,12 @@ function groupRoutes(ctx, instances, laneCapacity) {
       // through splitters, else with one belt more (2 to 1) or fewer (1 to 2) at the producers'
       // end; failing that, the ones that bring the most.
       const most = Math.min(producers.length, consumers.length);
+      // (A byproduct sorted out: the rest, what a run of producers makes and what its lanes carry
+      // of it, each machine at full speed.)
+      const rest = base.items.filter(i => i.item !== base.sorted);
+      const kept = rest.reduce((sum, i) => sum + i.rate, 0);
+      const makes = run => run.reduce((sum, s) => sum + production(s), 0);
+      const carriedBy = run => deliver([{ producers: run, consumers: [] }], false).total;
       const machinesIn = prefix(consumers, s => s.part.machines);
       const consumerRuns = splits(consumers, consumers.length, chainable, s => s.part.canEnter && entrySide(s) === W, () => true, (k, i, j) => machinesIn(i, j) ** 2);
       const endsEast = s => s.part.canExit && exitSide(s) === E;
@@ -1267,48 +1273,105 @@ function groupRoutes(ctx, instances, laneCapacity) {
         }
         return best;
       };
-      // Belts sorting a byproduct out each run on alone (no splitter joins them); where such belts
-      // starve the consumers (or chain none), they are joined as any Internal Path's where that
-      // starves them less, the byproduct riding on through the consumers to the east edge.
+      // A byproduct sorted out (route.sorted): a filter splitter right after each run of producers
+      // sends it on to the east edge, the rest into its consumers. Each run into a run of
+      // consumers where those bring every consumer what it takes (one belt each, no splitter
+      // joining them); else each run's line past the entries of as many runs of consumers as it
+      // brings what they take, a splitter before each (a Fan-out), the consumers cut as finely as
+      // they chain. Where a splitter finds no way (`chained`), or no runs bring enough, the belts
+      // are joined as any Internal Path's, the byproduct riding on through the consumers to the
+      // east edge.
+      const through = ctx.chained === 'all' || !!ctx.chained?.has(base.id);
       const alone = pick(!base.sorted);
+      if (base.sorted && !through) {
+        const sorting = alone && alone.short < 1e-6 ? alone.option.map(g => ({ producers: g.producers, runs: [g.consumers] })) : fanned();
+        if (sorting) {
+          sortOut(sorting);
+          continue;
+        }
+      }
       const together = base.sorted && !(alone && alone.short < 1e-6) ? pick(true) : null;
       riding = !!together && (!alone || together.short < alone.short - 1e-6);
       groups = (riding ? together : alone)?.option;
       if (!groups) throw new RoutingError(`${base.items[0].item}: no belts chain ${plan[base.source].recipe}'s machines to ${plan[base.consumers[0]].recipe}'s`);
       if (base.sorted && !riding) {
-        // A byproduct sorted out of each belt: its producers' run, a filter splitter right after
-        // them sending the byproduct on to the east edge, the rest into its consumers' run (as
-        // below, a belt at a time). Where a splitter finds no way (`chained`), each belt runs on
-        // through its consumers to the east edge, the byproduct with it.
-        const through = ctx.chained === 'all' || !!ctx.chained?.has(base.id);
-        const rest = base.items.filter(i => i.item !== base.sorted);
+        // (Its belts chained through their consumers: each runs on to the east edge, the
+        // byproduct with it.)
+        groups.forEach(g => {
+          const made = Math.min(carriedBy(g.producers), Math.max(makes(g.producers), wants(g.consumers) * total / kept)) / total;
+          routes.push(beltRoute(routes.length, base, [base.id], base.items.map(i => ({ ...i, rate: i.rate * made, supply: i.supply * made, capacity: carriedBy(g.producers), lane: 'out' })), [...g.producers, ...g.consumers], plan));
+        });
+        continue;
+      }
+      // Runs of producers each sorting the byproduct out (`sorting`: per run its producers and
+      // the runs of consumers its line passes), as routes: the producers' belt (filter) and a belt
+      // into each run of consumers, fed from it.
+      function sortOut(sorting) {
         const all = wants(consumers);
-        // (What each run's lanes carry of all it makes, the byproduct too: each on its own, its
-        // machines at full speed.)
-        const carried = groups.map(g => deliver([{ producers: g.producers, consumers: [] }], false).total);
-        const supplied = base.items.reduce((sum, i) => sum + i.supply, 0);
-        const kept = rest.reduce((sum, i) => sum + i.rate, 0);
-        groups.forEach((g, j) => {
+        for (const [j, { producers: run, runs }] of sorting.entries()) {
+          // (Where its splitter found no way, `chained` by this run: its line past them all the
+          // same, the byproduct with it, each belt off it on to the east edge.)
+          const key = `${base.id}/${j}`;
+          const riding = !!ctx.chained?.has(key);
           // (Its producers run as fast as its consumers take, where its lanes carry it: as an
           // Internal Path's belts bring what they are wanted for.)
-          const made = Math.min(carried[j], Math.max(g.producers.reduce((sum, s) => sum + production(s), 0), wants(g.consumers) * total / kept)) / total;
-          const items = base.items.map(i => ({ ...i, rate: i.rate * made, supply: i.supply * made, capacity: carried[j], lane: 'out' }));
-          if (through) {
-            routes.push(beltRoute(routes.length, base, [base.id], items, [...g.producers, ...g.consumers], plan));
-            return;
-          }
-          const trunk = beltRoute(routes.length, base, [base.id], items, g.producers, plan);
-          trunk.filter = base.sorted;
+          const taken = runs.reduce((sum, r) => sum + wants(r), 0);
+          const made = Math.min(carriedBy(run), Math.max(makes(run), taken * total / kept)) / total;
+          const trunk = beltRoute(routes.length, base, [base.id], base.items.map(i => ({ ...i, rate: i.rate * made, supply: i.supply * made, capacity: carriedBy(run), lane: 'out' })), run, plan);
+          if (!riding) trunk.filter = base.sorted;
+          trunk.chainKey = key;
           routes.push(trunk);
-          const share = all > 0 ? wants(g.consumers) / all : 0;
-          const member = beltRoute(routes.length, { ...base, sink: null }, [base.id], rest.map(i => ({ ...i, rate: i.rate * share, supply: i.supply * made, capacity: carried[j] * i.supply / supplied, lane: 'out' })), g.consumers, plan);
-          member.servesRows[base.source] = [];
-          member.fedFrom = trunk.id;
-          routes.push(member);
-          trunk.fanOut = [member.id];
-        });
-        if (!through) ctx.fannedOut = true;
-        continue;
+          trunk.fanOut = runs.map(r => {
+            const share = all > 0 ? wants(r) / all : 0;
+            // (Riding: its share of the byproduct too, as much of it as the run takes of the rest.)
+            const its = riding ? base.items.map(i => ({ ...i, rate: i.item === base.sorted ? i.rate * made * wants(r) / Math.max(taken, 1e-9) : i.rate * share })) : rest.map(i => ({ ...i, rate: i.rate * share }));
+            const member = beltRoute(routes.length, { ...base, sink: riding ? 'side-output' : null }, [base.id], its.map(i => ({ ...i, supply: i.rate, capacity: its.reduce((sum, x) => sum + x.rate, 0), lane: 'out' })), r, plan);
+            member.servesRows[base.source] = [];
+            member.fedFrom = trunk.id;
+            routes.push(member);
+            return member.id;
+          });
+        }
+        ctx.fannedOut = true;
+      }
+      // Runs of producers whose lines bring runs of consumers what they take: the fewest runs of
+      // producers (each within what its lanes carry), the consumers in as many runs as chain,
+      // dealt out in order, each run of producers about its share of all they take. Null where
+      // none do.
+      function fanned() {
+        // (A belt off a line enters its run from either side.)
+        const entered = splits(consumers, consumers.length, chainable, s => s.part.canEnter, () => true, (k, i, j) => machinesIn(i, j) ** 2);
+        let cs = null;
+        for (let c = consumers.length; c >= 1 && !cs; c--) cs = entered(c);
+        if (!cs) return null;
+        const need = cs.map(wants);
+        for (let count = 1; count <= producers.length; count++) {
+          const ps = splits(producers, count, chainable, () => true, endsEast, (k, i, j) => making(i, j) ** 2)(count);
+          if (!ps) continue;
+          const room = ps.map(run => carriedBy(run) * kept / total);
+          const whole = room.reduce((sum, r) => sum + r, 0);
+          if (whole < need.reduce((sum, w) => sum + w, 0) - 1e-6) continue;
+          // (Runs of consumers in order, a share for each run of producers within what it brings:
+          // fit[j][k], whether the first k fit the first j.)
+          const sum = prefix(need.map((_, k) => k), k => need[k]);
+          const fit = ps.map(() => Array(cs.length + 1).fill(-1));
+          for (let j = 0; j < ps.length; j++) {
+            for (let k = 1; k <= cs.length; k++) {
+              for (let i = j === 0 ? 0 : 1; i < k && fit[j][k] < 0; i++) {
+                if ((j === 0 ? i === 0 : fit[j - 1][i] >= 0) && sum(i, k) <= room[j] + 1e-6) fit[j][k] = i;
+              }
+            }
+          }
+          if (fit[ps.length - 1][cs.length] < 0) continue;
+          const sorting = [];
+          for (let j = ps.length - 1, k = cs.length; j >= 0; j--) {
+            const i = fit[j][k];
+            sorting.unshift({ producers: ps[j], runs: cs.slice(i, k) });
+            k = i;
+          }
+          return sorting;
+        }
+        return null;
       }
     } else if (base.consumers.length && fansOut(base) && byproductOf(base)) {
       // The same where an item of it none of them takes leaves on the train (a byproduct: Py's

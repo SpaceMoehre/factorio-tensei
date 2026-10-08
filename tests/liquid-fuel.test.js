@@ -89,7 +89,9 @@ test('a byproduct on more than one belt: each of the Internal Path\'s belts sort
   for (const item of ['molybdenite-dust', 'crushed-molybdenite']) {
     assert.ok(best.block.routes.filter(r => r.kind === 'belt' && r.items.some(i => i.item === item) && !r.fedFrom).length >= 2, `${item} on one belt`);
   }
-  assert.ok(best.block.routes.some(r => r.filter === 'stone'));
+  // Every belt sorts its byproduct out: none rides on through the consumers.
+  assert.equal(best.score[2], 0);
+  assert.ok(best.block.routes.some(r => r.filter === 'stone') && best.block.routes.some(r => r.filter === 'gravel'));
   assertValid(best.block, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
 });
 

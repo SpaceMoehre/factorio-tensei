@@ -13,7 +13,8 @@ import { bands } from './bands.js';
 // finds one later). Which n to try comes from the Foretelling (planner below), then the bounds
 // close in from the outcomes (a number whose designs starve bounds them only for a while: the
 // next whole number up may not starve); then Filling tries more machines than fit, ten at a time,
-// halving.
+// halving. Those tries let every byproduct ride on through its producers' consumers; the highest
+// that fit is tried once more, longer, with them sorted out by splitters (yielded where it fits).
 // Yields { type: 'foretell', rate, machines } (the highest rate foretold to fit, again whenever
 // the outcomes change it), { type: 'try', rate, machines, more } before each try (`more`: while
 // Filling, how many machines more than the highest that fit) and { type: 'best',
@@ -26,6 +27,8 @@ import { bands } from './bands.js';
 export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
   let tried = 0, failure = null, best = null, told = null;
+  // The n the best was found for (null: in Bands).
+  let bestN = null, bestScore = null;
   const misses = [];
   // Bands, in a City Block whose Fixtures stand in rows: the most machines its parts hold, then
   // fewer, until a layout fits (whether one routes comes and goes with the Count). First, where
@@ -48,6 +51,7 @@ export function* maximize(goals, catalog, logistics, options) {
     }
     plan.record(n, { block: outcome.block, placed: null, designed: null });
     best = { rate: list[0].rate, machines: n, goals: list };
+    bestN = null;
     yield { type: 'best', block: outcome.block, score: [0], tried, ...best };
     return outcome.block;
   }
@@ -93,11 +97,12 @@ export function* maximize(goals, catalog, logistics, options) {
     if (n === null) break;
     const list = plan.goalsFor(n);
     yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n), ...(plan.filling ? { more: n - plan.lo } : {}) };
-    const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable });
+    const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true });
     plan.record(n, outcome);
     tried += outcome.tried;
     if (outcome.block) {
       best = { rate: list[0].rate, machines: Math.ceil(n), goals: list };
+      [bestN, bestScore] = [n, outcome.score];
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
     } else {
       failure = outcome.failure;
@@ -105,6 +110,14 @@ export function* maximize(goals, catalog, logistics, options) {
     }
   }
   if (!banded && top > (best?.machines ?? 0)) yield* inBands(best?.machines ?? 0);
+  // The highest that fit found with every byproduct riding on through its producers' consumers
+  // (a layout sorting them out by splitters takes far longer to find): once more with them
+  // sorted out, given longer, kept where it fits.
+  if (best && bestN !== null) {
+    const sorted = attempt(plan, bestN, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true });
+    tried += sorted.tried;
+    if (sorted.block && sorted.score[2] < bestScore[2]) yield { type: 'best', block: sorted.block, score: sorted.score, tried, ...best };
+  }
   // (A number that starved may lie below the highest that fit.)
   const above = misses.filter(m => m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
   return { ...(best ?? { rate: 0, machines: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above };
@@ -118,9 +131,12 @@ export function* maximize(goals, catalog, logistics, options) {
 // its Sub-Blocks are designed;
 // `designed` lists each Sub-Block's item, Count and best design's area.
 // precheck: the Side Output's Sub-Blocks are checked for Starvation first (worth it above the
-// highest n whose Sub-Blocks were all designed without).
+// highest n whose Sub-Blocks were all designed without). unsorted: no byproduct sorted out after
+// its producers (search.js); routing: how long its candidates get once designed (budgetMs);
+// sorting: on past layouts whose byproducts ride on, to the first that sorts them all out (else
+// the best of them).
 /** @param {any} plan @param {number} n @param {any} options */
-export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false }) {
+export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false }) {
   const list = plan.goalsFor(n);
   let designed = null, entries;
   try {
@@ -130,14 +146,18 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
   }
   try {
     const run = search(entries, plan.catalog, plan.logistics, {
-      seed, site, maxCandidates, deadline: now() + budgetMs, routing: budgetMs, now, perfect: true, precheck, designed: d => { designed = d; },
+      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now, perfect: true, precheck, designed: d => { designed = d; },
     });
+    // (Sorting: the best so far, while its byproducts ride on.)
+    let kept = null;
     for (let step = run.next(); ; step = run.next()) {
       if (step.done) {
+        if (kept) return { block: kept.block, score: kept.score, placed: kept.placed, tried: step.value.tried, designed, starves: false, failure: null };
         const failure = step.value.failure ?? new Error(`no layout without starvation fits ${list[0].rate}/min`);
         return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), failure };
       }
-      if (step.value.score[0] === 0) {
+      if (sorting && step.value.score[0] === 0 && step.value.score[2] > 0) kept = step.value;
+      else if (step.value.score[0] === 0) {
         run.return(undefined);
         return { block: step.value.block, score: step.value.score, placed: step.value.placed, tried: step.value.tried, designed, starves: false, failure: null };
       }
@@ -373,6 +393,10 @@ function bandsTop(plan, site) {
 // Bands: how many Counts below the most its parts hold Maximize tries with them one by one,
 // before halving the gap down to the highest known to fit.
 const BAND_TRIES = 2;
+
+// How long the candidates of the last try (the highest that fit, its byproducts sorted out) get
+// at least once designed.
+const SORTING_MS = 120000;
 
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;

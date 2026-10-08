@@ -31,5 +31,15 @@ At 200/min the City Block's layout was 228 × 178, two thirds of it empty: 400/m
 
 Py molybdenum oxide in the 236 × 236 City Block, Maximize (budget 1 s or 10 s): 599.99/min (3 furnaces, 147 machines, 228 × 168) in about 6 minutes, not 199.99. At 662/min the hydrocyclones still starve 5/min (20 of them at 800/min: 60), more than one splitter per belt would even out.
 
+## Sorted out by splitters where they fit
+
+At 400/min and more no belt sorted its byproduct out: wherever runs of producers and of consumers did not pair up one to one without starving, every belt of the route rode on. A filter splitter that found no way also set every belt of its route riding, and only when it failed on the first try at the links.
+
+- **Filtered lines into several runs of consumers.** Where one belt per run would starve, each run of producers still sorts the byproduct out right after them; the rest goes on as a line past the entries of as many runs of consumers as it brings what they take, a splitter before each (a Fan-out). The consumers are cut as finely as they chain (a belt off the line enters from either side), dealt out in order so that each line keeps within what it brings, with the fewest runs of producers that do. Only where no such dealing exists (22 ball mills making 3630/min of dust for 15 agitators taking 3600, 240 each) do the belts ride on, joined.
+- **A splitter that finds no way rides on alone.** Its run keeps its line past its consumers, the byproduct with it, each belt off it on to the east edge; the other runs keep their filters. This holds however the links are routed: the Fan-outs last, without those across Sub-Blocks, or plain.
+- **Maximize sorts at the end.** A layout sorting byproducts out takes far longer to find (at 600/min in the 236 × 236 City Block, over 2 minutes of candidates, not under one). Maximize's tries let every byproduct ride on (`unsorted`); the highest that fit is tried once more with them sorted out, its candidates given at least 2 minutes (`SORTING_MS`), on past layouts that ride to the first that rides nowhere (`sorting`). It is kept where it rides less.
+
+Py molybdenite pulp at 9000/min outside a City Block: every gravel and stone belt filtered (was gravel riding). Py molybdenum oxide in the 236 × 236 City Block: at 200/min all six byproduct belts filtered; at 599.99/min (Maximize's best) no layout with filters was found within the 2 minutes, so the byproducts still ride on there.
+
 Still:
 - A route sorting a byproduct out gets no splitter between its belts: where its producers and consumers divide among none evenly, it starves.
