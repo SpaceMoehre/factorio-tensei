@@ -132,6 +132,20 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
   return poles;
 }
 
+// The poles placed (`poles`, the block's own, as entities) less those another now makes redundant:
+// poles placed apart for two layouts side by side (an Annex beside the layout before it), each
+// network's own pruned already. `fixed` as placePoles takes it.
+export function prunePoles(poles, consumers, spec, fixed = []) {
+  const anchors = fixed.map(f => ({ x: f.x, y: f.y, w: f.w, h: f.h, reach: f.spec.wireReach }));
+  consumers = consumers.filter(e => !fixed.some(f => powers(f, f.spec, e)));
+  const kept = poles.map(p => ({ ...p }));
+  const mine = new Map(kept.map(p => [p, []]));
+  const coverCount = consumers.map((e, i) => kept.filter(p => powers(p, spec, e) && mine.get(p).push(i)).length);
+  prune(kept, spec, coverCount, p => mine.get(p), anchors);
+  const left = new Set(kept.map(p => `${p.x},${p.y}`));
+  return poles.filter(p => left.has(`${p.x},${p.y}`));
+}
+
 // Joins the network one component at a time: the smallest component searches outward — a
 // breadth-first search over free pole positions, each hop within wire reach — for the nearest
 // pole of another component, and the fewest poles linking them are placed, even where the link

@@ -75,6 +75,8 @@ export function buryPipes(block, catalog, logistics) {
     const b = t.kind === 'pipe-to-ground' ? partner(t) : null;
     if (b) addTunnel(t, b, t.direction);
   }
+  // (In an Annex's City Block, the pipes' tunnels the layout before it built too.)
+  for (const t of block.site?.tunnels ?? []) if (t.pipe) addTunnel(t.a, t.b, t.travel);
   const removed = new Set();
   for (const [axis, d] of [[[E, W], E], [[N, S], S]]) {
     const [dx, dy] = VEC[d];

@@ -153,7 +153,7 @@ $('maximize').checked = state.city.maximize;
 $('maximize').addEventListener('change', () => { state.city.maximize = $('maximize').checked; renderCity(); save(); });
 $('apply-rate').addEventListener('click', applyRate);
 readCity();
-$('calculate').addEventListener('click', build);
+$('calculate').addEventListener('click', () => build());
 $('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
 $('copy-json').addEventListener('click', () => copy($('bp-json').value, $('copy-json')));
@@ -435,6 +435,17 @@ function renderForetell() {
   $('city-foretell').textContent = text ?? '';
 }
 
+// Whether the Goals' own rates are foretold not to fit the City Block.
+function foretoldShort() {
+  const goals = state.goals.filter(g => g.item && g.rate > 0);
+  try {
+    const plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, index, site: citySite() });
+    return plan.foretold().machines < plan.wanted;
+  } catch {
+    return false;
+  }
+}
+
 function foretellLine() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   const site = goals.length && chain && !chain.error && !city?.error ? citySite() : null;
@@ -468,8 +479,10 @@ function count(n, noun) {
 
 // Starts the layout search in a worker. Every better layout it finds replaces the map and the
 // blueprint; Stop, or the end of the budget, keeps the best one found. In a City Block it builds
-// inside it, or (Maximize) looks for the highest rate that fits.
-async function build() {
+// inside it, or (Maximize) looks for the highest rate that fits. Goals a City Block is foretold
+// not to fit, or that a build fits nowhere in it, fill it up to their rates instead (`upTo`: a
+// Maximize no higher than them, Annexes in the room it leaves).
+async function build(upTo = false) {
   if (!chain) return showStatus('error', 'Add at least one goal.');
   if (chain.error) return showStatus('error', chain.error);
   let site = null;
@@ -482,7 +495,8 @@ async function build() {
   for (const w of workers) w.worker.terminate();
   workers = [];
   best = null;
-  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && state.city.maximize), trying: null, foretold: null };
+  upTo = Boolean(site && !state.city.maximize && (upTo || foretoldShort()));
+  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && (state.city.maximize || upTo)), upTo, trying: null, foretold: null };
   map?.destroy();
   map = null;
   clocks = null;
@@ -541,7 +555,7 @@ async function build() {
       // The search time counts from the start, designing included (each strategy tries a layout
       // however little is left).
       budgetMs: Math.max(1, state.logistics.budget * 1000 - (Date.now() - started)),
-      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections } } : {}),
+      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections, upTo } } : {}),
     });
   }
 }
@@ -753,11 +767,21 @@ function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (be
     const { rate, machines } = best.found;
     // Why the next rate up does not fit: the lowest that did not.
     const next = above?.reason ? ` ${fmt(above.rate)}/min does not fit: ${above.reason.replace(/\.$/, '')}.` : '';
+    const asked = state.goals.find(g => g.item && g.rate > 0)?.rate;
+    if (built.upTo) {
+      // (Rates rounded down to 1/100 a minute, each Annex's too.)
+      const short = rate + 0.05 < asked;
+      $('apply-row').hidden = !short;
+      const rest = short ? ` of the ${fmt(asked)}/min asked.${next}` : '.';
+      return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Filled up to ${fmt(rate)}/min (${count(machines, 'machine')})${rest}`);
+    }
     return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest rate that fits: ${fmt(rate)}/min (${count(machines, 'machine')}).${next}`);
   }
   if (!best) {
     $('results').hidden = true;
     $('empty').textContent = 'No layout yet.';
+    // (Nothing fits at the Goals' own rates: filled up to them instead.)
+    if (built?.site && how === 'Done') return build(true);
     if (built?.site) {
       $('empty').textContent = 'Nothing fits yet.';
       return showStatus('error', `Nothing fits the city block${error ? `: ${error}` : ''}. ${foretellLine() ?? ''} Maximize finds the highest rate that fits.`);

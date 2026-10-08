@@ -230,7 +230,8 @@ test('Maximize finds a higher rate that fits, each layout found valid, inside an
     assertValid(block, catalog, logistics);
     assertInside(block);
     assert.equal(simulate(block).starvation.length, 0);
-    assert.equal(block.subBlocks.find(sb => sb.item === 'electronic-circuit').count, machines);
+    // (An Annex's machines too.)
+    assert.equal(block.subBlocks.filter(sb => sb.item === 'electronic-circuit').reduce((sum, sb) => sum + sb.count, 0), machines);
     found.push(rate);
   }
   // 90/min a machine: whole machines, then a few rates between (the last machine slower), each
@@ -295,6 +296,21 @@ test("the Foretelling: the first try is the most machines it foretells to fit; l
   assert.ok(broken.foretold().machines < first, `${broken.foretold().machines} of ${first}`);
 });
 
+test('Maximize no higher than a cap: Filling stops at it, and once it fits nothing is left to try', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
+  const plan = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site });
+  assert.equal(plan.wanted, 1);
+  const first = plan.next();
+  plan.cap(first + 3.5);
+  plan.record(first, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
+  const tried = [];
+  for (let n = plan.next(); n !== null; n = plan.next()) {
+    tried.push(n - first);
+    plan.record(n, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
+  }
+  assert.deepEqual(tried, [3.5]);
+});
+
 test('Maximize passes a number whose designs starve: Starvation comes and goes with the Count', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
   const options = { made: pyItems.slice(1), selections: pySelections, site };
@@ -327,8 +343,8 @@ test('Maximize passes a number whose designs starve: Starvation comes and goes w
 
 test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min and more, its Sub-Blocks in columns', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
-  // (Each try's time generous: tests run side by side.)
-  const run = maximize([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site, budgetMs: 120000 });
+  // (Each try's time generous: tests run side by side. No Annexes: the chain's own layout fills it.)
+  const run = maximize([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site, budgetMs: 120000, annexes: false });
   let step = run.next(), block = null;
   for (; !step.done; step = run.next()) if (/** @type {any} */ (step.value).type === 'best') block = /** @type {any} */ (step.value).block;
   // Placed one by one, from the Goals west, the iron sticks found no room at 3000/min (5 small

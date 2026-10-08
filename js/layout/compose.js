@@ -112,6 +112,10 @@ export function compose(ctx, prepared, positions, layout) {
   const placeAll = () => {
     const grid = new Grid(area);
     for (const f of site?.fixtures ?? []) grid.place(f);
+    // (An Annex's City Block: the tunnels the layout before it built, and where a pipe would join
+    // its machines.)
+    for (const t of site?.tunnels ?? []) grid.addTunnel(t.name, t.a, t.b);
+    for (const [x, y] of site?.pipeBlocked ?? []) grid.pipeBlocked.add(key(x, y));
     // Copies may stand in each other's empty corners (a refined placement), never on each other.
     const put = e => {
       for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) {

@@ -9,6 +9,7 @@ import { logistics as base } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 import { planner, attempt } from '../js/maximize.js';
 import { siteOf } from '../js/city.js';
+import { annexSite, annexed } from '../js/annex.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
@@ -73,5 +74,27 @@ test('Fluids Between in a City Block: 240 moss farms fill 116 x 116, the last ro
   assert.ok(block, 'no layout');
   assert.equal(block.entities.filter(e => e.kind === 'building').length, 240);
   assert.ok(block.bounds.w <= 114 && block.bounds.h <= 114);
+  assertValid(block, shipped, logistics);
+});
+
+// With its carbon dioxide, muddy sludge and soil made here, the moss stops at 135 farms in 116 x
+// 116 (its stack 84 x 75, the rest below it), a strip of 80 x 30 left empty: an Annex of 18 farms
+// and their own carbon dioxide, muddy sludge and soil stands in it, routed round the first
+// layout, its water from the west edge and its moss to the east edge.
+test('Annex: the moss chain again in the room its layout leaves, 135 farms and 18', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 1);
+  const options = {
+    made: ['muddy-sludge', 'carbon-dioxide', 'soil'],
+    selections: { moss: moss(0)[0].selection, 'carbon-dioxide': { recipe: 'moondrop-co2', building: 'moondrop-greenhouse-mk01', modules: [{ name: 'moondrop-mk02', count: 16 }] } },
+  };
+  const goals = [{ item: 'moss', rate: 750 }];
+  const first = attempt(planner(goals, shipped, logistics, { ...options, site }), 135, { site, budgetMs: 60000 });
+  assert.ok(first.block, 'no layout');
+  const room = annexSite(site, first.block, shipped);
+  const annex = attempt(planner(goals, shipped, logistics, { ...options, site: room }), 18, { site: room, budgetMs: 60000 });
+  assert.ok(annex.block, 'no annex');
+  const block = annexed(first.block, annex.block, site, shipped, logistics);
+  assert.equal(block.subBlocks.filter(sb => sb.item === 'moss').length, 2);
+  assert.ok(block.entities.filter(e => e.kind === 'building' && e.name === 'moss-farm-mk01').length >= 153);
   assertValid(block, shipped, logistics);
 });

@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v23: Annexes (implemented)
+The chain again in the room a City Block's layout leaves (ADR 0031); where v23 differs from v22, v23 wins.
+- **Annexes:** once Maximize has its highest rate, the whole chain is maximized again in the room left, everything built so far a Fixture (its belts, pipes and tunnels as such, its poles joined), each Sub-Block of the Annex its own; the two layouts are joined, checked and simulated together, and again while an Annex fits. Py moss with its carbon dioxide, muddy sludge and soil in 116 × 116: 777.3/min (was 648/min).
+- **Fixed rates fill up to the rate:** a fixed rate a City Block is foretold not to fit, or that a build finds no layout for, is a Maximize no higher than the Goals' own rates, then Annexes until they are reached. Py moss 750/min in 116 × 116: 749.99/min in three.
+
 ## v22: Byproducts on parallel belts (implemented)
 Byproducts more than one belt carries, and Maximize's budget (ADR 0030); where v22 differs from v21, v22 wins.
 - **Byproducts on parallel belts:** a producer's route to its one consumer Sub-Block, with one item left over for the train that its consumer does not take, and more than one belt's worth, is an Internal Path: parallel belts, each sorting the byproduct out after its producers with a filter splitter (or, where that finds no way, running on through its consumers to the east edge). No splitter joins those belts, so they are as many as divide producers and consumers evenly. Side Belts keep a route that runs as one belt in one.
