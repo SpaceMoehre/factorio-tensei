@@ -20,6 +20,8 @@ export function buildCatalog(raw) {
   }
   const buildings = {};
   for (const b of [...Object.values(raw['assembling-machine']), ...Object.values(raw.furnace)]) {
+    // Hidden: not built in this game (Py hides base's chemical plant and oil refinery for its own).
+    if (b.hidden) continue;
     buildings[b.name] = {
       name: b.name,
       size: footprint(b.collision_box),

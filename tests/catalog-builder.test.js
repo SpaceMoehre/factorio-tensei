@@ -103,6 +103,21 @@ test('building: the point beside it where a machine puts its products itself (Ou
   assert.equal(buildings['oil-derrick-mk01'].drop, undefined);
 });
 
+// Py hides base's 3 x 3 chemical plant for its own 9 x 9 ones: a hidden building is no choice.
+test('building: a hidden one is left out', () => {
+  const machine = (name, size, hidden) => ({
+    name, collision_box: [[-size, -size], [size, size]], crafting_speed: 1, crafting_categories: ['chemistry'],
+    energy_usage: '210kW', energy_source: { type: 'electric' }, ...(hidden && { hidden }),
+  });
+  const { buildings } = buildCatalog(dataRaw({
+    'assembling-machine': {
+      'chemical-plant': machine('chemical-plant', 1.2, true),
+      'chemical-plant-mk01': machine('chemical-plant-mk01', 4.2),
+    },
+  }));
+  assert.deepEqual(Object.keys(buildings), ['chemical-plant-mk01']);
+});
+
 test('logistics: poles, belt tiers with throughput and underground reach, pipe-to-ground reach', () => {
   const catalog = buildCatalog(dataRaw({
     'electric-pole': {
