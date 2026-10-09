@@ -157,7 +157,10 @@ export function routeLink(grid, spec, names) {
 
 // Routes a fluid as a pipe tree joining every terminal (a machine fluid connection), plus the
 // west edge for Side Input and the east edge for Side Output.
-// spec: { id, fluid, terminals: [[x, y, outwardDir]], source: boolean, sink: boolean }
+// spec: { id, fluid, terminals: [[x, y, outwardDir]], source: boolean, sink: boolean, draws? }
+// draws (an Annex's Side Input drawn from a pipe built before it, ADR 0032): { routes (the built
+// pipes' routes its pipes may join), starts (the tiles beside them, heading away), only (never
+// from the west edge) }.
 // names: { pipe, underground, reach }
 export function routePipe(grid, spec, names) {
   const [[x0, y0, out0]] = spec.terminals;
@@ -197,8 +200,9 @@ function growTree(grid, spec, names, seedPieces) {
   };
   commit({ pieces: seedPieces });
   if (spec.source) {
-    const leg = search(grid, edgeStarts(grid, grid.area.x, E), toTree.isGoal, toTree.heuristic, moves);
-    if (!leg) throw new RoutingError(`${spec.fluid}: no path from the west edge`);
+    const starts = spec.draws ? [...spec.draws.starts, ...(spec.draws.only ? [] : edgeStarts(grid, grid.area.x, E))] : edgeStarts(grid, grid.area.x, E);
+    const leg = search(grid, starts, toTree.isGoal, toTree.heuristic, moves);
+    if (!leg) throw new RoutingError(`${spec.fluid}: no path from ${spec.draws?.only ? 'the pipe it draws from' : 'the west edge'}`);
     commit(leg);
   }
   for (const [x, y, outward] of rest) {
@@ -586,13 +590,15 @@ function fedByOther(grid, spec, x, y) {
 }
 
 // A pipe connects on all four sides, so no neighbour may belong to another pipe network — even
-// one carrying the same fluid (a recipe's input and output of one fluid must stay apart).
+// one carrying the same fluid (a recipe's input and output of one fluid must stay apart) — but
+// one it draws from.
 function canPipe(grid, spec, x, y) {
   if (!grid.freeFor(x, y, spec.id) || grid.pipeBlocked.has(key(x, y))) return false;
   for (const [d, [dx, dy]] of Object.entries(VEC)) {
     const n = grid.at(x + dx, y + dy);
-    if (n?.kind === 'pipe' && n.route !== spec.id) return false;
-    if (n?.kind === 'pipe-to-ground' && n.route !== spec.id && n.direction === opposite(+d)) return false;
+    const other = n && n.route !== spec.id && !spec.draws?.routes.has(n.route);
+    if (n?.kind === 'pipe' && other) return false;
+    if (n?.kind === 'pipe-to-ground' && other && n.direction === opposite(+d)) return false;
     const k = key(x + dx, y + dy);
     if (grid.fluidPorts.has(k) && grid.holder(x + dx, y + dy) !== spec.id) return false;
   }

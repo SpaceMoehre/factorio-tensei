@@ -10,6 +10,7 @@ import { assertValid } from './support/invariants.js';
 import { planner, attempt } from '../js/maximize.js';
 import { siteOf } from '../js/city.js';
 import { annexSite, annexed } from '../js/annex.js';
+import { simulate } from '../js/sim.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
@@ -77,11 +78,29 @@ test('Fluids Between in a City Block: 240 moss farms fill 116 x 116, the last ro
   assertValid(block, shipped, logistics);
 });
 
+// In an Annex's City Block (ADR 0032), a fluid made here that a pipe built before it has to spare
+// comes from there while it has enough: 18 farms take 1080/min of carbon dioxide, of 1200 to
+// spare (no greenhouse), 25 take 1500 (their own greenhouse).
+test('An Annex draws a fluid it has enough of from a built pipe, and makes it where it has not', () => {
+  const draws = { 'carbon-dioxide': { route: 'built2', spare: 1200, starts: [] } };
+  const site = { ...siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 1), annex: true, draws };
+  const options = {
+    made: ['muddy-sludge', 'carbon-dioxide', 'soil'],
+    selections: { moss: moss(0)[0].selection, 'carbon-dioxide': { recipe: 'moondrop-co2', building: 'moondrop-greenhouse-mk01', modules: [{ name: 'moondrop-mk02', count: 16 }] } },
+  };
+  const plan = planner([{ item: 'moss', rate: 750 }], shipped, logistics, { ...options, site });
+  const chain = n => plan.chainOf(plan.goalsFor(n));
+  assert.deepEqual(chain(18).entries.map(e => e.goal.item), ['moss', 'muddy-sludge', 'soil']);
+  assert.equal(chain(18).trainInputs.find(t => t.item === 'carbon-dioxide').rate, 1080);
+  assert.ok(chain(25).entries.some(e => e.goal.item === 'carbon-dioxide'));
+});
+
 // With its carbon dioxide, muddy sludge and soil made here, the moss stops at 135 farms in 116 x
 // 116 (its stack 84 x 75, the rest below it), a strip of 80 x 30 left empty: an Annex of 18 farms
-// and their own carbon dioxide, muddy sludge and soil stands in it, routed round the first
-// layout, its water from the west edge and its moss to the east edge.
-test('Annex: the moss chain again in the room its layout leaves, 135 farms and 18', () => {
+// and their own muddy sludge and soil stands in it, routed round the first layout, its carbon
+// dioxide drawn from the first greenhouses' pipe (they make 1200/min more than its farms take)
+// and its water from the first water pipe (ADR 0032), its moss to the east edge.
+test('Annex: the moss chain again in the room its layout leaves, 135 farms and 18, drawing carbon dioxide and water', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 1);
   const options = {
     made: ['muddy-sludge', 'carbon-dioxide', 'soil'],
@@ -90,11 +109,14 @@ test('Annex: the moss chain again in the room its layout leaves, 135 farms and 1
   const goals = [{ item: 'moss', rate: 750 }];
   const first = attempt(planner(goals, shipped, logistics, { ...options, site }), 135, { site, budgetMs: 60000 });
   assert.ok(first.block, 'no layout');
-  const room = annexSite(site, first.block, shipped);
+  const room = annexSite(site, first.block, shipped, options.made);
   const annex = attempt(planner(goals, shipped, logistics, { ...options, site: room }), 18, { site: room, budgetMs: 60000 });
   assert.ok(annex.block, 'no annex');
   const block = annexed(first.block, annex.block, site, shipped, logistics);
   assert.equal(block.subBlocks.filter(sb => sb.item === 'moss').length, 2);
+  assert.equal(block.subBlocks.filter(sb => sb.item === 'carbon-dioxide').length, 1);
   assert.ok(block.entities.filter(e => e.kind === 'building' && e.name === 'moss-farm-mk01').length >= 153);
+  for (const fluid of ['carbon-dioxide', 'water']) assert.equal(block.routes.filter(r => r.fluid === fluid).length, 1, fluid);
+  assert.deepEqual(simulate(block).starvation, []);
   assertValid(block, shipped, logistics);
 });

@@ -84,6 +84,13 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v24: Annexes draw (implemented)
+Annexes using what is built, and finding out fast what fits (ADR 0032); where v24 differs from v23, v24 wins.
+- **Draws:** an Annex's Side Input of a fluid joins a pipe built before it: one of the train's fluids, or one made here whose producers make enough more than their consumers take (else the Annex makes it itself). Py moss in 116 × 116: the first greenhouses' spare carbon dioxide feeds the first Annex's 20 farms, with no greenhouse of its own; Maximize reaches 806.4/min in 695 s (was 777.3/min in 801 s, run side by side).
+- **Probe:** an Annex tries one of the first Goal's machines first; none fitting, annexing ends. Its Filling stops at one machine more (or its cap).
+- **An Annex's room:** only the stretches one of the first Goal's machines fits in with a tile round it.
+- **The sorting try** only where a byproduct rides on.
+
 ## v23: Annexes (implemented)
 The chain again in the room a City Block's layout leaves (ADR 0031); where v23 differs from v22, v23 wins.
 - **Annexes:** once Maximize has its highest rate, the whole chain is maximized again in the room left, everything built so far a Fixture (its belts, pipes and tunnels as such, its poles joined), each Sub-Block of the Annex its own; the two layouts are joined, checked and simulated together, and again while an Annex fits. Py moss with its carbon dioxide, muddy sludge and soil in 116 × 116: 777.3/min (was 648/min).

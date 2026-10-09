@@ -487,3 +487,35 @@ test('a search for a layout without Starvation ends as soon as a Sub-Block canno
 test('the recipe index is built once per catalog', () => {
   assert.equal(recipeOptions(pyCatalog), recipeOptions(pyCatalog));
 });
+
+// In an Annex's City Block (ADR 0032) the room is where one of the first Goal's machines fits with
+// a tile round it: of 20 x 20 inside the Buffer, built over all but a free 10 x 10 and a sliver 3
+// wide, the 10 x 10 only.
+test("An Annex's room: only the stretches one of its machines fits in with a tile round it", () => {
+  const size = pyCatalog.buildings['automated-factory-mk01'].size;
+  assert.ok(Math.max(size.w, size.h) + 2 <= 10 && Math.max(size.w, size.h) + 2 > 3);
+  const built = [{ name: 'built', kind: 'fixture', x: 1, y: 11, w: 20, h: 10 }, { name: 'built', kind: 'fixture', x: 11, y: 1, w: 3, h: 10 }, { name: 'built', kind: 'fixture', x: 17, y: 1, w: 4, h: 10 }];
+  const site = { ...siteOf({ area: { x: 0, y: 0, w: 22, h: 22 }, fixtures: built }, 1), annex: true };
+  const plan = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site });
+  assert.equal(plan.room, 100);
+});
+
+// An Annex fills whole machines, one more at least (ADR 0032), but still up to its cap.
+test('Filling in an Annex: one machine more at least, and the cap', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
+  const tries = (least, cap) => {
+    const plan = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site, least });
+    const first = plan.next();
+    if (cap !== undefined) plan.cap(first + cap);
+    plan.record(first, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
+    const tried = [];
+    for (let n = plan.next(); n !== null; n = plan.next()) {
+      tried.push(n - first);
+      plan.record(n, { block: null, starves: false, designed: null, tried: 1 });
+    }
+    return tried;
+  };
+  assert.ok(tries(undefined).some(m => m < 1), JSON.stringify(tries(undefined)));
+  assert.ok(tries(1).every(m => m >= 1 && Number.isInteger(m)), JSON.stringify(tries(1)));
+  assert.deepEqual(tries(1, 0.5), [0.5]);
+});

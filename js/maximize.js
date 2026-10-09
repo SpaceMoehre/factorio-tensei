@@ -31,7 +31,8 @@ import { simulate } from './sim.js';
 // options: { made, selections, index, site, budgetMs (each try's), maxCandidates (each try's),
 //            seed, now, upTo (no higher than the Goals' own rates: a City Block they do not fit
 //            filled up to them), annexes (false: none), bands (false: no Bands), most (no more of
-//            the first Goal's machines) }
+//            the first Goal's machines), probe (one of them first: none fitting, nothing more),
+//            least (Filling's fewest machines more, a quarter by default) }
 export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
   const most = options.most ?? (options.upTo ? plan.wanted : Infinity);
@@ -93,6 +94,7 @@ export function* maximize(goals, catalog, logistics, options) {
       else missed.add(n);
     }
   }
+  let probing = options.probe ? Math.min(1, most) : null;
   if (top >= plan.foretold().machines + FILL) {
     told = plan.foretold().machines;
     yield { type: 'foretell', ...plan.foretold() };
@@ -104,7 +106,9 @@ export function* maximize(goals, catalog, logistics, options) {
       told = foretold.machines;
       yield { type: 'foretell', ...foretold };
     }
-    const n = plan.next();
+    // (An Annex's first try: its least, one of the first Goal's machines. None fitting for want of
+    // room, no more is tried.)
+    const n = probing ?? plan.next();
     if (n === null) break;
     const list = plan.goalsFor(n);
     yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n), ...(plan.filling ? { more: n - plan.lo } : {}) };
@@ -118,13 +122,15 @@ export function* maximize(goals, catalog, logistics, options) {
     } else {
       failure = outcome.failure;
       misses.push({ rate: list[0].rate, machines: Math.ceil(n), reason: outcome.failure?.message ?? null });
+      if (probing !== null && !outcome.starves) break;
     }
+    probing = null;
   }
   if (!banded && top > (best?.machines ?? 0)) yield* inBands(best?.machines ?? 0);
   // The highest that fit found with every byproduct riding on through its producers' consumers
   // (a layout sorting them out by splitters takes far longer to find): once more with them
   // sorted out, given longer, kept where it fits.
-  if (best && bestN !== null) {
+  if (best && bestN !== null && bestScore[2] > 0) {
     const sorted = attempt(plan, bestN, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true });
     tried += sorted.tried;
     if (sorted.block && sorted.score[2] < bestScore[2]) {
@@ -134,25 +140,32 @@ export function* maximize(goals, catalog, logistics, options) {
   }
   // Annexes: the chain again in the room left, while one fits (and the cap leaves any). Each
   // layout found with the one before it (checked together too: a tunnel of one may pair with the
-  // other's).
+  // other's). Where one drawing a fluid made here from a built pipe finds none (no way to that
+  // pipe), once more making it itself.
   let annexAbove = null;
   const plus = (a, b) => Math.round((a + b) * 100) / 100;
   for (let built = bestBlock; built && options.annexes !== false && options.site && most - best.count >= LEAST;) {
     const before = best;
-    const run = maximize(goals, catalog, logistics, { ...options, site: annexSite(options.site, built, catalog), annexes: false, bands: false, upTo: false, most: most - before.count });
-    let found = null, step;
-    for (step = run.next(); !step.done; step = run.next()) {
-      const v = step.value;
-      if (v.type === 'try') yield { ...v, rate: plus(v.rate, before.rate), machines: v.machines + before.machines };
-      if (v.type !== 'best') continue;
-      const block = annexed(built, v.block, options.site, catalog, logistics);
-      if (validateBlock(block, catalog, logistics).length || simulate(block).starvation.length) continue;
-      const list = before.goals.map((g, k) => ({ ...g, rate: plus(g.rate, v.goals[k].rate) }));
-      found = { block, best: { rate: list[0].rate, machines: before.machines + v.machines, count: before.count + v.count, goals: list } };
-      yield { type: 'best', block, score: v.score, tried: tried + v.tried, ...found.best };
+    const site = annexSite(options.site, built, catalog, options.made);
+    const alone = { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) };
+    let found = null;
+    for (const room of Object.values(site.draws).some(d => d.only) ? [site, alone] : [site]) {
+      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: most - before.count });
+      let step;
+      for (step = run.next(); !step.done; step = run.next()) {
+        const v = step.value;
+        if (v.type === 'try') yield { ...v, rate: plus(v.rate, before.rate), machines: v.machines + before.machines };
+        if (v.type !== 'best') continue;
+        const block = annexed(built, v.block, options.site, catalog, logistics);
+        if (validateBlock(block, catalog, logistics).length || simulate(block).starvation.length) continue;
+        const list = before.goals.map((g, k) => ({ ...g, rate: plus(g.rate, v.goals[k].rate) }));
+        found = { block, best: { rate: list[0].rate, machines: before.machines + v.machines, count: before.count + v.count, goals: list } };
+        yield { type: 'best', block, score: v.score, tried: tried + v.tried, ...found.best };
+      }
+      tried += step.value.tried;
+      annexAbove = step.value.above && { ...step.value.above, rate: plus(step.value.above.rate, before.rate), machines: step.value.above.machines + before.machines };
+      if (found) break;
     }
-    tried += step.value.tried;
-    annexAbove = step.value.above && { ...step.value.above, rate: plus(step.value.above.rate, before.rate), machines: step.value.above.machines + before.machines };
     if (!found) break;
     [best, built] = [found.best, found.block];
   }
@@ -225,8 +238,19 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates, `wanted` as many running as fast as those take.
 /** @param {any[]} goals @param {any} catalog @param {any} logistics @param {any} options */
-export function planner(goals, catalog, logistics, { made = [], selections = {}, index = recipeOptions(catalog), site }) {
-  const chainOf = list => expandChain(list, catalog, { made, selections, index });
+export function planner(goals, catalog, logistics, { made = [], selections = {}, index = recipeOptions(catalog), site, least = LEAST }) {
+  // In an Annex's City Block, a fluid made here that a pipe built before it has to spare comes
+  // from there instead, while that has enough (ADR 0032).
+  const draws = Object.entries(site?.draws ?? {}).filter(([fluid]) => made.includes(fluid));
+  const chainOf = list => {
+    const drawn = new Set(draws.map(([fluid]) => fluid));
+    for (;;) {
+      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, index });
+      const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare);
+      if (!short.length) return chain;
+      for (const [fluid] of short) drawn.delete(fluid);
+    }
+  };
   const lead = goals[0];
   const sb = planSubBlocks(chainOf(goals).entries, catalog, logistics).find(s => s.item === lead.item);
   // What one of its machines adds to the Goal at full speed: its share of what the step makes,
@@ -251,8 +275,11 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   };
   // The room the City Block has: its area inside the Buffer, less its Fixtures there.
   const { inner } = site;
-  const room = inner.w * inner.h - site.fixtures.reduce((sum, f) => sum + overlap(f, inner), 0);
   const size = s => catalog.buildings[s.building].size;
+  // (In an Annex's City Block, only the room where one of the first Goal's machines fits with a
+  // tile round it: the layout before it leaves slivers no machine fits in.)
+  const room = site.annex ? usable(site, Math.max(size(sb).w, size(sb).h) + 2)
+    : inner.w * inner.h - site.fixtures.reduce((sum, f) => sum + overlap(f, inner), 0);
   // The fewest machines whose footprints alone need more room than there is: no try goes that far.
   const machineArea = n => planOf(n)?.reduce((sum, s) => sum + s.count * size(s).w * size(s).h, 0) ?? Infinity;
   let upper = 1;
@@ -273,7 +300,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   // as big as a few machines' modules a Fixture breaks, the less.
   let loose = 1.6;
   const largest = Math.max(1, ...(planOf(1) ?? []).map(s => Math.max(size(s).w, size(s).h)));
-  const reach = 0.95 * room * (1 - broken(site, 2 * (largest + 5)) / 2);
+  const reach = 0.95 * room * (site.annex ? 1 : 1 - broken(site, 2 * (largest + 5)) / 2);
   const fits = n => loose * modules(n) <= reach;
 
   // The highest n that fit, the lowest that did not for want of room (more machines never take
@@ -339,12 +366,16 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     }
     // Filling: FILL machines more than the highest that fit, again while they fit; half as many
     // after each that does not (or would be no fewer than the lowest that did not), down to a
-    // quarter machine, the last machine slower (the other Sub-Blocks need fewer machines than
-    // the next whole number's, and machines that starve at full speed may not a little
-    // slower). Never held back by the Foretelling: a layout found may pack looser than the
-    // next, and only a try tells.
+    // quarter machine (`least`; in an Annex whole machines, one at least), the last machine slower (the other Sub-Blocks
+    // need fewer machines than the next whole number's, and machines that starve at full speed
+    // may not a little slower). Never held back by the Foretelling: a layout found may pack
+    // looser than the next, and only a try tells.
     const rate = n => goalsFor(n)[0].rate;
-    for (; fill >= LEAST; fill /= 2) if (lo + fill < hiOf() && rate(Math.min(lo + fill, most)) > rate(lo)) return lo + fill;
+    for (; fill >= least; fill /= 2) {
+      // (No fewer than one: whole machines.)
+      const more = least < 1 ? fill : Math.floor(fill);
+      if (lo + more < hiOf() && rate(Math.min(lo + more, most)) > rate(lo)) return lo + more;
+    }
     return null;
   }
   return {
@@ -394,14 +425,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
 function broken(site, side) {
   const { inner } = site;
   if (!site.fixtures.length || inner.w < side || inner.h < side) return 0;
-  // Fixture tiles summed over every rectangle from the corner.
-  const sum = Array.from({ length: inner.h + 1 }, () => new Int32Array(inner.w + 1));
-  for (const f of site.fixtures) {
-    for (let x = Math.max(f.x, inner.x); x < Math.min(f.x + f.w, inner.x + inner.w); x++) {
-      for (let y = Math.max(f.y, inner.y); y < Math.min(f.y + f.h, inner.y + inner.h); y++) sum[y - inner.y + 1][x - inner.x + 1] = 1;
-    }
-  }
-  for (let y = 1; y <= inner.h; y++) for (let x = 1; x <= inner.w; x++) sum[y][x] += sum[y - 1][x] + sum[y][x - 1] - sum[y - 1][x - 1];
+  const sum = fixtureSums(site);
   let hit = 0, all = 0;
   for (let y = 0; y + side <= inner.h; y += 2) {
     for (let x = 0; x + side <= inner.w; x += 2) {
@@ -410,6 +434,42 @@ function broken(site, side) {
     }
   }
   return hit / all;
+}
+
+// A City Block's Fixture tiles inside its Buffer summed over every rectangle from its corner.
+function fixtureSums(site) {
+  const { inner } = site;
+  const sum = Array.from({ length: inner.h + 1 }, () => new Int32Array(inner.w + 1));
+  for (const f of site.fixtures) {
+    for (let x = Math.max(f.x, inner.x); x < Math.min(f.x + f.w, inner.x + inner.w); x++) {
+      for (let y = Math.max(f.y, inner.y); y < Math.min(f.y + f.h, inner.y + inner.h); y++) sum[y - inner.y + 1][x - inner.x + 1] = 1;
+    }
+  }
+  for (let y = 1; y <= inner.h; y++) for (let x = 1; x <= inner.w; x++) sum[y][x] += sum[y - 1][x] + sum[y][x - 1] - sum[y - 1][x - 1];
+  return sum;
+}
+
+// The tiles of a City Block's room (inside its Buffer) in some stretch of `side` × `side` tiles
+// no Fixture breaks.
+function usable(site, side) {
+  const { inner } = site;
+  const sum = fixtureSums(site);
+  const covered = Array.from({ length: inner.h + 1 }, () => new Int32Array(inner.w + 1));
+  for (let y = 0; y + side <= inner.h; y++) {
+    for (let x = 0; x + side <= inner.w; x++) {
+      if (sum[y + side][x + side] - sum[y][x + side] - sum[y + side][x] + sum[y][x] > 0) continue;
+      // (Marked at its corners, summed below: every tile of a free stretch counted once.)
+      covered[y][x]++; covered[y][x + side]--; covered[y + side][x]--; covered[y + side][x + side]++;
+    }
+  }
+  let tiles = 0;
+  for (let y = 0; y < inner.h; y++) {
+    for (let x = 0; x < inner.w; x++) {
+      covered[y][x] += (y ? covered[y - 1][x] : 0) + (x ? covered[y][x - 1] : 0) - (x && y ? covered[y - 1][x - 1] : 0);
+      if (covered[y][x] > 0) tiles++;
+    }
+  }
+  return tiles;
 }
 
 // The most machines Bands' parts hold in the City Block (a binary search: more machines never fit

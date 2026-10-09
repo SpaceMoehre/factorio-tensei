@@ -108,3 +108,21 @@ test("a link keeps off the tiles where its route's other links meet their copies
   assert.ok(!pieces.some(p => p.x === 3 && p.y === 1), JSON.stringify(pieces.map(p => [p.x, p.y])));
   assert.equal(pieces.at(-1).x, 6);
 });
+
+// An Annex draws a fluid from a pipe the layout before it built (ADR 0032): the built pipe at
+// (2..4, 2), a connection at (6,0) facing west. Drawing only, the tree joins the built pipe and
+// never the west edge; without the draw no pipe of its touches the built one.
+test('a pipe tree draws its fluid from a built pipe of that fluid', () => {
+  const built = () => {
+    const grid = new Grid({ x: 0, y: 0, w: 7, h: 3 });
+    for (let x = 2; x <= 4; x++) grid.place({ name: 'pipe', kind: 'pipe', route: 'built0', fluid: 'water', x, y: 2, w: 1, h: 1 });
+    grid.reserveFluidPort(6, 0, 0);
+    return grid;
+  };
+  const starts = [2, 3, 4].map(x => ({ x, y: 1, a: N }));
+  const pieces = routePipe(built(), { id: 0, fluid: 'water', terminals: [[6, 0, W]], source: true, sink: false, draws: { routes: new Set(['built0']), starts, only: true } }, pipes);
+  assert.ok(!pieces.some(p => p.x === 0), JSON.stringify(pieces.map(p => [p.x, p.y])));
+  assert.ok(pieces.some(p => p.y === 1 && p.x >= 2 && p.x <= 4), 'a pipe beside the built one');
+  const apart = routePipe(built(), { id: 0, fluid: 'water', terminals: [[6, 0, W]], source: true, sink: false }, pipes);
+  assert.ok(!apart.some(p => p.kind === 'pipe' && p.y === 1 && p.x >= 2 && p.x <= 4), JSON.stringify(apart.map(p => [p.x, p.y])));
+});

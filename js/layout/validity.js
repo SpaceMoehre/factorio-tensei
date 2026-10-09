@@ -398,9 +398,23 @@ export function pipeNetwork(block, route, catalog, logistics, machines) {
     }
   }
   for (const m of machines.filter(m => !reached.has(m))) problems.push(`${route.fluid} does not reach ${m.name} at ${m.x},${m.y}`);
-  if (route.source === 'side-input' && !pieces.some(p => p.x === block.bounds.x)) problems.push(`${route.fluid} does not start at the west edge`);
+  if (route.source === 'side-input' && !pieces.some(p => p.x === block.bounds.x) && drawnFrom(block, route) === null) problems.push(`${route.fluid} does not start at the west edge`);
   if (route.sink === 'side-output' && !pieces.some(p => p.x === block.bounds.x + block.bounds.w - 1)) problems.push(`${route.fluid} does not reach the east edge`);
   return problems;
+}
+
+// The route of the pipe the layout before an Annex built (a Fixture of its City Block) that a
+// Side Input of the Annex joins, drawing its fluid from it (ADR 0032), or null.
+export function drawnFrom(block, route) {
+  const built = new Map((block.site?.fixtures ?? []).filter(f => (f.kind === 'pipe' || f.kind === 'pipe-to-ground') && f.fluid === route.fluid).map(f => [key(f.x, f.y), f]));
+  if (!built.size) return null;
+  for (const p of route.pieces) {
+    for (const [d, [dx, dy]] of Object.entries(DIR)) {
+      const b = built.get(key(p.x + dx, p.y + dy));
+      if (b && connectsToward(p, +d) && connectsToward(b, OPPOSITE[d])) return b.route;
+    }
+  }
+  return null;
 }
 
 export function noFluidMixing(block, catalog, logistics) {

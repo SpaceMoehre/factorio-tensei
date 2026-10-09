@@ -47,9 +47,13 @@ export function buryPipes(block, catalog, logistics) {
       }
     }
   }
+  // (In an Annex's City Block, the pipes the layout before it built carrying the same fluid too:
+  // a pipe drawing from one joins it.)
+  const built = new Map((block.site?.fixtures ?? []).filter(f => f.kind === 'pipe' || f.kind === 'pipe-to-ground').map(f => [key(f.x, f.y), f]));
   // The sides a plain pipe connects on: a pipe, a pipe-to-ground facing it, a machine connection.
   const joins = p => [N, E, S, W].filter(d => {
-    const n = fluid.get(key(p.x + VEC[d][0], p.y + VEC[d][1]));
+    const at = key(p.x + VEC[d][0], p.y + VEC[d][1]);
+    const n = fluid.get(at) ?? (built.get(at)?.fluid === p.fluid ? built.get(at) : undefined);
     return n?.kind === 'pipe' || n?.direction === opposite(d) || ports.get(key(p.x, p.y))?.has(d);
   });
   const straight = (p, axis) => p?.kind === 'pipe' && joins(p).join() === axis.join();

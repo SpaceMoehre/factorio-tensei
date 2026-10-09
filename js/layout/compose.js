@@ -315,11 +315,15 @@ export function compose(ctx, prepared, positions, layout) {
     }).filter(([x, y]) => grid.inBounds(x, y));
     const reachesWest = route.stubs.some(s => s.side === 'W' && placed[s.inst.index].x + s.x === area.x);
     const reachesEast = route.stubs.some(s => s.side === 'E' && placed[s.inst.index].x + s.x === area.x + area.w - 1);
-    const source = route.source === 'side-input' && !reachesWest;
+    // (In an Annex's City Block, a Side Input drawn from a pipe the layout before it built: only
+    // from there where the train brings none, ADR 0032.)
+    const drawn = route.source === 'side-input' ? site?.draws?.[route.fluid] : undefined;
+    const draws = drawn && { routes: new Set([drawn.route]), starts: drawn.starts, only: drawn.only };
+    const source = route.source === 'side-input' && (!reachesWest || Boolean(draws?.only));
     const sink = route.sink === 'side-output' && !reachesEast;
     if (terminals.length < 2 && !source && !sink) return [];
     if (!terminals.length) throw new RoutingError(`${route.fluid}: no stub to join`);
-    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink }, pipes);
+    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...(draws ? { draws } : {}) }, pipes);
   };
 
   // Pipes first (no fluid may touch another), then the belt links in their order. When one
