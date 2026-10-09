@@ -317,10 +317,16 @@ function drawChain() {
     shown.querySelector('.speed').textContent = `${speed(building.craftingSpeed * effect.speed)}`
       + (effect.speed !== 1 ? ` (${speed(building.craftingSpeed)} × ${speed(effect.speed)} with modules)` : '') + ` · ${fmt(perMachine)}/min a machine`;
     // A Recipe Loop: what of this step's item goes back into the loop.
+    // And the byproducts it takes from a step making them (Recycled Byproducts), not by train.
     const back = use ? [] : chain.loops.filter(l => l.item === goal.item);
+    const takes = (chain.recycled ?? []).filter(r => r.into.includes(key));
+    const nameOf = k => label(chain.entries.find(e => (e.use?.key ?? e.goal.item) === k)?.goal.item ?? k).toLowerCase();
     const loop = shown.querySelector('.loop');
-    loop.textContent = back.map(l => `↺ ${fmt(l.rate)}/min back into ${l.into === goal.item ? 'itself' : l.into} (a recipe loop)`).join(' · ');
-    loop.hidden = !back.length;
+    loop.textContent = [
+      ...back.map(l => `↺ ${fmt(l.rate)}/min back into ${l.into === goal.item ? 'itself' : l.into} (a recipe loop)`),
+      ...takes.map(r => `↺ takes ${label(r.item).toLowerCase()} from the ${nameOf(r.from)} step's byproduct${r.spare > 1e-9 ? ` (${fmt(r.spare)}/min more leaves by train)` : ''}`),
+    ].join(' · ');
+    loop.hidden = !back.length && !takes.length;
     for (const next of chain.entries.filter(e => e.use?.from === key)) step(next);
     for (const b of chain.byproducts.filter(b => b.from === key)) {
       row(`byproduct:${useKey(key, b.item)}`, JSON.stringify(['byproduct', key, b.item, b.recipes]), () => byproductRow(b))

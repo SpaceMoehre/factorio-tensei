@@ -153,7 +153,8 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
       if (x > width || y > height || x + w < 0 || y + h < 0) continue;
       switch (e.kind) {
         case 'building':
-          ctx.fillStyle = t.machine;
+          // An offshore pump on its shallow water.
+          ctx.fillStyle = e.recipe === 'offshore-water' ? '#2d6a8f' : t.machine;
           ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
           ctx.strokeStyle = t.machineEdge;
           ctx.lineWidth = 1;

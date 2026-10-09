@@ -126,10 +126,30 @@ test('display panels mark which item every Side Input and Side Output carries', 
   const at = (x, y) => ({ x: x + 0.5, y: y + 0.5 });
   assert.deepEqual(panels, [
     { position: at(-1, 2), icon: { type: 'item', name: 'moss' }, text: 'moss 800/min', always_show: true, show_in_chart: true },
-    { position: at(-1, 4), icon: { type: 'item', name: 'casein' }, text: 'casein 360/min + plastic-bar 432/min', always_show: true, show_in_chart: true },
+    { position: at(-2, 4), icon: { type: 'item', name: 'casein' }, text: '↑ casein 360/min · ↓ plastic-bar 432/min', always_show: true, show_in_chart: true },
     { position: at(-1, 7), icon: { type: 'fluid', name: 'water' }, text: 'water 1200/min', always_show: true, show_in_chart: true },
     { position: at(7, 9), icon: { type: 'item', name: 'py-science-pack-2' }, text: 'py-science-pack-2 450/min', always_show: true, show_in_chart: true },
     { position: at(1, 0), icon: { type: 'item', name: 'iron-plate' }, text: 'iron-plate 30/min', always_show: true, show_in_chart: true },
+  ]);
+});
+
+// A belt of two items, a lane each, starts a tile west of the block, nothing behind it: each item
+// comes in on a belt of its own from the north and south, turning into it (head-on), so the
+// train brings each on a belt of its own. Not beside another Side Input's way in.
+test('a merged Side Input is built from two belts meeting head-on west of the block', async () => {
+  const belt = (route, x, y) => ({ name: 'transport-belt', kind: 'belt', route, x, y, w: 1, h: 1, direction: 4, travel: 4 });
+  const two = [{ item: 'iron-plate', rate: 300 }, { item: 'copper-plate', rate: 200 }];
+  const routes = [
+    { id: 0, kind: 'belt', source: 'side-input', sink: null, items: two, pieces: [belt(0, 0, 0), belt(0, 1, 0)] },
+    { id: 1, kind: 'belt', source: 'side-input', sink: null, items: two, pieces: [belt(1, 0, 4)] },
+    { id: 2, kind: 'belt', source: 'side-input', sink: null, items: [{ item: 'coal', rate: 30 }], pieces: [belt(2, 0, 5)] },
+  ];
+  const entities = routes.flatMap(r => r.pieces);
+  const { json } = await encodeBlueprint({ subBlocks: [], entities, routes, bounds: { x: 0, y: 0, w: 2, h: 6 } }, catalog);
+  const out = JSON.parse(json).blueprint.entities.filter(e => e.position.x < 0).map(e => [e.name, e.position.x, e.position.y, e.direction ?? 0]);
+  assert.deepEqual(out, [
+    ['transport-belt', -0.5, -0.5, 8], ['transport-belt', -0.5, 0.5, 4], ['transport-belt', -0.5, 1.5, 0],
+    ['display-panel', -1.5, 0.5, 0], ['display-panel', -0.5, 4.5, 0], ['display-panel', -0.5, 5.5, 0],
   ]);
 });
 

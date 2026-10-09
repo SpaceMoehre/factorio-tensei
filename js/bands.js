@@ -139,8 +139,10 @@ export function bands(entries, catalog, logistics, site, { seed = 1, pack = fals
 }
 
 function banded(entries, catalog, logistics, site, { seed, pack, spare, small, seen, until }) {
-  // (Not with Byproduct Uses: a Sub-Block's parts give their byproducts to none.)
+  // (Not with Byproduct Uses: a Sub-Block's parts give their byproducts to none. So Recycled
+  // Byproducts come by train.)
   if (!site?.fixtures.length || entries.some(e => e.use)) return null;
+  entries = entries.map(e => (e.goal.from ? { ...e, goal: Object.fromEntries(Object.entries(e.goal).filter(([k]) => k !== 'from')) } : e));
   const plan = planSubBlocks(entries, catalog, logistics);
   const goal = plan.findIndex(sb => sb.item === entries[0].goal.item);
   const lead = catalog.buildings[plan[goal].building];

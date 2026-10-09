@@ -79,8 +79,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
     }
     // East of a Recipe Loop's producer, room for the splitters sending its feedback off; east of
     // the Sub-Block it feeds back into, room for the feedback to come down to its entries.
-    const taps = Math.max(0, ...routes.filter(r => r.taps && r.source === i).map(r => r.taps.length));
-    const tapRoom = taps ? 3 + 2 * taps : 0;
+    // (Three more each on a belt carrying more than its item: a second splitter, for the spare.)
+    const taps = Math.max(0, ...routes.filter(r => r.taps && r.source === i).map(r => r.taps.length * (r.items.length > 1 ? 2.5 : 1)));
+    const tapRoom = taps ? Math.ceil(3 + 2 * taps) : 0;
     const loopRoom = routes.some(r => r.tapOf !== undefined && r.consumers.includes(i)) ? 2 : 0;
     // Room the search made round it (`pad`: tiles on every side) where a link found none.
     const pad = params.pad?.[i] ?? 0;

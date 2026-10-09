@@ -43,7 +43,8 @@ export function recipeOptions(catalog) {
     }
   }
   for (const recipes of consumers.values()) recipes.sort();
-  const rank = (item, recipe) => (recipe === item ? 0 : catalog.recipes[recipe].products[0].name === item ? 1 : 2);
+  // (An offshore pump's water first: nothing simpler makes it.)
+  const rank = (item, recipe) => (catalog.recipes[recipe].category === 'offshore' ? -1 : recipe === item ? 0 : catalog.recipes[recipe].products[0].name === item ? 1 : 2);
   for (const [item, recipes] of producers) recipes.sort((a, b) => rank(item, a) - rank(item, b) || a.localeCompare(b));
   const index = { producers, buildingsFor, consumers };
   optionsOf.set(catalog, index);
@@ -210,19 +211,50 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       if (stepOf(key).byTrain.has(name)) trainInputs.get(name).rate += amount * rates[t] / perCraft[t];
     }
   });
+  // Recycled Byproducts: an ingredient that would come by train though a step makes at least as
+  // much of it besides its item is taken from that step instead (the one making most), what it
+  // makes beyond leaving by train. A fluid only where the steps taking it do not feed that step
+  // (a fluid fed back comes by train, as a Recipe Loop's does).
+  const ratesOf = key => rates[at.get(key)] / perCraft[at.get(key)];
+  const feeds = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a)
+    && keys.some(k => recipeOf(k).ingredients.some(i => i.name === itemOf(a) && !stepOf(k).byTrain.has(i.name)) && feeds(k, b, seen)));
+  const recycled = [];
+  const takesFrom = new Map();
+  for (const input of [...trainInputs.values()]) {
+    if (input.reason !== 'import') continue;
+    const item = input.item;
+    const takers = keys.filter(k => stepOf(k).byTrain.has(item));
+    const fluid = recipeOf(takers[0]).ingredients.find(i => i.name === item).type === 'fluid';
+    const makers = keys.filter(k => itemOf(k) !== item && !takers.includes(k) && !used.has(useKey(k, item)) && recipeOf(k).products.some(p => p.name === item))
+      .filter(k => !fluid || !takers.some(t => feeds(t, k)))
+      .map(k => ({ key: k, rate: makes(k, item) * ratesOf(k) }))
+      .sort((a, b) => b.rate - a.rate);
+    const from = makers[0];
+    if (!from || from.rate < input.rate * (1 - 1e-9)) continue;
+    trainInputs.delete(item);
+    for (const k of takers) {
+      stepOf(k).byTrain.delete(item);
+      takesFrom.set(k, { ...takesFrom.get(k), [item]: from.key });
+    }
+    recycled.push({ item, from: from.key, into: takers, rate: input.rate, spare: Math.max(0, from.rate - input.rate) });
+  }
   // A step's ingredient that a step makes but comes by train (a loop's fluid, or a loop taking
   // more than it makes): the layout brings it by train too.
   const looping = item => [...steps.get(item).byTrain].filter(name => steps.has(name));
   // The entries: the steps, then the Byproduct Uses.
   const entryOf = new Map([...[...order].reverse(), ...used.keys()].map((key, k) => [key, k]));
+  const fromOf = (key, from = {}) => {
+    const taken = Object.entries(takesFrom.get(key) ?? {}).map(([item, k]) => [item, entryOf.get(k)]);
+    return taken.length || Object.keys(from).length ? { from: { ...from, ...Object.fromEntries(taken) } } : {};
+  };
   return {
     entries: [
       ...[...order].reverse().map(item => ({
-        goal: { item, rate: rates[at.get(item)] }, selection: steps.get(item).selection,
+        goal: { item, rate: rates[at.get(item)], ...fromOf(item) }, selection: steps.get(item).selection,
         ...(looping(item).length ? { byTrain: looping(item) } : {}),
       })),
       ...[...used].map(([key, u]) => ({
-        goal: { item: u.product, rate: rates[at.get(key)], from: { [u.item]: entryOf.get(u.from) } }, selection: u.selection,
+        goal: { item: u.product, rate: rates[at.get(key)], ...fromOf(key, { [u.item]: entryOf.get(u.from) }) }, selection: u.selection,
         use: { key, from: u.from, item: u.item },
       })),
     ],
@@ -230,9 +262,13 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     loops: loops.map(({ item, into }) => ({
       item, into, rate: recipeOf(into).ingredients.filter(i => i.name === item).reduce((sum, i) => sum + i.amount, 0) * rates[at.get(into)] / perCraft[at.get(into)],
     })),
+    recycled,
+    // (What a Recycled Byproduct's step makes beyond what is taken back.)
     byproducts: keys.flatMap((key, t) => byproductsOf(key).filter((p, k, all) => all.findIndex(q => q.name === p.name) === k && !used.has(useKey(key, p.name))).map(p => ({
-      from: key, item: p.name, type: p.type, rate: makes(key, p.name) * rates[t] / perCraft[t], recipes: (index.consumers.get(p.name) ?? []).filter(r => index.buildingsFor.has(r)),
-    }))),
+      from: key, item: p.name, type: p.type,
+      rate: makes(key, p.name) * rates[t] / perCraft[t] - recycled.filter(r => r.from === key && r.item === p.name).reduce((sum, r) => sum + r.rate, 0),
+      recipes: (index.consumers.get(p.name) ?? []).filter(r => index.buildingsFor.has(r)),
+    })).filter(b => b.rate > 1e-9)),
   };
 }
 

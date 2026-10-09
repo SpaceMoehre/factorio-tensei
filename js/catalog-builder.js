@@ -58,6 +58,7 @@ export function buildCatalog(raw) {
       ],
     };
   }
+  offshorePumps(raw, recipes, buildings);
   const poles = {};
   for (const p of Object.values(raw['electric-pole'])) {
     poles[p.name] = {
@@ -108,6 +109,25 @@ export function buildCatalog(raw) {
     if (!p.hidden && p.fuel_value && energy(p.fuel_value) > 0) fluidFuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value) };
   }
   return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
+}
+
+// Offshore pumps as buildings of recipe 'offshore-water' (no ingredients, 60 of the tile's fluid
+// a second per unit of crafting speed, the speed its pumping speed a tick): built on ground with
+// three by two tiles of shallow water before it (offshore: the tile; the blueprint lays them), so
+// it takes three by three tiles, the pump in the middle of its south row, its pipe leaving south.
+// Needs no power.
+function offshorePumps(raw, recipes, buildings) {
+  const tile = Object.values(raw.tile ?? {}).find(t => t.name === 'water-shallow' && t.fluid);
+  const pumps = Object.values(raw['offshore-pump'] ?? {}).filter(p => !p.hidden && p.pumping_speed > 0);
+  if (!tile || !pumps.length) return;
+  recipes['offshore-water'] = { name: 'offshore-water', category: 'offshore', time: 1, ingredients: [], products: [{ type: 'fluid', name: tile.fluid, amount: 60 }] };
+  for (const p of pumps) {
+    buildings[p.name] = {
+      name: p.name, size: { w: 3, h: 3 }, craftingSpeed: p.pumping_speed, categories: ['offshore'], energy: 'void', energyUsage: 0,
+      fluidBoxes: [{ production: 'output', connections: [{ x: 0, y: 1, direction: 8 }] }],
+      offshore: { tile: tile.name },
+    };
+  }
 }
 
 // The virtual signals an Inserter Clock may take, in the game's order (by subgroup, then their

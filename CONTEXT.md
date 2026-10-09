@@ -32,6 +32,9 @@ _Avoid_: assembler count as a user input (it's derived, not entered)
 An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow, leaving by train unless a Byproduct Use takes it. Where it shares a belt with an item consumers take, a filter splitter right after its producers sorts it out on to the east edge (Splitter).
 _Avoid_: treating byproducts as satisfying other Goals automatically
 
+**Recycled Byproduct**:
+An ingredient a step would bring by train that another step of the chain makes at least as much of as a byproduct: it comes from that step instead (fed back through a splitter where that closes a loop), what is left over leaving by train (Py's sodium hydroxide gives its lime the limestone it takes; ADR 0035).
+
 **Byproduct Use**:
 A step the user adds for a byproduct of a step — a recipe taking it — that takes all of it, sized by what that step makes (Py's iron slime from the hydroclassifiers making iron pulp, to unslimed iron). What it makes leaves by train, unless a Byproduct Use of its own takes it; it never feeds another step nor counts towards a Goal, so its item may also be made by a step of the chain (ADR 0034).
 _Avoid_: byproduct recipe (it is a step of the chain), sharing a byproduct among Uses
@@ -185,7 +188,7 @@ Where a machine puts its products itself: a point just beside it that turns with
 _Avoid_: output field, direct insertion (an inserter's is the Drop Offset)
 
 **Belt Merge**:
-Putting two items on one belt, one per Lane. Eligible only when both items already travel the same route (the same Side Input path feeding the same Sub-Blocks in the same order) — not any two unrelated belts — and only when each item's rate fits within one Lane. Parallel belts are judged per part: two single-item Side Inputs of one Sub-Block, each split into parallel belts, may share each part's belt when each item fits its Lane for the rows that belt feeds.
+Putting two items on one belt, one per Lane. Eligible only when both items already travel the same route (the same Side Input path feeding the same Sub-Blocks in the same order) — not any two unrelated belts — and only when each item's rate fits within one Lane. Parallel belts are judged per part: two single-item Side Inputs of one Sub-Block, each split into parallel belts, may share each part's belt when each item fits its Lane for the rows that belt feeds. The blueprint builds a merged Side Input's belt itself, a tile west of the block: each item comes in on a belt of its own from the north and the south, the two meeting head-on, so each lands on its own Lane (ADR 0037).
 _Avoid_: merging belts that don't share a route
 
 **Parallel Belts**:

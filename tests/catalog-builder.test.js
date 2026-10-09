@@ -374,3 +374,15 @@ test('every entity with a collision box gets its tile footprint, for the entitie
   assert.deepEqual(footprints['straight-rail'], { w: 2, h: 2 });
   assert.deepEqual(footprints['small-lamp'], { w: 1, h: 1 });
 });
+
+// An offshore pump: 20 a tick is 1200 water a second, on three by two tiles of shallow water.
+test('offshore pump: a building of offshore-water on shallow water', () => {
+  const { recipes, buildings } = buildCatalog(dataRaw({
+    'offshore-pump': { 'offshore-pump': { name: 'offshore-pump', pumping_speed: 20 } },
+    tile: { 'water-shallow': { name: 'water-shallow', fluid: 'water' } },
+  }));
+  const pump = buildings['offshore-pump'];
+  assert.deepEqual(recipes['offshore-water'].products, [{ type: 'fluid', name: 'water', amount: 60 }]);
+  assert.equal(pump.craftingSpeed * recipes['offshore-water'].products[0].amount / recipes['offshore-water'].time, 1200);
+  assert.deepEqual([pump.size, pump.energy, pump.offshore], [{ w: 3, h: 3 }, 'void', { tile: 'water-shallow' }]);
+});

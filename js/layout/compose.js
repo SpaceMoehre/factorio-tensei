@@ -347,6 +347,9 @@ export function compose(ctx, prepared, positions, layout) {
   let fanned = new Map();
   // A Recipe Loop's feedback belts routed from their splitters.
   let tapped = new Set();
+  // Their spare's belts back onto their output belt (side-loading), by output route: no link of
+  // a route's own, so kept apart.
+  let spilled = new Map();
   // Byproducts sorted out after their producers, per item: the belts carrying one to the east
   // edge that another may join (side-loading onto a lane with room): { route, tiles (its straight
   // belts: x, y, travel), lanes (what each carries: left, right) }.
@@ -374,6 +377,7 @@ export function compose(ctx, prepared, positions, layout) {
     fanned = new Map();
     sortedOut = new Map();
     tapped = new Set();
+    spilled = new Map();
     piped = new Set();
     let failed = null;
     for (const task of order) {
@@ -530,6 +534,14 @@ export function compose(ctx, prepared, positions, layout) {
         return true;
       }
       const feed = feeds[j], entry = entryOf(feed);
+      // On a belt carrying more than its item (a producer's byproducts, Recycled Byproducts), the
+      // splitter sends only the item (filter) its way. A filtered item never goes the other way,
+      // so where the belt brings more of it than the feedback takes, a second splitter on the
+      // feedback's side (priority to it) sends the rest back onto the line, side-loading.
+      const { item } = feed.items[0];
+      const filter = route.items.length > 1 ? item : null;
+      const spare = !!filter && (route.items.find(i => i.item === item)?.rate ?? 0)
+        - feeds.filter(f => f.items[0].item === item).reduce((sum, f) => sum + f.items[0].rate, 0) > 1e-6;
       // Splitters facing east, a few tiles on, the line coming in on either side; the feedback
       // leaves on the side toward its entry first.
       const spots = [];
@@ -539,30 +551,52 @@ export function compose(ctx, prepared, positions, layout) {
           for (const top of entry.y <= from.y ? [true, false] : [false, true]) {
             const branch = { x: x + 1, y: top ? y : y + 1 }, on = { x: x + 1, y: top ? y + 1 : y };
             if (!open(branch.x, branch.y, feed.id) || !open(on.x, on.y, route.id)) continue;
+            // (The second splitter: beside the branch, away from the line; the feedback leaving
+            // its outer side, the rest turning into the line two tiles on.)
+            const out = top ? -1 : 1;
+            if (spare && ![[x + 2, branch.y, feed.id], [x + 2, branch.y + out, feed.id], [x + 3, branch.y + out, feed.id], [x + 3, branch.y, route.id], [x + 2, on.y, route.id], [x + 3, on.y, route.id], [x + 4, on.y, route.id]]
+              .every(([u, v, id]) => open(u, v, id))) continue;
             for (const lane of [0, 1]) if (open(x - 1, y + lane, route.id)) spots.push({ x, y, top, lane, branch, on });
           }
         }
       }
       for (const spot of spots) {
         if (budget-- <= 0) break;
-        const before = grid.snapshot(), count = held.length, length = line.length;
+        const before = grid.snapshot(), count = held.length, length = line.length, spills = spilled.get(route.id)?.length ?? 0;
         try {
           reserve(spot.x - 1, spot.y + spot.lane, route.id);
           reserve(spot.branch.x, spot.branch.y, feed.id);
           reserve(spot.on.x, spot.on.y, route.id);
           // Output priority: the feedback's side (left of a splitter facing east is north).
-          const splitter = { name: splitterName, kind: 'splitter', x: spot.x, y: spot.y, w: 1, h: 2, direction: E, travel: E, priority: spot.top ? 'left' : 'right' };
+          const priority = spot.top ? 'left' : 'right';
+          const splitter = { name: splitterName, kind: 'splitter', x: spot.x, y: spot.y, w: 1, h: 2, direction: E, travel: E, priority, ...(filter ? { filter } : {}) };
           grid.place(splitter);
-          const leg = routeLink(grid, { id: feed.id, starts: [{ ...spot.branch, a: E }], goal: entry }, belts);
-          line.push(...routeLink(grid, { id: route.id, starts: [from], goal: { x: spot.x, y: spot.y + spot.lane, a: E } }, belts), splitter);
-          off.set(feed.id, [splitter, ...leg]);
-          if (tap(j + 1, { ...spot.on, a: E })) return true;
+          let next = { ...spot.on, a: E }, head = [], lead = [], feedStart = { ...spot.branch, a: E };
+          if (spare) {
+            // The branch a tile on into the second splitter: its outer side the feedback, its
+            // inner the spare, turning onto the line (going straight on two tiles) from the side.
+            const out = spot.top ? -1 : 1, bx = spot.branch.x, by = spot.branch.y;
+            const belt = (u, v, d, id) => ({ name: belts.belt, kind: 'belt', route: id, x: u, y: v, w: 1, h: 1, direction: d, travel: d, out: key(u + VEC[d][0], v + VEC[d][1]) });
+            const second = { name: splitterName, kind: 'splitter', x: bx + 1, y: Math.min(by, by + out), w: 1, h: 2, direction: E, travel: E, priority };
+            lead = [belt(bx, by, E, feed.id), second];
+            head = [belt(bx, spot.on.y, E, route.id), belt(bx + 1, spot.on.y, E, route.id), belt(bx + 2, spot.on.y, E, route.id)];
+            const spill = belt(bx + 2, by, spot.top ? S : N, route.id);
+            for (const e of [...lead, ...head, spill]) grid.place(e);
+            spilled.set(route.id, [...(spilled.get(route.id) ?? []), spill]);
+            feedStart = { x: bx + 2, y: by + out, a: E };
+            next = { x: bx + 3, y: spot.on.y, a: E };
+          }
+          const leg = routeLink(grid, { id: feed.id, starts: [feedStart], goal: entry }, belts);
+          line.push(...routeLink(grid, { id: route.id, starts: [from], goal: { x: spot.x, y: spot.y + spot.lane, a: E } }, belts), splitter, ...head);
+          off.set(feed.id, [splitter, ...lead, ...leg]);
+          if (tap(j + 1, next)) return true;
         } catch (e) {
           if (!(e instanceof RoutingError)) throw e;
         }
         undo(before, count);
         line.length = length;
         off.delete(feed.id);
+        spilled.get(route.id)?.splice(spills);
       }
       return false;
     };
@@ -1053,7 +1087,7 @@ export function compose(ctx, prepared, positions, layout) {
       };
     });
     const seen = new Set();
-    for (const r of result) for (const p of r.pieces) if (!seen.has(p)) { seen.add(p); entities.push(p); }
+    for (const r of result) for (const p of [...r.pieces, ...spilled.get(r.id) ?? []]) if (!seen.has(p)) { seen.add(p); entities.push(p); }
     const subBlocks = plan.map((sb, i) => {
       const mine = instances.filter(inst => inst.step === i);
       const box = extentOf(mine.filter(inst => !inst.detached).map(inst => placed[inst.index]), { w: 0, e: 0, n: 0, s: 0 });
