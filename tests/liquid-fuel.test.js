@@ -74,6 +74,23 @@ test('a byproduct is sorted out after its producers: stone off the crushed quart
   assertValid(block, shipped, logistics);
 });
 
+// Pipes of one fluid join into one network (ADR 0033): Py's slaughterhouses bleeding auogs for
+// their cages and rendering them for bones both make blood the train takes; the second's pipe
+// joins the first's on its way to the east edge, not going there on its own.
+test('byproduct pipes of one fluid join: blood from two Sub-Blocks to the east edge as one network', () => {
+  const block = solve([
+    { goal: { item: 'cage', rate: 10 }, selection: { recipe: 'ex-blo-auog', building: 'slaughterhouse-mk01' } },
+    { goal: { item: 'bones', rate: 10 }, selection: { recipe: 'full-render-auogs', building: 'slaughterhouse-mk01' } },
+  ], shipped, logistics);
+  const blood = block.routes.filter(r => r.fluid === 'blood');
+  assert.equal(blood.length, 2);
+  assert.equal(new Set(blood.map(r => r.network)).size, 1);
+  assert.notEqual(blood[0].network, undefined);
+  const east = blood.filter(r => r.pieces.some(p => p.x === block.bounds.x + block.bounds.w - 1));
+  assert.equal(east.length, 1, 'one pipe to the east edge');
+  assertValid(block, shipped, logistics);
+});
+
 // Py's ball mills make 1800/min of molybdenite dust with 180 of gravel, more than one belt
 // carries, for agitators that take only the dust (the jaw crushers 900 of crushed molybdenite with
 // 360 of stone): an Internal Path all the same, each of its parallel belts sorting the byproduct

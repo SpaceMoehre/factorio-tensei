@@ -308,7 +308,7 @@ export function compose(ctx, prepared, positions, layout) {
 
   // A fluid's links: every copy's stub (where its pipes reach its west or east edge) joined, and
   // the train's edges.
-  const routeFluid = (grid, route) => {
+  const routeFluid = (grid, route, pieces) => {
     const terminals = route.stubs.map(({ inst, x, y, side }) => {
       const { x: ox, y: oy } = placed[inst.index];
       return side === 'W' ? [x + ox - 1, y + oy, W] : [x + ox + 1, y + oy, E];
@@ -321,9 +321,18 @@ export function compose(ctx, prepared, positions, layout) {
     const draws = drawn && { routes: new Set([drawn.route]), starts: drawn.starts, only: drawn.only };
     const source = route.source === 'side-input' && (!reachesWest || Boolean(draws?.only));
     const sink = route.sink === 'side-output' && !reachesEast;
-    if (terminals.length < 2 && !source && !sink) return [];
+    // (Its network's pipes routed before it: it joins them, from a free tile beside one.)
+    const peers = [...networks.keys()].filter(id => id !== route.id && networks.get(id) === networks.get(route.id) && (piped.has(id) || builtPipes.has(id)));
+    const starts = [];
+    for (const p of peers.flatMap(id => builtPipes.get(id) ?? pieces[id]).filter(p => p.kind === 'pipe')) {
+      for (const [d, [dx, dy]] of Object.entries(VEC)) {
+        if (grid.inBounds(p.x + dx, p.y + dy) && !grid.at(p.x + dx, p.y + dy)) starts.push({ x: p.x + dx, y: p.y + dy, a: +d });
+      }
+    }
+    const joins = starts.length ? { routes: new Set(peers), starts } : null;
+    if (terminals.length < 2 && !source && !sink && !joins) return [];
     if (!terminals.length) throw new RoutingError(`${route.fluid}: no stub to join`);
-    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...(draws ? { draws } : {}) }, pipes);
+    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...(draws ? { draws } : {}), ...(joins ? { joins } : {}) }, pipes);
   };
 
   // Pipes first (no fluid may touch another), then the belt links in their order. When one
@@ -342,6 +351,12 @@ export function compose(ctx, prepared, positions, layout) {
   // edge that another may join (side-loading onto a lane with room): { route, tiles (its straight
   // belts: x, y, travel), lanes (what each carries: left, right) }.
   let sortedOut = new Map();
+  // Pipe routes of one fluid joined into one network (pipeNetworks), and those routed so far.
+  const networks = pipeNetworks(routes, site?.pipes);
+  let piped = new Set();
+  // (In an Annex's City Block, the pipes built before it, by route.)
+  const builtPipes = new Map();
+  for (const f of site?.fixtures ?? []) if (f.network !== undefined) builtPipes.set(f.route, [...(builtPipes.get(f.route) ?? []), f]);
   const splitterName = beltSpec.splitter ?? beltSpec.name.replace(/transport-belt$/, 'splitter');
   for (;;) {
     const { grid, entities, pieces } = placeAll();
@@ -359,13 +374,15 @@ export function compose(ctx, prepared, positions, layout) {
     fanned = new Map();
     sortedOut = new Map();
     tapped = new Set();
+    piped = new Set();
     let failed = null;
     for (const task of order) {
       // A search out of time gives up on the layout rather than route on.
       if (layout.until && layout.until()) throw new RoutingError('out of time routing the links');
       try {
         if (task.pipe !== undefined) {
-          pieces[task.pipe].push(...routeFluid(grid, routes[task.pipe]));
+          pieces[task.pipe].push(...routeFluid(grid, routes[task.pipe], pieces));
+          piped.add(task.pipe);
           continue;
         }
         if (task.split) {
@@ -1031,6 +1048,7 @@ export function compose(ctx, prepared, positions, layout) {
         ...(fanned.get(r.id) ?? {}),
         ...loop,
         ...(fed.length ? { taps: fed } : {}),
+        ...(networks.has(r.id) ? { network: networks.get(r.id) } : {}),
         pieces: pieces[r.id],
       };
     });
@@ -1551,6 +1569,27 @@ function tapLoop(routes, feeds, base) {
     feed.items = feed.items.map(i => ({ ...i, supply: Math.max(0, Math.min(i.capacity, out.left)) }));
     out.left -= feed.items[0].rate;
   }
+}
+
+// Pipe routes of one fluid that join into one network: those carrying it to the east edge, and
+// the others (a pipe to the train would draw off what the others' consumers take), never a
+// Sub-Block's input of it with its output (a recipe's input and output of one fluid stay apart).
+// In an Annex's City Block, those of the pipes built before it (`built`: each its network's
+// already) first. Per route id, its network's (its first route's id, a built one's own), for
+// those of two routes or more.
+export function pipeNetworks(routes, built = []) {
+  const groups = [];
+  for (const r of [...built, ...routes.filter(r => r.kind === 'pipe')]) {
+    const makes = r.source === 'side-input' || r.source === undefined ? [] : [r.source];
+    const sink = r.sink === 'side-output';
+    let g = r.network !== undefined ? groups.find(g => g.key === r.network)
+      : groups.find(g => g.fluid === r.fluid && g.sink === sink && !makes.some(i => g.takes.has(i)) && !r.consumers.some(i => g.makes.has(i)));
+    if (!g) groups.push(g = { key: r.network ?? r.id, fluid: r.fluid, sink, ids: [], makes: new Set(), takes: new Set() });
+    g.ids.push(r.id);
+    for (const i of makes) g.makes.add(i);
+    for (const i of r.consumers) g.takes.add(i);
+  }
+  return new Map(groups.filter(g => g.ids.length > 1).flatMap(g => g.ids.map(id => [id, g.key])));
 }
 
 // How many states a byproduct's belt explores looking for one carrying it on to join.

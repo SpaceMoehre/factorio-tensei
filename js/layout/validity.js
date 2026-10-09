@@ -399,8 +399,24 @@ export function pipeNetwork(block, route, catalog, logistics, machines) {
   }
   for (const m of machines.filter(m => !reached.has(m))) problems.push(`${route.fluid} does not reach ${m.name} at ${m.x},${m.y}`);
   if (route.source === 'side-input' && !pieces.some(p => p.x === block.bounds.x) && drawnFrom(block, route) === null) problems.push(`${route.fluid} does not start at the west edge`);
-  if (route.sink === 'side-output' && !pieces.some(p => p.x === block.bounds.x + block.bounds.w - 1)) problems.push(`${route.fluid} does not reach the east edge`);
+  // (Joined with pipes of its network, through theirs; in an Annex's City Block reaching one built
+  // before it will do: that was checked with its own.)
+  const built = p => route.network !== undefined && p.network === route.network;
+  if (route.sink === 'side-output' && !joinedTo(block, route, reach).some(p => p.x === block.bounds.x + block.bounds.w - 1 || built(p))) problems.push(`${route.fluid} does not reach the east edge`);
   return problems;
+}
+
+// The pipes a route's joins: its own, and those of its network's (pipes of the same fluid joined
+// into one, ADR 0033) it reaches, in an Annex's City Block those built before it too (they carry
+// their network: pieces of the block's do not).
+function joinedTo(block, route, reach) {
+  if (route.network === undefined) return route.pieces;
+  const built = (block.site?.fixtures ?? []).filter(f => f.network !== undefined && f.network === route.network);
+  const at = tileMap([...block.routes.filter(r => r.kind === 'pipe' && r.network === route.network).flatMap(r => r.pieces), ...built]);
+  const seen = new Set(route.pieces);
+  const stack = [...route.pieces];
+  while (stack.length) for (const n of pipeNeighbors(at, stack.pop(), reach)) if (!seen.has(n)) { seen.add(n); stack.push(n); }
+  return [...seen];
 }
 
 // The route of the pipe the layout before an Annex built (a Fixture of its City Block) that a
@@ -443,15 +459,17 @@ export function noFluidMixing(block, catalog, logistics) {
   return problems;
 }
 
-// Different routes are different pipe networks even when they carry the same fluid.
+// Different routes are different pipe networks even when they carry the same fluid, but those
+// joined into one (ADR 0033).
 export function separateNetworks(block, catalog, logistics) {
   const reach = catalog.pipes[logistics.pipe].maxDistance;
   const fluidPieces = block.entities.filter(e => e.kind === 'pipe' || e.kind === 'pipe-to-ground');
   const at = tileMap(fluidPieces);
+  const network = new Map(block.routes.filter(r => r.network !== undefined).map(r => [r.id, r.network]));
   const problems = [];
   for (const a of fluidPieces) {
     for (const b of pipeNeighbors(at, a, reach)) {
-      if (b.route !== a.route) problems.push(`${a.fluid} route ${a.route} at ${a.x},${a.y} joins route ${b.route} at ${b.x},${b.y}`);
+      if (b.route !== a.route && (!network.has(a.route) || network.get(a.route) !== network.get(b.route))) problems.push(`${a.fluid} route ${a.route} at ${a.x},${a.y} joins route ${b.route} at ${b.x},${b.y}`);
     }
   }
   return problems;

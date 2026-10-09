@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v25: Pipes of one fluid join (implemented)
+Pipe Networks (ADR 0033); where v25 differs from v24, v25 wins.
+- **One network per fluid:** a fluid's pipe routes join (those to the east edge together, the others together, never a Sub-Block's input with its output); joined, a route to the east edge goes there through the other's pipe. Py slaughterhouses' blood from two Sub-Blocks: one pipe to the east edge, 47 × 28 (was 38 × 42).
+- **Across Annexes:** an Annex's pipe joins the built network of its fluid first (Py moss: the Annex's muddy sludge joins the first layout's).
+
 ## v24: Annexes draw (implemented)
 Annexes using what is built, and finding out fast what fits (ADR 0032); where v24 differs from v23, v24 wins.
 - **Draws:** an Annex's Side Input of a fluid joins a pipe built before it: one of the train's fluids, or one made here whose producers make enough more than their consumers take (else the Annex makes it itself). Py moss in 116 × 116: the first greenhouses' spare carbon dioxide feeds the first Annex's 20 farms, with no greenhouse of its own; Maximize reaches 806.4/min in 695 s (was 777.3/min in 801 s, run side by side).

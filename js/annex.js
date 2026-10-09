@@ -15,8 +15,10 @@ import { drawnFrom } from './layout/validity.js';
 // with theirs), the tiles where a pipe would join its machines, and the pipes its Side Inputs
 // may draw from (draws(): `made`, the items made here).
 export function annexSite(site, block, catalog, made = []) {
+  // (A pipe's carries its network, ADR 0033: one of the Annex's of its fluid may join it.)
+  const network = new Map(block.routes.filter(r => r.kind === 'pipe').map(r => [r.id, `${BUILT}${r.network ?? r.id}`]));
   const fixtures = block.entities.map(e => (PIECES.has(e.kind)
-    ? { ...e, route: `${BUILT}${e.route}` }
+    ? { ...e, route: `${BUILT}${e.route}`, ...(network.has(e.route) ? { network: network.get(e.route) } : {}) }
     : { name: e.kind === 'pole' ? e.name : BUILT, kind: 'fixture', x: e.x, y: e.y, w: e.w, h: e.h }));
   const tunnels = [];
   const at = new Map(block.entities.map(e => [`${e.x},${e.y}`, e]));
@@ -43,9 +45,15 @@ export function annexSite(site, block, catalog, made = []) {
       }
     }
   }
+  // The built pipe routes, as routes of the Annex's (their Sub-Blocks apart from its own), whose
+  // networks those of the Annex's of their fluid may join.
+  const pipes = block.routes.filter(r => r.kind === 'pipe').map(r => ({
+    id: `${BUILT}${r.id}`, kind: 'pipe', fluid: r.fluid, sink: r.sink, network: network.get(r.id),
+    source: typeof r.source === 'number' ? `${BUILT}${r.source}` : r.source, consumers: r.consumers.map(i => `${BUILT}${i}`),
+  }));
   return {
     ...site, annex: true, fixtures: [...site.fixtures, ...fixtures], tunnels: [...(site.tunnels ?? []), ...tunnels], pipeBlocked: [...(site.pipeBlocked ?? []), ...ports],
-    draws: draws(block, site, ports, made),
+    draws: draws(block, site, ports, made), pipes,
   };
 }
 
@@ -154,6 +162,21 @@ export function annexed(block, annex, site, catalog, logistics) {
       ...(r.loop?.from !== undefined ? { loop: { ...r.loop, from: sb(r.loop.from) } } : {}),
     })),
   ];
+  // Pipes of one fluid joined into one network (ADR 0033), the Annex's with the block's they join:
+  // each the network of the first of them.
+  const root = new Map();
+  const find = id => (root.has(id) && root.get(id) !== id ? find(root.get(id)) : id);
+  const union = (a, b) => root.set(find(a), find(b));
+  for (const r of block.routes) if (r.network !== undefined) union(r.id, r.network);
+  for (const r of annex.routes) if (r.network !== undefined) union(route(r.id), typeof r.network === 'string' ? Number(r.network.slice(BUILT.length)) : route(r.network));
+  const members = new Map();
+  for (const r of routes.filter(r => r.kind === 'pipe')) members.set(find(r.id), [...(members.get(find(r.id)) ?? []), r.id]);
+  for (const [k, r] of routes.entries()) {
+    if (r.kind !== 'pipe') continue;
+    const { network, ...rest } = r;
+    const ids = members.get(find(r.id));
+    routes[k] = ids.length > 1 ? { ...rest, network: Math.min(...ids) } : rest;
+  }
   const subBlocks = [
     ...block.subBlocks,
     ...annex.subBlocks.map(s => ({ ...s, index: sb(s.index), inserters: s.inserters?.map(x => ({ ...x, route: route(x.route) })) })),

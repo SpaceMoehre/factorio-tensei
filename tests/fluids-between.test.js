@@ -99,7 +99,8 @@ test('An Annex draws a fluid it has enough of from a built pipe, and makes it wh
 // 116 (its stack 84 x 75, the rest below it), a strip of 80 x 30 left empty: an Annex of 18 farms
 // and their own muddy sludge and soil stands in it, routed round the first layout, its carbon
 // dioxide drawn from the first greenhouses' pipe (they make 1200/min more than its farms take)
-// and its water from the first water pipe (ADR 0032), its moss to the east edge.
+// and its water from the first water pipe (ADR 0032), its muddy sludge's pipe joining the first's
+// (ADR 0033), its moss to the east edge.
 test('Annex: the moss chain again in the room its layout leaves, 135 farms and 18, drawing carbon dioxide and water', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 1);
   const options = {
@@ -117,6 +118,10 @@ test('Annex: the moss chain again in the room its layout leaves, 135 farms and 1
   assert.equal(block.subBlocks.filter(sb => sb.item === 'carbon-dioxide').length, 1);
   assert.ok(block.entities.filter(e => e.kind === 'building' && e.name === 'moss-farm-mk01').length >= 153);
   for (const fluid of ['carbon-dioxide', 'water']) assert.equal(block.routes.filter(r => r.fluid === fluid).length, 1, fluid);
+  // Its own muddy sludge joins the first's pipe of it, one network (ADR 0033).
+  const sludge = block.routes.filter(r => r.fluid === 'muddy-sludge');
+  assert.equal(sludge.length, 2);
+  assert.ok(sludge.every(r => r.network !== undefined && r.network === sludge[0].network));
   assert.deepEqual(simulate(block).starvation, []);
   assertValid(block, shipped, logistics);
 });

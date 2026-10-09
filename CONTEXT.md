@@ -161,6 +161,10 @@ _Avoid_: hardcoded raw item list
 The train-bound path carrying every Goal's target item not consumed internally by another Sub-Block, plus unconsumed Byproducts (the Compound Block's final products). It leaves on the Compound Block's east edge (in a City Block, the Buffer's).
 _Avoid_: hardcoded output item list
 
+**Pipe Network**:
+The pipe routes of one fluid joined into one: those carrying it to the east edge together, the others (the train's, and those between Sub-Blocks) together, never a Sub-Block's input of it with its output. A route's pipes join one of its network's routed before it (an Annex's, one built before it) where they find a short way; joined, a route to the east edge goes there through theirs.
+_Avoid_: a pipe to the train joined with pipes feeding consumers (it would draw off what they take)
+
 **Tunnel**:
 An underground belt (or pipe-to-ground) segment, used (1) reactively, whenever a path's straight route would cross a tile occupied by something it isn't connecting to, and (2) proactively as a compaction primitive — an inserter can sit directly adjacent to its assembler with a pole on the same line, because the feeding belt or pipe tunnels underneath both. Each hop's length, up to the underground entity's maximum reach, is chosen by the layout search for compactness. (3) Once the block is routed, three plain pipes or more in a straight line go underground: a pipe-to-ground at each end, nothing between. Plain pipes and pipe-to-grounds are of one material: those of different materials do not connect.
 _Avoid_: tunnel as purely a crossing-avoidance fallback (it's also a compaction tool); a fixed hop length; a plain pipe of one material with a pipe-to-ground of another

@@ -12,6 +12,8 @@ const GREED = 1.5;
 // tile it has to cover: a path that exists is found long before.
 const EXPANSIONS_MAX = 20000;
 const EXPANSIONS_PER_STEP = 100;
+// How many states a pipe tree explores looking for a pipe of its network to join.
+const JOIN_STATES = 4000;
 
 export class RoutingError extends Error {
   /** @type {number[] | undefined} the Sub-Blocks a link that found no room runs between */
@@ -157,10 +159,14 @@ export function routeLink(grid, spec, names) {
 
 // Routes a fluid as a pipe tree joining every terminal (a machine fluid connection), plus the
 // west edge for Side Input and the east edge for Side Output.
-// spec: { id, fluid, terminals: [[x, y, outwardDir]], source: boolean, sink: boolean, draws? }
+// spec: { id, fluid, terminals: [[x, y, outwardDir]], source: boolean, sink: boolean, draws?, joins? }
 // draws (an Annex's Side Input drawn from a pipe built before it, ADR 0032): { routes (the built
 // pipes' routes its pipes may join), starts (the tiles beside them, heading away), only (never
 // from the west edge) }.
+// joins (pipes of its network, carrying the same fluid, routed before it): { routes (theirs: its
+// pipes may join them), starts (the tiles beside them, heading away) }. Its tree joins them where
+// it finds a way within a short search; a sink's, joined, does not go on to the east edge (theirs
+// reaches it).
 // names: { pipe, underground, reach }
 export function routePipe(grid, spec, names) {
   const [[x0, y0, out0]] = spec.terminals;
@@ -199,6 +205,8 @@ function growTree(grid, spec, names, seedPieces) {
     field = null;
   };
   commit({ pieces: seedPieces });
+  const joined = spec.joins?.starts.length ? search(grid, spec.joins.starts, toTree.isGoal, toTree.heuristic, moves, undefined, JOIN_STATES) : null;
+  if (joined) commit(joined);
   if (spec.source) {
     const starts = spec.draws ? [...spec.draws.starts, ...(spec.draws.only ? [] : edgeStarts(grid, grid.area.x, E))] : edgeStarts(grid, grid.area.x, E);
     const leg = search(grid, starts, toTree.isGoal, toTree.heuristic, moves);
@@ -213,7 +221,7 @@ function growTree(grid, spec, names, seedPieces) {
     if (!leg) throw new RoutingError(`${spec.fluid}: cannot connect ${x},${y}`);
     commit(leg);
   }
-  if (spec.sink) {
+  if (spec.sink && !joined) {
     const leg = search(grid, edgeStarts(grid, grid.area.x + grid.area.w - 1, W), toTree.isGoal, toTree.heuristic, moves);
     if (!leg) throw new RoutingError(`${spec.fluid}: no path to the east edge`);
     commit(leg);
@@ -591,12 +599,12 @@ function fedByOther(grid, spec, x, y) {
 
 // A pipe connects on all four sides, so no neighbour may belong to another pipe network — even
 // one carrying the same fluid (a recipe's input and output of one fluid must stay apart) — but
-// one it draws from.
+// one it draws from or joins.
 function canPipe(grid, spec, x, y) {
   if (!grid.freeFor(x, y, spec.id) || grid.pipeBlocked.has(key(x, y))) return false;
   for (const [d, [dx, dy]] of Object.entries(VEC)) {
     const n = grid.at(x + dx, y + dy);
-    const other = n && n.route !== spec.id && !spec.draws?.routes.has(n.route);
+    const other = n && n.route !== spec.id && !spec.draws?.routes.has(n.route) && !spec.joins?.routes.has(n.route);
     if (n?.kind === 'pipe' && other) return false;
     if (n?.kind === 'pipe-to-ground' && other && n.direction === opposite(+d)) return false;
     const k = key(x + dx, y + dy);

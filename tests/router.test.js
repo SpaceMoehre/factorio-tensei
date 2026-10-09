@@ -126,3 +126,21 @@ test('a pipe tree draws its fluid from a built pipe of that fluid', () => {
   const apart = routePipe(built(), { id: 0, fluid: 'water', terminals: [[6, 0, W]], source: true, sink: false }, pipes);
   assert.ok(!apart.some(p => p.kind === 'pipe' && p.y === 1 && p.x >= 2 && p.x <= 4), JSON.stringify(apart.map(p => [p.x, p.y])));
 });
+
+// Pipes of one fluid join (one network): a byproduct's pipe tree joins the pipe of another
+// carrying it to the east edge (2..8, 2) rather than going there itself; a connection at (1,0)
+// facing west. Without the join no pipe of its touches the other.
+test('a pipe tree joins a pipe of its network rather than go to the east edge itself', () => {
+  const other = () => {
+    const grid = new Grid({ x: 0, y: 0, w: 9, h: 3 });
+    for (let x = 2; x <= 8; x++) grid.place({ name: 'pipe', kind: 'pipe', route: 1, fluid: 'blood', x, y: 2, w: 1, h: 1 });
+    grid.reserveFluidPort(1, 0, 0);
+    return grid;
+  };
+  const starts = [2, 3, 4, 5, 6, 7, 8].map(x => ({ x, y: 1, a: N }));
+  const pieces = routePipe(other(), { id: 0, fluid: 'blood', terminals: [[1, 0, W]], source: false, sink: true, joins: { routes: new Set([1]), starts } }, pipes);
+  assert.ok(!pieces.some(p => p.x === 8), JSON.stringify(pieces.map(p => [p.x, p.y])));
+  assert.ok(pieces.some(p => p.y === 1 && p.x >= 2), 'a pipe beside the other');
+  const apart = routePipe(other(), { id: 0, fluid: 'blood', terminals: [[1, 0, W]], source: false, sink: true }, pipes);
+  assert.ok(!apart.some(p => p.kind === 'pipe' && p.y === 1 && p.x >= 2), JSON.stringify(apart.map(p => [p.x, p.y])));
+});
