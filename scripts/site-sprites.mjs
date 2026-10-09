@@ -25,6 +25,9 @@ const names = new Set();
 for (const r of Object.values(catalog.recipes)) for (const x of [...r.ingredients, ...r.products]) names.add(x.name);
 for (const group of ['buildings', 'inserters', 'poles', 'belts', 'pipes']) for (const name of Object.keys(catalog[group] ?? {})) names.add(name);
 for (const name of catalog.signals ?? []) names.add(name);
+// (The blueprint's icon: the page's. The item groups' icons and the technologies' pictures stay
+// where the copied sprites/ has them.)
+names.add('blueprint');
 
 // Paths the catalog already names, where a zip has them.
 const named = Object.fromEntries(Object.entries(catalog.icons ?? {}).filter(([name, path]) => names.has(name) && path.includes('/graphics/')));

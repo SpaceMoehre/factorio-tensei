@@ -29,10 +29,16 @@ if (lstatSync(link, { throwIfNoEntry: false })?.isSymbolicLink()) {
   unlinkSync(link);
 }
 const out = fileURLToPath(new URL('../sprites/', import.meta.url));
+// The item groups' icons (the item picker's tabs) and the technologies' pictures the page shows
+// (catalog.art), besides the icons.
+const groups = Object.fromEntries((catalog.groups ?? []).filter(g => g.icon).map(g => [g.name, g.icon]));
+const art = catalog.art ?? {};
 if (dump) {
-  const { written, missing } = dumpedSprites(catalog.icons, { dump, out });
-  console.log(`sprites/: ${written} icons from the dump${missing.length ? `, ${missing.length} it has none for (e.g. ${missing.slice(0, 3).join(', ')})` : ''}`);
+  for (const [what, icons, folders] of /** @type {[string, any, string[] | null][]} */ ([['icons', catalog.icons, null], ['item group icons', groups, ['item-group']], ['technology pictures', art, ['technology']]])) {
+    const { written, missing } = dumpedSprites(icons, { dump, out, folders });
+    console.log(`sprites/: ${written} ${what} from the dump${missing.length ? `, ${missing.length} it has none for (e.g. ${missing.slice(0, 3).join(', ')})` : ''}`);
+  }
   process.exit(0);
 }
-const { written, missing } = buildSprites(catalog.icons, { game, mods, out });
+const { written, missing } = buildSprites({ ...catalog.icons, ...Object.fromEntries(Object.entries(groups).map(([k, v]) => [`group:${k}`, v])), ...Object.fromEntries(Object.entries(art).map(([k, v]) => [`art:${k}`, v])) }, { game, mods, out });
 console.log(`sprites/: ${written} icons${missing.length ? `, ${missing.length} not found (e.g. ${missing.slice(0, 3).join(', ')})` : ''}`);

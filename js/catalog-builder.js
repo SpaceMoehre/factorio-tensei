@@ -107,7 +107,7 @@ export function buildCatalog(raw) {
   for (const p of Object.values(raw.fluid ?? {})) {
     if (!p.hidden && p.fuel_value && energy(p.fuel_value) > 0) fluidFuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value) };
   }
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), footprints: footprints(raw) };
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
 }
 
 // The virtual signals an Inserter Clock may take, in the game's order (by subgroup, then their
@@ -186,18 +186,58 @@ const ITEM_TYPES = [
   'item', 'fluid', 'tool', 'module', 'ammo', 'capsule', 'armor', 'gun', 'item-with-entity-data',
   'rail-planner', 'repair-tool', 'space-platform-starter-pack',
 ];
+// The game's item groups (its crafting menu's tabs), in its order, each with its icon (a sprite
+// path) and its items and fluids in the game's order (by subgroup, then their own order): every
+// one not hidden. Groups holding none are left out.
+function itemGroups(raw) {
+  const ordered = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const subgroup = p => raw['item-subgroup']?.[p.subgroup ?? (p.type === 'fluid' ? 'fluid' : 'other')];
+  const byGroup = new Map();
+  for (const type of ITEM_TYPES) {
+    for (const p of Object.values(raw[type] ?? {})) {
+      if (p.hidden || p.parameter || !subgroup(p)) continue;
+      const group = subgroup(p).group;
+      if (!byGroup.has(group)) byGroup.set(group, []);
+      byGroup.get(group).push(p);
+    }
+  }
+  return Object.values(raw['item-group'] ?? {})
+    .filter(g => byGroup.has(g.name))
+    .sort((a, b) => ordered(a.order ?? '', b.order ?? '') || ordered(a.name, b.name))
+    .map(g => ({
+      name: g.name, icon: spritePath(g.icon ?? g.icons?.[0]?.icon),
+      items: byGroup.get(g.name).sort((a, b) => ordered(subgroup(a).order ?? '', subgroup(b).order ?? '') || ordered(a.order ?? '', b.order ?? '') || ordered(a.name, b.name)).map(p => p.name),
+    }));
+}
+
+// Technologies whose pictures illustrate the page (its sections, the empty map): { name: sprite
+// path }.
+const ART = ['automation', 'oil-processing', 'logistics', 'construction-robotics', 'circuit-network', 'logistic-system'];
+function art(raw) {
+  return Object.fromEntries(ART.flatMap(name => {
+    const t = raw.technology?.[name];
+    const path = spritePath(t?.icon ?? t?.icons?.[0]?.icon);
+    return path ? [[name, path]] : [];
+  }));
+}
+
+// "__mod__/path" as a file under sprites/ ("mod/path"), else null.
+function spritePath(path) {
+  const match = /^__([^/]+)__\/(.+)$/.exec(path ?? '');
+  // (Some mods name a folder twice: graphics/icons//sap-extractor-mk01.png.)
+  return match ? `${match[1]}/${match[2].replace(/\/{2,}/g, '/')}` : null;
+}
+
 // Icons as files under sprites/: "__pyhightechgraphics__/graphics/icons/pcb1.png" becomes
 // "pyhightechgraphics/graphics/icons/pcb1.png" (scripts/build-sprites.mjs extracts them from the
 // game and the mod zips). Layered icons show their first layer. Virtual signals' too, for the
-// signals an Inserter Clock may take.
+// signals an Inserter Clock may take, and the blueprint's (the page's).
 function spriteIcons(raw) {
   const icons = {};
-  for (const type of [...ITEM_TYPES, 'virtual-signal']) {
+  for (const type of [...ITEM_TYPES, 'virtual-signal', 'blueprint']) {
     for (const p of Object.values(raw[type] ?? {})) {
-      const path = p.icon ?? p.icons?.[0]?.icon;
-      const match = /^__([^/]+)__\/(.+)$/.exec(path ?? '');
-      // (Some mods name a folder twice: graphics/icons//sap-extractor-mk01.png.)
-      if (match) icons[p.name] = `${match[1]}/${match[2].replace(/\/{2,}/g, '/')}`;
+      const path = spritePath(p.icon ?? p.icons?.[0]?.icon);
+      if (path) icons[p.name] = path;
     }
   }
   return icons;

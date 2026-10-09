@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v27: A friendlier page (implemented)
+- **Pictures everywhere:** Goals are picked from a chooser of icons by the game's item groups (its crafting menu's tabs) with a search; recipes are shown and chosen as their ingredients → products with amounts; buildings, belts, pipes, inserters and modules as icon toggles; fuels and other long lists in the chooser; Train in/out lines with icons. Names read as words ("Iron pulp 01"), the game's name beside them.
+- **Sections** numbered in order (what to make, how it's made, logistics, city block, build), each headed by a technology picture; an empty map that says what to do; Factorio's font (Titillium Web) and colours.
+- **Catalog:** the item groups with their items in the game's order (`groups`) and the technology pictures the page shows (`art`); `npm run build-sprites -- --dump` fills in their pictures too.
+
 ## v26: Byproduct Uses (implemented)
 Byproducts shown and processed in the block (ADR 0034); where v26 differs from v25, v26 wins.
 - **Byproducts shown:** under each step of the Production Chain, the byproducts it sends away by train, with their rates.

@@ -97,7 +97,13 @@ let reading = 0;
 let cityRead = Promise.resolve();
 let built = null;
 
-$('items').replaceChildren(...[...index.producers.keys()].sort().map(name => new Option(name)));
+// The page's pictures: technologies' (catalog.art) and items' icons.
+for (const img of /** @type {any[]} */ (Array.from(document.querySelectorAll('img[data-art], img[data-icon]')))) {
+  const path = img.dataset.art ? catalog.art?.[img.dataset.art] : catalog.icons[img.dataset.icon];
+  if (path) img.src = `sprites/${path}`;
+  else img.hidden = true;
+}
+for (const span of /** @type {any[]} */ (Array.from(document.querySelectorAll('[data-sprite]')))) span.replaceWith(iconOf(span.dataset.sprite));
 for (const key of SELECTS) {
   fillSelect($(key), choices[key], state.logistics[key], key === 'pipe' ? plainOf : undefined);
   $(key).addEventListener('change', () => {
@@ -105,6 +111,10 @@ for (const key of SELECTS) {
     if (key === 'pipe') state.logistics.plainPipe = plainOf($(key).value);
     save();
   });
+  const select = $(key);
+  const at = select.nextSibling;
+  const parent = select.parentNode;
+  parent.insertBefore(pictured(select, { title: /** @type {HTMLElement} */ (document.querySelector(`label[for="${key}"]`)).textContent }), at);
 }
 $('circuit').value = state.logistics.circuit;
 $('circuit').addEventListener('change', () => {
@@ -123,11 +133,11 @@ $('handSize').addEventListener('change', () => {
 });
 $('budget').value = String(state.logistics.budget);
 $('budget').addEventListener('change', () => { state.logistics.budget = Math.max(1, Number($('budget').value) || 10); save(); });
-$('add-goal').addEventListener('click', () => {
-  state.goals.push({ item: '', rate: 60 });
+$('add-goal').addEventListener('click', () => chooseGoal('', item => {
+  state.goals.push({ item, rate: 60 });
   renderGoals();
   save();
-});
+}));
 $('city-on').checked = state.city.on;
 $('city-on').addEventListener('change', () => { state.city.on = $('city-on').checked; renderCity(); save(); });
 $('city-bp').value = state.city.blueprint;
@@ -166,10 +176,13 @@ $('picker-none').addEventListener('click', () => choose(null));
 $('picker-filter').addEventListener('input', filterPicker);
 // A click on the backdrop closes it.
 $('picker').addEventListener('click', e => { if (e.target === $('picker')) $('picker').close(); });
+$('chooser-close').addEventListener('click', () => $('chooser').close());
+$('chooser-filter').addEventListener('input', drawChooser);
+$('chooser').addEventListener('click', e => { if (e.target === $('chooser')) $('chooser').close(); });
 $('zoom-in').addEventListener('click', () => map?.zoom(1.4));
 $('zoom-out').addEventListener('click', () => map?.zoom(1 / 1.4));
 $('fit').addEventListener('click', () => map?.fit());
-$('empty').textContent = 'Add goals and build a factory block to see its map here.';
+showEmpty('Your factory block appears here.');
 renderGoals();
 if (outdated) {
   $('calculate').disabled = true;
@@ -203,29 +216,39 @@ function defaultLogistics() {
 }
 
 function renderGoals() {
-  $('goals').replaceChildren(...state.goals.map((goal, i) => goalRow(goal, i)));
+  $('goals').replaceChildren(...(state.goals.length ? state.goals.map((goal, i) => goalRow(goal, i)) : [
+    el('div', { className: 'empty-goals' }, ...(catalog.art?.automation ? [el('img', { src: `sprites/${catalog.art.automation}`, alt: '' })] : []),
+      el('p', { className: 'hint', textContent: 'No goals yet. Add one: pick an item, and its recipe, machines and belts follow.' })),
+  ]));
+  $('add-goal').textContent = state.goals.length ? '+ Add another goal' : '+ Add a goal';
   renderChain();
+}
+
+// The items a Goal may be: every one a recipe makes, by the game's item groups (its crafting
+// menu's tabs).
+function goalGroups() {
+  const made = name => index.producers.has(name);
+  const groups = (catalog.groups ?? []).map(g => ({ name: g.name, icon: g.icon, items: g.items.filter(made) })).filter(g => g.items.length);
+  const grouped = new Set(groups.flatMap(g => g.items));
+  const rest = [...index.producers.keys()].filter(name => !grouped.has(name)).sort();
+  return rest.length ? [...groups, { name: 'other', icon: null, items: rest }] : groups;
+}
+
+function chooseGoal(current, pick) {
+  openChooser({ title: 'What to make', groups: goalGroups(), current, pick });
 }
 
 // A Goal is an item and a rate; how it is made is chosen in the Production Chain. Editing a Goal
 // only redraws the chain, so the field being edited keeps its focus.
 function goalRow(goal, i) {
-  const row = el('div', { className: 'goal' });
-  const icon = iconOf(goal.item);
-  const item = el('input', { type: 'text', value: goal.item, placeholder: 'Item or fluid…', ariaLabel: 'Goal item' });
-  item.setAttribute('list', 'items');
+  const item = el('button', { type: 'button', className: 'goal-item', title: 'Choose another item', ariaLabel: `Goal item: ${goal.item ? label(goal.item) : 'none'}` },
+    iconOf(goal.item), el('span', { className: 'goal-name' }, el('strong', { textContent: goal.item ? label(goal.item) : 'Choose an item…' }), el('small', { textContent: goal.item })));
+  item.addEventListener('click', () => chooseGoal(goal.item, name => { goal.item = name; renderGoals(); save(); }));
   const rate = el('input', { type: 'number', min: '0', step: 'any', value: String(goal.rate), title: 'Target rate per minute', ariaLabel: 'Goal rate per minute' });
-  const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: 'Remove goal' });
-  item.addEventListener('change', () => {
-    goal.item = item.value.trim();
-    icon.replaceWith(iconOf(goal.item));
-    renderChain();
-    save();
-  });
+  const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: 'Remove goal', ariaLabel: `Remove ${label(goal.item)}` });
   rate.addEventListener('change', () => { goal.rate = Number(rate.value); renderChain(); save(); });
   remove.addEventListener('click', () => { state.goals.splice(i, 1); renderGoals(); save(); });
-  row.append(el('div', { className: 'goal-head' }, icon, item, rate, el('span', { textContent: '/min', className: 'hint' }), remove));
-  return row;
+  return el('div', { className: 'goal' }, item, el('span', { className: 'rate-in' }, rate, el('span', { textContent: '/min' })), remove);
 }
 
 // The Production Chain: every step with its rate, machines, recipe and building, and what comes
@@ -252,7 +275,7 @@ function showFuels() {
     liquidFuel: buildings.some(b => b.energy === 'fluid' && !b.fuelFilter && !b.heats),
   };
   for (const [id, shown] of Object.entries(burns)) {
-    $(id).hidden = !shown;
+    ($(id).closest('.pictured') ?? $(id)).hidden = !shown;
     /** @type {HTMLElement} */ (document.querySelector(`label[for="${id}"]`)).hidden = !shown;
   }
 }
@@ -290,7 +313,7 @@ function drawChain() {
     const perMachine = building.craftingSpeed * effect.speed / recipe.time
       * recipe.products.find(p => p.name === goal.item).amount * (1 + effect.productivity) * 60;
     // The Count, and the machine's speed with its modules (Py farms: their plants and animals).
-    shown.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${Math.ceil(goal.rate / perMachine - 1e-9)}×`;
+    shown.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${count(Math.ceil(goal.rate / perMachine - 1e-9), 'machine')}`;
     shown.querySelector('.speed').textContent = `${speed(building.craftingSpeed * effect.speed)}`
       + (effect.speed !== 1 ? ` (${speed(building.craftingSpeed)} × ${speed(effect.speed)} with modules)` : '') + ` · ${fmt(perMachine)}/min a machine`;
     // A Recipe Loop: what of this step's item goes back into the loop.
@@ -305,6 +328,7 @@ function drawChain() {
     }
   };
   for (const entry of chain.entries) if (!entry.use) step(entry);
+  if (chain.trainInputs.length) row('train-head', 'train-head', () => el('div', { className: 'train-head', textContent: 'By train' }));
   for (const input of chain.trainInputs) {
     row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
   }
@@ -340,7 +364,7 @@ function useRow({ goal, selection, use }, recipes, buildings) {
     save();
   });
   const from = chain.entries.find(e => (e.use?.key ?? e.goal.item) === use.from).goal.item;
-  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${use.item} the ${from} step makes`);
+  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${label(use.item).toLowerCase()} the ${label(from).toLowerCase()} step makes`);
   row.classList.add('use');
   row.style.setProperty('--depth', String(depthOf(use.key)));
   return row;
@@ -349,8 +373,9 @@ function useRow({ goal, selection, use }, recipes, buildings) {
 // A byproduct leaving by train, with the recipes that could take it instead (a Byproduct Use).
 function byproductRow({ from, item, recipes }) {
   const add = el('select', { ariaLabel: `Use ${item}` });
-  add.append(new Option(recipes.length ? 'Use in…' : 'Nothing takes it', ''), ...recipes.map(r => new Option(r, r)));
-  add.disabled = !recipes.length;
+  // (Filling barrels and voiding last.)
+  const aside = r => /barrel|void/.test(r);
+  add.append(new Option('', ''), ...[...recipes].sort((a, b) => Number(aside(a)) - Number(aside(b))).map(r => new Option(r, r)));
   add.addEventListener('change', () => {
     if (!add.value) return;
     state.uses.push({ from, item, recipe: add.value });
@@ -358,8 +383,9 @@ function byproductRow({ from, item, recipes }) {
     save();
   });
   const row = el('div', { className: 'step byproduct' },
-    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' })),
-    el('div', { className: 'selection' }, el('span', { textContent: 'Byproduct' }), add));
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: `${label(item)} — leaves by train`, title: item }), el('span', { className: 'rate' })),
+    el('div', { className: 'selection' }, el('span', { textContent: 'Byproduct' }),
+      pictured(add, { kind: 'recipes', title: `Use ${label(item)} in a recipe`, placeholder: recipes.length ? 'Use it in a recipe…' : 'No recipe takes it' })));
   row.style.setProperty('--depth', String(depthOf(useKey(from, item))));
   return row;
 }
@@ -378,10 +404,11 @@ function stepBody(item, recipes, buildings, selection, choose, button, hint = ''
   recipe.addEventListener('change', () => choose({ recipe: recipe.value, building: '', modules: undefined }));
   building.addEventListener('change', () => choose({ building: building.value, modules: undefined }));
   return el('div', { className: 'step' },
-    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), button),
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: label(item), title: item }), el('span', { className: 'rate' }), button),
     el('div', { className: 'hint', textContent: hint, hidden: !hint }),
     el('div', { className: 'hint loop', hidden: true }),
-    el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building,
+    el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), pictured(recipe, { kind: 'recipes', title: `Recipe for ${label(item)}` }),
+      el('span', { textContent: 'Building' }), pictured(building, { title: `Building for ${label(item)}` }),
       ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : []),
       el('span', { textContent: 'Speed' }), el('span', { className: 'speed hint' })));
 }
@@ -405,7 +432,7 @@ function modulesEditor(item, selection, choose) {
     });
     const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: `Remove ${m.name}` });
     remove.addEventListener('click', () => set(modules.filter((_, j) => j !== i)));
-    return el('div', { className: 'module' }, iconOf(m.name), name, count, remove);
+    return el('div', { className: 'module' }, pictured(name, { title: `Module for ${label(item)}` }), count, remove);
   });
   const add = el('button', { type: 'button', className: 'swap', textContent: '+ Module' });
   add.addEventListener('click', () => set([...modules, { name: options[0], count: slots - used }]));
@@ -419,15 +446,137 @@ function trainRow(input) {
   make.addEventListener('click', () => { state.made.push(input.item); renderChain(); save(); });
   make.hidden = input.reason !== 'import';
   return el('div', { className: 'step train' },
-    el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: input.item }), el('span', { className: 'rate' }), make),
+    el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: label(input.item), title: input.item }), el('span', { className: 'rate' }), make),
     el('div', { className: 'hint', textContent: TRAIN_REASON[input.reason] }));
 }
 
 // An item's icon from sprites/ (only its first mipmap is shown), or an empty square.
 function iconOf(item) {
-  const icon = el('span', { className: 'sprite', title: item });
+  const icon = el('span', { className: catalog.icons[item] ? 'sprite' : 'sprite none', title: item ? label(item) : '' });
   if (catalog.icons[item]) icon.style.backgroundImage = `url("sprites/${catalog.icons[item]}")`;
   return icon;
+}
+
+// A name as people read it: "iron-pulp-01" is "Iron pulp 01".
+function label(name) {
+  const words = String(name ?? '').replace(/[-_]+/g, ' ').trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+// An icon with its amount in the corner, as the game shows a recipe's.
+function amountIcon(name, amount) {
+  const qty = amount >= 1000 ? `${Number((amount / 1000).toPrecision(2))}k` : String(Number(amount.toPrecision(3)));
+  return el('span', { className: 'amount', title: `${qty} × ${label(name)}` }, iconOf(name), el('span', { className: 'qty', textContent: qty }));
+}
+
+// A recipe as pictures: its ingredients, an arrow, its products, and how long a craft takes.
+function recipeFace(name) {
+  const recipe = catalog.recipes[name];
+  if (!recipe) return el('span', { className: 'recipe-face', textContent: label(name) });
+  const side = list => el('span', { className: 'stack' }, ...list.map(x => amountIcon(x.name, x.amount)));
+  return el('span', { className: 'recipe-face', title: label(name) }, side(recipe.ingredients), el('span', { className: 'arrow', textContent: '→' }), side(recipe.products),
+    el('span', { className: 'time', textContent: `${speed(recipe.time)} s` }));
+}
+
+// A select shown as pictures (it stays the one the page reads and listens to): a few options with
+// icons as toggle buttons, more (or `kind` 'recipes') as a button opening the chooser. Returns the
+// element holding both, to stand where the select did.
+function pictured(select, { kind = 'auto', title = '', placeholder = '' } = {}) {
+  const values = [...select.options].map(o => o.value);
+  const choices = values.filter(Boolean);
+  const wrap = el('div', { className: 'pictured' }, select);
+  const set = v => {
+    select.value = v;
+    select.dispatchEvent(new Event('change'));
+  };
+  let draw;
+  if (kind === 'auto' && choices.length <= 8 && choices.every(v => catalog.icons[v])) {
+    const buttons = choices.map(v => {
+      const b = el('button', { type: 'button', className: 'toggle', title: label(v), ariaLabel: `${title}: ${label(v)}` }, iconOf(v));
+      b.addEventListener('click', () => set(v));
+      return b;
+    });
+    const name = el('span', { className: 'pick-name' });
+    wrap.append(el('div', { className: 'toggles', role: 'group', ariaLabel: title }, ...buttons), name);
+    draw = () => {
+      buttons.forEach((b, i) => b.setAttribute('aria-pressed', String(choices[i] === select.value)));
+      name.textContent = label(select.value);
+    };
+  } else {
+    const button = el('button', { type: 'button', className: 'pick', title, ariaLabel: title });
+    button.addEventListener('click', () => openChooser({ title, groups: [{ name: '', icon: null, items: choices }], kind: kind === 'recipes' ? 'recipes' : 'grid', current: select.value, pick: set }));
+    wrap.append(button);
+    draw = () => {
+      const face = !select.value ? [el('span', { className: 'pick-name placeholder', textContent: placeholder })]
+        : kind === 'recipes' ? [recipeFace(select.value)] : [iconOf(select.value), el('span', { className: 'pick-name', textContent: label(select.value) })];
+      button.replaceChildren(...face, el('span', { className: 'chev', textContent: '▾' }));
+      // (Nothing to choose from: the button only shows the one there is.)
+      button.disabled = !choices.length || (choices.length === 1 && choices[0] === select.value);
+    };
+  }
+  select.addEventListener('change', draw);
+  draw();
+  return wrap;
+}
+
+// The chooser: a dialog of icons (or recipes) to pick one from, by tabs (the game's item groups)
+// and a search over every tab.
+let choosing = null;
+function openChooser({ title, groups, kind = 'grid', current, pick }) {
+  const tab = Math.max(0, groups.findIndex(g => g.items.includes(current)));
+  choosing = { groups, kind, current, pick, tab };
+  $('chooser-title').textContent = title;
+  $('chooser-filter').value = '';
+  $('chooser-tabs').hidden = groups.length < 2;
+  $('chooser-tabs').replaceChildren(...groups.map((g, i) => {
+    const b = el('button', { type: 'button', className: 'tab', role: 'tab', title: label(g.name), ariaLabel: label(g.name) },
+      g.icon ? el('img', { src: `sprites/${g.icon}`, alt: '' }) : el('span', { textContent: label(g.name) }));
+    b.addEventListener('click', () => {
+      choosing.tab = i;
+      $('chooser-filter').value = '';
+      drawChooser();
+    });
+    return b;
+  }));
+  drawChooser();
+  $('chooser').showModal();
+  $('chooser-filter').focus();
+}
+
+const SHOWN = 800;
+function drawChooser() {
+  const { groups, kind, current, tab } = choosing;
+  const words = $('chooser-filter').value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  [...$('chooser-tabs').children].forEach((b, i) => b.setAttribute('aria-selected', String(!words.length && i === tab)));
+  const names = words.length
+    ? [...new Set(groups.flatMap(g => g.items))].filter(n => words.every(w => n.toLowerCase().includes(w) || label(n).toLowerCase().includes(w)))
+    : groups[tab].items;
+  const foot = $('chooser-foot');
+  const tell = name => { foot.textContent = name ? `${label(name)} · ${name}` : ''; };
+  const option = name => {
+    const b = el('button', { type: 'button', className: kind === 'recipes' ? 'choice recipe' : 'choice', title: label(name), ariaLabel: label(name) },
+      ...(kind === 'recipes' ? [el('span', { className: 'choice-name', textContent: label(name) }), recipeFace(name)] : [iconOf(name)]));
+    b.setAttribute('aria-pressed', String(name === current));
+    b.addEventListener('mouseenter', () => tell(name));
+    b.addEventListener('focus', () => tell(name));
+    b.addEventListener('click', () => {
+      $('chooser').close();
+      choosing.pick(name);
+    });
+    return b;
+  };
+  const shown = names.slice(0, SHOWN);
+  $('chooser-list').replaceChildren(
+    shown.length ? el('div', { className: kind === 'recipes' ? 'choices recipes' : 'choices' }, ...shown.map(option)) : el('p', { className: 'hint', textContent: 'Nothing matches.' }),
+    ...(names.length > shown.length ? [el('p', { className: 'hint', textContent: `${names.length - shown.length} more: narrow the search.` })] : []));
+  tell(current && names.includes(current) ? current : '');
+}
+
+// The map's empty state: what to do, or what the build is doing (`busy`).
+function showEmpty(text, busy = false) {
+  $('empty').hidden = false;
+  $('empty').classList.toggle('busy', busy);
+  $('empty-text').textContent = text;
 }
 
 // The City Block from its blueprint string (none without one), shown in its section. A build
@@ -559,8 +708,7 @@ async function build(upTo = false) {
   $('results').hidden = true;
   $('apply-row').hidden = true;
   $('bp-string').value = $('bp-json').value = '';
-  $('empty').hidden = false;
-  $('empty').textContent = 'Searching for a layout…';
+  showEmpty('Searching for a layout…', true);
   showStatus('', 'Searching…');
   $('stop').hidden = false;
   const goals = state.goals.filter(g => g.item && g.rate > 0);
@@ -571,7 +719,7 @@ async function build(upTo = false) {
   let designs = null;
   if (!built.maximize) {
     const ticket = built;
-    $('empty').textContent = `Designing ${count(chain.entries.length, 'Sub-Block')}…`;
+    showEmpty(`Designing ${count(chain.entries.length, 'Sub-Block')}…`, true);
     try {
       designs = await designEach(job, ticket);
     } catch (e) {
@@ -579,7 +727,7 @@ async function build(upTo = false) {
       return finish('Stopped', 0, e.message);
     }
     if (built !== ticket || !designs) return;
-    $('empty').textContent = 'Searching for a layout…';
+    showEmpty('Searching for a layout…', true);
   }
   // A Maximize tries one rate after another in one worker; a build runs every strategy at once,
   // the best layout any of them finds shown (the others go on until the budget is spent).
@@ -816,7 +964,7 @@ function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (be
     $('apply-row').hidden = !best?.found;
     if (!best?.found) {
       $('results').hidden = true;
-      $('empty').textContent = 'Nothing fits yet.';
+      showEmpty('Nothing fits yet.');
       return showStatus('error', `Nothing fits the city block without starvation${error ? `: ${error}` : ''}. Give each try more time, or a bigger block.`);
     }
     const { rate, machines } = best.found;
@@ -834,11 +982,11 @@ function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (be
   }
   if (!best) {
     $('results').hidden = true;
-    $('empty').textContent = 'No layout yet.';
+    showEmpty('No layout yet.');
     // (Nothing fits at the Goals' own rates: filled up to them instead.)
     if (built?.site && how === 'Done') return build(true);
     if (built?.site) {
-      $('empty').textContent = 'Nothing fits yet.';
+      showEmpty('Nothing fits yet.');
       return showStatus('error', `Nothing fits the city block${error ? `: ${error}` : ''}. ${foretellLine() ?? ''} Maximize finds the highest rate that fits.`);
     }
     return showStatus('error', error ?? 'No layout found. Give the search more time.');
@@ -882,7 +1030,7 @@ function fillFlows(list, routes, block) {
       // tapped off it takes back.
       const taken = block ? takes(r, i.item) + (r.taps ?? []).reduce((sum, id) => sum + takes(block.routes[id], i.item), 0) : 0;
       const k = `${i.item} (${r.kind})`;
-      const line = lines.get(k) ?? { rate: 0, belts: 0 };
+      const line = lines.get(k) ?? { item: i.item, kind: r.kind, rate: 0, belts: 0 };
       line.rate += block ? Math.max(0, i.rate - taken) : i.rate;
       // A Fan-out's belts count once: the belt from the west edge.
       if (r.fedBy === undefined) line.belts++;
@@ -890,8 +1038,9 @@ function fillFlows(list, routes, block) {
     }
   }
   // An item nothing of leaves (a product all taken along the way) is no line.
-  list.replaceChildren(...[...lines].filter(([, { rate }]) => !block || rate >= 0.05).map(([k, { rate, belts }]) => el('li', {},
-    el('span', { textContent: belts > 1 ? `${k} ×${belts}` : k }), el('span', { textContent: `${fmt(rate)}/min` }))));
+  list.replaceChildren(...[...lines.values()].filter(({ rate }) => !block || rate >= 0.05).map(({ item, kind, rate, belts }) => el('li', {},
+    iconOf(item), el('span', { className: 'what', title: item }, label(item), el('span', { className: 'kind', textContent: belts > 1 ? `${kind} ×${belts}` : kind })),
+    el('span', { className: 'per', textContent: `${fmt(rate)}/min` }))));
 }
 
 function describe(entity, block) {

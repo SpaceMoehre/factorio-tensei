@@ -4,198 +4,381 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Factory Block Planner</title>
+<meta name="description" content="Pick what to make in Factorio and get a compact, belted, piped and powered factory block as a blueprint.">
+<meta name="theme-color" content="#1d1c1b">
+<link rel="icon" href="sprites/base/graphics/icons/blueprint.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Titillium+Web:wght@400;600;700&display=swap">
 <style>
+  /* Factorio's own look: warm dark panels, inset fields, one orange accent. */
   :root {
-    --bg: #111318; --panel: #1a1d24; --panel-2: #22262f; --border: #343a46;
-    --text: #e6e6e6; --muted: #9aa3b2; --accent: #e0c097; --danger: #ff6b6b; --ok: #6fcf97;
-    --map-bg: #14161b; --map-grid: #20232b; --map-machine: #3b4658; --map-machine-edge: #8aa0c0;
-    --map-text: #e8e8e8; --map-starve: #ff5c5c; --map-subblock: #e0c097;
+    --bg: #1d1c1b; --panel: #2a2826; --panel-2: #33302d; --inset: #1a1918; --border: #46413b; --border-soft: #3a3632;
+    --text: #ece5d8; --muted: #a59c8f; --faint: #7d756b;
+    --accent: #e8a03c; --accent-ink: #211a10; --accent-soft: rgba(232,160,60,.14);
+    --danger: #e0705f; --ok: #91c47a;
+    --map-bg: #161514; --map-grid: #22201e; --map-machine: #3b4658; --map-machine-edge: #8aa0c0;
+    --map-text: #e8e8e8; --map-starve: #ff5c5c; --map-subblock: #e8a03c;
+    --shadow: 0 1px 0 rgba(255,255,255,.04) inset, 0 6px 18px -10px rgba(10,6,2,.8);
+    --radius: 10px; --radius-sm: 6px;
+    --ease: cubic-bezier(.2,.8,.2,1);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; }
-  .app { display: grid; grid-template-columns: minmax(340px, 420px) 1fr; height: 100vh; }
-  /* Safari sizes a select by its longest option and will not shrink it in a grid track: keep
-     every control within its column so nothing runs off a phone screen. */
-  .selection select, .settings select, .module select { width: 100%; min-width: 0; max-width: 100%; }
-  .step, .step-head, .modules, .module, .goal-head { min-width: 0; }
-  aside { min-width: 0; overflow-x: hidden; }
-  aside { background: var(--panel); border-right: 1px solid var(--border); overflow-y: auto; padding: 16px; }
-  main { position: relative; min-width: 0; }
-  h1 { font-size: 18px; margin: 0 0 4px; color: var(--accent); }
-  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 8px; }
-  .hint { color: var(--muted); font-size: 12px; margin: 0 0 12px; }
-  .goal { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
-  .goal-head { display: flex; gap: 6px; align-items: center; }
-  .sprite { flex: none; width: 28px; height: 28px; background: left center / auto 100% no-repeat; }
-  .step { border-bottom: 1px dashed var(--border); padding: 6px 0; }
-  .step-head { display: flex; gap: 6px; align-items: center; }
-  .step-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .step-head .rate { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  .step-head .sprite { width: 24px; height: 24px; }
-  .step.train .hint { margin: 2px 0 0 30px; }
-  /* A Byproduct Use and a byproduct leaving by train stand under the step making it. */
-  .step.use, .step.byproduct { margin-left: calc(var(--depth, 1) * 16px); border-left: 2px solid var(--border); padding-left: 8px; }
-  .step.byproduct .name { color: var(--muted); }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 'Titillium Web', system-ui, sans-serif; font-variant-numeric: tabular-nums; }
+  .app { display: grid; grid-template-columns: minmax(360px, 460px) 1fr; height: 100dvh; }
+  aside { min-width: 0; overflow-x: hidden; overflow-y: auto; background: var(--bg); border-right: 1px solid var(--border-soft); padding: 18px 16px 40px; scroll-behavior: smooth; }
+  main { position: relative; min-width: 0; background: var(--map-bg); }
   [hidden] { display: none !important; }
-  .goal-head input[type=text] { flex: 1; min-width: 0; }
-  .goal-head input[type=number] { width: 80px; }
-  .modules { display: flex; flex-direction: column; gap: 4px; }
-  .module { display: flex; gap: 4px; align-items: center; }
-  .module select { flex: 1; min-width: 0; }
-  .module input[type=number] { width: 56px; }
-  .module .sprite { width: 20px; height: 20px; flex: none; }
-  .selection { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 8px; align-items: center; margin-top: 8px; font-size: 12px; color: var(--muted); }
-  input, select, button, textarea { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 5px 8px; }
+  .skip { position: absolute; left: -999px; top: 8px; z-index: 20; background: var(--accent); color: var(--accent-ink); padding: 6px 10px; border-radius: var(--radius-sm); }
+  .skip:focus { left: 8px; }
+
+  /* Brand */
+  .brand { display: flex; gap: 12px; align-items: center; margin-bottom: 14px; }
+  .brand img { width: 44px; height: 44px; object-fit: cover; object-position: left; image-rendering: auto; filter: drop-shadow(0 4px 10px rgba(232,160,60,.25)); }
+  h1 { font-size: 22px; line-height: 1.1; letter-spacing: -.01em; margin: 0; font-weight: 700; }
+  .brand p { margin: 2px 0 0; color: var(--muted); font-size: 13px; text-wrap: pretty; }
+
+  /* Sections: a card each, headed by a technology picture and a step number. */
+  .card { background: var(--panel); border: 1px solid var(--border-soft); border-radius: var(--radius); box-shadow: var(--shadow); padding: 14px 14px 16px; margin-bottom: 12px; }
+  .section-head { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+  .section-head .art { flex: none; width: 46px; height: 46px; border-radius: 8px; object-fit: cover; background: var(--inset); border: 1px solid var(--border); }
+  h2 { font-size: 17px; margin: 0; font-weight: 700; letter-spacing: -.005em; display: flex; align-items: baseline; gap: 8px; }
+  h2 .num { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 6px; background: var(--accent-soft); color: var(--accent); font-size: 13px; transform: translateY(-1px); }
+  h3.sub { font-size: 13px; font-weight: 600; color: var(--muted); margin: 14px 0 6px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0; text-wrap: pretty; }
+  .section-head .hint { margin-top: 1px; }
+
+  /* Controls */
+  input, select, button, textarea { font: inherit; color: var(--text); }
+  input, select, textarea { background: var(--inset); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 8px; box-shadow: 0 1px 2px rgba(0,0,0,.4) inset; transition: border-color .2s var(--ease); }
+  input:hover, select:hover, textarea:hover { border-color: #5a544c; }
   select { width: 100%; min-width: 0; }
-  button { cursor: pointer; background: var(--panel-2); }
-  button:hover { border-color: var(--accent); }
-  button.primary { background: var(--accent); color: #1b1b1b; border-color: var(--accent); font-weight: 600; width: 100%; padding: 8px; }
-  button.icon { padding: 4px 9px; }
-  .settings { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 6px 8px; align-items: center; }
-  .status { margin-top: 12px; padding: 8px 10px; border-radius: 6px; font-size: 13px; }
-  .status.error { background: rgba(255,107,107,.12); border: 1px solid var(--danger); color: var(--danger); }
-  .status.ok { background: rgba(111,207,151,.1); border: 1px solid var(--ok); color: var(--ok); }
-  .status.warn { background: rgba(255,107,107,.08); border: 1px solid var(--danger); }
-  ul.flows { list-style: none; padding: 0; margin: 0; font-size: 13px; }
-  ul.flows li { display: flex; justify-content: space-between; gap: 8px; padding: 2px 0; border-bottom: 1px dashed var(--border); }
+  button { cursor: pointer; background: var(--panel-2); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 5px 10px; transition: background .2s var(--ease), border-color .2s var(--ease), transform .12s var(--ease), box-shadow .2s var(--ease); }
+  button:hover:not(:disabled) { border-color: var(--accent); background: #3b3733; }
+  button:active:not(:disabled) { transform: translateY(1px) scale(.985); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled, input:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 700; padding: 10px 14px; font-size: 16px; box-shadow: 0 6px 18px -8px rgba(232,160,60,.7); }
+  button.primary:hover:not(:disabled) { background: #f2ae4c; border-color: #f2ae4c; }
+  button.icon { padding: 2px 9px; font-size: 16px; line-height: 1.4; }
+  button.ghost { background: transparent; border-style: dashed; color: var(--muted); }
+  button.ghost:hover:not(:disabled) { color: var(--text); background: var(--accent-soft); }
+  .swap { padding: 2px 9px; font-size: 13px; white-space: nowrap; }
   textarea { width: 100%; height: 72px; font: 11px/1.3 ui-monospace, monospace; resize: vertical; }
-  details summary { cursor: pointer; color: var(--muted); font-size: 12px; margin-top: 6px; }
-  .row { display: flex; gap: 6px; margin-top: 6px; }
-  .swap { padding: 2px 8px; font-size: 12px; white-space: nowrap; }
-  .row.build { margin-top: 0; }
-  .row.build .primary { flex: 1; width: auto; }
-  button:disabled, input:disabled { opacity: .5; cursor: not-allowed; }
-  .check { display: flex; gap: 6px; align-items: center; }
+  .row { display: flex; gap: 6px; margin-top: 8px; }
+  .check { display: flex; gap: 8px; align-items: center; }
+  .check input { accent-color: var(--accent); width: 16px; height: 16px; }
   .check .hint, .budget .hint { margin: 0; }
+  .budget { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
   .budget input { width: 80px; }
-  #city-bp { height: 56px; }
-  #city > .settings { margin-top: 8px; }
-  .area { position: absolute; top: 12px; left: 12px; background: rgba(17,19,24,.92); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 12px; color: var(--accent); z-index: 2; }
-  .area[hidden] { display: none; }
-  .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
-  .tooltip { position: absolute; left: 12px; bottom: 12px; background: rgba(17,19,24,.92); border: 1px solid var(--border); border-radius: 6px; padding: 6px 10px; font-size: 12px; pointer-events: none; max-width: 60%; }
-  .tooltip:empty { display: none; }
-  .empty { position: absolute; inset: 0; display: grid; place-items: center; color: var(--muted); text-align: center; padding: 24px; }
-  .empty[hidden] { display: none; }
-  ul.clocks { list-style: none; padding: 0; margin: 0; font-size: 13px; }
-  ul.clocks li { display: flex; gap: 8px; align-items: center; padding: 3px 0; border-bottom: 1px dashed var(--border); }
+
+  /* Icons: sprites keep their first mipmap only. */
+  .sprite { flex: none; display: inline-block; width: 28px; height: 28px; background: left center / auto 100% no-repeat; image-rendering: auto; }
+  .sprite.none { border-radius: 6px; background: repeating-linear-gradient(45deg, #2f2c29 0 4px, #36322e 4px 8px); }
+  .amount { position: relative; display: inline-flex; }
+  .amount .sprite { width: 26px; height: 26px; }
+  .amount .qty { position: absolute; right: -3px; bottom: -4px; font-size: 11px; font-weight: 700; line-height: 1; padding: 1px 2px; color: #fff; text-shadow: 0 0 2px #000, 0 0 2px #000, 0 0 3px #000; }
+
+  /* Goals */
+  .goal { display: flex; gap: 8px; align-items: center; background: var(--panel-2); border: 1px solid var(--border-soft); border-radius: var(--radius); padding: 8px; margin-bottom: 8px; min-width: 0; }
+  .goal-item { flex: 1; min-width: 0; display: flex; gap: 10px; align-items: center; text-align: left; background: transparent; border-color: transparent; padding: 4px 6px; }
+  .goal-item .sprite { width: 40px; height: 40px; }
+  .goal-name { min-width: 0; display: flex; flex-direction: column; }
+  .goal-name strong { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .goal-name small { color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .goal .rate-in { display: flex; align-items: center; gap: 4px; }
+  .goal .rate-in input { width: 84px; text-align: right; font-weight: 600; }
+  .goal .rate-in span { color: var(--muted); font-size: 13px; }
+  .empty-goals { display: flex; gap: 12px; align-items: center; padding: 12px; border: 1px dashed var(--border); border-radius: var(--radius); margin-bottom: 8px; color: var(--muted); }
+  .empty-goals img { width: 56px; height: 56px; border-radius: 8px; opacity: .9; }
+  #add-goal { width: 100%; padding: 8px; }
+
+  /* Production chain */
+  .step { padding: 10px 0; border-top: 1px solid var(--border-soft); min-width: 0; }
+  #chain > .step:first-child { border-top: none; padding-top: 2px; }
+  .step-head { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .step-head .sprite { width: 30px; height: 30px; }
+  .step-head .name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .step-head .rate { color: var(--muted); font-size: 13px; white-space: nowrap; }
+  .step.train { padding: 6px 0; }
+  .step.train .step-head .sprite { width: 24px; height: 24px; }
+  .step.train .name { font-weight: 400; }
+  .step.train .hint { margin: 0 0 0 32px; font-size: 12px; }
+  .step > .hint { margin: 2px 0 0 38px; }
+  .train-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
+  .train-head::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
+  /* A Byproduct Use and a byproduct leaving by train stand under the step making it. */
+  .step.use, .step.byproduct { margin-left: calc(var(--depth, 1) * 14px); border-top: none; border-left: 2px solid var(--border); padding-left: 10px; margin-top: 4px; }
+  .step.use { border-left-color: var(--accent); }
+  .step.byproduct .name { color: var(--muted); font-weight: 400; }
+  .selection { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 6px 10px; align-items: center; margin: 8px 0 0 38px; font-size: 13px; color: var(--muted); }
+  .step.use .selection, .step.byproduct .selection { margin-left: 0; }
+  .modules { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+  .module { display: flex; gap: 6px; align-items: center; min-width: 0; }
+  .module .pictured { flex: 1; min-width: 0; }
+  .module input[type=number] { width: 56px; }
+  .module .sprite { width: 22px; height: 22px; }
+
+  /* Pictured choices: toggles of icons, or a button opening the chooser. */
+  .pictured { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .pictured > select { display: none; }
+  .toggles { display: flex; flex-wrap: wrap; gap: 4px; }
+  .toggle { width: 40px; height: 40px; padding: 4px; display: grid; place-items: center; background: var(--inset); }
+  .toggle .sprite { width: 30px; height: 30px; }
+  .toggle[aria-pressed=true] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .pick-name { color: var(--text); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick-name.placeholder { color: var(--muted); }
+  .pick { display: flex; gap: 8px; align-items: center; min-width: 0; max-width: 100%; text-align: left; background: var(--inset); padding: 4px 8px; }
+  .pick .sprite { width: 26px; height: 26px; }
+  .pick .chev { color: var(--muted); margin-left: auto; padding-left: 4px; }
+  .pick:disabled { opacity: 1; cursor: default; }
+  .pick:disabled .chev { display: none; }
+  .recipe-face { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+  .recipe-face .stack { display: inline-flex; flex-wrap: wrap; gap: 5px; }
+  .recipe-face .arrow { color: var(--accent); font-weight: 700; }
+  .recipe-face .time { color: var(--faint); font-size: 12px; }
+
+  /* Logistics */
+  .settings { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px 10px; align-items: center; }
+  .settings > label { font-size: 13px; color: var(--muted); }
+  #city > .settings { margin-top: 10px; }
+  #city-bp { height: 56px; margin-top: 8px; }
+
+  /* Build */
+  .row.build { margin-top: 0; }
+  .row.build .primary { flex: 1; }
+  .status { margin-top: 10px; padding: 8px 10px; border-radius: var(--radius-sm); font-size: 14px; }
+  .status:empty { display: none; }
+  .status.error { background: rgba(224,112,95,.12); border: 1px solid var(--danger); color: #f0a497; }
+  .status.ok { background: rgba(145,196,122,.1); border: 1px solid var(--ok); color: #bfe0ae; }
+  .status.warn { background: rgba(224,112,95,.08); border: 1px solid var(--danger); }
+  details summary { cursor: pointer; color: var(--muted); font-size: 13px; margin-top: 8px; }
+  ul.flows { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+  ul.flows li { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--border-soft); }
+  ul.flows li:first-child { border-top: none; }
+  ul.flows .sprite { width: 24px; height: 24px; }
+  ul.flows .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.flows .kind { color: var(--faint); font-size: 12px; margin-left: 4px; }
+  ul.flows .per { color: var(--muted); }
+
+  /* Inserter clocks */
+  ul.clocks { list-style: none; padding: 0; margin: 0; font-size: 14px; }
+  ul.clocks li { display: flex; gap: 8px; align-items: center; padding: 4px 0; border-top: 1px solid var(--border-soft); }
+  ul.clocks li:first-child { border-top: none; }
   ul.clocks .label { white-space: nowrap; }
   ul.clocks .what { flex: 1; min-width: 0; display: flex; gap: 2px; overflow: hidden; }
-  ul.clocks .what .sprite { width: 18px; height: 18px; }
+  ul.clocks .what .sprite { width: 20px; height: 20px; }
   ul.clocks .count { color: var(--muted); font-size: 12px; white-space: nowrap; }
-  button.signal { flex: none; width: 36px; height: 36px; padding: 2px; display: grid; place-items: center; background: var(--panel-2); }
+  button.signal { flex: none; width: 38px; height: 38px; padding: 3px; display: grid; place-items: center; background: var(--inset); }
   button.signal.unset { border-style: dashed; color: var(--muted); }
   button.signal[aria-pressed=true] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-  .signal img { width: 28px; height: 28px; object-fit: contain; }
-  .glyph { font: 700 19px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 2px #000; }
+  .signal img { width: 28px; height: 28px; object-fit: contain; object-position: left; }
+  .glyph { font: 700 19px/1 'Titillium Web', system-ui, sans-serif; color: #fff; text-shadow: 0 1px 2px #000; }
   .unset .glyph { color: var(--muted); text-shadow: none; font-weight: 400; }
   .glyph.named { max-width: 32px; max-height: 32px; overflow: hidden; font-size: 8px; line-height: 1.1; text-align: center; overflow-wrap: anywhere; text-shadow: none; }
   .swatch { width: 20px; height: 20px; border-radius: 50%; border: 1px solid rgba(255,255,255,.35); }
-  dialog#picker { width: min(640px, calc(100vw - 32px)); max-height: min(80vh, 720px); padding: 0; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 10px; }
-  dialog#picker::backdrop { background: rgba(0,0,0,.6); }
-  .picker { display: flex; flex-direction: column; max-height: min(80vh, 720px); }
-  .picker-head { display: flex; gap: 8px; align-items: center; padding: 12px 16px 0; }
-  .picker-head h3 { flex: 1; margin: 0; font-size: 15px; color: var(--accent); }
+
+  /* Dialogs: the signal picker and the chooser (items, recipes, settings). */
+  dialog { width: min(680px, calc(100vw - 24px)); max-height: min(82dvh, 760px); padding: 0; background: var(--panel); color: var(--text); border: 1px solid var(--border); border-radius: 12px; box-shadow: 0 24px 60px -20px rgba(0,0,0,.9); }
+  dialog::backdrop { background: rgba(10,8,6,.65); backdrop-filter: blur(2px); }
+  dialog[open] { animation: rise .22s var(--ease); }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.99); } }
+  .picker { display: flex; flex-direction: column; max-height: min(82dvh, 760px); }
+  .picker-head { display: flex; gap: 8px; align-items: center; padding: 14px 16px 0; }
+  .picker-head h3 { flex: 1; margin: 0; font-size: 17px; }
   .picker-tools { padding: 0 16px; }
-  .picker-tools input { flex: 1; min-width: 0; }
-  .picker-list { overflow-y: auto; padding: 0 16px 16px; }
-  .picker-list h4 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 12px 0 6px; font-weight: 600; }
-  .signals { display: grid; grid-template-columns: repeat(auto-fill, 36px); gap: 4px; }
+  .picker-tools input { flex: 1; min-width: 0; padding: 8px 10px; }
+  .picker-list { overflow-y: auto; padding: 4px 16px 12px; min-height: 120px; }
+  .picker-list h4 { font-size: 13px; color: var(--muted); margin: 12px 0 6px; font-weight: 600; }
+  .signals { display: grid; grid-template-columns: repeat(auto-fill, 38px); gap: 4px; }
+  .tabs { display: flex; flex-wrap: wrap; gap: 4px; padding: 10px 16px 4px; }
+  .tab { width: 52px; height: 52px; padding: 4px; display: grid; place-items: center; background: var(--inset); }
+  .tab img { width: 42px; height: 42px; object-fit: contain; }
+  .tab[aria-selected=true] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .choices { display: grid; grid-template-columns: repeat(auto-fill, 44px); gap: 4px; margin-top: 8px; }
+  .choice { width: 44px; height: 44px; padding: 4px; display: grid; place-items: center; background: var(--inset); }
+  .choice .sprite { width: 34px; height: 34px; }
+  .choice[aria-pressed=true], .choice.recipe[aria-pressed=true] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .choices.recipes { grid-template-columns: 1fr; }
+  .choice.recipe { width: auto; height: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 10px; text-align: left; }
+  .choice-name { font-weight: 600; font-size: 14px; }
+  .chooser-foot { padding: 8px 16px 12px; border-top: 1px solid var(--border-soft); color: var(--muted); font-size: 13px; min-height: 37px; }
+
+  /* Map */
   canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
   canvas:active { cursor: grabbing; }
-  @media (max-width: 800px) {
-    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 70vh; height: auto; }
-    aside { border-right: none; border-bottom: 1px solid var(--border); }
+  .area { position: absolute; top: 12px; left: 12px; background: rgba(29,28,27,.92); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 10px; font-size: 13px; color: var(--accent); z-index: 2; max-width: calc(100% - 180px); }
+  .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
+  .toolbar button { background: rgba(42,40,38,.92); }
+  .tooltip { position: absolute; left: 12px; bottom: 12px; background: rgba(29,28,27,.94); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 13px; pointer-events: none; max-width: 60%; z-index: 2; }
+  .tooltip:empty { display: none; }
+  .empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; overflow: hidden;
+    background: radial-gradient(60% 60% at 50% 45%, rgba(232,160,60,.08), transparent 70%), repeating-linear-gradient(0deg, transparent 0 31px, rgba(255,255,255,.025) 31px 32px), repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.025) 31px 32px); }
+  .empty-inner { max-width: 440px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .empty-art { width: 168px; height: 168px; border-radius: 18px; box-shadow: 0 30px 60px -30px rgba(232,160,60,.45); }
+  #empty-text { font-size: 18px; font-weight: 600; margin: 0; text-wrap: balance; }
+  .empty ol { margin: 0; padding: 0; list-style: none; display: grid; gap: 8px; text-align: left; color: var(--muted); }
+  .empty ol li { display: flex; gap: 10px; align-items: center; }
+  .empty ol .sprite { width: 32px; height: 32px; }
+  .empty.busy .empty-art { animation: pulse 1.6s var(--ease) infinite; }
+  @keyframes pulse { 50% { transform: scale(.96); opacity: .75; } }
+  .empty.busy ol { display: none; }
+
+  @media (max-width: 860px) {
+    .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 70dvh; height: auto; }
+    aside { border-right: none; border-bottom: 1px solid var(--border-soft); overflow: visible; }
+    .selection { margin-left: 0; }
   }
+  @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
 </style>
 </head>
 <body>
+<a class="skip" href="#calculate">Skip to Build</a>
 <div class="app">
   <aside>
-    <h1>Factory Block Planner</h1>
-    <p class="hint">Set item-rate Goals and pick their recipes; their ingredients arrive by train unless you choose to make them here. The tool then builds a compact block with its blueprint.</p>
-
-    <h2>Goals</h2>
-    <div id="goals"></div>
-    <button id="add-goal" type="button">+ Add goal</button>
-    <datalist id="items"></datalist>
-
-    <h2>Production chain</h2>
-    <p class="hint">A Goal's ingredients come by train. <em>Make here</em> builds one in the block instead, and its own ingredients then come by train. A step's byproducts leave by train, unless you use one in a recipe that takes it all.</p>
-    <div id="chain"></div>
-
-    <h2>Logistics</h2>
-    <div class="settings">
-      <label for="belt">Belt</label><select id="belt"></select>
-      <label for="pipe">Pipe</label><select id="pipe" title="Plain pipes and pipe-to-grounds of one material: pipes of different materials do not connect"></select>
-      <label for="pole">Pole</label><select id="pole"></select>
-      <label for="inserter">Inserter</label><select id="inserter"></select>
-      <label for="longInserter">Long inserter</label><select id="longInserter"></select>
-      <label for="handSize">Hand size</label>
-      <span class="budget"><input type="number" id="handSize" min="1" max="12" step="1" aria-label="Items an inserter moves per swing"> <span class="hint">items per swing (inserter capacity research)</span></span>
-      <label for="fuel">Fuel</label><select id="fuel"></select>
-      <label for="liquidFuel">Liquid fuel</label><select id="liquidFuel" title="The fluid machines burning one burn (Py's glassworks and smelters)"></select>
-      <label for="circuit">Circuit wires</label>
-      <span class="budget"><select id="circuit" aria-label="Circuit wires joining every pole and inserter"><option value="none">None</option><option value="red">Red</option><option value="green">Green</option><option value="both">Red and green</option></select> <span class="hint">join every pole and inserter</span></span>
-      <label for="right-angle">90° inserters</label>
-      <label class="check"><input type="checkbox" id="right-angle"> <span class="hint">needs the Inserter_Config mod</span></label>
-      <label for="budget">Search time</label>
-      <span class="budget"><input type="number" id="budget" min="1" step="1" aria-label="Search time in seconds"> <span class="hint">s</span></span>
-    </div>
-
-    <h2>City block</h2>
-    <label class="check"><input type="checkbox" id="city-on"> <span>Build inside a city block</span></label>
-    <div id="city" hidden>
-      <p class="hint">Paste the city block's blueprint, or load it from a file: its poles, roboports, radars and everything else stay where they are, the factory is built around them and their poles power it. Without a blueprint, give the block's size.</p>
-      <textarea id="city-bp" aria-label="City block blueprint string" placeholder="Blueprint string (0eN…)"></textarea>
-      <div class="row">
-        <button id="city-load" type="button">Load file…</button>
-        <input type="file" id="city-file" accept=".txt,.json,text/plain,application/json" hidden>
-        <button id="city-clear" type="button">Clear</button>
+    <header class="brand">
+      <img data-icon="blueprint" alt="">
+      <div>
+        <h1>Factory Block Planner</h1>
+        <p>Pick what to make. Get a compact, belted, piped and powered block as a blueprint.</p>
       </div>
-      <p class="hint" id="city-info"></p>
+    </header>
+
+    <section class="card" aria-labelledby="goals-title">
+      <div class="section-head">
+        <img class="art" data-art="automation" alt="">
+        <div>
+          <h2 id="goals-title"><span class="num">1</span>What to make</h2>
+          <p class="hint">Each goal is an item and how many a minute.</p>
+        </div>
+      </div>
+      <div id="goals"></div>
+      <button id="add-goal" type="button" class="ghost">+ Add a goal</button>
+    </section>
+
+    <section class="card" aria-labelledby="chain-title">
+      <div class="section-head">
+        <img class="art" data-art="oil-processing" alt="">
+        <div>
+          <h2 id="chain-title"><span class="num">2</span>How it's made</h2>
+          <p class="hint">Ingredients come by train. <em>Make here</em> builds one in the block. A byproduct leaves by train unless you use it in a recipe.</p>
+        </div>
+      </div>
+      <div id="chain"></div>
+    </section>
+
+    <section class="card" aria-labelledby="logistics-title">
+      <div class="section-head">
+        <img class="art" data-art="logistics" alt="">
+        <div>
+          <h2 id="logistics-title"><span class="num">3</span>Logistics</h2>
+          <p class="hint">What the block is built with.</p>
+        </div>
+      </div>
       <div class="settings">
-        <label for="city-w">Size</label>
-        <span class="budget"><input type="number" id="city-w" min="8" step="1" aria-label="City block width"> × <input type="number" id="city-h" min="8" step="1" aria-label="City block height"> <span class="hint">tiles</span></span>
-        <label for="city-buffer">Buffer</label>
-        <span class="budget"><input type="number" id="city-buffer" min="0" step="1" aria-label="Buffer in tiles"> <span class="hint">tiles kept free inside the border, to wire the inputs (west) and outputs (east)</span></span>
-        <label for="maximize">Maximize</label>
-        <label class="check"><input type="checkbox" id="maximize"> <span class="hint">the highest goal rate that fits; goals keep their ratio, the first try is what the Foretelling says fits, each try gets the search time at most</span></label>
+        <label for="belt">Belt</label><select id="belt"></select>
+        <label for="pipe">Pipe</label><select id="pipe" title="Plain pipes and pipe-to-grounds of one material: pipes of different materials do not connect"></select>
+        <label for="pole">Pole</label><select id="pole"></select>
+        <label for="inserter">Inserter</label><select id="inserter"></select>
+        <label for="longInserter">Long inserter</label><select id="longInserter"></select>
+        <label for="handSize">Hand size</label>
+        <span class="budget"><input type="number" id="handSize" min="1" max="12" step="1" aria-label="Items an inserter moves per swing"> <span class="hint">items per swing (inserter capacity research)</span></span>
+        <label for="fuel">Fuel</label><select id="fuel"></select>
+        <label for="liquidFuel">Liquid fuel</label><select id="liquidFuel" title="The fluid machines burning one burn (Py's glassworks and smelters)"></select>
+        <label for="circuit">Circuit wires</label>
+        <span class="budget"><select id="circuit" aria-label="Circuit wires joining every pole and inserter" style="width:auto"><option value="none">None</option><option value="red">Red</option><option value="green">Green</option><option value="both">Red and green</option></select> <span class="hint">join every pole and inserter</span></span>
+        <label for="right-angle">90° inserters</label>
+        <label class="check"><input type="checkbox" id="right-angle"> <span class="hint">needs the Inserter_Config mod</span></label>
+        <label for="budget">Search time</label>
+        <span class="budget"><input type="number" id="budget" min="1" step="1" aria-label="Search time in seconds"> <span class="hint">seconds</span></span>
       </div>
-      <p class="hint" id="city-foretell" hidden></p>
-    </div>
+    </section>
 
-    <h2>Build</h2>
-    <div class="row build">
-      <button id="calculate" class="primary" type="button">Build factory block</button>
-      <button id="stop" type="button" hidden>Stop</button>
-    </div>
-    <div id="status"></div>
-    <div class="row" id="apply-row" hidden><button id="apply-rate" type="button">Use this rate</button></div>
-    <div class="row"><button id="copy-setup" type="button" title="The goals, production chain, logistics, city block and what the last build said, as JSON: paste it when describing a problem">Copy setup</button></div>
-    <details id="setup">
-      <summary>Setup JSON</summary>
-      <textarea id="setup-json" readonly aria-label="Setup JSON" style="height:160px"></textarea>
-    </details>
+    <section class="card" aria-labelledby="city-title">
+      <div class="section-head">
+        <img class="art" data-art="construction-robotics" alt="">
+        <div>
+          <h2 id="city-title"><span class="num">4</span>City block <span class="hint">optional</span></h2>
+          <label class="check"><input type="checkbox" id="city-on"> <span class="hint">Build inside a city block</span></label>
+        </div>
+      </div>
+      <div id="city" hidden>
+        <p class="hint">Paste the city block's blueprint, or load it from a file: its poles, roboports, radars and everything else stay where they are, the factory is built around them and their poles power it. Without a blueprint, give the block's size.</p>
+        <textarea id="city-bp" aria-label="City block blueprint string" placeholder="Blueprint string (0eN…)"></textarea>
+        <div class="row">
+          <button id="city-load" type="button">Load file…</button>
+          <input type="file" id="city-file" accept=".txt,.json,text/plain,application/json" hidden>
+          <button id="city-clear" type="button">Clear</button>
+        </div>
+        <p class="hint" id="city-info"></p>
+        <div class="settings">
+          <label for="city-w">Size</label>
+          <span class="budget"><input type="number" id="city-w" min="8" step="1" aria-label="City block width"> × <input type="number" id="city-h" min="8" step="1" aria-label="City block height"> <span class="hint">tiles</span></span>
+          <label for="city-buffer">Buffer</label>
+          <span class="budget"><input type="number" id="city-buffer" min="0" step="1" aria-label="Buffer in tiles"> <span class="hint">tiles kept free inside the border, to wire the inputs (west) and outputs (east)</span></span>
+          <label for="maximize">Maximize</label>
+          <label class="check"><input type="checkbox" id="maximize"> <span class="hint">the highest goal rate that fits; goals keep their ratio, the first try is what the Foretelling says fits, each try gets the search time at most</span></label>
+        </div>
+        <p class="hint" id="city-foretell" hidden></p>
+      </div>
+    </section>
+
+    <section class="card" aria-labelledby="build-title">
+      <div class="section-head">
+        <img class="art" data-art="logistic-system" alt="">
+        <div>
+          <h2 id="build-title"><span class="num">5</span>Build</h2>
+          <p class="hint">Searches for the most compact layout within the search time.</p>
+        </div>
+      </div>
+      <div class="row build">
+        <button id="calculate" class="primary" type="button">Build factory block</button>
+        <button id="stop" type="button" hidden>Stop</button>
+      </div>
+      <div id="status"></div>
+      <div class="row" id="apply-row" hidden><button id="apply-rate" type="button">Use this rate</button></div>
+      <div class="row"><button id="copy-setup" type="button" title="The goals, production chain, logistics, city block and what the last build said, as JSON: paste it when describing a problem">Copy setup</button></div>
+      <details id="setup">
+        <summary>Setup JSON</summary>
+        <textarea id="setup-json" readonly aria-label="Setup JSON" style="height:160px"></textarea>
+      </details>
+    </section>
+
     <div id="results" hidden>
-      <h2>Side Input (train in)</h2>
-      <ul class="flows" id="side-input"></ul>
-      <h2>Side Output (train out)</h2>
-      <ul class="flows" id="side-output"></ul>
-      <div id="clocks-box">
-        <h2>Inserter clocks</h2>
-        <p class="hint">What an inserter moves while its machine runs at full speed: the items on its belt added up, shared by the inserters on one belt into a machine or out of one. Pick a signal for a clock and its inserters work while that signal is above 0; without one they run freely.</p>
+      <section class="card" aria-labelledby="blueprint-title">
+        <div class="section-head">
+          <img class="art" data-icon="blueprint" alt="">
+          <div>
+            <h2 id="blueprint-title">Blueprint</h2>
+            <p class="hint">Copy it and import it in the game.</p>
+          </div>
+        </div>
+        <textarea id="bp-string" readonly aria-label="Blueprint string"></textarea>
+        <div class="row"><button id="copy-string" type="button" class="primary">Copy blueprint string</button></div>
+        <details>
+          <summary>Blueprint JSON</summary>
+          <textarea id="bp-json" readonly aria-label="Blueprint JSON" style="height:160px"></textarea>
+          <div class="row"><button id="copy-json" type="button">Copy JSON</button></div>
+        </details>
+      </section>
+      <section class="card" aria-labelledby="train-title">
+        <h2 id="train-title">Train in</h2>
+        <ul class="flows" id="side-input"></ul>
+        <h2 style="margin-top:14px">Train out</h2>
+        <ul class="flows" id="side-output"></ul>
+      </section>
+      <section class="card" id="clocks-box" aria-labelledby="clocks-title">
+        <div class="section-head">
+          <img class="art" data-art="circuit-network" alt="">
+          <div>
+            <h2 id="clocks-title">Inserter clocks</h2>
+            <p class="hint">What an inserter moves while its machine runs at full speed. Pick a signal for a clock and its inserters work while that signal is above 0; without one they run freely.</p>
+          </div>
+        </div>
         <ul class="clocks" id="clocks"></ul>
         <p class="hint" id="clocks-wires" hidden>Circuit wires are None (Logistics): the inserters need wires to the network carrying the signals.</p>
-      </div>
-      <h2>Blueprint</h2>
-      <textarea id="bp-string" readonly aria-label="Blueprint string"></textarea>
-      <div class="row"><button id="copy-string" type="button">Copy blueprint string</button></div>
-      <details>
-        <summary>Blueprint JSON</summary>
-        <textarea id="bp-json" readonly aria-label="Blueprint JSON" style="height:160px"></textarea>
-        <div class="row"><button id="copy-json" type="button">Copy JSON</button></div>
-      </details>
+      </section>
     </div>
   </aside>
   <main>
@@ -207,7 +390,17 @@
     </div>
     <div class="area" id="area" hidden></div>
     <div class="tooltip" id="tooltip"></div>
-    <div class="empty" id="empty">Loading catalog…</div>
+    <div class="empty" id="empty">
+      <div class="empty-inner">
+        <img class="empty-art" data-art="automation" alt="">
+        <p id="empty-text">Loading catalog…</p>
+        <ol id="empty-steps">
+          <li><span class="sprite" data-sprite="assembling-machine-1"></span>Pick what to make and how many a minute.</li>
+          <li><span class="sprite" data-sprite="transport-belt"></span>Choose recipes, belts and inserters.</li>
+          <li><span class="sprite" data-sprite="blueprint"></span>Build, then copy the blueprint into the game.</li>
+        </ol>
+      </div>
+    </div>
   </main>
 </div>
 <dialog id="picker" aria-labelledby="picker-title">
@@ -217,10 +410,24 @@
       <button type="button" class="icon" id="picker-close" aria-label="Close">×</button>
     </div>
     <div class="row picker-tools">
-      <input type="text" id="picker-filter" placeholder="Filter…" aria-label="Filter signals" autocomplete="off">
+      <input type="search" id="picker-filter" placeholder="Search signals…" aria-label="Filter signals" autocomplete="off">
       <button type="button" id="picker-none">None: full speed</button>
     </div>
     <div class="picker-list" id="picker-list"></div>
+  </div>
+</dialog>
+<dialog id="chooser" aria-labelledby="chooser-title">
+  <div class="picker">
+    <div class="picker-head">
+      <h3 id="chooser-title">Choose</h3>
+      <button type="button" class="icon" id="chooser-close" aria-label="Close">×</button>
+    </div>
+    <div class="tabs" id="chooser-tabs" role="tablist"></div>
+    <div class="row picker-tools">
+      <input type="search" id="chooser-filter" placeholder="Search…" aria-label="Search" autocomplete="off">
+    </div>
+    <div class="picker-list" id="chooser-list"></div>
+    <div class="chooser-foot" id="chooser-foot"></div>
   </div>
 </dialog>
 <script type="module" src="js/app.js"></script>

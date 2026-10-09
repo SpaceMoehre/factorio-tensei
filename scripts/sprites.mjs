@@ -39,10 +39,11 @@ export function buildSprites(icons, { game, mods, out }) {
 // Icons from an icon dump instead (`factorio --dump-icon-sprites`: script-output/<type>/<name>.png,
 // each prototype drawn once, no game install needed): every icon of the catalog that sprites/
 // lacks, written where the catalog names it — an item's picture first, then a fluid's, a virtual
-// signal's, any other's. Returns how many were written and the names the dump has no icon for.
-export function dumpedSprites(icons, { dump, out }) {
+// signal's, any other's (`folders`: only those folders of the dump, in that order). Returns how many
+// were written and the names the dump has no icon for.
+export function dumpedSprites(icons, { dump, out, folders: only = null }) {
   const first = ['item', 'fluid', 'virtual-signal'];
-  const folders = readdirSync(dump, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
+  const folders = only ?? readdirSync(dump, { withFileTypes: true }).filter(d => d.isDirectory()).map(d => d.name)
     .sort((a, b) => (first.indexOf(a) + 1 || first.length + 1) - (first.indexOf(b) + 1 || first.length + 1) || a.localeCompare(b));
   let written = 0;
   const missing = [];
