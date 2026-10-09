@@ -75,6 +75,13 @@
 
   /* Icons: sprites keep their first mipmap only. */
   .sprite { flex: none; display: inline-block; width: 28px; height: 28px; background: left center / auto 100% no-repeat; image-rendering: auto; }
+  /* A leveled item's level (Py: 2 red, 3 blue, 4 purple), its icon's own mark made plain. */
+  .sprite[data-tier] { position: relative; }
+  .sprite[data-tier]::after { content: attr(data-tier); position: absolute; top: -3px; right: -4px; min-width: 15px; height: 15px; padding: 0 3px; border-radius: 4px; font: 700 11px/15px 'Titillium Web', system-ui, sans-serif; text-align: center; color: #fff; box-shadow: 0 0 0 1.5px var(--bg); background: #888; }
+  .sprite[data-tier="2"]::after { background: #d8433c; }
+  .sprite[data-tier="3"]::after { background: #2b8fd6; }
+  .sprite[data-tier="4"]::after { background: #9a52d8; }
+  .sprite[data-tier="5"]::after, .sprite[data-tier="6"]::after, .sprite[data-tier="7"]::after, .sprite[data-tier="8"]::after, .sprite[data-tier="9"]::after { background: #c9a227; color: #1d1c1b; }
   .sprite.none { border-radius: 6px; background: repeating-linear-gradient(45deg, #2f2c29 0 4px, #36322e 4px 8px); }
   .amount { position: relative; display: inline-flex; }
   .amount .sprite { width: 26px; height: 26px; }

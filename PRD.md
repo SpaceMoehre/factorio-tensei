@@ -87,6 +87,7 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 ## v27: A friendlier page (implemented)
 - **Pictures everywhere:** Goals are picked from a chooser of icons by the game's item groups (its crafting menu's tabs) with a search; recipes are shown and chosen as their ingredients → products with amounts; buildings, belts, pipes, inserters and modules as icon toggles; fuels and other long lists in the chooser; Train in/out lines with icons. Names read as words ("Iron pulp 01"), the game's name beside them.
 - **Sections** numbered in order (what to make, how it's made, logistics, city block, build), each headed by a technology picture; an empty map that says what to do; Factorio's font (Titillium Web) and colours.
+- **Leveled items:** an icon of several layers (Py's leveled plants and animals: the plant and a red, blue or purple mark for its level, as Py's prototypes on GitHub draw them) is the icon dump's picture of it whole (`layered/<name>.png`, kept on the site), not its first layer; and every leveled item or building wears a badge of its level (2 red, 3 blue, 4 purple; `tiers`, from the icon's level mark, else its name's -mk02…).
 - **Catalog:** the item groups with their items in the game's order (`groups`) and the technology pictures the page shows (`art`); `npm run build-sprites -- --dump` fills in their pictures too.
 
 ## v26: Byproduct Uses (implemented)

@@ -30,7 +30,8 @@ for (const name of catalog.signals ?? []) names.add(name);
 names.add('blueprint');
 
 // Paths the catalog already names, where a zip has them.
-const named = Object.fromEntries(Object.entries(catalog.icons ?? {}).filter(([name, path]) => names.has(name) && path.includes('/graphics/')));
+// (A layered icon, layered/<name>.png, is the icon dump's picture of it: kept where sprites/ has it.)
+const named = Object.fromEntries(Object.entries(catalog.icons ?? {}).filter(([name, path]) => names.has(name) && (path.includes('/graphics/') || path.startsWith('layered/'))));
 const kept = {};
 for (const [name, path] of Object.entries(named)) {
   if (buildSprites({ [name]: path }, { game, mods, out }).written || existsSync(join(out, path))) kept[name] = path;

@@ -454,6 +454,12 @@ function trainRow(input) {
 function iconOf(item) {
   const icon = el('span', { className: catalog.icons[item] ? 'sprite' : 'sprite none', title: item ? label(item) : '' });
   if (catalog.icons[item]) icon.style.backgroundImage = `url("sprites/${catalog.icons[item]}")`;
+  // A leveled item's level, marked in Py's colours (red, blue, purple) where it is easy to see.
+  const tier = catalog.tiers?.[item];
+  if (tier) {
+    icon.dataset.tier = String(tier);
+    icon.title += ` · level ${tier}`;
+  }
   return icon;
 }
 

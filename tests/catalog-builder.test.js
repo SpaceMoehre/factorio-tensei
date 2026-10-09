@@ -153,7 +153,7 @@ test('recipe: Lua empty tables dumped as {} are treated as empty lists', () => {
   assert.deepEqual([recipes.void.ingredients, recipes.void.products], [[], []]);
 });
 
-test('icons: every item, fluid and virtual signal maps to its icon file under sprites/<mod>/, from the first icon layer', () => {
+test('icons: every item, fluid and virtual signal maps to its icon file under sprites/<mod>/; one of several layers to the icon dump\'s picture of it', () => {
   const { icons } = buildCatalog(dataRaw({
     item: {
       'iron-gear-wheel': { name: 'iron-gear-wheel', icon: '__base__/graphics/icons/iron-gear-wheel.png' },
@@ -172,9 +172,23 @@ test('icons: every item, fluid and virtual signal maps to its icon file under sp
     pcb1: 'pyhightechgraphics/graphics/icons/pcb1.png',
     'sap-extractor-mk01': 'pyalienlifegraphics/graphics/icons/sap-extractor-mk01.png',
     water: 'base/graphics/icons/fluid/water.png',
-    'automation-science-pack': 'base/graphics/icons/automation-science-pack.png',
+    'automation-science-pack': 'layered/automation-science-pack.png',
     'signal-A': 'base/graphics/icons/signal/signal_A.png',
   });
+});
+
+// Py's leveled plants and animals: the plant's icon with a red (2), blue (3) or purple (4) mark.
+test('tiers: a leveled item\'s level from its icon\'s level mark, else its name', () => {
+  const { tiers } = buildCatalog(dataRaw({
+    item: {
+      'auog-pup-mk02': { name: 'auog-pup-mk02', icons: [{ icon: '__pyalienlifegraphics__/graphics/icons/auog-pup.png' }, { icon: '__pyalienlifegraphics__/graphics/icons/over-mk02.png' }] },
+      'arqad-egg-3': { name: 'arqad-egg-3', icons: [{ icon: '__pyalienlifegraphics3__/graphics/icons/arqad-egg.png' }, { icon: '__pyalienlifegraphics__/graphics/icons/evolution-mk03.png' }] },
+      'jaw-crusher-mk04': { name: 'jaw-crusher-mk04', icon: '__pycoalprocessinggraphics__/graphics/icons/jaw-crusher-mk04.png' },
+      'jaw-crusher-mk01': { name: 'jaw-crusher-mk01', icon: '__pycoalprocessinggraphics__/graphics/icons/jaw-crusher-mk01.png' },
+    },
+    module: { 'moss-mk03': { name: 'moss-mk03', icons: [{ icon: '__pyalienlifegraphics3__/graphics/icons/mip/moss-01.png' }, { icon: '__pyalienlifegraphics__/graphics/icons/over-mk03.png', scale: 0.5 }] } },
+  }));
+  assert.deepEqual(tiers, { 'auog-pup-mk02': 2, 'arqad-egg-3': 3, 'jaw-crusher-mk04': 4, 'moss-mk03': 3 });
 });
 
 // The game's virtual signals in its order: by subgroup, then each signal's own; never the

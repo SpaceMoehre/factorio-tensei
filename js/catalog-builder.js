@@ -107,7 +107,7 @@ export function buildCatalog(raw) {
   for (const p of Object.values(raw.fluid ?? {})) {
     if (!p.hidden && p.fuel_value && energy(p.fuel_value) > 0) fluidFuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value) };
   }
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
 }
 
 // The virtual signals an Inserter Clock may take, in the game's order (by subgroup, then their
@@ -232,15 +232,31 @@ function spritePath(path) {
 // "pyhightechgraphics/graphics/icons/pcb1.png" (scripts/build-sprites.mjs extracts them from the
 // game and the mod zips). Layered icons show their first layer. Virtual signals' too, for the
 // signals an Inserter Clock may take, and the blueprint's (the page's).
+// An icon of several layers (Py's leveled plants and animals: the plant, and a red, blue or
+// purple mark for its level) is the icon dump's picture of it, drawn whole: layered/<name>.png.
 function spriteIcons(raw) {
   const icons = {};
   for (const type of [...ITEM_TYPES, 'virtual-signal', 'blueprint']) {
     for (const p of Object.values(raw[type] ?? {})) {
       const path = spritePath(p.icon ?? p.icons?.[0]?.icon);
-      if (path) icons[p.name] = path;
+      if (path) icons[p.name] = (p.icons?.length ?? 0) > 1 ? `layered/${p.name}.png` : path;
     }
   }
   return icons;
+}
+
+// The level of each leveled item or building (2 to 4, as the page marks them): the level mark of
+// its icon (Py's over-mk02.png, evolution-mk03.png, …), else its name's -mk02 to -mk09.
+function tiers(raw) {
+  const out = {};
+  for (const type of [...ITEM_TYPES]) {
+    for (const p of Object.values(raw[type] ?? {})) {
+      const mark = (p.icons ?? []).slice(1).map(l => /(?:over|evolution|c)-mk0?([2-9])\.png$/.exec(l.icon ?? '')).find(Boolean);
+      const tier = Number(mark?.[1] ?? /-mk0?([2-9])$/.exec(p.name)?.[1] ?? 0);
+      if (tier) out[p.name] = tier;
+    }
+  }
+  return out;
 }
 
 // The data-raw dump serializes empty Lua tables as {} rather than [].
