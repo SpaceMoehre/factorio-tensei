@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { expandChain } from '../js/chain.js';
+import { readFileSync } from 'node:fs';
+import { expandChain, useKey } from '../js/chain.js';
 import { catalog, pyCatalog } from './fixtures/catalog.js';
 
 const byItem = entries => Object.fromEntries(entries.map(e => [e.goal.item, e.goal.rate]));
@@ -118,4 +119,32 @@ test('each step carries its modules: the default for its building, or the ones c
   // A module this building cannot take is dropped.
   assert.deepEqual(selectionOf({ moss: { recipe: 'Moss-1', building: 'moss-farm-mk01', modules: [{ name: 'speed-module', count: 2 }, { name: 'moss', count: 4 }] } }).modules,
     [{ name: 'moss', count: 4 }]);
+});
+
+// Py's hydroclassifiers make 50 iron pulp and 50 iron slime a craft: 600 pulp/min is 12 crafts,
+// 600 slime. Its Byproduct Use takes all of it, 100 a craft (6 crafts: 6 unslimed iron, 600
+// tailings, 1200 water); a Use of that unslimed iron makes 40 molten iron from each (240, with 18
+// borax and 360 oxygen).
+test('a Byproduct Use takes all of its step\'s byproduct, its products leaving by train or used again', () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const from = useKey('iron-pulp-01', 'iron-slime');
+  const uses = [
+    { from, item: 'unslimed-iron', recipe: 'molten-iron-06' },
+    { from: 'iron-pulp-01', item: 'iron-slime', recipe: 'unslimed-iron' },
+  ];
+  const { entries, trainInputs, byproducts } = expandChain([{ item: 'iron-pulp-01', rate: 600 }], shipped, { uses });
+  assert.deepEqual(entries.map((/** @type {any} */ e) => [e.goal.item, e.goal.rate, e.selection.recipe, e.use?.key]), [
+    ['iron-pulp-01', 600, 'classify-iron-ore-dust', undefined],
+    ['unslimed-iron', 6, 'unslimed-iron', from],
+    ['molten-iron', 240, 'molten-iron-06', useKey(from, 'unslimed-iron')],
+  ]);
+  assert.deepEqual(entries.map((/** @type {any} */ e) => e.goal.from), [undefined, { 'iron-slime': 0 }, { 'unslimed-iron': 1 }]);
+  assert.deepEqual(Object.fromEntries(trainInputs.map(t => [t.item, t.rate])), { 'iron-ore-dust': 36, water: 4800, borax: 18, oxygen: 360 });
+  // What leaves by train, each offered the recipes taking it.
+  assert.deepEqual(byproducts.map(b => [b.from, b.item, b.rate]), [[from, 'tailings', 600], [useKey(from, 'unslimed-iron'), 'molten-iron', 240]]);
+  assert.ok(byproducts[0].recipes.includes('iron-slime'));
+  // A Use whose step no longer makes its item is left out, and so are its own.
+  const without = expandChain([{ item: 'iron-pulp-01', rate: 600 }], shipped, { uses: uses.slice(0, 1) });
+  assert.equal(without.entries.length, 1);
+  assert.deepEqual(without.byproducts.map(b => [b.item, b.rate]), [['iron-slime', 600]]);
 });

@@ -2,8 +2,10 @@
 // Recipe Loop's last link — an item taken by a Sub-Block that the item's own producer (through
 // those it takes from) takes from, or by its producer itself — is its feedback: fed back from the
 // producer's output (an item; a fluid comes by train), not part of the Dependency Order.
+// A Byproduct Use's Sub-Block (sb.use) makes its item besides: it feeds only Byproduct Uses of
+// its own (sb.from), what else it makes leaving by train.
 export function buildFlows(plan) {
-  const producerOf = new Map(plan.map((sb, i) => [sb.item, i]));
+  const producerOf = new Map(plan.flatMap((sb, i) => (sb.use ? [] : [[sb.item, i]])));
   const edges = [];
   // What a Sub-Block takes by train though another makes it (the chain's choice) is no link.
   // (A part of a split Sub-Block takes an item from the part of its producer named in `from`.)
@@ -37,13 +39,21 @@ export function buildFlows(plan) {
       if (from === undefined || (input.type === 'fluid' && [...closing].some(e => e.to === i && e.item === input.name))) addRate(sideInput, input.name, input.type, input.rate);
     }
   });
-  for (const sb of plan) {
-    const main = sb.outputs.find(o => o.name === sb.item);
-    const consumed = [...internal, ...feedback].filter(e => e.item === sb.item).reduce((sum, e) => sum + e.rate, 0);
-    if (main.rate - consumed > 1e-9) addRate(sideOutput, main.name, main.type, main.rate - consumed);
-    for (const b of sb.byproducts) addRate(sideOutput, b.name, b.type, b.rate);
-  }
+  plan.forEach((sb, i) => {
+    // (Its item first, then its byproducts.)
+    for (const o of [sb.outputs.find(o => o.name === sb.item), ...sb.byproducts]) {
+      const left = o.rate - taken(plan, { internal, feedback }, i, o.name);
+      if (left > 1e-9 * Math.max(1, o.rate)) addRate(sideOutput, o.name, o.type, left);
+    }
+  });
   return { order: dependencyOrder(plan.length, internal), internal, feedback, sideInput, sideOutput };
+}
+
+// What Sub-Blocks take of a Sub-Block's item: its own (a Sub-Block in parts, Bands: all its
+// parts') through Internal Paths and feedback.
+export function taken(plan, flows, i, item) {
+  const of = plan[i].item === item && plan[i].part && !plan[i].use ? plan.flatMap((sb, j) => (sb.item === item && sb.part ? [j] : [])) : [i];
+  return [...flows.internal, ...flows.feedback ?? []].filter(e => e.item === item && of.includes(e.from)).reduce((sum, e) => sum + e.rate, 0);
 }
 
 function addRate(flows, item, type, rate) {

@@ -29,8 +29,12 @@ The number of assembler buildings a Sub-Block needs to meet its Goal's target ra
 _Avoid_: assembler count as a user input (it's derived, not entered)
 
 **Byproduct**:
-An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow. Where it shares a belt with an item consumers take, a filter splitter right after its producers sorts it out on to the east edge (Splitter).
+An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow, leaving by train unless a Byproduct Use takes it. Where it shares a belt with an item consumers take, a filter splitter right after its producers sorts it out on to the east edge (Splitter).
 _Avoid_: treating byproducts as satisfying other Goals automatically
+
+**Byproduct Use**:
+A step the user adds for a byproduct of a step — a recipe taking it — that takes all of it, sized by what that step makes (Py's iron slime from the hydroclassifiers making iron pulp, to unslimed iron). What it makes leaves by train, unless a Byproduct Use of its own takes it; it never feeds another step nor counts towards a Goal, so its item may also be made by a step of the chain (ADR 0034).
+_Avoid_: byproduct recipe (it is a step of the chain), sharing a byproduct among Uses
 
 **Fuel**:
 The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item.

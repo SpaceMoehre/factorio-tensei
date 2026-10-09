@@ -4,7 +4,7 @@
 // that beats its best so far ({ type: 'best', block, score, tried }), then { type: 'done',
 // tried, failure } when the budget is spent, or { type: 'error', message }. The page stops a
 // search by terminating the worker; it keeps the best layout any worker sent.
-// In a City Block (site) with `maximize` ({ goals, made, selections, upTo }), it looks for the
+// In a City Block (site) with `maximize` ({ goals, made, selections, uses, upTo }), it looks for the
 // highest rate that fits instead (upTo: no higher than the Goals' own): { type: 'foretell', rate, machines } whenever the Foretelling changes,
 // { type: 'try', rate, machines } before each try, { type: 'best', …, rate, machines, goals } for
 // each that fits, and { type: 'done', tried, failure, rate, machines, goals, above } at the end
@@ -26,7 +26,7 @@ self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = nul
       return;
     }
     if (goals) {
-      const run = maximize(goals.goals, await catalog, logistics, { made: goals.made, selections: goals.selections, upTo: goals.upTo, site, budgetMs, seed });
+      const run = maximize(goals.goals, await catalog, logistics, { made: goals.made, selections: goals.selections, uses: goals.uses, upTo: goals.upTo, site, budgetMs, seed });
       let step = run.next();
       for (; !step.done; step = run.next()) self.postMessage(step.value);
       const { tried, failure, rate, machines, goals: list, above } = step.value;

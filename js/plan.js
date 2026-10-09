@@ -4,13 +4,15 @@ import { assignFluidBoxes } from './fluidboxes.js';
 // logistics.fuel: the Fuel item burner machines burn; logistics.liquidFuel: the Liquid Fuel
 // machines burning a fluid burn (unless their energy source takes one fluid only).
 // An entry's byTrain: items it takes by train though a Sub-Block makes them (a Recipe Loop's).
+// An entry's use: a Byproduct Use's (chain.js), its item made besides any step's (it takes its
+// byproduct from the entry `goal.from` names).
 export function planSubBlocks(entries, catalog, logistics = {}) {
   const seen = new Set();
-  return entries.map(({ goal, selection, byTrain = [] }) => {
+  return entries.map(({ goal, selection, byTrain = [], use }) => {
     if (!(goal.rate > 0)) throw new Error(`${goal.item}: the rate must be above 0`);
     // (A Sub-Block in parts, Bands, has an entry for each part.)
-    if (seen.has(goal.item) && !goal.part) throw new Error(`${goal.item} is a Goal more than once; combine them into one Goal`);
-    seen.add(goal.item);
+    if (seen.has(goal.item) && !goal.part && !use) throw new Error(`${goal.item} is a Goal more than once; combine them into one Goal`);
+    if (!use) seen.add(goal.item);
     const recipe = catalog.recipes[selection.recipe];
     const building = catalog.buildings[selection.building];
     const liquid = building.energy === 'fluid' ? liquidFuelOf(building, catalog, logistics.liquidFuel) : null;
@@ -59,6 +61,7 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(byTrain.length ? { byTrain } : {}),
       ...(goal.part ? { part: true } : {}),
       ...(goal.from ? { from: goal.from } : {}),
+      ...(use ? { use: true } : {}),
     };
   });
 }

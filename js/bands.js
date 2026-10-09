@@ -139,7 +139,8 @@ export function bands(entries, catalog, logistics, site, { seed = 1, pack = fals
 }
 
 function banded(entries, catalog, logistics, site, { seed, pack, spare, small, seen, until }) {
-  if (!site?.fixtures.length) return null;
+  // (Not with Byproduct Uses: a Sub-Block's parts give their byproducts to none.)
+  if (!site?.fixtures.length || entries.some(e => e.use)) return null;
   const plan = planSubBlocks(entries, catalog, logistics);
   const goal = plan.findIndex(sb => sb.item === entries[0].goal.item);
   const lead = catalog.buildings[plan[goal].building];

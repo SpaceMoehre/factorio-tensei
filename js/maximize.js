@@ -28,7 +28,7 @@ import { simulate } from './sim.js';
 // Then Annexes (annex.js): in the room the highest that fit leaves, the chain again, maximized
 // there with what was built as Fixtures, while one fits (yielded as the layouts together: `rate`,
 // `machines` and `goals` theirs summed).
-// options: { made, selections, index, site, budgetMs (each try's), maxCandidates (each try's),
+// options: { made, selections, uses, index, site, budgetMs (each try's), maxCandidates (each try's),
 //            seed, now, upTo (no higher than the Goals' own rates: a City Block they do not fit
 //            filled up to them), annexes (false: none), bands (false: no Bands), most (no more of
 //            the first Goal's machines), probe (one of them first: none fitting, nothing more),
@@ -238,14 +238,14 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates, `wanted` as many running as fast as those take.
 /** @param {any[]} goals @param {any} catalog @param {any} logistics @param {any} options */
-export function planner(goals, catalog, logistics, { made = [], selections = {}, index = recipeOptions(catalog), site, least = LEAST }) {
+export function planner(goals, catalog, logistics, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), site, least = LEAST }) {
   // In an Annex's City Block, a fluid made here that a pipe built before it has to spare comes
   // from there instead, while that has enough (ADR 0032).
   const draws = Object.entries(site?.draws ?? {}).filter(([fluid]) => made.includes(fluid));
   const chainOf = list => {
     const drawn = new Set(draws.map(([fluid]) => fluid));
     for (;;) {
-      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, index });
+      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index });
       const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare);
       if (!short.length) return chain;
       for (const [fluid] of short) drawn.delete(fluid);

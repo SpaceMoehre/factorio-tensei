@@ -1,5 +1,5 @@
 import { simulate } from './sim.js';
-import { expandChain, recipeOptions } from './chain.js';
+import { expandChain, recipeOptions, useKey } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
 import { clocksOf, clockLabel } from './clocks.js';
@@ -54,6 +54,8 @@ state.logistics.plainPipe = plainOf(state.logistics.pipe);
 state.made ??= [];
 delete state.inputs;
 state.selections ??= {};
+// Byproduct Uses: { from (a step's key), item, recipe, building?, modules? } (chain.js).
+state.uses ??= [];
 // Inserter Clocks: the signal chosen for each clock (by its key, "items/seconds"), kept from one
 // build to the next.
 state.clocks ??= {};
@@ -258,7 +260,7 @@ function showFuels() {
 function drawChain() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
-    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, index }) : null;
+    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, index }) : null;
   } catch (e) {
     chain = { error: e.message };
   }
@@ -270,33 +272,41 @@ function drawChain() {
   }
   const rows = [];
   const seen = new Set();
-  for (const { goal, selection } of chain.entries) {
-    const recipes = index.producers.get(goal.item);
+  const row = (id, key, make) => {
+    rows.push(reuse(id, key, make));
+    seen.add(id);
+    return chainRows.get(id).el;
+  };
+  // Each step, then its Byproduct Uses (each with its own) and the byproducts it leaves by train.
+  const step = entry => {
+    const { goal, selection, use } = entry;
+    const key = use?.key ?? goal.item;
+    const recipes = use ? index.consumers.get(use.item).filter(r => index.buildingsFor.has(r)) : index.producers.get(goal.item);
     const buildings = index.buildingsFor.get(selection.recipe);
-    const key = JSON.stringify(['step', goal.item, recipes, selection, buildings]);
-    rows.push(reuse(`step:${goal.item}`, key, () => stepRow(goal.item, recipes, buildings, selection)));
-    seen.add(`step:${goal.item}`);
+    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection)));
     const building = catalog.buildings[selection.building];
     const recipe = catalog.recipes[selection.recipe];
     const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
     const perMachine = building.craftingSpeed * effect.speed / recipe.time
       * recipe.products.find(p => p.name === goal.item).amount * (1 + effect.productivity) * 60;
     // The Count, and the machine's speed with its modules (Py farms: their plants and animals).
-    chainRows.get(`step:${goal.item}`).el.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${Math.ceil(goal.rate / perMachine - 1e-9)}×`;
-    const machineSpeed = chainRows.get(`step:${goal.item}`).el.querySelector('.speed');
-    machineSpeed.textContent = `${speed(building.craftingSpeed * effect.speed)}`
+    shown.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${Math.ceil(goal.rate / perMachine - 1e-9)}×`;
+    shown.querySelector('.speed').textContent = `${speed(building.craftingSpeed * effect.speed)}`
       + (effect.speed !== 1 ? ` (${speed(building.craftingSpeed)} × ${speed(effect.speed)} with modules)` : '') + ` · ${fmt(perMachine)}/min a machine`;
     // A Recipe Loop: what of this step's item goes back into the loop.
-    const back = chain.loops.filter(l => l.item === goal.item);
-    const loop = chainRows.get(`step:${goal.item}`).el.querySelector('.loop');
+    const back = use ? [] : chain.loops.filter(l => l.item === goal.item);
+    const loop = shown.querySelector('.loop');
     loop.textContent = back.map(l => `↺ ${fmt(l.rate)}/min back into ${l.into === goal.item ? 'itself' : l.into} (a recipe loop)`).join(' · ');
     loop.hidden = !back.length;
-  }
+    for (const next of chain.entries.filter(e => e.use?.from === key)) step(next);
+    for (const b of chain.byproducts.filter(b => b.from === key)) {
+      row(`byproduct:${useKey(key, b.item)}`, JSON.stringify(['byproduct', key, b.item, b.recipes]), () => byproductRow(b))
+        .querySelector('.rate').textContent = `${fmt(b.rate)}/min`;
+    }
+  };
+  for (const entry of chain.entries) if (!entry.use) step(entry);
   for (const input of chain.trainInputs) {
-    const key = JSON.stringify(['train', input.item, input.reason]);
-    rows.push(reuse(`train:${input.item}`, key, () => trainRow(input)));
-    seen.add(`train:${input.item}`);
-    chainRows.get(`train:${input.item}`).el.querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
+    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
   }
   for (const k of [...chainRows.keys()]) if (!seen.has(k)) chainRows.delete(k);
   if (rows.some((row, i) => list.children[i] !== row) || list.children.length !== rows.length) list.replaceChildren(...rows);
@@ -311,20 +321,65 @@ function reuse(id, key, make) {
 }
 
 function stepRow(item, recipes, buildings, selection) {
+  const choose = changes => { state.selections[item] = { ...selection, ...changes }; renderChain(); save(); };
+  const train = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Bring ${item} by train instead` });
+  train.addEventListener('click', () => { state.made = state.made.filter(i => i !== item); renderChain(); save(); });
+  train.hidden = state.goals.some(g => g.item === item);
+  return stepBody(item, recipes, buildings, selection, choose, train);
+}
+
+// A Byproduct Use: a step taking all its step's byproduct, of a recipe that takes it. Removing it
+// removes the Uses of what it makes too.
+function useRow({ goal, selection, use }, recipes, buildings) {
+  const wanted = () => state.uses.find(u => useKey(u.from, u.item) === use.key);
+  const choose = changes => { Object.assign(wanted(), selection, changes); renderChain(); save(); };
+  const remove = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Send ${use.item} away by train instead` });
+  remove.addEventListener('click', () => {
+    state.uses = state.uses.filter(u => useKey(u.from, u.item) !== use.key && u.from !== use.key && !u.from.startsWith(`${use.key} > `));
+    renderChain();
+    save();
+  });
+  const from = chain.entries.find(e => (e.use?.key ?? e.goal.item) === use.from).goal.item;
+  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${use.item} the ${from} step makes`);
+  row.classList.add('use');
+  row.style.setProperty('--depth', String(depthOf(use.key)));
+  return row;
+}
+
+// A byproduct leaving by train, with the recipes that could take it instead (a Byproduct Use).
+function byproductRow({ from, item, recipes }) {
+  const add = el('select', { ariaLabel: `Use ${item}` });
+  add.append(new Option(recipes.length ? 'Use in…' : 'Nothing takes it', ''), ...recipes.map(r => new Option(r, r)));
+  add.disabled = !recipes.length;
+  add.addEventListener('change', () => {
+    if (!add.value) return;
+    state.uses.push({ from, item, recipe: add.value });
+    renderChain();
+    save();
+  });
+  const row = el('div', { className: 'step byproduct' },
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' })),
+    el('div', { className: 'selection' }, el('span', { textContent: 'Byproduct' }), add));
+  row.style.setProperty('--depth', String(depthOf(useKey(from, item))));
+  return row;
+}
+
+// How many Byproduct Uses down a key is (a step's: 0).
+function depthOf(key) {
+  return key.split(' > ').length - 1;
+}
+
+function stepBody(item, recipes, buildings, selection, choose, button, hint = '') {
   const recipe = el('select', { ariaLabel: `Recipe for ${item}` });
   fillSelect(recipe, recipes, selection.recipe);
   const building = el('select', { ariaLabel: `Building for ${item}` });
   fillSelect(building, buildings, selection.building);
-  const choose = changes => { state.selections[item] = { ...selection, ...changes }; renderChain(); save(); };
   // A new recipe or building starts from its own default modules.
   recipe.addEventListener('change', () => choose({ recipe: recipe.value, building: '', modules: undefined }));
   building.addEventListener('change', () => choose({ building: building.value, modules: undefined }));
-  const isGoal = state.goals.some(g => g.item === item);
-  const train = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Bring ${item} by train instead` });
-  train.addEventListener('click', () => { state.made = state.made.filter(i => i !== item); renderChain(); save(); });
-  train.hidden = isGoal;
   return el('div', { className: 'step' },
-    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), train),
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: item }), el('span', { className: 'rate' }), button),
+    el('div', { className: 'hint', textContent: hint, hidden: !hint }),
     el('div', { className: 'hint loop', hidden: true }),
     el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), recipe, el('span', { textContent: 'Building' }), building,
       ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : []),
@@ -439,7 +494,7 @@ function renderForetell() {
 function foretoldShort() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
-    const plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, index, site: citySite() });
+    const plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, index, site: citySite() });
     return plan.foretold().machines < plan.wanted;
   } catch {
     return false;
@@ -452,7 +507,7 @@ function foretellLine() {
   if (!site || site.error) return null;
   let plan;
   try {
-    plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, index, site });
+    plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, index, site });
   } catch {
     return null;
   }
@@ -555,7 +610,7 @@ async function build(upTo = false) {
       // The search time counts from the start, designing included (each strategy tries a layout
       // however little is left).
       budgetMs: Math.max(1, state.logistics.budget * 1000 - (Date.now() - started)),
-      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections, upTo } } : {}),
+      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections, uses: state.uses, upTo } } : {}),
     });
   }
 }
@@ -875,7 +930,7 @@ function showStatus(kind, text) {
 // catalog's fingerprint and what the last build said.
 function setupText() {
   const round = n => Math.round(n * 100) / 100;
-  const steps = chain?.entries?.map(({ goal, selection }) => ({ item: goal.item, rate: round(goal.rate), ...selection }));
+  const steps = chain?.entries?.map(({ goal, selection, use }) => ({ item: goal.item, rate: round(goal.rate), ...selection, ...(use ? { uses: use.key } : {}) }));
   const result = $('status').textContent ? {
     status: $('status').textContent,
     ...($('area').hidden ? {} : { map: $('area').textContent }),

@@ -1,5 +1,7 @@
 // Routes between Sub-Blocks, the Side Input and the Side Output, with Belt Merge.
 
+import { taken } from './flows.js';
+
 // Factorio 2.0 fluid segments move up to 6000 units/s.
 const PIPE_CAPACITY = 6000 * 60;
 
@@ -35,15 +37,17 @@ export function buildRoutes(plan, flows, laneCapacity) {
   }
   plan.forEach((sb, i) => {
     const internalConsumers = item => flows.internal.filter(e => e.from === i && e.item === item).map(e => e.to).sort(byOrder);
-    const leavesBlock = item => flows.sideOutput.some(o => o.item === item);
+    // (What of it no Sub-Block takes leaves by train.)
+    const leavesBlock = o => o.rate - taken(plan, flows, i, o.name) > 1e-9 * Math.max(1, o.rate);
     const solidOut = sb.outputs.filter(o => o.type === 'item');
     if (solidOut.length) {
-      const consumers = internalConsumers(sb.item);
+      // (Those taking a byproduct, Byproduct Uses, as those taking its item.)
+      const consumers = [...new Set(solidOut.flatMap(o => internalConsumers(o.name)))].sort(byOrder);
       // A byproduct only the train takes, with more than one belt carries: an Internal Path to its
       // one consumer all the same, each of its belts sorting the byproduct out after the producers
       // (compose.js), so the path may run on parallel belts (Py's ball mills' molybdenite dust
       // with gravel).
-      const left = solidOut.filter(o => leavesBlock(o.name));
+      const left = solidOut.filter(leavesBlock);
       const sorted = consumers.length === 1 && left.length === 1 && left[0].name !== sb.item
         && !plan[consumers[0]].inputs.some(x => x.name === left[0].name)
         && solidOut.reduce((sum, o) => sum + o.rate, 0) > 2 * laneCapacity + 1e-6;
@@ -56,9 +60,9 @@ export function buildRoutes(plan, flows, laneCapacity) {
     }
     for (const o of sb.outputs.filter(o => o.type === 'fluid')) {
       add({
-        kind: 'pipe', fluid: o.name, source: i, sink: leavesBlock(o.name) ? 'side-output' : null,
+        kind: 'pipe', fluid: o.name, source: i, sink: leavesBlock(o) ? 'side-output' : null,
         items: [{ item: o.name, rate: o.rate, supply: o.rate, capacity: PIPE_CAPACITY }],
-        consumers: o.name === sb.item ? internalConsumers(o.name) : [],
+        consumers: internalConsumers(o.name),
       });
     }
   });

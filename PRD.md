@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v26: Byproduct Uses (implemented)
+Byproducts shown and processed in the block (ADR 0034); where v26 differs from v25, v26 wins.
+- **Byproducts shown:** under each step of the Production Chain, the byproducts it sends away by train, with their rates.
+- **Byproduct Uses:** a byproduct can go to a recipe that takes it. That step takes all of the byproduct, and its products go by train or to Uses of their own. Py iron pulp 600/min: its slime goes to unslimed iron, then to molten iron, 38 × 14.
+
 ## v25: Pipes of one fluid join (implemented)
 Pipe Networks (ADR 0033); where v25 differs from v24, v25 wins.
 - **One network per fluid:** a fluid's pipe routes join (those to the east edge together, the others together, never a Sub-Block's input with its output); joined, a route to the east edge goes there through the other's pipe. Py slaughterhouses' blood from two Sub-Blocks: one pipe to the east edge, 47 × 28 (was 38 × 42).

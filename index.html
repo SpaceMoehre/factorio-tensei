@@ -33,6 +33,9 @@
   .step-head .rate { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .step-head .sprite { width: 24px; height: 24px; }
   .step.train .hint { margin: 2px 0 0 30px; }
+  /* A Byproduct Use and a byproduct leaving by train stand under the step making it. */
+  .step.use, .step.byproduct { margin-left: calc(var(--depth, 1) * 16px); border-left: 2px solid var(--border); padding-left: 8px; }
+  .step.byproduct .name { color: var(--muted); }
   [hidden] { display: none !important; }
   .goal-head input[type=text] { flex: 1; min-width: 0; }
   .goal-head input[type=number] { width: 80px; }
@@ -118,7 +121,7 @@
     <datalist id="items"></datalist>
 
     <h2>Production chain</h2>
-    <p class="hint">A Goal's ingredients come by train. <em>Make here</em> builds one in the block instead, and its own ingredients then come by train.</p>
+    <p class="hint">A Goal's ingredients come by train. <em>Make here</em> builds one in the block instead, and its own ingredients then come by train. A step's byproducts leave by train, unless you use one in a recipe that takes it all.</p>
     <div id="chain"></div>
 
     <h2>Logistics</h2>
