@@ -836,14 +836,15 @@ function progress() {
 }
 
 async function show(block, tried, found = null, rank = null) {
-  best = { block, tried, found, score: rank };
   const { starvation } = simulate(block);
+  best = { block, tried, found, score: rank, starvation };
+  inspect(null, block);
   const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
   $('empty').hidden = true;
   const circuit = state.logistics.circuit;
   map = createMap($('map'), block, {
-    starving, onHover: describe, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null),
+    starving, onHover: describe, onSelect: inspect, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null),
     circuit: circuit === 'none' ? null : { colors: circuit === 'both' ? ['red', 'green'] : [circuit], pairs: circuitPairs(block.entities, catalog, block.site?.fixtures ?? []) },
   });
   const { bounds, site } = block;
@@ -1083,6 +1084,134 @@ function describe(entity, block) {
   const clock = clocks?.of.get(entity);
   if (clock) parts.push(`clock: ${clockLabel(clock)}${state.clocks[clock] ? ` while ${state.clocks[clock].name} > 0` : ''}`);
   tip.textContent = parts.join(' · ');
+}
+
+// The Inspector: what a tap or click on the map selected, in detail — a machine's recipe and what
+// it takes and makes, a belt's or pipe's items with how full they run and where they come from and
+// go, an inserter's load, a Sub-Block's totals. Names of Sub-Blocks in it select them.
+function inspect(hit, block) {
+  const panel = $('inspector');
+  if (!hit) {
+    panel.hidden = true;
+    return;
+  }
+  const { starvation } = best?.block === block && best.starvation ? best : { starvation: [] };
+  const body = [];
+  let head;
+  const rate = n => `${fmtRate(n)}/min`;
+  // A Sub-Block's name, which selects it.
+  const sbLink = i => {
+    const sb = block.subBlocks[i];
+    if (!sb) return el('span', { textContent: `Sub-Block ${i}` });
+    return el('button', {
+      type: 'button', className: 'link', title: 'Show this Sub-Block',
+      onclick: () => {
+        map?.select({ subBlock: i });
+        map?.show(sb);
+        inspect({ subBlock: i }, block);
+      },
+    }, iconOf(sb.item), el('span', { textContent: `${label(sb.item)} ×${sb.count}` }));
+  };
+  const end = (at, west) => (typeof at === 'number' ? sbLink(at)
+    : el('span', { className: 'train' }, iconOf('locomotive'), el('span', { textContent: `Train (${west ? 'west' : 'east'} edge)` })));
+  const facts = rows => el('dl', { className: 'facts' }, ...rows.filter(Boolean).flatMap(([k, ...v]) => [el('dt', { textContent: k }), el('dd', {}, ...v)]));
+  // A flow: its icon and name, its rate, and how full it runs of `capacity` (a bar).
+  const flow = (name, n, capacity = null, note = '') => {
+    const share = capacity ? Math.min(1, n / capacity) : null;
+    return el('li', { className: 'flow' }, iconOf(name), el('span', { className: 'name', textContent: label(name) }),
+      el('span', { className: 'num', textContent: `${rate(n)}${note}` }),
+      ...(share === null ? [] : [el('span', { className: `bar${share > 0.98 ? ' full' : ''}`, title: `${Math.round(share * 100)}% of ${rate(capacity)}` }, el('i', { style: `width:${(share * 100).toFixed(1)}%` }))]));
+  };
+  const flows = (title, list) => (list.length ? [el('h4', { textContent: title }), el('ul', { className: 'flows' }, ...list)] : []);
+  const short = i => starvation.filter(s => s.subBlock === i);
+  const warn = list => (list.length ? [el('p', { className: 'warn' }, `Short: ${list.map(s => `${label(s.item)} ${fmtRate(s.available)} of ${rate(s.demand)}`).join(', ')}`)] : []);
+  const sbBody = (sb, i, per = 1) => [
+    ...(catalog.recipes[sb.recipe] ? [el('div', { className: 'recipe-line' }, recipeFace(sb.recipe))] : []),
+    ...flows(per === 1 ? 'Takes' : 'Each machine takes', sb.inputs.map(x => flow(x.name, x.rate / per, null, x.fuel ? ' (fuel)' : ''))),
+    ...flows(per === 1 ? 'Makes' : 'Each machine makes', sb.outputs.map(x => flow(x.name, x.rate / per))),
+    ...(sb.modules?.length ? [el('h4', { textContent: 'Modules' }), el('div', { className: 'modules' }, ...sb.modules.map(m => amountIcon(m.name, m.count)))] : []),
+    ...warn(short(i)),
+  ];
+
+  if (hit.subBlock !== undefined) {
+    const i = hit.subBlock, sb = block.subBlocks[i];
+    head = [sb.item, `${label(sb.item)} ×${sb.count}`, `Sub-Block · ${label(sb.building)}`];
+    body.push(facts([
+      ['Makes', rate(sb.rate)],
+      ['Machines', `${sb.count}${sb.copies > 1 ? ` in ${sb.copies} copies` : ''}`],
+      ['Runs at', `${Math.round(100 / (sb.headroom ?? 1))}% of full speed`],
+      ['Takes up', `${sb.w} × ${sb.h} tiles`],
+    ]), ...sbBody(sb, i));
+  } else {
+    const e = hit.entity;
+    const route = hit.route !== null && hit.route !== undefined ? block.routes[hit.route] : null;
+    const sb = block.subBlocks[e.subBlock];
+    switch (e.kind) {
+      case 'building':
+        head = [sb?.item ?? e.recipe, label(sb?.item ?? e.recipe), `${label(e.name)}${sb ? ` · machine ${e.machine + 1} of ${sb.count}` : ''}`];
+        body.push(facts([sb && ['Sub-Block', sbLink(e.subBlock)], e.drop && ['Output', 'drops onto the belt beside it']]));
+        if (sb) body.push(...sbBody(sb, e.subBlock, sb.count));
+        break;
+      case 'inserter': {
+        const clock = clocks?.of.get(e);
+        head = [e.name, label(e.name), e.role === 'output' ? 'Takes products out' : e.role === 'input' ? 'Puts ingredients in' : 'Inserter'];
+        body.push(facts([
+          sb && ['Machine', sbLink(e.subBlock)],
+          e.flow !== undefined && ['Load', `${rate(e.flow)} of ${rate(e.rate)}`],
+          e.vectors && ['Inserter_Config', turnsSideways(e) ? 'turns 90°' : 'drop offset'],
+          clock && ['Clock', `${clockLabel(clock)}${state.clocks[clock] ? ` while ${state.clocks[clock].name} > 0` : ''}`],
+        ]));
+        if (e.moves?.length) body.push(el('h4', { textContent: 'Moves' }), el('div', { className: 'modules' }, ...e.moves.map(m => iconOf(m))));
+        if (e.flow !== undefined && e.rate) body.push(el('span', { className: 'bar wide', title: `${Math.round(100 * e.flow / e.rate)}% busy` }, el('i', { style: `width:${Math.min(100, 100 * e.flow / e.rate).toFixed(1)}%` })));
+        break;
+      }
+      case 'pipe':
+      case 'pipe-to-ground':
+        head = [e.fluid, label(e.fluid), `${label(e.name)}${e.underground ? ` · tunnel ${e.underground === 'input' ? 'entrance' : 'exit'}` : ''}`];
+        if (route) {
+          body.push(...flows('Carries', route.items.map(i => flow(i.item, i.rate))));
+          body.push(facts([
+            ['From', end(route.source, true)],
+            ...route.consumers.map((c, k) => [k ? '' : 'To', sbLink(c)]),
+            route.sink === 'side-output' && [route.consumers.length ? '' : 'To', end('side-output', false)],
+          ]));
+        }
+        break;
+      default:
+        if (route && (e.kind === 'belt' || e.kind === 'underground-belt' || e.kind === 'splitter')) {
+          head = [route.items[0]?.item ?? e.name, route.items.map(i => label(i.item)).join(' + '),
+            `${label(e.name)}${e.underground ? ` · tunnel ${e.underground === 'input' ? 'entrance' : 'exit'}` : ''}`];
+          body.push(...flows('Carries', route.items.map(i => flow(i.item, i.rate, i.capacity))));
+          body.push(facts([
+            e.filter && ['Filter', iconOf(e.filter), el('span', { textContent: ` ${label(e.filter)} only` })],
+            e.priority && ['Priority', `${e.priority} side`],
+            route.loop && ['Feeds back', 'a byproduct to the step taking it'],
+            ['From', route.fedBy !== undefined ? el('span', { textContent: 'a splitter on a belt of ' }, end(block.routes[route.fedBy]?.source, true)) : end(route.source, true)],
+            ...route.consumers.map((c, k) => [k ? '' : 'To', sbLink(c)]),
+            route.sink === 'side-output' && [route.consumers.length ? '' : 'To', end('side-output', false)],
+          ]));
+          break;
+        }
+        head = [e.name, label(e.name), e.kind === 'pole' ? 'Electric pole' : e.kind === 'fixture' ? 'Part of the city block: it stays' : label(e.kind)];
+    }
+  }
+  const [icon, title, subtitle] = head;
+  const art = iconOf(icon);
+  art.classList.add('big');
+  panel.replaceChildren(
+    el('header', { className: 'inspector-head' }, art,
+      el('div', { className: 'titles' }, el('h3', { textContent: title }), el('p', { textContent: subtitle })),
+      el('button', { type: 'button', className: 'icon close', ariaLabel: 'Close', textContent: '×', onclick: () => { map?.select(null); inspect(null, block); } })),
+    el('div', { className: 'inspector-body' }, ...body));
+  panel.hidden = false;
+  panel.scrollTop = 0;
+  // (On a phone the panel is a sheet over the map's bottom: what it shows stays in sight above it.)
+  const box = hit.entity ?? block.subBlocks[hit.subBlock];
+  if (box && matchMedia('(max-width: 860px)').matches) map?.reveal(box, panel.getBoundingClientRect().height + 8);
+}
+
+function fmtRate(n) {
+  return n >= 100 ? Math.round(n).toLocaleString('en') : String(Number(n.toPrecision(3)));
 }
 
 function showStatus(kind, text) {

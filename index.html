@@ -232,6 +232,47 @@
   @keyframes pulse { 50% { transform: scale(.96); opacity: .75; } }
   .empty.busy ol { display: none; }
 
+  /* Inspector: what a tap on the map selected — a panel on the right, a sheet from the bottom on phones. */
+  .inspector { position: absolute; top: 56px; right: 12px; width: min(360px, calc(100% - 24px)); max-height: calc(100% - 68px); overflow-y: auto; overscroll-behavior: contain; z-index: 3;
+    background: rgba(37,35,33,.97); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 18px 40px -18px rgba(10,6,2,.9);
+    animation: inspector-in .22s var(--ease); }
+  @keyframes inspector-in { from { opacity: 0; transform: translateY(8px); } }
+  .inspector-head { position: sticky; top: 0; display: flex; gap: 12px; align-items: center; padding: 12px 12px 10px; background: inherit; border-bottom: 1px solid var(--border-soft); z-index: 1; }
+  .inspector-head .sprite.big { width: 44px; height: 44px; flex: none; background-color: var(--inset); border-radius: 8px; border: 1px solid var(--border); background-size: 36px 36px; background-position: center; }
+  .inspector-head .titles { min-width: 0; flex: 1; }
+  .inspector-head h3 { margin: 0; font-size: 17px; line-height: 1.2; font-weight: 700; letter-spacing: -.005em; overflow-wrap: anywhere; }
+  .inspector-head p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+  .inspector-head .close { align-self: flex-start; }
+  .inspector-body { padding: 4px 14px 16px; }
+  .inspector h4 { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--faint); letter-spacing: .04em; text-transform: uppercase; }
+  .facts { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 12px 0 0; font-size: 14px; }
+  .facts dt { color: var(--muted); }
+  .facts dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+  .flows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .flow { display: grid; grid-template-columns: 28px 1fr auto; grid-template-rows: auto auto; column-gap: 8px; align-items: center; font-size: 14px; }
+  .flow .sprite { width: 28px; height: 28px; grid-row: span 2; }
+  .flow .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .flow .num { color: var(--text); font-weight: 600; }
+  .flow .bar { grid-column: 2 / 4; }
+  .bar { display: block; height: 4px; border-radius: 2px; background: var(--inset); overflow: hidden; margin-top: 3px; }
+  .bar.wide { margin-top: 12px; height: 6px; }
+  .bar i { display: block; height: 100%; background: var(--ok); border-radius: inherit; transition: width .3s var(--ease); }
+  .bar.full i { background: var(--accent); }
+  .recipe-line { margin-top: 12px; padding: 8px; background: var(--inset); border-radius: var(--radius-sm); overflow-x: auto; }
+  .modules { display: flex; flex-wrap: wrap; gap: 6px; }
+  .modules .sprite { width: 28px; height: 28px; }
+  button.link { display: inline-flex; gap: 6px; align-items: center; padding: 2px 8px 2px 3px; background: var(--panel-2); border-radius: var(--radius-sm); font-size: 14px; max-width: 100%; }
+  button.link .sprite, .train .sprite { width: 22px; height: 22px; flex: none; }
+  button.link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .train { display: inline-flex; gap: 6px; align-items: center; }
+  .warn { margin: 12px 0 0; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(224,112,95,.12); color: var(--danger); font-size: 14px; }
+  @media (max-width: 860px) {
+    .inspector { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 58%; border-radius: 14px 14px var(--radius) var(--radius); animation-name: sheet-in; }
+    @keyframes sheet-in { from { opacity: 0; transform: translateY(24px); } }
+    .inspector-head::before { content: ''; position: absolute; top: 5px; left: 50%; width: 36px; height: 4px; margin-left: -18px; border-radius: 2px; background: var(--border); }
+    .inspector-head { padding-top: 16px; }
+    .tooltip { display: none; }
+  }
   @media (max-width: 860px) {
     .app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto 70dvh; height: auto; }
     aside { border-right: none; border-bottom: 1px solid var(--border-soft); overflow: visible; }
@@ -397,6 +438,7 @@
     </div>
     <div class="area" id="area" hidden></div>
     <div class="tooltip" id="tooltip"></div>
+    <aside class="inspector" id="inspector" aria-label="Selected on the map" aria-live="polite" hidden></aside>
     <div class="empty" id="empty">
       <div class="empty-inner">
         <img class="empty-art" data-art="automation" alt="">

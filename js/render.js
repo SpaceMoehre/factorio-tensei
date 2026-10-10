@@ -1,4 +1,6 @@
-// Pan/zoom map of a Compound Block on a <canvas>: drag to pan, wheel to zoom around the cursor.
+// Pan/zoom map of a Compound Block on a <canvas>: drag to pan, wheel or pinch to zoom around the
+// cursor or the fingers, a double tap to zoom in; a tap or click selects what is there (an entity,
+// else the Sub-Block whose box it is in), outlined with its route, and onSelect hears of it.
 const ARROW = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
 const MIN_SCALE = 2, MAX_SCALE = 64;
 
@@ -6,9 +8,9 @@ const MIN_SCALE = 2, MAX_SCALE = 64;
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {any} block
- * @param {{ onHover?: (entity: any, block: any) => void, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null }} [options]
+ * @param {{ onHover?: (entity: any, block: any) => void, onSelect?: (hit: any, block: any) => void, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null }} [options]
  */
-export function createMap(canvas, block, { onHover = () => {}, starving = new Set(), icon = () => null, circuit = null } = {}) {
+export function createMap(canvas, block, { onHover = () => {}, onSelect = () => {}, starving = new Set(), icon = () => null, circuit = null } = {}) {
   const ctx = canvas.getContext('2d');
   // Icons load in the background; the map redraws as each arrives.
   const images = new Map();
@@ -47,6 +49,17 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
   for (const e of [...fixtures, ...block.entities]) {
     for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) byTile.set(`${e.x + dx},${e.y + dy}`, e);
   }
+
+  // The selection: { entity } or { subBlock } (its index), and the route its entity is on.
+  let selected = null;
+  const routeOf = new Map();
+  for (const r of block.routes) for (const p of r.pieces) routeOf.set(p, r.id);
+  const hitAt = (tx, ty) => {
+    const entity = byTile.get(`${tx},${ty}`);
+    if (entity) return { entity, route: entity.route ?? routeOf.get(entity) ?? null };
+    const sb = block.subBlocks.find(b => [b, ...(b.apart ?? [])].some(r => tx >= r.x && ty >= r.y && tx < r.x + r.w && ty < r.y + r.h));
+    return sb ? { subBlock: sb.index ?? block.subBlocks.indexOf(sb) } : null;
+  };
 
   const theme = () => {
     const css = getComputedStyle(canvas);
@@ -144,7 +157,7 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
       if (s >= 3) {
         ctx.fillStyle = starving.has(sb.index) ? t.starve : t.subBlock;
         ctx.font = `${Math.max(10, Math.min(14, s))}px system-ui, sans-serif`;
-        ctx.fillText(`${sb.item} ×${sb.count}`, sx(sb.x), sy(sb.y) - 6);
+        ctx.fillText(`${words(sb.item)} ×${sb.count}`, sx(sb.x), sy(sb.y) - 6);
       }
     }
 
@@ -166,7 +179,7 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
           if (s * e.w >= 40) {
             ctx.fillStyle = t.text;
             ctx.font = `${Math.min(12, s * 0.8)}px system-ui, sans-serif`;
-            ctx.fillText(e.recipe, x + 4, y + 4 + Math.min(12, s * 0.8), w - 8);
+            ctx.fillText(words(e.recipe), x + 4, y + 4 + Math.min(12, s * 0.8), w - 8);
           }
           break;
         case 'belt':
@@ -254,6 +267,39 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
     wire(block.wires ?? [], 'rgba(214, 140, 70, 0.9)', Math.max(1, s * 0.08), 0);
     (circuit?.colors ?? []).forEach((color, k) => wire(circuit.pairs, color === 'red' ? 'rgba(230, 70, 70, 0.85)' : 'rgba(70, 200, 90, 0.85)',
       Math.max(1, s * 0.05), (k - (circuit.colors.length - 1) / 2) * Math.max(1, s * 0.1)));
+
+    // The selection: its route's every piece, then it, outlined in the accent colour.
+    if (selected) {
+      const accent = t.subBlock;
+      const outline = (e, pad, width) => {
+        ctx.strokeStyle = accent;
+        ctx.lineWidth = width;
+        ctx.strokeRect(sx(e.x) - pad, sy(e.y) - pad, e.w * s + 2 * pad, e.h * s + 2 * pad);
+      };
+      if (selected.route !== null && selected.route !== undefined) {
+        ctx.fillStyle = 'rgba(232, 160, 60, 0.28)';
+        for (const p of block.routes[selected.route]?.pieces ?? []) ctx.fillRect(sx(p.x), sy(p.y), p.w * s, p.h * s);
+      }
+      if (selected.entity) {
+        const sb = block.subBlocks[selected.entity.subBlock];
+        if (sb) {
+          ctx.setLineDash([6, 4]);
+          for (const b of [sb, ...(sb.apart ?? [])]) outline(b, 3, 2);
+          ctx.setLineDash([]);
+        }
+        ctx.shadowColor = accent;
+        ctx.shadowBlur = 12;
+        outline(selected.entity, 2, Math.max(2, s * 0.12));
+        ctx.shadowBlur = 0;
+      } else if (selected.subBlock !== undefined) {
+        const sb = block.subBlocks[selected.subBlock];
+        ctx.fillStyle = 'rgba(232, 160, 60, 0.1)';
+        for (const b of [sb, ...(sb.apart ?? [])]) {
+          ctx.fillRect(sx(b.x), sy(b.y), b.w * s, b.h * s);
+          outline(b, 3, 2.5);
+        }
+      }
+    }
   }
 
   function pipeLinks(e, x, y, s) {
@@ -282,33 +328,99 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
     ctx.fill();
   }
 
-  let drag = null;
-  const onDown = e => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); };
-  const onMove = e => {
+  // Pointers down (a pinch: two), how far the gesture moved, and the last tap (a double tap zooms).
+  const pointers = new Map();
+  let drag = null, pinch = null, moved = 0, lastTap = null;
+  const local = e => {
     const r = canvas.getBoundingClientRect();
-    if (drag) {
-      view.x -= (e.clientX - drag.x) / view.scale;
-      view.y -= (e.clientY - drag.y) / view.scale;
-      drag = { x: e.clientX, y: e.clientY };
+    return { x: e.clientX - r.left, y: e.clientY - r.top };
+  };
+  const span = () => {
+    const [a, b] = [...pointers.values()];
+    return { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  };
+  const onDown = e => {
+    canvas.setPointerCapture(e.pointerId);
+    pointers.set(e.pointerId, local(e));
+    if (pointers.size === 1) {
+      drag = local(e);
+      moved = 0;
+    } else if (pointers.size === 2) {
+      pinch = span();
+      moved = Infinity;
+    }
+  };
+  const onMove = e => {
+    const at = local(e);
+    if (pointers.has(e.pointerId)) pointers.set(e.pointerId, at);
+    if (pinch && pointers.size >= 2) {
+      const now = span();
+      view.x -= (now.x - pinch.x) / view.scale;
+      view.y -= (now.y - pinch.y) / view.scale;
+      if (pinch.d > 0) zoomAt(now.x, now.y, now.d / pinch.d);
+      else draw();
+      pinch = now;
+      return;
+    }
+    if (drag && pointers.has(e.pointerId)) {
+      moved += Math.hypot(at.x - drag.x, at.y - drag.y);
+      view.x -= (at.x - drag.x) / view.scale;
+      view.y -= (at.y - drag.y) / view.scale;
+      drag = at;
       draw();
       return;
     }
-    const tx = Math.floor(view.x + (e.clientX - r.left) / view.scale);
-    const ty = Math.floor(view.y + (e.clientY - r.top) / view.scale);
+    if (e.pointerType !== 'mouse') return;
+    const tx = Math.floor(view.x + at.x / view.scale), ty = Math.floor(view.y + at.y / view.scale);
     onHover(byTile.get(`${tx},${ty}`) ?? null, block);
   };
-  const onUp = () => { drag = null; };
+  const onUp = e => {
+    const at = local(e);
+    pointers.delete(e.pointerId);
+    if (pointers.size === 1) {
+      // (The pinch over: the finger left pans on from where it is.)
+      pinch = null;
+      drag = [...pointers.values()][0];
+      return;
+    }
+    if (pointers.size) return;
+    const tap = drag && moved < 8;
+    drag = null;
+    pinch = null;
+    if (!tap) return;
+    // A double tap (or click) zooms in there.
+    const now = performance.now();
+    if (lastTap && now - lastTap.time < 300 && Math.hypot(at.x - lastTap.x, at.y - lastTap.y) < 24) {
+      lastTap = null;
+      zoomAt(at.x, at.y, 2);
+      return;
+    }
+    lastTap = { time: now, x: at.x, y: at.y };
+    const hit = hitAt(Math.floor(view.x + at.x / view.scale), Math.floor(view.y + at.y / view.scale));
+    selected = hit;
+    draw();
+    onSelect(hit && (hit.entity ? { entity: hit.entity, route: hit.route } : hit), block);
+  };
+  const onCancel = e => {
+    pointers.delete(e.pointerId);
+    if (!pointers.size) [drag, pinch] = [null, null];
+  };
   const onWheel = e => {
     e.preventDefault();
     const r = canvas.getBoundingClientRect();
     zoomAt(e.clientX - r.left, e.clientY - r.top, Math.exp(-e.deltaY * 0.0015));
   };
+  // (Safari's own pinch zooms the page, not the map.)
+  const onGesture = e => e.preventDefault();
+  const onLeave = () => onHover(null, block);
   const observer = new ResizeObserver(resize);
   canvas.addEventListener('pointerdown', onDown);
   canvas.addEventListener('pointermove', onMove);
   canvas.addEventListener('pointerup', onUp);
-  canvas.addEventListener('pointerleave', () => onHover(null, block));
+  canvas.addEventListener('pointercancel', onCancel);
+  canvas.addEventListener('pointerleave', onLeave);
   canvas.addEventListener('wheel', onWheel, { passive: false });
+  canvas.addEventListener('gesturestart', onGesture);
   observer.observe(canvas);
   resize();
   fit();
@@ -324,7 +436,31 @@ export function createMap(canvas, block, { onHover = () => {}, starving = new Se
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
+      canvas.removeEventListener('pointercancel', onCancel);
+      canvas.removeEventListener('pointerleave', onLeave);
       canvas.removeEventListener('wheel', onWheel);
+      canvas.removeEventListener('gesturestart', onGesture);
+    },
+    // Selects `hit` ({ entity, route } or { subBlock }; null: nothing), as a tap would, quietly.
+    select(hit) {
+      selected = hit;
+      draw();
+    },
+    // Pans the map so a tile box stands clear of the bottom `inset` pixels (a sheet over the map),
+    // where it is behind them.
+    reveal({ y, h }, inset) {
+      const { height } = canvas.getBoundingClientRect();
+      const bottom = (y + h - view.y) * view.scale, room = height - inset - 12;
+      if (bottom <= room) return;
+      view.y += Math.min(bottom - room, (y - view.y) * view.scale - 12) / view.scale;
+      draw();
+    },
+    // Centres the map on a tile box.
+    show({ x, y, w, h }) {
+      const { width, height } = canvas.getBoundingClientRect();
+      view.x = x + w / 2 - width / 2 / view.scale;
+      view.y = y + h / 2 - height / 2 / view.scale;
+      draw();
     },
   };
 }
@@ -350,6 +486,12 @@ export function turnsSideways(e) {
 function directionOf({ x, y }) {
   if (Math.abs(x) > Math.abs(y)) return x > 0 ? 4 : 12;
   return y > 0 ? 8 : 0;
+}
+
+// A name as people read it: "iron-pulp-01" is "Iron pulp 01".
+function words(name) {
+  const text = String(name ?? '').replace(/[-_]+/g, ' ').trim();
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 function clamp(v, lo, hi) {
