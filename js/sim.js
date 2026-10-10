@@ -9,11 +9,13 @@ export function simulate(block) {
   const starvation = [];
   const demandOf = (route, sb, item) => (block.subBlocks[sb].inputs.find(x => x.name === item)?.rate ?? 0) * (route.share?.[sb] ?? 1);
   for (const route of block.routes) {
-    const available = laneShares(route.items);
+    // (A Supplied Item's belt side-loads what it brings onto it, a lane with room for it.)
+    const available = laneShares(route.items).map((a, i) => a + (route.items[i].joined ?? 0));
     route.items.forEach(({ item, rate }, i) => {
       let left = available[i];
       const take = (subBlock, demand) => {
-        if (demand > left + EPSILON) starvation.push({ route: route.id, subBlock, item, demand, available: left });
+        // (Rates rounded to 1e-9 a minute along a chain of Byproduct Uses: relative.)
+        if (demand > left + EPSILON * Math.max(1, demand)) starvation.push({ route: route.id, subBlock, item, demand, available: left });
         left = Math.max(0, left - demand);
       };
       const fed = (route.taps ?? []).map(id => block.routes[id]).reduce((sum, r) => sum + r.consumers.reduce((t, sb) => t + demandOf(r, sb, item), 0), 0);

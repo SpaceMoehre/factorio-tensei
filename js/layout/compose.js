@@ -72,7 +72,8 @@ export function compose(ctx, prepared, positions, layout) {
   });
   // In a City Block the area inside its Buffer, its Fixtures standing in it. Elsewhere, copies
   // whose pipes stop at the block's west (east) edge are joined there: room for a trunk per fluid
-  // to join, three columns each so trunks of two fluids can pass each other.
+  // to join, three columns each so trunks of two fluids can pass each other. (So is a Supplied
+  // Item's pipe there, even from one copy: it turns back to join its network.)
   const { site = null } = ctx;
   const area = site ? { ...site.inner } : extentOf([...placed, ...(positions.bounds ? [positions.bounds] : [])], layout.margin);
   // Standing on its own, a row along the top for each Recipe Loop's feedback to run back west
@@ -84,7 +85,7 @@ export function compose(ctx, prepared, positions, layout) {
   }
   for (const side of site ? [] : ['W', 'E']) {
     const edge = side === 'W' ? area.x : area.x + area.w - 1;
-    const trunks = routes.filter(r => r.kind === 'pipe' && r.stubs.length > 1 && r.stubs.some(st => st.side === side
+    const trunks = routes.filter(r => r.kind === 'pipe' && (r.stubs.length > 1 || r.into !== undefined) && r.stubs.some(st => st.side === side
       && placed[st.inst.index].x + st.x === edge)).length;
     if (!trunks) continue;
     if (side === 'W') area.x -= 3 * trunks;
@@ -161,7 +162,7 @@ export function compose(ctx, prepared, positions, layout) {
         // Fan-out's line leaves them.)
         const own = trim(slot.part, {
           head: k === 0 && route.source !== 'side-input' && route.fedFrom === undefined,
-          tail: k === route.slots.length - 1 && route.sink !== 'side-output' && !route.fanOut,
+          tail: k === route.slots.length - 1 && route.sink !== 'side-output' && !route.fanOut && !route.supplyEnd,
         }, belts.belt)
           .map(p => ({ ...p, x: p.x + ox, y: p.y + oy, route: route.id, out: p.out === null ? null : shift(p.out, ox, oy) }));
         slot.pieces = own;
@@ -205,7 +206,7 @@ export function compose(ctx, prepared, positions, layout) {
         const first = slot.pieces[0], last = slot.pieces.at(-1);
         const [ex, ey] = VEC[slot.part.dir ?? E];
         if (k > 0 || route.source === 'side-input' || route.fedFrom !== undefined) hold(grid, first.x - ex, first.y - ey, route.id);
-        if (k < route.slots.length - 1 || route.sink === 'side-output' || route.fanOut) {
+        if (k < route.slots.length - 1 || route.sink === 'side-output' || route.fanOut || route.supplyEnd) {
           const [dx, dy] = VEC[last.travel];
           hold(grid, last.x + dx, last.y + dy, route.id);
         }
@@ -238,14 +239,20 @@ export function compose(ctx, prepared, positions, layout) {
         if (route.tapOf !== undefined && k === 0 && !layout.plain) return;
         tasks.push({ route, slot: k, ...flags(route, k) });
       });
-      if (route.sink === 'side-output' && !route.fanOut) tasks.push({ route, slot: route.slots.length, ...flags(route, route.slots.length) });
+      if ((route.sink === 'side-output' || route.supplyEnd) && !route.fanOut) tasks.push({ route, slot: route.slots.length, ...flags(route, route.slots.length) });
       // A Fan-out from the producers: their line, after their belt, and every consumer's belt.
       if (route.fanOut) tasks.push({ route, slot: route.slots.length, fanOut: route.fanOut });
     }
     return tasks;
   };
-  // (The link after a producer's belt's producers: through its taps, or its gatherer's splitter.)
-  const flags = (route, k) => (layout.plain ? {} : route.taps && k === route.tapAt ? { taps: true } : route.gather !== undefined && k === route.gatherAt ? { gather: true } : {});
+  // (The link after a producer's belt's producers: through its taps, or its gatherer's splitter;
+  // a Supplied Item's, even plain: nothing else brings it. A belt of only a Supplied Item: its
+  // last link joins the belt it is supplied to.)
+  const flags = (route, k) => {
+    if (route.supplyEnd && k === route.slots.length) return { supply: true };
+    if (route.gather !== undefined && k === route.gatherAt && (!layout.plain || routes[route.gather].into !== undefined)) return { gather: true };
+    return layout.plain ? {} : route.taps && k === route.tapAt ? { taps: true } : {};
+  };
   const endsOf = ({ route, slot: k }) => {
     if (k === route.slots.length) {
       const last = route.slots.at(-1).pieces.at(-1);
@@ -270,8 +277,8 @@ export function compose(ctx, prepared, positions, layout) {
     // A Recipe Loop's feedback runs back across the block (along its row on top), after every
     // other link.
     if (task.taps) return [5, 0];
-    // A gatherer joins its feedback belt: after it.
-    if (task.gather) return [5, 1];
+    // A gatherer joins its feedback belt: after it; a Supplied Item's belt, the belt it joins.
+    if (task.gather || task.supply) return [5, 1];
     // A Fan-out from producers lays its line before the links between Sub-Blocks: the longest first.
     if (task.fanOut) return [0.5, -task.fanOut.length];
     if (k > 0 && k < route.slots.length && stacked(route.slots[k].inst, route.slots[k - 1].inst)) {
@@ -325,8 +332,9 @@ export function compose(ctx, prepared, positions, layout) {
     const draws = drawn && { routes: new Set([drawn.route]), starts: drawn.starts, only: drawn.only };
     const source = route.source === 'side-input' && (!reachesWest || Boolean(draws?.only));
     const sink = route.sink === 'side-output' && !reachesEast;
-    // (Its network's pipes routed before it: it joins them, from a free tile beside one.)
-    const peers = [...networks.keys()].filter(id => id !== route.id && networks.get(id) === networks.get(route.id) && (piped.has(id) || builtPipes.has(id)));
+    // (Its network's pipes routed before it: it joins them, from a free tile beside one. Not a
+    // Supplied Item's that found no way to it: those go on to the train.)
+    const peers = [...networks.keys()].filter(id => id !== route.id && !unjoined.has(id) && networks.get(id) === networks.get(route.id) && (piped.has(id) || builtPipes.has(id)));
     const starts = [];
     for (const p of peers.flatMap(id => builtPipes.get(id) ?? pieces[id]).filter(p => p.kind === 'pipe')) {
       for (const [d, [dx, dy]] of Object.entries(VEC)) {
@@ -334,6 +342,21 @@ export function compose(ctx, prepared, positions, layout) {
       }
     }
     const joins = starts.length ? { routes: new Set(peers), starts } : null;
+    // A Supplied Item's pipe joins the one it is supplied to; where it finds no way, it goes on to
+    // the train (its network's consumers short of it).
+    if (route.into !== undefined) {
+      const spec = { id: route.id, fluid: route.fluid, terminals, source: false, sink: false, mustJoin: true, joins };
+      if (joins && terminals.length) {
+        try {
+          return routePipe(grid, spec, pipes);
+        } catch (e) {
+          if (!(e instanceof RoutingError)) throw e;
+        }
+      }
+      unjoined.add(route.id);
+      if (!terminals.length || reachesEast) return [];
+      return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source: false, sink: true }, pipes);
+    }
     if (terminals.length < 2 && !source && !sink && !joins) return [];
     if (!terminals.length) throw new RoutingError(`${route.fluid}: no stub to join`);
     return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...(draws ? { draws } : {}), ...(joins ? { joins } : {}) }, pipes);
@@ -363,6 +386,9 @@ export function compose(ctx, prepared, positions, layout) {
   // Pipe routes of one fluid joined into one network (pipeNetworks), and those routed so far.
   const networks = pipeNetworks(routes, site?.pipes);
   let piped = new Set();
+  // Supplied Items' pipes and belts that found no way to the pipe or belt they are supplied to:
+  // on to the train instead.
+  let unjoined = new Set();
   // (In an Annex's City Block, the pipes built before it, by route.)
   const builtPipes = new Map();
   for (const f of site?.fixtures ?? []) if (f.network !== undefined) builtPipes.set(f.route, [...(builtPipes.get(f.route) ?? []), f]);
@@ -386,88 +412,125 @@ export function compose(ctx, prepared, positions, layout) {
     gathered = new Set();
     spilled = new Map();
     piped = new Set();
+    unjoined = new Set();
     let failed = null;
-    // (Tasks routed ahead of their turn: a feedback's splitters, before a gatherer joining it.)
+    // (Tasks routed ahead of their turn: a feedback's splitters, before a gatherer joining it; a
+    // belt's links up to where a Supplied Item joins it, and a pipe's a Supplied Item's joins.)
     const done = new Set();
+    const put = (id, k, leg) => {
+      if (!links.has(id)) links.set(id, new Map());
+      links.get(id).set(k, leg);
+    };
     // Without room for the splitters, the link on its own and each feedback by train.
     const runTaps = task => {
       const feeds = task.route.taps.map(id => routes[id]);
       const legs = routeTaps(grid, task, feeds) ?? [[task.route.id, task.slot, link(grid, task)], ...feeds.map(r => [r.id, 0, link(grid, { route: r, slot: 0 })])];
-      for (const [id, k, leg] of legs) {
-        if (!links.has(id)) links.set(id, new Map());
-        links.get(id).set(k, leg);
+      for (const [id, k, leg] of legs) put(id, k, leg);
+    };
+    // The tasks routing a belt's links into its slots up to `at`.
+    const upTo = (r, at) => order.filter(t => (t.route?.id === r.id && t.slot <= at) || t.fan?.includes(r.id) || t.fanOut?.includes(r.id)
+      || (t.split && t.route.splitter.with === r.id && r.splitter.at <= at));
+    const run = task => {
+      if (done.has(task)) return;
+      done.add(task);
+      try {
+        runTask(task);
+      } catch (e) {
+        // (The task that failed, though another routed it ahead of its turn.)
+        if (e instanceof RoutingError && !e.task) e.task = task;
+        throw e;
       }
+    };
+    const runTask = task => {
+      if (task.pipe !== undefined) {
+        const into = routes[task.pipe].into;
+        if (into !== undefined) run(order.find(t => t.pipe === into));
+        pieces[task.pipe].push(...routeFluid(grid, routes[task.pipe], pieces));
+        piped.add(task.pipe);
+        return;
+      }
+      if (task.split) {
+        const legs = routeSplit(grid, task.route, routes[task.route.splitter.with]);
+        for (const [id, leg] of legs) put(id, routes[id].splitter.at, leg);
+        return;
+      }
+      if (task.fan) {
+        for (const [id, leg] of fan(grid, task.fan.map(id => routes[id]))) put(id, 0, leg);
+        return;
+      }
+      if (task.fanOut) {
+        // (In a City Block its line keeps off the west edge's column, where the Side Inputs come in.)
+        const kept = [];
+        for (let y = area.y; site && y < area.y + area.h; y++) {
+          if (grid.at(area.x, y) || grid.holder(area.x, y) !== undefined) continue;
+          grid.reserve(area.x, y, -1);
+          kept.push(y);
+        }
+        try {
+          for (const [id, leg] of fanFrom(grid, task)) put(id, id === task.route.id ? task.slot : 0, leg);
+        } finally {
+          for (const y of kept) if (grid.holder(area.x, y) === -1) grid.unreserve(area.x, y);
+        }
+        return;
+      }
+      if (task.supply) {
+        // A belt of only a Supplied Item: its last link side-loads onto the belt it is supplied
+        // to, ahead of the consumer taking it (that belt's links up to there first).
+        // Where it finds no way, on to the train (that consumer short of it).
+        const target = routes[task.route.into];
+        for (const t of upTo(target, task.route.at)) run(t);
+        const joins = joinsOf(target, task.route.at, links);
+        const last = task.route.slots.at(-1).pieces.at(-1);
+        const [dx, dy] = VEC[last.travel];
+        const starts = [{ x: last.x + dx, y: last.y + dy, a: last.travel }];
+        const saved = grid.snapshot({ holds: true });
+        try {
+          if (joins.size) {
+            put(task.route.id, task.slot, routeLink(grid, { id: task.route.id, starts, goal: 'join', joins, most: 5 * JOIN_STATES }, belts));
+            return;
+          }
+        } catch (e) {
+          if (!(e instanceof RoutingError)) throw e;
+          grid.restore(saved);
+        }
+        unjoined.add(task.route.id);
+        put(task.route.id, task.slot, last.x === area.x + area.w - 1 && last.travel === E ? [] : routeLink(grid, { id: task.route.id, starts, goal: 'east' }, belts));
+        return;
+      }
+      if (task.gather) {
+        // Its feedback taken off another belt: without room for its splitter or a way to that
+        // feedback, the feedback would starve (the layout routed again: in the end plain, every
+        // feedback by train). Its feedback by train: the link on its own. (Its feedback's
+        // splitter first, where this comes before it.) A Supplied Item's: nothing else brings it
+        // (the belt it joins, up to where, first).
+        const gatherer = routes[task.route.gather];
+        if (gatherer.into !== undefined) for (const t of upTo(routes[gatherer.into], gatherer.at)) run(t);
+        else {
+          const tapping = order.find(t => t.taps && t.route.id === routes[gatherer.feed].tapOf);
+          if (tapping) run(tapping);
+        }
+        const legs = routeGather(grid, task, links);
+        // (A Supplied Item's on a belt to the train: on with it, that consumer short of it.)
+        if (legs === null && (gatherer.into !== undefined ? task.route.sink !== 'side-output' : tapped.has(gatherer.feed))) {
+          throw new RoutingError(`belt ${task.route.id}: no way to ${gatherer.into !== undefined ? `bring its ${gatherer.items[0].item} to belt ${gatherer.into}` : `gather its ${gatherer.items[0].item} into its feedback`}`);
+        }
+        for (const [id, k, leg] of legs ?? [[task.route.id, task.slot, link(grid, task)]]) put(id, k, leg);
+        return;
+      }
+      if (task.taps) {
+        runTaps(task);
+        return;
+      }
+      put(task.route.id, task.slot, link(grid, task));
     };
     for (const task of order) {
       // A search out of time gives up on the layout rather than route on.
       if (layout.until && layout.until()) throw new RoutingError('out of time routing the links');
       try {
-        if (task.pipe !== undefined) {
-          pieces[task.pipe].push(...routeFluid(grid, routes[task.pipe], pieces));
-          piped.add(task.pipe);
-          continue;
-        }
-        if (task.split) {
-          const legs = routeSplit(grid, task.route, routes[task.route.splitter.with]);
-          for (const [id, leg] of legs) {
-            if (!links.has(id)) links.set(id, new Map());
-            links.get(id).set(routes[id].splitter.at, leg);
-          }
-          continue;
-        }
-        if (task.fan) {
-          for (const [id, leg] of fan(grid, task.fan.map(id => routes[id]))) {
-            if (!links.has(id)) links.set(id, new Map());
-            links.get(id).set(0, leg);
-          }
-          continue;
-        }
-        if (task.fanOut) {
-          // (In a City Block its line keeps off the west edge's column, where the Side Inputs come in.)
-          const kept = [];
-          for (let y = area.y; site && y < area.y + area.h; y++) {
-            if (grid.at(area.x, y) || grid.holder(area.x, y) !== undefined) continue;
-            grid.reserve(area.x, y, -1);
-            kept.push(y);
-          }
-          try {
-            for (const [id, leg] of fanFrom(grid, task)) {
-              if (!links.has(id)) links.set(id, new Map());
-              links.get(id).set(id === task.route.id ? task.slot : 0, leg);
-            }
-          } finally {
-            for (const y of kept) if (grid.holder(area.x, y) === -1) grid.unreserve(area.x, y);
-          }
-          continue;
-        }
-        if (task.gather) {
-          // Its feedback taken off another belt: without room for its splitter or a way to that
-          // feedback, the feedback would starve (the layout routed again: in the end plain, every
-          // feedback by train). Its feedback by train: the link on its own. (Its feedback's
-          // splitter first, where this comes before it.)
-          const feed = routes[routes[task.route.gather].feed];
-          const tapping = order.find(t => t.taps && t.route.id === feed.tapOf);
-          if (tapping && !done.has(tapping)) {
-            done.add(tapping);
-            runTaps(tapping);
-          }
-          const legs = routeGather(grid, task, links);
-          if (legs === null && tapped.has(routes[task.route.gather].feed)) throw new RoutingError(`belt ${task.route.id}: no way to gather its ${routes[task.route.gather].items[0].item} into its feedback`);
-          for (const [id, k, leg] of legs ?? [[task.route.id, task.slot, link(grid, task)]]) {
-            if (!links.has(id)) links.set(id, new Map());
-            links.get(id).set(k, leg);
-          }
-          continue;
-        }
-        if (task.taps) {
-          if (!done.has(task)) runTaps(task);
-          continue;
-        }
-        if (!links.has(task.route.id)) links.set(task.route.id, new Map());
-        links.get(task.route.id).set(task.slot, link(grid, task));
+        run(task);
       } catch (e) {
         if (!(e instanceof RoutingError)) throw e;
-        failed = { task, error: e };
+        failed = { task: e.task ?? task, error: e };
         break;
       }
     }
@@ -518,27 +581,38 @@ export function compose(ctx, prepared, positions, layout) {
       const first = slot.pieces[0], last = slot.pieces.at(-1);
       const [ex, ey] = VEC[slot.part.dir ?? E], [dx, dy] = VEC[last.travel];
       if (j !== k && (j > 0 || route.source === 'side-input' || route.fedFrom !== undefined)) out.add(key(first.x - ex, first.y - ey));
-      if (j !== k - 1 && (j < route.slots.length - 1 || route.sink === 'side-output' || route.fanOut)) out.add(key(last.x + dx, last.y + dy));
+      if (j !== k - 1 && (j < route.slots.length - 1 || route.sink === 'side-output' || route.fanOut || route.supplyEnd)) out.add(key(last.x + dx, last.y + dy));
     });
     return out;
   }
 
+  // Where a belt may join `target` (side-loading onto it): beside its straight belts, heading into
+  // their side; with `at`, those of its links after its producers up to its slot `at`.
+  function joinsOf(target, at, links) {
+    const legs = at === undefined ? [[...(links.get(target.id)?.values() ?? [])].flat()]
+      : [...(links.get(target.id) ?? new Map())].filter(([k]) => k <= at && !target.slots.slice(k).some(slot => slot.inst.step === target.source)).map(([, leg]) => leg);
+    const joins = new Set();
+    for (const leg of legs) {
+      const belts = leg.filter(p => p.kind === 'belt');
+      belts.forEach((p, k) => {
+        if (k > 0 && belts[k - 1].travel === p.travel) for (const a of [turnRight(p.travel), turnLeft(p.travel)]) joins.add(`${p.x},${p.y},${a}`);
+      });
+    }
+    return joins;
+  }
+
   // A gatherer (task.gather): the producer's other output belt's link after its producers runs
   // through a splitter a few tiles on, filtering the byproduct off to its side (priority to it),
-  // whose belt side-loads it onto the feedback belt; the rest goes on. Returns [routeId, slot,
-  // pieces] for the link and the gatherer; null where none finds a way.
+  // whose belt side-loads it onto the feedback belt (a Supplied Item's: onto the belt it is
+  // supplied to, ahead of its consumer); the rest goes on. Returns [routeId, slot, pieces] for
+  // the link and the gatherer; null where none finds a way.
   function routeGather(grid, task, links) {
     const { route } = task;
     const ends = endsOf(task);
-    const gatherer = routes[route.gather], feed = routes[gatherer.feed];
-    if (!ends || !tapped.has(feed.id)) return null;
+    const gatherer = routes[route.gather];
+    if (!ends || (gatherer.into === undefined && !tapped.has(gatherer.feed))) return null;
     const { item } = gatherer.items[0];
-    // Beside the feedback's straight belts, heading into their side.
-    const legs = [...(links.get(feed.id)?.values() ?? [])].flat().filter(p => p.kind === 'belt');
-    const joins = new Set();
-    legs.forEach((p, k) => {
-      if (k > 0 && legs[k - 1].travel === p.travel) for (const a of [turnRight(p.travel), turnLeft(p.travel)]) joins.add(`${p.x},${p.y},${a}`);
-    });
+    const joins = gatherer.into !== undefined ? joinsOf(routes[gatherer.into], gatherer.at, links) : joinsOf(routes[gatherer.feed], undefined, links);
     if (!joins.size) return null;
     const free = (x, y, id) => grid.inBounds(x, y) && !grid.at(x, y) && [undefined, id].includes(grid.holder(x, y));
     const from = ends.starts[0];
@@ -1151,23 +1225,32 @@ export function compose(ctx, prepared, positions, layout) {
 
   function finish(grid, entities, pieces) {
     const result = routes.map(r => {
-      const { slots, stubs, splitter, fan, taps, tapAt, tapOf, gather, gatherAt, feed, ...rest } = r;
+      const { slots, stubs, splitter, fan, taps, tapAt, tapOf, gather, gatherAt, feed, into, at, supplyEnd, ...rest } = r;
       // A Recipe Loop's feedback fed from its splitter (and what gatherers bring it), else by train
       // (all a belt brings); a gatherer's output belt feeds it too.
-      const fed = [...taps?.filter(id => tapped.has(id)) ?? [], ...(gathered.has(gather) ? [routes[gather].feed] : [])];
+      const fed = [...taps?.filter(id => tapped.has(id)) ?? [], ...(gathered.has(gather) && routes[gather].feed !== undefined ? [routes[gather].feed] : [])];
       const brought = routes.filter(g => g.feed === r.id && !gathered.has(g.id)).reduce((sum, g) => sum + g.items[0].rate, 0);
       const loop = tapOf === undefined ? {} : tapped.has(r.id) ? { fedBy: tapOf, items: r.items.map(i => ({ ...i, supply: Math.max(0, i.supply - brought) })) }
         : { items: r.items.map(i => ({ ...i, supply: i.capacity })) };
-      // (A gatherer: from its splitter, side-loading onto its feedback belt; one not routed, none.)
-      const gatherer = feed === undefined ? {} : gathered.has(r.id) ? { fedBy: routes.find(o => o.gather === r.id).id, joins: feed } : { dropped: true };
+      // (A gatherer: from its splitter, side-loading onto its feedback belt, or a Supplied Item's
+      // onto the belt it is supplied to; one not routed, none. A belt of only a Supplied Item
+      // side-loads onto it itself.)
+      const joining = r.kind === 'pipe' ? (unjoined.has(r.id) ? { sink: 'side-output' } : {}) : supplyEnd ? (unjoined.has(r.id) ? { sink: 'side-output' } : { joins: into })
+        : feed === undefined && into === undefined ? {} : gathered.has(r.id) ? { fedBy: routes.find(o => o.gather === r.id).id, joins: feed ?? into } : { dropped: true };
+      // (What Supplied Items that found no way would have brought it: not there.)
+      const lost = routes.filter(o => o.into === r.id && (unjoined.has(o.id) || (o.kind === 'belt' && !o.supplyEnd && !gathered.has(o.id))))
+        .reduce((sum, o) => sum + o.items.reduce((t, i) => t + i.rate, 0), 0);
+      const short = lost > 0 ? { items: r.items.map(i => (r.kind === 'pipe' ? { ...i, rate: i.rate - lost, supply: i.supply - lost }
+        : i.joined ? { ...i, rate: i.rate - lost, joined: Math.max(0, i.joined - lost) } : i)) } : {};
       return {
         ...rest,
         ...(balanced.has(r.id) ? { items: splitter.items, balancedWith: splitter.with } : {}),
         ...(fanned.get(r.id) ?? {}),
         ...loop,
         ...(fed.length ? { taps: fed } : {}),
-        ...gatherer,
-        ...(networks.has(r.id) ? { network: networks.get(r.id) } : {}),
+        ...joining,
+        ...short,
+        ...(networks.has(r.id) && !unjoined.has(r.id) ? { network: networks.get(r.id) } : {}),
         pieces: pieces[r.id],
       };
     });
@@ -1238,6 +1321,8 @@ export const stacked = (a, b) => a.step === b.step && !a.detached && !b.detached
 function groupRoutes(ctx, instances, laneCapacity) {
   const { plan } = ctx;
   const routes = [];
+  // Per producer's route, its Supplied Items and the consumer slot each joins before.
+  const suppliedAt = new Map();
   // A Sub-Block's slots of a route, snake by snake: each of its module's parts through every
   // copy in turn (the copies' belts chain part to same part).
   const snakesOf = (step, baseId) => {
@@ -1320,7 +1405,12 @@ function groupRoutes(ctx, instances, laneCapacity) {
     const total = products.reduce((sum, o) => sum + o.rate, 0);
     const production = slot => total * shareOf(slot);
     const perMachine = total / plan[base.source].count;
-    const wants = run => run.reduce((sum, s) => sum + base.items.reduce((t, i) => t + flowOf(s.inst.step, i.item, 'input') * shareOf(s), 0), 0);
+    // (A Supplied Item joins the belt into the first consumer taking it: that belt's run takes so
+    // much less from the producers.)
+    const supplied = (base.supplied ?? []).map(s => ({ ...s, slot: consumers.find(c => plan[c.inst.step].inputs.some(x => x.name === s.item)) })).filter(s => s.slot);
+    if (supplied.length) suppliedAt.set(base.id, supplied);
+    const wants = run => Math.max(0, run.reduce((sum, s) => sum + base.items.reduce((t, i) => t + flowOf(s.inst.step, i.item, 'input') * shareOf(s), 0), 0)
+      - supplied.filter(s => run.includes(s.slot)).reduce((sum, s) => sum + s.rate, 0));
     // Every producer machine of every copy, at its full rate (Path Flow).
     const full = perMachine * (plan[base.source].headroom ?? 1);
     const machineKey = (s, d) => `${s.inst.index}:${d.machine}`;
@@ -1329,7 +1419,9 @@ function groupRoutes(ctx, instances, laneCapacity) {
     // (null); a belt merging into another, nothing of its own.
     // (With what its consumers take, the belt brings what rides along with it in step: a Recycled
     // Byproduct on its way to its feedback's splitter, Py sodium hydroxide's limestone.)
-    const along = base.sorted ? 1 : base.items.reduce((sum, i) => sum + i.rate, 0)
+    // (What a Byproduct Use supplies leaves its belt right after its producers: none of it along.)
+    const supplying = new Set((base.supplies ?? []).map(s => s.item));
+    const along = base.sorted ? 1 : base.items.filter(i => !supplying.has(i.item)).reduce((sum, i) => sum + i.rate, 0)
       / Math.max(1e-9, base.items.filter(i => base.consumers.some(step => plan[step].inputs.some(x => x.name === i.item))).reduce((sum, i) => sum + i.rate, 0));
     const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) ? wants(g.consumers) * along : null);
     // What each belt of an option delivers: its producers' machines through its lanes, joined by
@@ -1345,7 +1437,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
     const needOf = option => option.reduce((sum, g) => sum + (wantOf(g) ?? 0), 0);
     // The one item of a route none of its consumers takes (its other items all theirs), or null.
     const byproductOf = route => {
-      const taken = new Set(route.consumers.flatMap(c => plan[c].inputs.map(x => x.name)));
+      const taken = new Set([...route.consumers.flatMap(c => plan[c].inputs.map(x => x.name)), ...supplying]);
       const left = route.items.filter(i => !taken.has(i.item));
       return left.length === 1 && left.length < route.items.length ? left[0].item : null;
     };
@@ -1671,7 +1763,52 @@ function groupRoutes(ctx, instances, laneCapacity) {
       if (g.pair !== undefined && g.pair > j) join(g.pair, groups[g.pair].producers.length);
     });
   }
+  supplyJoins(ctx, routes, suppliedAt, laneCapacity);
   return routes;
+}
+
+// Supplied Items (routes.js): each belt of a Byproduct Use's carrying one sends it to the
+// producer's belt into the first consumer taking it (that belt's item `joined` it; `supplied`:
+// [{ item, rate, at: that consumer's slot }]), side-loading onto it ahead of that consumer (`into`,
+// `at`): through a filter splitter after its producers onto a belt of its own (a gatherer's,
+// `gather`), where the rest goes on to its consumers or the train; else its own belt
+// (`supplyEnd`). A pipe of one joins the producer's network (`into`: its route).
+function supplyJoins(ctx, routes, suppliedAt, laneCapacity) {
+  for (const r of routes) {
+    delete r.supplied;
+    delete r.supplies;
+    if (r.kind === 'pipe' && r.into !== undefined) r.into = routes.find(o => o.kind === 'pipe' && o.base === r.into).id;
+  }
+  for (const base of ctx.routes.filter(r => r.kind === 'belt' && r.supplies)) {
+    for (const { item, into } of base.supplies) {
+      const producer = ctx.routes.find(r => r.kind === 'belt' && r.source === into);
+      const s = suppliedAt.get(producer?.id)?.find(s => s.item === item);
+      const target = s && routes.find(r => r.kind === 'belt' && r.base === producer.id && r.slots.some(x => x.inst === s.slot.inst && x.part === s.slot.part));
+      if (!target) continue;
+      const at = target.slots.findIndex(x => x.inst === s.slot.inst && x.part === s.slot.part);
+      let brought = 0;
+      for (const r of routes.filter(r => r.kind === 'belt' && r.base === base.id && r.source === base.source)) {
+        const rate = r.items.find(i => i.item === item)?.rate ?? 0;
+        if (rate < 1e-9 || r.splitter || r.fanOut || r.taps || r.gather !== undefined) continue;
+        if (!r.consumers.length && r.sink !== 'side-output' && r.items.every(i => i.item === item || i.rate < 1e-9)) {
+          Object.assign(r, { supplyEnd: true, into: target.id, at });
+        } else {
+          const branch = {
+            id: routes.length, kind: 'belt', source: 'side-input', sink: null, base: r.id, bases: [r.id], consumers: [], servesRows: {}, share: {}, slots: [],
+            items: [{ item, rate, supply: rate, capacity: laneCapacity }], into: target.id, at,
+          };
+          routes.push(branch);
+          const k = r.slots.findIndex(slot => slot.inst.step !== r.source);
+          r.gather = branch.id;
+          r.gatherAt = k < 0 ? r.slots.length : k;
+        }
+        brought += rate;
+      }
+      if (brought < 1e-9) continue;
+      target.items = target.items.map(i => (i.item === item ? { ...i, rate: i.rate + brought, joined: (i.joined ?? 0) + brought } : i));
+      target.supplied = [...target.supplied ?? [], { item, rate: brought, at }];
+    }
+  }
 }
 
 // A Recipe Loop's feedback belts, each fed from one of its producer's output belts (no splitter
@@ -1722,14 +1859,16 @@ function tapLoop(routes, feeds, base) {
 // the others (a pipe to the train would draw off what the others' consumers take), never a
 // Sub-Block's input of it with its output (a recipe's input and output of one fluid stay apart).
 // In an Annex's City Block, those of the pipes built before it (`built`: each its network's
-// already) first. Per route id, its network's (its first route's id, a built one's own), for
-// those of two routes or more.
+// already) first. A Supplied Item's pipe joins the network of the one it is supplied to (`into`).
+// Per route id, its network's (its first route's id, a built one's own), for those of two routes
+// or more.
 export function pipeNetworks(routes, built = []) {
   const groups = [];
   for (const r of [...built, ...routes.filter(r => r.kind === 'pipe')]) {
     const makes = r.source === 'side-input' || r.source === undefined ? [] : [r.source];
     const sink = r.sink === 'side-output';
     let g = r.network !== undefined ? groups.find(g => g.key === r.network)
+      : r.into !== undefined ? groups.find(g => g.ids.includes(r.into))
       : groups.find(g => g.fluid === r.fluid && g.sink === sink && !makes.some(i => g.takes.has(i)) && !r.consumers.some(i => g.makes.has(i)));
     if (!g) groups.push(g = { key: r.network ?? r.id, fluid: r.fluid, sink, ids: [], makes: new Set(), takes: new Set() });
     g.ids.push(r.id);

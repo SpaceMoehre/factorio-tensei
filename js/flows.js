@@ -3,7 +3,10 @@
 // those it takes from) takes from, or by its producer itself — is its feedback: fed back from the
 // producer's output (an item; a fluid comes by train), not part of the Dependency Order.
 // A Byproduct Use's Sub-Block (sb.use) makes its item besides: it feeds only Byproduct Uses of
-// its own (sb.from), what else it makes leaving by train.
+// its own (sb.from) and the Sub-Blocks taking it from it (a Recycled Byproduct), and what it
+// makes of an item another Sub-Block makes joins that one's on its way to its consumers
+// (sb.joins: a Supplied Item; `joined`: { from, into, item, type, rate }), what else it makes
+// leaving by train.
 export function buildFlows(plan) {
   const producerOf = new Map(plan.flatMap((sb, i) => (sb.use ? [] : [[sb.item, i]])));
   const edges = [];
@@ -30,6 +33,11 @@ export function buildFlows(plan) {
   plan.forEach((_, i) => state[i] || walk(i));
   const internal = edges.filter(e => !closing.has(e));
   const feedback = edges.filter(e => closing.has(e) && e.type !== 'fluid');
+  // (Only into an Internal Path: one of the item's consumers' takes it from there.)
+  const joined = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
+    const o = sb.outputs.find(o => o.name === item);
+    return o && internal.some(e => e.from === into && e.item === item) ? [{ from, into, item, type: o.type, rate: o.rate }] : [];
+  }));
   const sideInput = [];
   const sideOutput = [];
   // An input no Sub-Block makes arrives by train, and a fluid a loop takes back.
@@ -43,18 +51,27 @@ export function buildFlows(plan) {
     // (Its item first, then its byproducts.)
     for (const o of [sb.outputs.find(o => o.name === sb.item), ...sb.byproducts]) {
       // (An Extension's extra stays on its pipe for an Annex to draw.)
-      const left = o.rate - (o.name === sb.item ? sb.extra ?? 0 : 0) - taken(plan, { internal, feedback }, i, o.name);
+      const left = o.rate - (o.name === sb.item ? sb.extra ?? 0 : 0) + joinedInto({ joined }, i, o.name) - taken(plan, { internal, feedback, joined }, i, o.name);
       if (left > 1e-9 * Math.max(1, o.rate)) addRate(sideOutput, o.name, o.type, left);
     }
   });
-  return { order: dependencyOrder(plan.length, internal), internal, feedback, sideInput, sideOutput };
+  // (A Supplied Item's Use before the consumers of the Sub-Block it joins, where that makes no
+  // cycle: its belt joins theirs before them.)
+  const reaches = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a) && internal.some(e => e.from === a && reaches(e.to, b, seen)));
+  const ahead = joined.flatMap(j => internal.filter(e => e.from === j.into && e.item === j.item && !reaches(e.to, j.from)).map(e => ({ from: j.from, to: e.to })));
+  return { order: dependencyOrder(plan.length, [...internal, ...ahead]), internal, feedback, joined, sideInput, sideOutput };
+}
+
+// What Byproduct Uses' Supplied Items bring a Sub-Block's route of an item.
+export function joinedInto(flows, i, item) {
+  return (flows.joined ?? []).filter(j => j.into === i && j.item === item).reduce((sum, j) => sum + j.rate, 0);
 }
 
 // What Sub-Blocks take of a Sub-Block's item: its own (a Sub-Block in parts, Bands: all its
-// parts') through Internal Paths and feedback.
+// parts') through Internal Paths and feedback, and what joins another's (a Supplied Item).
 export function taken(plan, flows, i, item) {
   const of = plan[i].item === item && plan[i].part && !plan[i].use ? plan.flatMap((sb, j) => (sb.item === item && sb.part ? [j] : [])) : [i];
-  return [...flows.internal, ...flows.feedback ?? []].filter(e => e.item === item && of.includes(e.from)).reduce((sum, e) => sum + e.rate, 0);
+  return [...flows.internal, ...flows.feedback ?? [], ...flows.joined ?? []].filter(e => e.item === item && of.includes(e.from)).reduce((sum, e) => sum + e.rate, 0);
 }
 
 function addRate(flows, item, type, rate) {

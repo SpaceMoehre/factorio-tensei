@@ -113,12 +113,24 @@ export function placeBlocks(ctx, prepared, params = {}) {
       });
     });
   }
+  // (A Supplied Item's belt links its Use with the consumer whose belt it joins.)
+  for (const route of routes.filter(r => r.kind === 'belt' && r.into !== undefined)) {
+    const own = route.supplyEnd ? route : routes[route.base];
+    const from = own.slots.filter(slot => !slot.inst.detached).at(-1), to = routes[route.into].slots[route.at];
+    if (!from || !to || to.inst.detached) continue;
+    links.push({
+      from: from.inst.step, to: to.inst.step, fromY: blocks[from.inst.step].at.get(from.inst.index).y + exitY(from),
+      toY: blocks[to.inst.step].at.get(to.inst.index).y + entryY(to),
+    });
+  }
   for (const route of routes.filter(r => r.kind === 'pipe')) {
+    // (A Supplied Item's pipe: as one to the consumers of the pipe it joins.)
+    const into = route.into !== undefined ? routes[route.into] : null;
     for (const stub of route.stubs.filter(st => !st.inst.detached)) {
       const at = blocks[stub.inst.step].at.get(stub.inst.index).y + stub.y - stub.inst.module.area.y;
       if (route.source === 'side-input' && stub.side === 'W') blocks[stub.inst.step].entries.push(at);
       if (typeof route.source !== 'number' || stub.inst.step !== route.source || stub.side !== 'E') continue;
-      for (const to of route.stubs.filter(s => s.inst.step !== route.source && s.side === 'W' && !s.inst.detached)) {
+      for (const to of [...route.stubs, ...into?.stubs ?? []].filter(s => s.inst.step !== route.source && s.inst.step !== into?.source && s.side === 'W' && !s.inst.detached)) {
         links.push({ from: route.source, to: to.inst.step, fromY: at, toY: blocks[to.inst.step].at.get(to.inst.index).y + to.y - to.inst.module.area.y });
       }
     }

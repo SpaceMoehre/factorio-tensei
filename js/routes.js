@@ -1,12 +1,16 @@
 // Routes between Sub-Blocks, the Side Input and the Side Output, with Belt Merge.
 
-import { taken } from './flows.js';
+import { taken, joinedInto } from './flows.js';
 
 // Factorio 2.0 fluid segments move up to 6000 units/s.
 const PIPE_CAPACITY = 6000 * 60;
 
 // Every route item carries its rate (what the plan moves), supply (what enters the route) and
 // capacity (what the route can carry), all per minute. The train keeps Side Input saturated.
+// A Supplied Item (flows.joined): the Use's belt of it (`supplies`: { item, into: the producer,
+// rate }) joins the producer's (`supplied`: { item, rate }) before its consumers, side-loading
+// onto it (compose.js); the Use's pipe of it joins the producer's network (`into`: that route),
+// the producer's pipe carrying both.
 export function buildRoutes(plan, flows, laneCapacity) {
   const rank = new Map(flows.order.map((sb, i) => [sb, i]));
   const byOrder = (a, b) => rank.get(a) - rank.get(b);
@@ -39,7 +43,8 @@ export function buildRoutes(plan, flows, laneCapacity) {
     const internalConsumers = item => flows.internal.filter(e => e.from === i && e.item === item).map(e => e.to).sort(byOrder);
     // (What of it no Sub-Block takes leaves by train.)
     // (An Extension's extra stays on its pipe for an Annex to draw.)
-    const leavesBlock = o => o.rate - (o.name === sb.item ? sb.extra ?? 0 : 0) - taken(plan, flows, i, o.name) > 1e-9 * Math.max(1, o.rate);
+    const leavesBlock = o => o.rate - (o.name === sb.item ? sb.extra ?? 0 : 0) + joinedInto(flows, i, o.name) - taken(plan, flows, i, o.name) > 1e-9 * Math.max(1, o.rate);
+    const joins = type => (flows.joined ?? []).filter(j => j.from === i && j.type === type);
     const solidOut = sb.outputs.filter(o => o.type === 'item');
     if (solidOut.length) {
       // (Those taking a byproduct, Byproduct Uses, as those taking its item.)
@@ -57,13 +62,18 @@ export function buildRoutes(plan, flows, laneCapacity) {
         kind: 'belt', source: i, sink: left.length ? 'side-output' : null,
         items: solidOut.map(o => ({ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' })),
         consumers, ...(sorted ? { sorted: left[0].name } : {}),
+        ...(joins('item').length ? { supplies: joins('item').map(j => ({ item: j.item, into: j.into, rate: j.rate })) } : {}),
+        ...(solidOut.some(o => joinedInto(flows, i, o.name) > 0) ? { supplied: solidOut.filter(o => joinedInto(flows, i, o.name) > 0).map(o => ({ item: o.name, rate: joinedInto(flows, i, o.name) })) } : {}),
       });
     }
     for (const o of sb.outputs.filter(o => o.type === 'fluid')) {
+      const more = joinedInto(flows, i, o.name);
+      const into = joins('fluid').find(j => j.item === o.name);
       add({
         kind: 'pipe', fluid: o.name, source: i, sink: leavesBlock(o) ? 'side-output' : null,
-        items: [{ item: o.name, rate: o.rate, supply: o.rate, capacity: PIPE_CAPACITY }],
+        items: [{ item: o.name, rate: o.rate + more, supply: o.rate + more, capacity: PIPE_CAPACITY }],
         consumers: internalConsumers(o.name),
+        ...(into ? { into: routes.find(r => r.kind === 'pipe' && r.source === into.into && r.fluid === o.name).id } : {}),
       });
     }
   });

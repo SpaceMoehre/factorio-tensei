@@ -24,6 +24,8 @@ export class RoutingError extends Error {
   across;
   /** @type {number | undefined} a route a Fan-out from producers found no way for (chain it) */
   chain;
+  /** @type {object | undefined} the routing task that failed, though another routed it ahead of its turn */
+  task;
 }
 
 // Routes a belt through its waypoints (a chain), committing each leg to the grid as it goes.
@@ -159,7 +161,8 @@ export function routeLink(grid, spec, names) {
 
 // Routes a fluid as a pipe tree joining every terminal (a machine fluid connection), plus the
 // west edge for Side Input and the east edge for Side Output.
-// spec: { id, fluid, terminals: [[x, y, outwardDir]], source: boolean, sink: boolean, draws?, joins? }
+// spec: { id, fluid, terminals: [[x, y, outwardDir]], source: boolean, sink: boolean, draws?, joins?,
+//         mustJoin? (a Supplied Item's: only a tree joining one of the `joins` routes) }
 // draws (an Annex's Side Input drawn from a pipe built before it, ADR 0032): { routes (the built
 // pipes' routes its pipes may join), starts (the tiles beside them, heading away), only (never
 // from the west edge) }.
@@ -205,7 +208,9 @@ function growTree(grid, spec, names, seedPieces) {
     field = null;
   };
   commit({ pieces: seedPieces });
-  const joined = spec.joins?.starts.length ? search(grid, spec.joins.starts, toTree.isGoal, toTree.heuristic, moves, undefined, JOIN_STATES) : null;
+  // (A Supplied Item's, from further away.)
+  const joined = spec.joins?.starts.length ? search(grid, spec.joins.starts, toTree.isGoal, toTree.heuristic, moves, undefined, spec.mustJoin ? 20 * JOIN_STATES : JOIN_STATES) : null;
+  if (spec.mustJoin && !joined) throw new RoutingError(`${spec.fluid}: no way to join its network`);
   if (joined) commit(joined);
   if (spec.source) {
     const starts = spec.draws ? [...spec.draws.starts, ...(spec.draws.only ? [] : edgeStarts(grid, grid.area.x, E))] : edgeStarts(grid, grid.area.x, E);

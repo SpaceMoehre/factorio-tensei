@@ -311,7 +311,7 @@ function drawChain() {
     const key = use?.key ?? goal.item;
     const recipes = use ? index.consumers.get(use.item).filter(r => index.buildingsFor.has(r)) : index.producers.get(goal.item);
     const buildings = index.buildingsFor.get(selection.recipe);
-    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection)));
+    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, !!use?.general]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection)));
     const building = catalog.buildings[selection.building];
     const recipe = catalog.recipes[selection.recipe];
     const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
@@ -325,13 +325,19 @@ function drawChain() {
     // And the byproducts it takes from a step making them (Recycled Byproducts), not by train.
     const back = use ? [] : chain.loops.filter(l => l.item === goal.item);
     const takes = (chain.recycled ?? []).filter(r => r.into.includes(key));
-    const nameOf = k => label(chain.entries.find(e => (e.use?.key ?? e.goal.item) === k)?.goal.item ?? k).toLowerCase();
+    // (Supplied Items: what Byproduct Uses make of this step's item, and what this Use supplies.)
+    const joined = use ? [] : (chain.supplies ?? []).filter(s => s.into === key);
+    const supplies = (chain.supplies ?? []).filter(s => s.from === key);
+    const entryOf = k => chain.entries.find(e => (e.use?.key ?? e.goal.item) === k);
+    const nameOf = k => (entryOf(k)?.use ? `${label(entryOf(k).use.item).toLowerCase()} use` : `${label(entryOf(k)?.goal.item ?? k).toLowerCase()} step`);
     const loop = shown.querySelector('.loop');
     loop.textContent = [
       ...back.map(l => `↺ ${fmt(l.rate)}/min back into ${l.into === goal.item ? 'itself' : l.into} (a recipe loop)`),
-      ...takes.map(r => `↺ takes ${label(r.item).toLowerCase()} from the ${nameOf(r.from)} step's byproduct${r.spare > 1e-9 ? ` (${fmt(r.spare)}/min more leaves by train)` : ''}`),
+      ...takes.map(r => `↺ takes ${label(r.item).toLowerCase()} from the ${nameOf(r.from)}'s ${entryOf(r.from)?.use ? 'products' : 'byproduct'}${r.spare > 1e-9 ? ` (${fmt(r.spare)}/min more leaves by train)` : ''}`),
+      ...joined.map(s => `+ ${fmt(s.rate)}/min more from the ${nameOf(s.from)}, so this step makes that much less`),
+      ...supplies.map(s => `→ its ${fmt(s.rate)}/min of ${label(s.item).toLowerCase()} joins what the ${label(s.item).toLowerCase()} step makes`),
     ].join(' · ');
-    loop.hidden = !back.length && !takes.length;
+    loop.hidden = !back.length && !takes.length && !joined.length && !supplies.length;
     for (const next of chain.entries.filter(e => e.use?.from === key)) step(next);
     for (const b of chain.byproducts.filter(b => b.from === key)) {
       row(`byproduct:${useKey(key, b.item)}`, JSON.stringify(['byproduct', key, b.item, b.recipes]), () => byproductRow(b))
@@ -363,40 +369,56 @@ function stepRow(item, recipes, buildings, selection) {
   return stepBody(item, recipes, buildings, selection, choose, train);
 }
 
-// A Byproduct Use: a step taking all its step's byproduct, of a recipe that takes it. Removing it
-// removes the Uses of what it makes too.
+// A Byproduct Use: a step taking all its step's byproduct, of a recipe that takes it — or a
+// General Use's, every step's making it. Removing it removes the Uses of what it makes too (a
+// General Use's, at every step).
 function useRow({ goal, selection, use }, recipes, buildings) {
-  const wanted = () => state.uses.find(u => useKey(u.from, u.item) === use.key);
+  const general = !!use.general;
+  const wanted = () => state.uses.find(u => (general ? u.from == null && u.item === use.item : u.from != null && useKey(u.from, u.item) === use.key));
   const choose = changes => { Object.assign(wanted(), selection, changes); renderChain(); save(); };
-  const remove = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Send ${use.item} away by train instead` });
+  const under = u => u.from != null && (u.from === use.key || u.from.startsWith(`${use.key} > `));
+  const remove = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: general ? `Send ${use.item} away by train instead, from every step` : `Send ${use.item} away by train instead` });
   remove.addEventListener('click', () => {
-    state.uses = state.uses.filter(u => useKey(u.from, u.item) !== use.key && u.from !== use.key && !u.from.startsWith(`${use.key} > `));
+    state.uses = state.uses.filter(u => u !== wanted() && !under(u));
+    renderChain();
+    save();
+  });
+  // Every step making it, or this one only.
+  const every = el('input', { type: 'checkbox', checked: general, ariaLabel: `Use ${label(use.item)} so at every step making it` });
+  every.addEventListener('change', () => {
+    const { from, ...rule } = { ...wanted(), ...selection };
+    state.uses = state.uses.filter(u => u !== wanted());
+    state.uses.push(every.checked ? rule : { from: use.from, ...rule });
     renderChain();
     save();
   });
   const from = chain.entries.find(e => (e.use?.key ?? e.goal.item) === use.from).goal.item;
-  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${label(use.item).toLowerCase()} the ${label(from).toLowerCase()} step makes`);
+  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${label(use.item).toLowerCase()} the ${label(from).toLowerCase()} step makes`,
+    [el('span', { textContent: 'Steps' }), el('label', { className: 'check' }, every, el('span', { textContent: `Every step making ${label(use.item).toLowerCase()}` }))]);
   row.classList.add('use');
   row.style.setProperty('--depth', String(depthOf(use.key)));
   return row;
 }
 
-// A byproduct leaving by train, with the recipes that could take it instead (a Byproduct Use).
+// A byproduct leaving by train, with the recipes that could take it instead (a Byproduct Use),
+// at this step or every step making it (a General Use).
 function byproductRow({ from, item, recipes }) {
   const add = el('select', { ariaLabel: `Use ${item}` });
   // (Filling barrels and voiding last.)
   const aside = r => /barrel|void/.test(r);
   add.append(new Option('', ''), ...[...recipes].sort((a, b) => Number(aside(a)) - Number(aside(b))).map(r => new Option(r, r)));
+  const every = el('input', { type: 'checkbox', ariaLabel: `Use ${label(item)} so at every step making it` });
   add.addEventListener('change', () => {
     if (!add.value) return;
-    state.uses.push({ from, item, recipe: add.value });
+    state.uses.push(every.checked ? { item, recipe: add.value } : { from, item, recipe: add.value });
     renderChain();
     save();
   });
   const row = el('div', { className: 'step byproduct' },
     el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: `${label(item)} — leaves by train`, title: item }), el('span', { className: 'rate' })),
     el('div', { className: 'selection' }, el('span', { textContent: 'Byproduct' }),
-      pictured(add, { kind: 'recipes', title: `Use ${label(item)} in a recipe`, placeholder: recipes.length ? 'Use it in a recipe…' : 'No recipe takes it' })));
+      pictured(add, { kind: 'recipes', title: `Use ${label(item)} in a recipe`, placeholder: recipes.length ? 'Use it in a recipe…' : 'No recipe takes it' }),
+      ...(recipes.length ? [el('span'), el('label', { className: 'check' }, every, el('span', { textContent: `At every step making ${label(item).toLowerCase()}` }))] : [])));
   row.style.setProperty('--depth', String(depthOf(useKey(from, item))));
   return row;
 }
@@ -406,7 +428,7 @@ function depthOf(key) {
   return key.split(' > ').length - 1;
 }
 
-function stepBody(item, recipes, buildings, selection, choose, button, hint = '') {
+function stepBody(item, recipes, buildings, selection, choose, button, hint = '', more = []) {
   const recipe = el('select', { ariaLabel: `Recipe for ${item}` });
   fillSelect(recipe, recipes, selection.recipe);
   const building = el('select', { ariaLabel: `Building for ${item}` });
@@ -421,7 +443,7 @@ function stepBody(item, recipes, buildings, selection, choose, button, hint = ''
     el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), pictured(recipe, { kind: 'recipes', title: `Recipe for ${label(item)}` }),
       el('span', { textContent: 'Building' }), pictured(building, { title: `Building for ${label(item)}` }),
       ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : []),
-      el('span', { textContent: 'Speed' }), el('span', { className: 'speed hint' })));
+      el('span', { textContent: 'Speed' }), el('span', { className: 'speed hint' }), ...more));
 }
 
 // A step's modules: a row per module type with its count, and a button to add another type while
@@ -1181,7 +1203,9 @@ function inspect(hit, block) {
         if (route && (e.kind === 'belt' || e.kind === 'underground-belt' || e.kind === 'splitter')) {
           head = [route.items[0]?.item ?? e.name, route.items.map(i => label(i.item)).join(' + '),
             `${label(e.name)}${e.underground ? ` · tunnel ${e.underground === 'input' ? 'entrance' : 'exit'}` : ''}`];
-          body.push(...flows('Carries', route.items.map(i => flow(i.item, i.rate, i.capacity))));
+          // (A Supplied Item's belt side-loading onto it: what it brings, joined.)
+          body.push(...flows('Carries', route.items.map(i => flow(i.item, i.rate, i.capacity, i.joined ? ` (${fmtRate(i.joined)} joins)` : ''))));
+          const joined = route.joins !== undefined ? block.routes[route.joins] : null;
           body.push(facts([
             e.filter && ['Filter', iconOf(e.filter), el('span', { textContent: ` ${label(e.filter)} only` })],
             e.priority && ['Priority', `${e.priority} side`],
@@ -1189,6 +1213,7 @@ function inspect(hit, block) {
             ['From', route.fedBy !== undefined ? el('span', { textContent: 'a splitter on a belt of ' }, end(block.routes[route.fedBy]?.source, true)) : end(route.source, true)],
             ...route.consumers.map((c, k) => [k ? '' : 'To', sbLink(c)]),
             route.sink === 'side-output' && [route.consumers.length ? '' : 'To', end('side-output', false)],
+            joined && !route.sink && ['Joins', el('span', { textContent: 'the belt of ' }, end(joined.source, true), ...(joined.consumers.length ? [el('span', { textContent: ' into ' }), sbLink(joined.consumers[0])] : []))],
           ]));
           break;
         }

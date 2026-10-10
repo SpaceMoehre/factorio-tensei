@@ -5,7 +5,8 @@ import { assignFluidBoxes } from './fluidboxes.js';
 // machines burning a fluid burn (unless their energy source takes one fluid only).
 // An entry's byTrain: items it takes by train though a Sub-Block makes them (a Recipe Loop's).
 // An entry's use: a Byproduct Use's (chain.js), its item made besides any step's (it takes its
-// byproduct from the entry `goal.from` names).
+// byproduct from the entry `goal.from` names, and what it makes of an item `goal.joins` names
+// joins that entry's).
 export function planSubBlocks(entries, catalog, logistics = {}) {
   const seen = new Set();
   return entries.map(({ goal, selection, byTrain = [], use }) => {
@@ -61,6 +62,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(byTrain.length ? { byTrain } : {}),
       ...(goal.part ? { part: true } : {}),
       ...(goal.from ? { from: goal.from } : {}),
+      // (A Byproduct Use's Supplied Items: item → the Sub-Block whose route of it they join.)
+      ...(goal.joins ? { joins: goal.joins } : {}),
       // (An Extension: so much of its item made beyond what is taken, for an Annex to draw.)
       ...(goal.extra ? { extra: goal.extra } : {}),
       ...(use ? { use: true } : {}),

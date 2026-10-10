@@ -33,11 +33,18 @@ An output of a Recipe Selection's recipe other than the Goal's target item, prod
 _Avoid_: treating byproducts as satisfying other Goals automatically
 
 **Recycled Byproduct**:
-An ingredient a step would bring by train that another step of the chain makes at least as much of as a byproduct: it comes from that step instead (fed back through a splitter where that closes a loop), what is left over leaving by train (Py's sodium hydroxide gives its lime the limestone it takes; ADR 0035). A solid only where one lane of the chosen belt carries all the solids its step makes, or from a Goal's step: then each of its output belts without a tap gathers its share onto the feedback belt (a Gatherer: a filter splitter and a belt side-loading onto the feedback; ADR 0039, ADR 0040).
+An ingredient a step would bring by train that another step of the chain makes at least as much of as a byproduct, or a Byproduct Use as one of its products: it comes from that step instead (fed back through a splitter where that closes a loop), what is left over leaving by train (Py's sodium hydroxide gives its lime the limestone it takes, ADR 0035; Py titanium's recrushed rejects give the sand its gravel, ADR 0041). Fed back, a solid only where one lane of the chosen belt carries all the solids its step makes, or from a Goal's step: then each of its output belts without a tap gathers its share onto the feedback belt (a Gatherer: a filter splitter and a belt side-loading onto the feedback; ADR 0039, ADR 0040).
 
 **Byproduct Use**:
-A step the user adds for a byproduct of a step — a recipe taking it — that takes all of it, sized by what that step makes (Py's iron slime from the hydroclassifiers making iron pulp, to unslimed iron). What it makes leaves by train, unless a Byproduct Use of its own takes it; it never feeds another step nor counts towards a Goal, so its item may also be made by a step of the chain (ADR 0034).
+A step the user adds for a byproduct of a step — a recipe taking it — that takes all of it, sized by what that step makes (Py's iron slime from the hydroclassifiers making iron pulp, to unslimed iron). What it makes goes to a Byproduct Use of its own, else to the steps taking it (a Supplied Item, or a Recycled Byproduct where it would come by train), else leaves by train. Its item may also be made by a step of the chain: they are two Sub-Blocks (ADR 0034, ADR 0041).
 _Avoid_: byproduct recipe (it is a step of the chain), sharing a byproduct among Uses
+
+**General Use**:
+A Byproduct Use the user adds for an item rather than a step's byproduct: every step (and Use) making the item besides its own gets a Use of that recipe, each a Sub-Block of its own, but where a Use names that step for the item (Py's ti rejects from the grade 3 screeners and the ti-enriched dust's, both recrushed; ADR 0041). Its rows say so; turning it off keeps it at the one step.
+
+**Supplied Item**:
+What a Byproduct Use makes of an item a step of the chain makes: it joins that step's on its way to the steps taking it, and the step makes that much less (Py titanium: the recrushers' grade 3 titanium joins the grade 3 screeners'). The Use's belt side-loads onto the step's belt ahead of the first consumer taking it — from a filter splitter after its producers where the rest goes on — and its pipe joins the step's network. A solid only where one lane of the chosen belt carries all the solids the Use makes; none where the step would then make none. Where its belt or pipe finds no way there, it goes to the train and that consumer starves (ADR 0041).
+_Avoid_: feeding a consumer from two belts (one belt into it, the Use's joining it)
 
 **Fuel**:
 The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item.

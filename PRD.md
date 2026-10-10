@@ -84,6 +84,12 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v30: General Uses and Supplied Items (implemented)
+Byproducts used at every step, what their Uses make used by the chain (ADR 0041); where v30 differs from v29, v30 wins.
+- **General Uses:** a byproduct's Use can be for every step making it, not one step: each step and Use making it gets a Use of that recipe, a Sub-Block of its own, unless a Use names that step for it. A Use's row turns it on or off, and *By train* on a General Use removes it everywhere.
+- **Supplied Items:** what a Use makes of an item a step makes joins that step's on its way to the steps taking it, and the step makes that much less. The Use's belt side-loads onto the step's belt before the first consumer taking it (from a filter splitter after its producers, where the rest goes on), and its pipe joins the step's network. A solid only where one lane of the belt carries all the Use makes. Py titanium: the recrushed rejects' grade 3 joins the grade 3 screeners', and the pans' MIBC joins the mixers'.
+- **Use products instead of the train:** an ingredient that would come by train comes from a Use making at least as much of it (Py titanium: the recrushed gravel to the sand). The lane rule for solid Recycled Byproducts now holds only where they are fed back into a loop.
+
 ## v29: Extensions (implemented)
 Annexes grow built Sub-Blocks before building small ones of their own (ADR 0038), and Py aramid builds (ADR 0039); where v29 differs from v28, v29 wins.
 - **Extensions:** an Annex may make a fluid made here in a Sub-Block of its own while a layout before it makes that fluid too. If so, that layout's Sub-Block of the fluid is grown to make as much more as the Annex takes, with the steps feeding it grown to match. The layouts after it are laid out again, and the Annex draws the fluid from the grown Sub-Block's pipe; it no longer makes the fluid, nor what fed only that. This is kept only where all of it fits without Starvation and the Annex has fewer Sub-Blocks. A solid's Sub-Block is not extended.

@@ -477,17 +477,24 @@ export function separateNetworks(block, catalog, logistics) {
 
 export function endsAtEastEdge(block, route) {
   const last = route.pieces[route.pieces.length - 1];
-  // A byproduct's belt joining another that carries it there (side-loading onto it): its last
-  // belt heads into the side of one of that one's.
+  // A byproduct's belt joining another that carries it there (side-loading onto it).
   if (route.joins !== undefined) {
-    const other = block.routes[route.joins];
-    const [dx, dy] = DIR[last.travel];
-    const into = other?.pieces.find(p => p.x === last.x + dx && p.y === last.y + dy);
-    if (!into || into.kind === 'splitter' || into.travel === last.travel || into.travel === (last.travel + 8) % 16) return [`route ${route.id} does not join route ${route.joins} from the side`];
-    return endsAtEastEdge(block, other);
+    const problems = joinsFromSide(block, route);
+    return problems.length ? problems : endsAtEastEdge(block, block.routes[route.joins]);
   }
   if (last.x !== block.bounds.x + block.bounds.w - 1) return [`route ${route.id} does not reach the east edge`];
   if (last.travel !== 4) return [`route ${route.id} does not leave eastward`];
+  return [];
+}
+
+// A belt joining another (side-loading onto it: a byproduct's, a gatherer's, a Supplied Item's):
+// its last belt heads into the side of one of that one's.
+function joinsFromSide(block, route) {
+  const last = route.pieces[route.pieces.length - 1];
+  const other = block.routes[route.joins];
+  const [dx, dy] = DIR[last.travel];
+  const into = other?.pieces.find(p => p.x === last.x + dx && p.y === last.y + dy);
+  if (!into || into.kind === 'splitter' || into.travel === last.travel || into.travel === (last.travel + 8) % 16) return [`route ${route.id} does not join route ${route.joins} from the side`];
   return [];
 }
 
@@ -533,6 +540,7 @@ export function validateBlock(block, catalog, logistics) {
     else problems.push(...startsAtWestEdge(block, route));
     problems.push(...feedsEveryMachine(block, route, route.consumers.flatMap(i => servedBy(route, i)), catalog));
     if (route.sink === 'side-output') problems.push(...endsAtEastEdge(block, route));
+    else if (route.joins !== undefined) problems.push(...joinsFromSide(block, route));
   }
   // Together, the parts of a split route serve every machine row.
   const basesOf = r => r.bases ?? [r.base];

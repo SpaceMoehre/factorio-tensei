@@ -344,9 +344,10 @@ export function* search(entries, catalog, logistics, options = {}) {
     // A Recipe Loop's feedback by train (no room for its splitter) counts before Compactness.
     const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
     // So does a byproduct riding on through its producers' consumers (no room to sort it out after
-    // them): it may fill their belt.
+    // them): it may fill their belt. (A Supplied Item a filter splitter sends off after them does not.)
+    const sentOff = new Set(block.routes.filter(g => g.fedBy !== undefined && g.joins !== undefined).map(g => `${g.fedBy}:${g.items[0].item}`));
     const unsorted = block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length
-      && r.items.some(i => !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item)))).length;
+      && r.items.some(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item)))).length;
     // Then machines that put their products on a belt themselves (Output Drop) rather than
     // through inserters: the fewest inserters at them.
     const score = [Math.round(starving * 1000) / 1000, loopsByTrain, unsorted, supporting(block), compactness(block).value, block.entities.length];
