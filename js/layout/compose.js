@@ -129,8 +129,9 @@ export function compose(ctx, prepared, positions, layout) {
     instances.forEach((inst, n) => {
       const { x: ox, y: oy } = placed[n];
       const move = e => ({ ...e, x: e.x + ox, y: e.y + oy });
+      // (Each piece of a copy knows it: the user may move its Sub-Block, edit.js.)
       for (const e of inst.module.entities) {
-        const abs = { ...move(e), subBlock: inst.step };
+        const abs = { ...move(e), subBlock: inst.step, copy: n };
         if (e.kind === 'building') abs.row = e.row + inst.rowOffset;
         entities.push(abs);
         put(abs);
@@ -148,7 +149,7 @@ export function compose(ctx, prepared, positions, layout) {
       for (const [x, y] of core.dropTiles ?? []) if (!grid.occupied.has(key(x + ox, y + oy))) grid.reserve(x + ox, y + oy, -1);
       for (const f of inst.module.fluids) {
         const id = pipeRouteOf(routes, f.routeId);
-        const abs = f.pieces.map(p => ({ ...move(p), route: id }));
+        const abs = f.pieces.map(p => ({ ...move(p), route: id, copy: n }));
         for (const p of abs) put(p);
         addTunnels(grid, abs, pipes.underground);
         pieces[id].push(...abs);
@@ -164,7 +165,7 @@ export function compose(ctx, prepared, positions, layout) {
           head: k === 0 && route.source !== 'side-input' && route.fedFrom === undefined,
           tail: k === route.slots.length - 1 && route.sink !== 'side-output' && !route.fanOut && !route.supplyEnd,
         }, belts.belt)
-          .map(p => ({ ...p, x: p.x + ox, y: p.y + oy, route: route.id, out: p.out === null ? null : shift(p.out, ox, oy) }));
+          .map(p => ({ ...p, x: p.x + ox, y: p.y + oy, route: route.id, copy: slot.inst.index, out: p.out === null ? null : shift(p.out, ox, oy) }));
         slot.pieces = own;
         for (const p of own) put(p);
         addTunnels(grid, own, belts.underground);
@@ -1260,7 +1261,7 @@ export function compose(ctx, prepared, positions, layout) {
       const mine = instances.filter(inst => inst.step === i);
       const box = extentOf(mine.filter(inst => !inst.detached).map(inst => placed[inst.index]), { w: 0, e: 0, n: 0, s: 0 });
       // Machines broken out of it (Breakout) stand apart, each in a box of its own.
-      const apart = mine.filter(inst => inst.detached).map(inst => ({ ...placed[inst.index].box }));
+      const apart = mine.filter(inst => inst.detached).map(inst => ({ ...placed[inst.index].box, inst: inst.index }));
       return {
         ...sb, index: i, x: box.x, y: box.y, w: box.w, h: box.h, copies: mine.length, inserters: supplyOf(mine),
         ...(apart.length ? { apart } : {}),

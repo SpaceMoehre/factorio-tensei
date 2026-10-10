@@ -390,6 +390,14 @@ export function placeBlocks(ctx, prepared, params = {}) {
     const p = unslid.get(b.step) ?? placed.get(b.step);
     return { step: b.step, x: p.x + dx, y: p.y + dy, w: b.w, h: b.h };
   });
+  // Each Sub-Block's box (its stack with the room beside it) from its first copy, wherever that
+  // stands (the user's moves, edit.js).
+  out.rooms = blocks.map(b => {
+    const first = b.instances[0];
+    if (!first) return null;
+    const at = b.at.get(first.index);
+    return { inst: first.index, x: -at.x, y: -at.y, w: b.w, h: b.h };
+  });
   return out;
 
   // In a City Block, the columns west of Sub-Block i the links it takes from other Sub-Blocks

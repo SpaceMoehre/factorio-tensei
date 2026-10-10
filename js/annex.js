@@ -188,7 +188,9 @@ export function annexed(block, annex, site, catalog, logistics) {
     x = Math.min(x, e.x); y = Math.min(y, e.y);
     x1 = Math.max(x1, e.x + e.w); y1 = Math.max(y1, e.y + e.h);
   }
-  return { ...block, subBlocks, entities, routes, bounds: { x, y, w: x1 - x, h: y1 - y }, site, wires: wirePairs(entities, catalog, site.fixtures) };
+  // (Two layouts as one: no Sub-Block of it is moved, edit.js.)
+  const { edit, ...rest } = block;
+  return { ...rest, subBlocks, entities, routes, bounds: { x, y, w: x1 - x, h: y1 - y }, site, wires: wirePairs(entities, catalog, site.fixtures) };
 }
 
 // What an Annex's Fixtures other than poles are called, and their routes' ids begin with.

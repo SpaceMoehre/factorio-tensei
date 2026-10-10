@@ -1,3 +1,6 @@
+import { simulate } from '../sim.js';
+import { supporting } from './validity.js';
+
 // Compactness (CONTEXT.md): how good a Compound Block's shape is, lower better. Square first, then
 // as little empty room as can be, every belt and pipe as straight as can be:
 //   square  the strip a rectangle has beyond a square, |w − h| × min(w, h) tiles (in a City Block
@@ -32,4 +35,18 @@ export function compactness(block) {
     }
   }
   return { square, empty, bends, value: SQUARE * square + empty + BEND * bends };
+}
+
+// How the layout search ranks a valid Compound Block, part by part, lower better: Starvation
+// (per minute, to a thousandth), Recipe Loops whose feedback comes by train (no room for its
+// splitter), byproducts riding on through their producers' consumers (no room to sort them out
+// after them; a Supplied Item a filter splitter sends off after them is not), output inserters at
+// machines with an Output Drop, Compactness, entities.
+export function rankOf(block) {
+  const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
+  const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
+  const sentOff = new Set(block.routes.filter(g => g.fedBy !== undefined && g.joins !== undefined).map(g => `${g.fedBy}:${g.items[0].item}`));
+  const unsorted = block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length
+    && r.items.some(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item)))).length;
+  return [Math.round(starving * 1000) / 1000, loopsByTrain, unsorted, supporting(block), compactness(block).value, block.entities.length];
 }

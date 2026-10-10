@@ -3,9 +3,9 @@ import { LayoutError } from './layout/core.js';
 import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
 import { placeBlocks, roomFor } from './layout/place.js';
 import { finishBlock } from './layout/compact.js';
-import { validateBlock, supporting } from './layout/validity.js';
-import { simulate } from './sim.js';
-import { compactness } from './layout/score.js';
+import { validateBlock } from './layout/validity.js';
+import { rankOf } from './layout/score.js';
+import { editOf } from './layout/edit.js';
 
 // Anytime layout search, bottom-up (ADR 0005). First every Sub-Block is designed on its own,
 // from the leaves of the Production Chain up to the Goals: candidate layouts of its machines and
@@ -254,9 +254,9 @@ export function* search(entries, catalog, logistics, options = {}) {
       queue.unshift({ ...candidate, solid: true });
       structured++;
     };
-    let work = ready;
+    let work = ready, used = null, positions = null;
     try {
-      let positions = placeBlocks(ctx, ready, candidate);
+      positions = placeBlocks(ctx, ready, candidate);
       if (positions.holes?.size) {
         way = true;
         const made = makeWay(candidate, k, ready, positions);
@@ -274,10 +274,13 @@ export function* search(entries, catalog, logistics, options = {}) {
       const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => (timedOut ||= now() > until) : null };
       // A byproduct's splitter after its producers that finds no way: their belt chained through
       // the consumers instead (or that run of them, a line past its consumers riding on), route by
-      // route — however the links are routed.
+      // route — however the links are routed. (`used`: how the links were routed, for the user's
+      // moves to route them again so.)
       const chaining = lay => {
         try {
-          return compose(ctx, work, positions, lay);
+          const out = compose(ctx, work, positions, lay);
+          used = lay;
+          return out;
         } catch (first) {
           let e = first;
           const chained = new Set();
@@ -288,7 +291,7 @@ export function* search(entries, catalog, logistics, options = {}) {
             if (moved.holes?.size) break;
             try {
               const out = compose(ctx, again, moved, lay);
-              [work, positions] = [again, moved];
+              [work, positions, used] = [again, moved, lay];
               placed = positions.bounds.w * positions.bounds.h;
               boxes = positions.boxes;
               return out;
@@ -340,17 +343,10 @@ export function* search(entries, catalog, logistics, options = {}) {
       trace(candidate, failure);
       continue;
     }
-    const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
-    // A Recipe Loop's feedback by train (no room for its splitter) counts before Compactness.
-    const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
-    // So does a byproduct riding on through its producers' consumers (no room to sort it out after
-    // them): it may fill their belt. (A Supplied Item a filter splitter sends off after them does not.)
-    const sentOff = new Set(block.routes.filter(g => g.fedBy !== undefined && g.joins !== undefined).map(g => `${g.fedBy}:${g.items[0].item}`));
-    const unsorted = block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length
-      && r.items.some(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item)))).length;
-    // Then machines that put their products on a belt themselves (Output Drop) rather than
-    // through inserters: the fewest inserters at them.
-    const score = [Math.round(starving * 1000) / 1000, loopsByTrain, unsorted, supporting(block), compactness(block).value, block.entities.length];
+    // Starvation first, then Recipe Loops fed by train, byproducts riding on unsorted, then
+    // machines that put their products on a belt themselves (Output Drop) rather than through
+    // inserters: the fewest inserters at them; then Compactness.
+    const score = rankOf(block);
     if (perfect && score[0] > 0) {
       solidly();
       failure = new Error(`the layout starves ${score[0]}/min`);
@@ -367,6 +363,9 @@ export function* search(entries, catalog, logistics, options = {}) {
         ...(spread ? packs(candidate, boxes, buffer) : []),
         ...Array.from({ length: Math.max(trying.length, Math.ceil(sliding.length / 2)) }, (_, j) => [sliding[2 * j], sliding[2 * j + 1], trying[j]]).flat().filter(Boolean),
       ];
+      // (With what it takes to lay it out again with Sub-Blocks the user moved.)
+      block.edit = editOf(work, positions, used, block.squeeze);
+      delete block.squeeze;
       yield { block, score, tried, placed };
     }
   }

@@ -7,7 +7,7 @@ import { circuitPairs } from './layout/wires.js';
 import { createMap, turnsSideways } from './render.js';
 import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
 import { planner } from './maximize.js';
-import { compactness, SQUARE, BEND } from './layout/score.js';
+import { compactness, rankOf, SQUARE, BEND } from './layout/score.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel', 'liquidFuel'];
@@ -96,6 +96,11 @@ let encoding = 0;
 let reading = 0;
 let cityRead = Promise.resolve();
 let built = null;
+// The user's moves (ADR 0043): the layouts shown before each, the last one last (Undo), and the
+// move being laid out ({ worker, step, inst, dx, dy }).
+let undo = [];
+let moving = null;
+const UNDOS = 30;
 
 // The page's pictures: technologies' (catalog.art) and items' icons.
 for (const img of /** @type {any[]} */ (Array.from(document.querySelectorAll('img[data-art], img[data-icon]')))) {
@@ -123,7 +128,7 @@ $('circuit').addEventListener('change', () => {
   state.logistics.circuit = $('circuit').value;
   save();
   // Only the blueprint and the map change: the block stays as it is.
-  if (best) show(best.block, best.tried, best.found, best.score);
+  if (best) show(best.block, best.tried, best.found, best.score, { view: map?.viewport() });
 });
 $('right-angle').checked = state.logistics.rightAngle;
 $('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
@@ -184,6 +189,14 @@ $('picker').addEventListener('click', e => { if (e.target === $('picker')) $('pi
 $('chooser-close').addEventListener('click', () => $('chooser').close());
 $('chooser-filter').addEventListener('input', drawChooser);
 $('chooser').addEventListener('click', e => { if (e.target === $('chooser')) $('chooser').close(); });
+$('undo').addEventListener('click', undoMove);
+// (Ctrl+Z or ⌘Z undoes a move, but in a field.)
+document.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() !== 'z' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || !undo.length) return;
+  if (/** @type {HTMLElement} */ (e.target).closest?.('input, textarea, select, [contenteditable]')) return;
+  e.preventDefault();
+  undoMove();
+});
 $('zoom-in').addEventListener('click', () => map?.zoom(1.4));
 $('zoom-out').addEventListener('click', () => map?.zoom(1 / 1.4));
 $('fit').addEventListener('click', () => map?.fit());
@@ -738,8 +751,11 @@ async function build(upTo = false) {
   for (const w of workers) w.worker.terminate();
   workers = [];
   best = null;
+  stopMoving();
+  undo = [];
+  $('undo').hidden = true;
   upTo = Boolean(site && !state.city.maximize && (upTo || foretoldShort()));
-  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && (state.city.maximize || upTo)), upTo, trying: null, foretold: null };
+  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && (state.city.maximize || upTo)), upTo, trying: null, foretold: null, job: null };
   map?.destroy();
   map = null;
   clocks = null;
@@ -753,6 +769,8 @@ async function build(upTo = false) {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   const started = Date.now();
   const job = { entries: chain.entries, logistics: logisticsOf(), seed: 1, site };
+  // (The user's moves lay the block out again for the chain it was built for.)
+  built.job = job;
   // A build first designs each Sub-Block on its own, every one in a worker of its own at once;
   // the strategies then start from those designs.
   let designs = null;
@@ -857,7 +875,9 @@ function progress() {
   return `${built.trying ?? 'Searching…'}${told}${fits}`;
 }
 
-async function show(block, tried, found = null, rank = null) {
+// view: where the map stands (as it did: the same block, or one the user moved a Sub-Block of),
+// else it fits the block; selected: what it selects.
+async function show(block, tried, found = null, rank = null, { view = null, selected = null } = {}) {
   const { starvation } = simulate(block);
   best = { block, tried, found, score: rank, starvation };
   inspect(null, block);
@@ -868,7 +888,12 @@ async function show(block, tried, found = null, rank = null) {
   map = createMap($('map'), block, {
     starving, onHover: describe, onSelect: inspect, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null),
     circuit: circuit === 'none' ? null : { colors: circuit === 'both' ? ['red', 'green'] : [circuit], pairs: circuitPairs(block.entities, catalog, block.site?.fixtures ?? []) },
+    onMove: block.edit ? moveSubBlock : null, view,
   });
+  if (selected) {
+    map.select(selected);
+    inspect(selected, block);
+  }
   const { bounds, site } = block;
   // Compactness, as the search scores it: its parts, and the score.
   const score = compactness(block);
@@ -887,6 +912,83 @@ async function show(block, tried, found = null, rank = null) {
   await writeBlueprint(block);
   if (best?.block !== block) return;
   $('results').hidden = false;
+}
+
+// The user's move (ADR 0043): the shown block laid out again, in a worker of its own, with a
+// Sub-Block (its stack, or a machine stood apart: `inst`) `dx`, `dy` tiles off, everything else
+// where it stands; where its links find no way, it goes a little further, else what stands in
+// its way moves off. A search still running stops: its layouts would replace the one moved.
+function moveSubBlock(unit, dx, dy) {
+  const before = best;
+  if (!before?.block.edit || !built?.job) return map?.settle();
+  if (workers.length) finish('Stopped');
+  stopMoving();
+  const sb = before.block.subBlocks[unit.step];
+  const name = `${label(sb.item)}${unit.inst !== undefined ? ' (a machine apart)' : ''}`;
+  const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), ...unit, dx, dy };
+  moving = run;
+  showStatus('', `Moving ${name} ${where(dx, dy)}: laying its belts, pipes and poles again…`);
+  const over = () => {
+    run.worker.terminate();
+    if (moving === run) moving = null;
+  };
+  const stuck = message => {
+    over();
+    map?.settle();
+    showStatus('error', `${name} stays where it was: ${message.replace(/\.$/, '')}.`);
+  };
+  run.worker.onmessage = async ({ data }) => {
+    if (moving !== run) return;
+    if (data.type === 'trying') {
+      if (data.tried) showStatus('', `Moving ${name}: its links find no way there yet; ${data.pushed.length ? 'moving what stands in its way' : 'trying close by'} (${count(data.tried, 'layout')} tried)…`);
+      return;
+    }
+    if (data.type !== 'moved') return stuck(data.message ?? 'no way found to route its links there');
+    over();
+    // (The last UNDOS layouts: each holds its modules.)
+    undo = [...undo, before].slice(-UNDOS);
+    $('undo').hidden = false;
+    const view = map?.viewport();
+    await show(data.block, before.tried, before.found, data.score, { view, selected: { subBlock: unit.step } });
+    const further = data.at.dx !== dx || data.at.dy !== dy ? ` (${where(data.at.dx - dx, data.at.dy - dy)} past where it was put, to give its links room)` : '';
+    const pushed = data.pushed.map(p => `${label(best.block.subBlocks[p.step].item)}${p.inst !== undefined ? ' (a machine apart)' : ''} ${where(p.dx, p.dy)}`);
+    const others = pushed.length ? ` To make room, moved ${pushed.join(', ')}.` : '';
+    const opened = data.back ? ` The block opened up by ${count(data.back, 'tile')} to lay its belts again.` : '';
+    report(best.block, best.starvation, `Moved ${name} ${where(data.at.dx, data.at.dy)}${further}.${others}${opened}`);
+  };
+  run.worker.onerror = e => stuck(e.message);
+  const { entries, logistics, site } = built.job;
+  run.worker.postMessage({
+    entries, logistics, site, budgetMs: Math.max(5, state.logistics.budget) * 1000,
+    move: { edit: before.block.edit, score: rankOf(before.block), ...unit, dx, dy },
+  });
+}
+
+// The layout before the last move, shown again (where the map stands).
+function undoMove() {
+  const prev = undo.pop();
+  if (!prev) return;
+  stopMoving();
+  $('undo').hidden = !undo.length;
+  show(prev.block, prev.tried, prev.found, prev.score, { view: map?.viewport() });
+  report(prev.block, prev.starvation, 'Move undone.');
+}
+
+function stopMoving() {
+  if (!moving) return;
+  moving.worker.terminate();
+  moving = null;
+  map?.settle();
+}
+
+// How far a move goes: "3 tiles east, 2 south".
+function where(dx, dy) {
+  const parts = [];
+  if (dx) parts.push(`${Math.abs(dx)} ${dx > 0 ? 'east' : 'west'}`);
+  if (dy) parts.push(`${Math.abs(dy)} ${dy > 0 ? 'south' : 'north'}`);
+  if (!parts.length) return 'where it was';
+  parts[0] = parts[0].replace(/^(\d+) /, (_, n) => `${n} ${n === '1' ? 'tile' : 'tiles'} `);
+  return parts.join(', ');
 }
 
 // The shown block's blueprint, with its Circuit Wires and the signals its inserters' clocks take.
@@ -1163,7 +1265,7 @@ function inspect(hit, block) {
       ['Machines', `${sb.count}${sb.copies > 1 ? ` in ${sb.copies} copies` : ''}`],
       ['Runs at', `${Math.round(100 / (sb.headroom ?? 1))}% of full speed`],
       ['Takes up', `${sb.w} × ${sb.h} tiles`],
-    ]), ...sbBody(sb, i));
+    ]), ...(block.edit ? [moveHint(i)] : []), ...sbBody(sb, i));
   } else {
     const e = hit.entity;
     const route = hit.route !== null && hit.route !== undefined ? block.routes[hit.route] : null;
@@ -1233,6 +1335,22 @@ function inspect(hit, block) {
   // (On a phone the panel is a sheet over the map's bottom: what it shows stays in sight above it.)
   const box = hit.entity ?? block.subBlocks[hit.subBlock];
   if (box && matchMedia('(max-width: 860px)').matches) map?.reveal(box, panel.getBoundingClientRect().height + 8);
+}
+
+// How a Sub-Block is moved (ADR 0043): dragged on the map, or a tile at a time.
+function moveHint(step) {
+  const nudge = (dx, dy) => {
+    if (moving) return;
+    map?.place({ step }, dx, dy);
+    moveSubBlock({ step }, dx, dy);
+  };
+  const arrow = (text, name, dx, dy) => el('button', { type: 'button', className: 'icon nudge', textContent: text, ariaLabel: `Move it one tile ${name}`, title: `One tile ${name}`, onclick: () => nudge(dx, dy) });
+  return el('div', { className: 'move-hint' },
+    el('p', { className: 'hint' }, el('strong', { textContent: 'Drag it on the map to move it.' }),
+      ' Its belts, pipes and poles are laid again; where they find no way, it goes a little further.'),
+    el('div', { className: 'nudges', role: 'group', ariaLabel: 'Move it a tile' },
+      el('span', { className: 'hint', textContent: 'A tile at a time' }),
+      arrow('←', 'west', -1, 0), arrow('↑', 'north', 0, -1), arrow('↓', 'south', 0, 1), arrow('→', 'east', 1, 0)));
 }
 
 function fmtRate(n) {

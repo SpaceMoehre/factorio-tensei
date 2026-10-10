@@ -215,13 +215,17 @@
   .chooser-foot { padding: 8px 16px 12px; border-top: 1px solid var(--border-soft); color: var(--muted); font-size: 13px; min-height: 37px; }
 
   /* Map */
-  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
   canvas:active { cursor: grabbing; }
   .area { position: absolute; top: 12px; left: 12px; background: rgba(29,28,27,.92); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 4px 10px; font-size: 13px; color: var(--accent); z-index: 2; max-width: calc(100% - 180px); }
   .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
   .toolbar button { background: rgba(42,40,38,.92); }
+  main:has(#undo:not([hidden])) .area { max-width: calc(100% - 250px); }
   .tooltip { position: absolute; left: 12px; bottom: 12px; background: rgba(29,28,27,.94); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 13px; pointer-events: none; max-width: 60%; z-index: 2; }
   .tooltip:empty { display: none; }
+  /* A Sub-Block carried: the panels over the map fade, so where it goes shows. */
+  .inspector, .tooltip, .toolbar, .area { transition: opacity .2s var(--ease); }
+  canvas[data-carrying] ~ :is(.inspector, .tooltip, .toolbar, .area) { opacity: .18; pointer-events: none; }
   .empty { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; overflow: hidden;
     background: radial-gradient(60% 60% at 50% 45%, rgba(232,160,60,.08), transparent 70%), repeating-linear-gradient(0deg, transparent 0 31px, rgba(255,255,255,.025) 31px 32px), repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.025) 31px 32px); }
   .empty-inner { max-width: 440px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 14px; }
@@ -267,6 +271,11 @@
   button.link .sprite, .train .sprite { width: 22px; height: 22px; flex: none; }
   button.link span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .train { display: inline-flex; gap: 6px; align-items: center; }
+  .move-hint { margin: 12px 0 0; padding: 8px 10px; border-radius: var(--radius-sm); background: var(--accent-soft); }
+  .move-hint strong { color: var(--accent); font-weight: 600; }
+  .nudges { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
+  .nudges .hint { flex: 1; }
+  .nudge { width: 32px; height: 30px; padding: 0; display: grid; place-items: center; font-size: 15px; }
   .warn { margin: 12px 0 0; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(224,112,95,.12); color: var(--danger); font-size: 14px; }
   @media (max-width: 860px) {
     .inspector { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 58%; border-radius: 14px 14px var(--radius) var(--radius); animation-name: sheet-in; }
@@ -434,6 +443,7 @@
   <main>
     <canvas id="map" aria-label="Factory block map"></canvas>
     <div class="toolbar">
+      <button id="undo" type="button" title="Undo the last move (Ctrl+Z)" aria-label="Undo the last move" hidden>↶ Undo</button>
       <button class="icon" id="zoom-in" type="button" title="Zoom in">+</button>
       <button class="icon" id="zoom-out" type="button" title="Zoom out">−</button>
       <button id="fit" type="button" title="Fit to view">Fit</button>

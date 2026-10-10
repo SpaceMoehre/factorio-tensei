@@ -1,16 +1,24 @@
 // Pan/zoom map of a Compound Block on a <canvas>: drag to pan, wheel or pinch to zoom around the
 // cursor or the fingers, a double tap to zoom in; a tap or click selects what is there (an entity,
 // else the Sub-Block whose box it is in), outlined with its route, and onSelect hears of it.
+// A Sub-Block (its stack, or a machine a Breakout stood apart) picked up — pressed and held, or
+// dragged once selected — follows the pointer tile by tile, and onMove hears where it was put.
 const ARROW = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
 const MIN_SCALE = 2, MAX_SCALE = 64;
+// How long a press picks a Sub-Block up (ms), how far a pointer moves before a press pans (px),
+// and how close to the map's edge a Sub-Block carried pans it (px).
+const HOLD = 420, SLOP = 8, EDGE = 36;
 
 // circuit: the circuit wires to draw, { colors: ['red', 'green'], pairs (circuitPairs) }, or null.
+// onMove: called with ({ step, inst }, dx, dy) where a Sub-Block (its stack; `inst`: a machine
+// stood apart) was put down that many tiles off (null: nothing moves; only a block with `edit`
+// may be moved, edit.js). view: where the map starts ({ scale, x, y }), else it fits the block.
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {any} block
- * @param {{ onHover?: (entity: any, block: any) => void, onSelect?: (hit: any, block: any) => void, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null }} [options]
+ * @param {{ onHover?: (entity: any, block: any) => void, onSelect?: (hit: any, block: any) => void, onMove?: ((unit: { step: number, inst?: number }, dx: number, dy: number) => void) | null, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null, view?: { scale: number, x: number, y: number } | null }} [options]
  */
-export function createMap(canvas, block, { onHover = () => {}, onSelect = () => {}, starving = new Set(), icon = () => null, circuit = null } = {}) {
+export function createMap(canvas, block, { onHover = () => {}, onSelect = () => {}, onMove: onPut = null, starving = new Set(), icon = () => null, circuit = null, view: start = null } = {}) {
   const ctx = canvas.getContext('2d');
   // Icons load in the background; the map redraws as each arrives.
   const images = new Map();
@@ -38,7 +46,7 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   };
   const pieceIndex = new Map();
   for (const r of block.routes) r.pieces.forEach((p, i) => pieceIndex.set(p, i));
-  const view = { scale: 16, x: 0, y: 0 };
+  const view = { scale: 16, x: 0, y: 0, ...(start ?? {}) };
   const colors = palette(block);
   // A City Block: its area, the Buffer inside its border, and its Fixtures.
   const { site = null } = block;
@@ -49,6 +57,53 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   for (const e of [...fixtures, ...block.entities]) {
     for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) byTile.set(`${e.x + dx},${e.y + dy}`, e);
   }
+
+  // What may be moved: each Sub-Block's stack and each machine stood apart (its box, the copies it
+  // holds), with their pieces; where their pieces stand.
+  const units = [];
+  if (onPut && block.edit) {
+    const { instances } = block.edit;
+    block.subBlocks.forEach((sb, i) => {
+      units.push({ step: i, box: sb, members: new Set(instances.filter(n => n.step === i && !n.detached).map(n => n.index)), pieces: [] });
+      for (const b of sb.apart ?? []) if (b.inst !== undefined) units.push({ step: i, inst: b.inst, box: b, members: new Set([b.inst]), pieces: [] });
+    });
+  }
+  const unitOf = new Map();
+  for (const u of units) for (const n of u.members) unitOf.set(n, u);
+  const owner = new Map();
+  for (const e of block.entities) {
+    const u = unitOf.get(e.copy);
+    if (!u) continue;
+    u.pieces.push(e);
+    for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) owner.set(`${e.x + dx},${e.y + dy}`, u);
+  }
+  const fixed = new Set();
+  for (const f of fixtures) for (let dx = 0; dx < f.w; dx++) for (let dy = 0; dy < f.h; dy++) fixed.add(`${f.x + dx},${f.y + dy}`);
+  // The unit at a tile: the one its piece is of, else the box it is in (a machine apart's first).
+  const unitAt = (tx, ty) => {
+    const mine = owner.get(`${tx},${ty}`);
+    if (mine) return mine;
+    const inBox = b => tx >= b.x && ty >= b.y && tx < b.x + b.w && ty < b.y + b.h;
+    return units.find(u => u.inst !== undefined && inBox(u.box)) ?? units.find(u => u.inst === undefined && inBox(u.box)) ?? null;
+  };
+  // Whether a unit `dx`, `dy` off stands outside the City Block ('outside'), or on another's
+  // pieces or a Fixture ('taken'); else false.
+  const clashes = (u, dx, dy) => {
+    let taken = false;
+    for (const e of u.pieces) {
+      for (let ax = 0; ax < e.w; ax++) {
+        for (let ay = 0; ay < e.h; ay++) {
+          const x = e.x + ax + dx, y = e.y + ay + dy, k = `${x},${y}`;
+          if (site && (x < site.inner.x || y < site.inner.y || x >= site.inner.x + site.inner.w || y >= site.inner.y + site.inner.h)) return 'outside';
+          if ((owner.get(k) ?? u) !== u || fixed.has(k)) taken = true;
+        }
+      }
+    }
+    return taken && 'taken';
+  };
+  // A unit carried (lift: picked up, dx and dy off where it stood, from the world point it was
+  // picked up at), and one put down whose move is being laid out (`placing`).
+  let lift = null, placing = null;
 
   // The selection: { entity } or { subBlock } (its index), and the route its entity is on.
   let selected = null;
@@ -100,9 +155,12 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     draw();
   }
 
+  // The theme and the canvas's size as the map draws it now.
+  let shade = null, size = { width: 0, height: 0 };
+
   function draw() {
-    const t = theme();
-    const { width, height } = canvas.getBoundingClientRect();
+    const t = shade = theme();
+    const { width, height } = size = canvas.getBoundingClientRect();
     const s = view.scale;
     const sx = x => (x - view.x) * s, sy = y => (y - view.y) * s;
     ctx.fillStyle = t.bg;
@@ -147,109 +205,27 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       if (s * Math.min(f.w, f.h) >= 12) drawIcon(f.name, x + w / 2, y + h / 2, Math.min(w, h) * 0.8);
     }
 
+    // (A Sub-Block carried, or put down while its move is laid out, stands where it goes.)
+    const away = lift?.unit ?? placing?.unit ?? null;
     for (const sb of block.subBlocks) {
       ctx.strokeStyle = starving.has(sb.index) ? t.starve : t.subBlock;
       ctx.setLineDash([6, 4]);
       ctx.lineWidth = 1.5;
       // Machines broken out of it (Breakout) in boxes of their own.
-      for (const b of [sb, ...(sb.apart ?? [])]) ctx.strokeRect(sx(b.x) - 3, sy(b.y) - 3, b.w * s + 6, b.h * s + 6);
+      for (const b of [sb, ...(sb.apart ?? [])]) if (b !== away?.box) ctx.strokeRect(sx(b.x) - 3, sy(b.y) - 3, b.w * s + 6, b.h * s + 6);
       ctx.setLineDash([]);
-      if (s >= 3) {
+      if (s >= 3 && sb !== away?.box) {
         ctx.fillStyle = starving.has(sb.index) ? t.starve : t.subBlock;
         ctx.font = `${Math.max(10, Math.min(14, s))}px system-ui, sans-serif`;
         ctx.fillText(`${words(sb.item)} ×${sb.count}`, sx(sb.x), sy(sb.y) - 6);
       }
     }
 
-    for (const e of block.entities) {
-      const x = sx(e.x), y = sy(e.y), w = e.w * s, h = e.h * s;
-      if (x > width || y > height || x + w < 0 || y + h < 0) continue;
-      switch (e.kind) {
-        case 'building':
-          // An offshore pump on its shallow water.
-          ctx.fillStyle = e.recipe === 'offshore-water' ? '#2d6a8f' : t.machine;
-          ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
-          ctx.strokeStyle = t.machineEdge;
-          ctx.lineWidth = 1;
-          ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
-          // What the machine makes, with the machine itself in the corner.
-          drawIcon(block.subBlocks[e.subBlock]?.item ?? e.recipe, x + w / 2, y + h / 2, Math.min(w, h) * 0.55);
-          const corner = Math.min(w, h) * 0.25;
-          if (corner >= 12) drawIcon(e.name, x + w - corner * 0.7, y + h - corner * 0.7, corner);
-          if (s * e.w >= 40) {
-            ctx.fillStyle = t.text;
-            ctx.font = `${Math.min(12, s * 0.8)}px system-ui, sans-serif`;
-            ctx.fillText(words(e.recipe), x + 4, y + 4 + Math.min(12, s * 0.8), w - 8);
-          }
-          break;
-        case 'belt':
-        case 'underground-belt': {
-          ctx.fillStyle = colors.route(e.route);
-          ctx.fillRect(x + s * 0.15, y + s * 0.15, s * 0.7, s * 0.7);
-          if (e.kind === 'underground-belt') {
-            ctx.strokeStyle = t.text;
-            ctx.lineWidth = Math.max(1, s * 0.08);
-            ctx.strokeRect(x + s * 0.1, y + s * 0.1, s * 0.8, s * 0.8);
-          }
-          arrow(x, y, s, e.travel, t.bg);
-          // The items it carries, on every third tile, each merged item in turn.
-          const n = pieceIndex.get(e);
-          const items = block.routes[e.route].items;
-          if (s >= 14 && n % 3 === 0) drawIcon(items[(n / 3) % items.length].item, x + s / 2, y + s / 2, s * 0.55);
-          break;
-        }
-        case 'splitter':
-          ctx.fillStyle = t.machineEdge;
-          ctx.fillRect(x + s * 0.1, y + s * 0.1, w - s * 0.2, h - s * 0.2);
-          arrow(x + (w - s) / 2, y + (h - s) / 2, s, e.travel ?? e.direction, t.bg);
-          break;
-        case 'pipe':
-        case 'pipe-to-ground':
-          ctx.fillStyle = colors.fluid(e.fluid);
-          if (e.kind === 'pipe') ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
-          else {
-            ctx.beginPath();
-            ctx.arc(x + s / 2, y + s / 2, s * 0.38, 0, Math.PI * 2);
-            ctx.fill();
-            arrow(x, y, s, e.direction, t.bg);
-          }
-          pipeLinks(e, x, y, s);
-          if (s >= 14 && pieceIndex.get(e) % 4 === 0) drawIcon(e.fluid, x + s / 2, y + s / 2, s * 0.5);
-          break;
-        case 'inserter':
-          if (s >= 20 && drawIcon(e.name, x + s / 2, y + s / 2, s * 0.8)) {
-            arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
-            break;
-          }
-          ctx.fillStyle = turnsSideways(e) ? '#9b6fe0' : e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
-          ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
-          // Arrow points toward the drop.
-          arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
-          break;
-        case 'pole':
-          if (s >= 20 && drawIcon(e.name, x + w / 2, y + h / 2, Math.min(w, h) * 0.9)) break;
-          ctx.fillStyle = '#c9a227';
-          ctx.fillRect(x + w * 0.25, y + h * 0.25, w * 0.5, h * 0.5);
-          break;
-      }
-    }
+    for (const e of block.entities) if (!away || !away.members.has(e.copy)) drawEntity(e, 0, 0);
 
     // Output Drops, as the game shows them: a yellow arrow out of the machine, across its edge
     // onto the tile it puts its products on.
-    if (s >= 8) {
-      ctx.fillStyle = '#f0c419';
-      for (const e of block.entities.filter(m => m.kind === 'building' && m.drop)) {
-        const [dx, dy] = ARROW[directionOf({ x: e.drop.x - e.w / 2, y: e.drop.y - e.h / 2 })];
-        // The edge point it crosses, and the arrow's tip a third of a tile out from it.
-        const ex = sx(e.x + e.drop.x), ey = sy(e.y + e.drop.y);
-        const r = s * 0.22;
-        ctx.beginPath();
-        ctx.moveTo(ex + dx * r, ey + dy * r);
-        ctx.lineTo(ex - dx * r * 0.2 - dy * r, ey - dy * r * 0.2 + dx * r);
-        ctx.lineTo(ex - dx * r * 0.2 + dy * r, ey - dy * r * 0.2 - dx * r);
-        ctx.fill();
-      }
-    }
+    if (s >= 8) for (const e of block.entities) if (e.kind === 'building' && e.drop && (!away || !away.members.has(e.copy))) drawDrop(e, 0, 0);
 
     // Copper wires between poles (on to the City Block's: indices past the entities), then the
     // circuit wires, red and green side by side.
@@ -295,11 +271,135 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
         const sb = block.subBlocks[selected.subBlock];
         ctx.fillStyle = 'rgba(232, 160, 60, 0.1)';
         for (const b of [sb, ...(sb.apart ?? [])]) {
+          if (b === away?.box) continue;
           ctx.fillRect(sx(b.x), sy(b.y), b.w * s, b.h * s);
           outline(b, 3, 2.5);
         }
       }
     }
+
+    // A Sub-Block carried: faint where it stood, whole where it goes, its box in the accent
+    // colour (red where it would stand on another or a Fixture: the move takes it to the nearest
+    // room; or outside the City Block), with how far it goes; put down, while its move is laid
+    // out, the same.
+    if (away) {
+      const { dx, dy, clash } = lift ?? placing;
+      ctx.globalAlpha = 0.28;
+      for (const e of away.pieces) drawEntity(e, 0, 0);
+      ctx.globalAlpha = 1;
+      for (const e of away.pieces) drawEntity(e, dx, dy);
+      if (s >= 8) for (const e of away.pieces) if (e.kind === 'building' && e.drop) drawDrop(e, dx, dy);
+      const b = away.box, color = clash ? t.starve : t.subBlock;
+      ctx.fillStyle = clash ? 'rgba(255, 92, 92, 0.12)' : 'rgba(232, 160, 60, 0.12)';
+      ctx.fillRect(sx(b.x + dx), sy(b.y + dy), b.w * s, b.h * s);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash(placing ? [3, 5] : [8, 4]);
+      ctx.strokeRect(sx(b.x + dx) - 3, sy(b.y + dy) - 3, b.w * s + 6, b.h * s + 6);
+      ctx.setLineDash([]);
+      const sb = block.subBlocks[away.step];
+      const how = placing ? 'laying it out…' : clash === 'outside' ? 'outside the city block' : clash ? 'on another: it goes to the nearest room' : offset(dx, dy);
+      ctx.font = `600 ${Math.max(11, Math.min(14, s))}px system-ui, sans-serif`;
+      const text = `${words(sb.item)} ×${sb.count}${how ? ` · ${how}` : ''}`;
+      const tx = sx(b.x + dx), ty = sy(b.y + dy) - 10;
+      const pad = 5, tw = ctx.measureText(text).width;
+      ctx.fillStyle = 'rgba(22, 21, 20, 0.88)';
+      ctx.fillRect(tx - pad, ty - 14, tw + 2 * pad, 20);
+      ctx.fillStyle = color;
+      ctx.fillText(text, tx, ty);
+    }
+  }
+
+  // One entity, `ox`, `oy` tiles off where it stands.
+  function drawEntity(e, ox, oy) {
+    const t = shade ?? theme();
+    const { width, height } = size;
+    const s = view.scale;
+    const x = (e.x + ox - view.x) * s, y = (e.y + oy - view.y) * s, w = e.w * s, h = e.h * s;
+    if (x > width || y > height || x + w < 0 || y + h < 0) return;
+    switch (e.kind) {
+      case 'building':
+        // An offshore pump on its shallow water.
+        ctx.fillStyle = e.recipe === 'offshore-water' ? '#2d6a8f' : t.machine;
+        ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+        ctx.strokeStyle = t.machineEdge;
+        ctx.lineWidth = 1;
+        ctx.strokeRect(x + 1, y + 1, w - 2, h - 2);
+        // What the machine makes, with the machine itself in the corner.
+        drawIcon(block.subBlocks[e.subBlock]?.item ?? e.recipe, x + w / 2, y + h / 2, Math.min(w, h) * 0.55);
+        const corner = Math.min(w, h) * 0.25;
+        if (corner >= 12) drawIcon(e.name, x + w - corner * 0.7, y + h - corner * 0.7, corner);
+        if (s * e.w >= 40) {
+          ctx.fillStyle = t.text;
+          ctx.font = `${Math.min(12, s * 0.8)}px system-ui, sans-serif`;
+          ctx.fillText(words(e.recipe), x + 4, y + 4 + Math.min(12, s * 0.8), w - 8);
+        }
+        break;
+      case 'belt':
+      case 'underground-belt': {
+        ctx.fillStyle = colors.route(e.route);
+        ctx.fillRect(x + s * 0.15, y + s * 0.15, s * 0.7, s * 0.7);
+        if (e.kind === 'underground-belt') {
+          ctx.strokeStyle = t.text;
+          ctx.lineWidth = Math.max(1, s * 0.08);
+          ctx.strokeRect(x + s * 0.1, y + s * 0.1, s * 0.8, s * 0.8);
+        }
+        arrow(x, y, s, e.travel, t.bg);
+        // The items it carries, on every third tile, each merged item in turn.
+        const n = pieceIndex.get(e);
+        const items = block.routes[e.route].items;
+        if (s >= 14 && n % 3 === 0) drawIcon(items[(n / 3) % items.length].item, x + s / 2, y + s / 2, s * 0.55);
+        break;
+      }
+      case 'splitter':
+        ctx.fillStyle = t.machineEdge;
+        ctx.fillRect(x + s * 0.1, y + s * 0.1, w - s * 0.2, h - s * 0.2);
+        arrow(x + (w - s) / 2, y + (h - s) / 2, s, e.travel ?? e.direction, t.bg);
+        break;
+      case 'pipe':
+      case 'pipe-to-ground':
+        ctx.fillStyle = colors.fluid(e.fluid);
+        if (e.kind === 'pipe') ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
+        else {
+          ctx.beginPath();
+          ctx.arc(x + s / 2, y + s / 2, s * 0.38, 0, Math.PI * 2);
+          ctx.fill();
+          arrow(x, y, s, e.direction, t.bg);
+        }
+        pipeLinks(e, x, y, s);
+        if (s >= 14 && pieceIndex.get(e) % 4 === 0) drawIcon(e.fluid, x + s / 2, y + s / 2, s * 0.5);
+        break;
+      case 'inserter':
+        if (s >= 20 && drawIcon(e.name, x + s / 2, y + s / 2, s * 0.8)) {
+          arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
+          break;
+        }
+        ctx.fillStyle = turnsSideways(e) ? '#9b6fe0' : e.name.startsWith('long') ? '#d08a3c' : '#4fa3e0';
+        ctx.fillRect(x + s * 0.3, y + s * 0.3, s * 0.4, s * 0.4);
+        // Arrow points toward the drop.
+        arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);
+        break;
+      case 'pole':
+        if (s >= 20 && drawIcon(e.name, x + w / 2, y + h / 2, Math.min(w, h) * 0.9)) break;
+        ctx.fillStyle = '#c9a227';
+        ctx.fillRect(x + w * 0.25, y + h * 0.25, w * 0.5, h * 0.5);
+        break;
+    }
+  }
+
+  // A machine's Output Drop: a yellow arrow out of it, across its edge onto its drop tile.
+  function drawDrop(e, ox, oy) {
+    const s = view.scale;
+    const [dx, dy] = ARROW[directionOf({ x: e.drop.x - e.w / 2, y: e.drop.y - e.h / 2 })];
+    // The edge point it crosses, and the arrow's tip a third of a tile out from it.
+    const ex = (e.x + ox + e.drop.x - view.x) * s, ey = (e.y + oy + e.drop.y - view.y) * s;
+    const r = s * 0.22;
+    ctx.fillStyle = '#f0c419';
+    ctx.beginPath();
+    ctx.moveTo(ex + dx * r, ey + dy * r);
+    ctx.lineTo(ex - dx * r * 0.2 - dy * r, ey - dy * r * 0.2 + dx * r);
+    ctx.lineTo(ex - dx * r * 0.2 + dy * r, ey - dy * r * 0.2 - dx * r);
+    ctx.fill();
   }
 
   function pipeLinks(e, x, y, s) {
@@ -329,8 +429,10 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   }
 
   // Pointers down (a pinch: two), how far the gesture moved, and the last tap (a double tap zooms).
+  // A press on a Sub-Block that may be moved (`press`): held still, it picks it up; dragged, it
+  // pans the map, unless that Sub-Block is selected: then it carries it straight away.
   const pointers = new Map();
-  let drag = null, pinch = null, moved = 0, lastTap = null;
+  let drag = null, pinch = null, moved = 0, lastTap = null, press = null, edgeFrame = 0;
   const local = e => {
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -339,13 +441,91 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     const [a, b] = [...pointers.values()];
     return { d: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
   };
+  const world = at => ({ x: view.x + at.x / view.scale, y: view.y + at.y / view.scale });
+  const tileOf = at => {
+    const w = world(at);
+    return [Math.floor(w.x), Math.floor(w.y)];
+  };
+  // Picks a unit up, the pointer at `at`: it follows the pointer from there, tile by tile.
+  // (Selected, quietly: a panel opening over the map would hide where it goes.)
+  const pickUp = (unit, at) => {
+    clearTimeout(press?.timer);
+    press = null;
+    lift = { unit, from: world(at), at, dx: 0, dy: 0, clash: false };
+    selected = { subBlock: unit.step };
+    canvas.style.cursor = 'grabbing';
+    canvas.dataset.carrying = '';
+    navigator.vibrate?.(12);
+    draw();
+    window.addEventListener('keydown', onKey);
+    edgeFrame = requestAnimationFrame(edgePan);
+  };
+  // Where the unit carried goes, the pointer at `at`.
+  const carry = at => {
+    lift.at = at;
+    const w = world(at);
+    const dx = Math.round(w.x - lift.from.x), dy = Math.round(w.y - lift.from.y);
+    if (dx === lift.dx && dy === lift.dy) return;
+    Object.assign(lift, { dx, dy, clash: clashes(lift.unit, dx, dy) });
+    draw();
+  };
+  // Near the map's edge, a unit carried pans the map that way.
+  const edgePan = () => {
+    if (!lift) return;
+    const { width, height } = canvas.getBoundingClientRect();
+    const toward = (v, end) => (v < EDGE ? v - EDGE : v > end - EDGE ? v - end + EDGE : 0);
+    const vx = toward(lift.at.x, width), vy = toward(lift.at.y, height);
+    if (vx || vy) {
+      view.x += vx * 0.3 / view.scale;
+      view.y += vy * 0.3 / view.scale;
+      carry(lift.at);
+      draw();
+    }
+    edgeFrame = requestAnimationFrame(edgePan);
+  };
+  const stopLift = () => {
+    lift = null;
+    cancelAnimationFrame(edgeFrame);
+    window.removeEventListener('keydown', onKey);
+    canvas.style.cursor = '';
+    delete canvas.dataset.carrying;
+  };
+  // Puts the unit carried down: moved, onMove hears where, and it shows there while its move is
+  // laid out (until settle(), or the map made again); not moved, it is selected as a tap would.
+  const putDown = () => {
+    const { unit, dx, dy, clash } = lift;
+    stopLift();
+    if (dx || dy) {
+      placing = { unit, dx, dy, clash };
+      onPut({ step: unit.step, ...(unit.inst !== undefined ? { inst: unit.inst } : {}) }, dx, dy);
+    } else onSelect({ subBlock: unit.step }, block);
+    draw();
+  };
+  // Escape: the unit carried goes back where it stood.
+  const onKey = e => {
+    if (e.key !== 'Escape' || !lift) return;
+    stopLift();
+    drag = null;
+    draw();
+  };
   const onDown = e => {
     canvas.setPointerCapture(e.pointerId);
     pointers.set(e.pointerId, local(e));
     if (pointers.size === 1) {
       drag = local(e);
       moved = 0;
+      const unit = placing ? null : unitAt(...tileOf(drag));
+      if (unit) {
+        const now = selected?.subBlock === unit.step;
+        press = { unit, at: drag, last: drag, now, timer: now ? 0 : setTimeout(() => pickUp(unit, press?.last ?? drag), HOLD) };
+      }
     } else if (pointers.size === 2) {
+      clearTimeout(press?.timer);
+      press = null;
+      if (lift) {
+        stopLift();
+        draw();
+      }
       pinch = span();
       moved = Infinity;
     }
@@ -362,6 +542,23 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       pinch = now;
       return;
     }
+    if (lift && pointers.has(e.pointerId)) {
+      carry(at);
+      return;
+    }
+    if (press && pointers.has(e.pointerId)) {
+      const far = Math.hypot(at.x - press.at.x, at.y - press.at.y);
+      press.last = at;
+      if (press.now && far > SLOP / 2) {
+        pickUp(press.unit, drag);
+        carry(at);
+        return;
+      }
+      if (far <= SLOP) return;
+      // (Not held still: a pan, from where the press began.)
+      clearTimeout(press.timer);
+      press = null;
+    }
     if (drag && pointers.has(e.pointerId)) {
       moved += Math.hypot(at.x - drag.x, at.y - drag.y);
       view.x -= (at.x - drag.x) / view.scale;
@@ -371,12 +568,24 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       return;
     }
     if (e.pointerType !== 'mouse') return;
-    const tx = Math.floor(view.x + at.x / view.scale), ty = Math.floor(view.y + at.y / view.scale);
+    const [tx, ty] = tileOf(at);
     onHover(byTile.get(`${tx},${ty}`) ?? null, block);
+    // (A selected Sub-Block that may be moved: dragged, it goes.)
+    const unit = units.length && !placing ? unitAt(tx, ty) : null;
+    canvas.style.cursor = unit && selected?.subBlock === unit.step ? 'move' : '';
   };
   const onUp = e => {
     const at = local(e);
     pointers.delete(e.pointerId);
+    clearTimeout(press?.timer);
+    press = null;
+    if (lift) {
+      if (pointers.size) return;
+      carry(at);
+      putDown();
+      drag = null;
+      return;
+    }
     if (pointers.size === 1) {
       // (The pinch over: the finger left pans on from where it is.)
       pinch = null;
@@ -396,14 +605,24 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       return;
     }
     lastTap = { time: now, x: at.x, y: at.y };
-    const hit = hitAt(Math.floor(view.x + at.x / view.scale), Math.floor(view.y + at.y / view.scale));
+    const hit = hitAt(...tileOf(at));
     selected = hit;
     draw();
     onSelect(hit && (hit.entity ? { entity: hit.entity, route: hit.route } : hit), block);
   };
   const onCancel = e => {
     pointers.delete(e.pointerId);
+    clearTimeout(press?.timer);
+    press = null;
+    if (lift) {
+      stopLift();
+      draw();
+    }
     if (!pointers.size) [drag, pinch] = [null, null];
+  };
+  // (A long press is a pick-up, not the browser's menu.)
+  const onMenu = e => {
+    if (press || lift) e.preventDefault();
   };
   const onWheel = e => {
     e.preventDefault();
@@ -421,9 +640,10 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   canvas.addEventListener('pointerleave', onLeave);
   canvas.addEventListener('wheel', onWheel, { passive: false });
   canvas.addEventListener('gesturestart', onGesture);
+  canvas.addEventListener('contextmenu', onMenu);
   observer.observe(canvas);
   resize();
-  fit();
+  if (!start) fit();
 
   return {
     fit,
@@ -433,6 +653,9 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     },
     destroy() {
       observer.disconnect();
+      clearTimeout(press?.timer);
+      stopLift();
+      canvas.removeEventListener('contextmenu', onMenu);
       canvas.removeEventListener('pointerdown', onDown);
       canvas.removeEventListener('pointermove', onMove);
       canvas.removeEventListener('pointerup', onUp);
@@ -440,6 +663,23 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       canvas.removeEventListener('pointerleave', onLeave);
       canvas.removeEventListener('wheel', onWheel);
       canvas.removeEventListener('gesturestart', onGesture);
+    },
+    // Where the map stands and how far it is zoomed in (`view` for another map of the same place).
+    viewport: () => ({ scale: view.scale, x: view.x, y: view.y }),
+    // The move put down is over without a new map (it found no way): the Sub-Block shows where it
+    // stands again.
+    settle() {
+      placing = null;
+      draw();
+    },
+    // Shows a Sub-Block ({ step, inst }) `dx`, `dy` tiles off while its move is laid out, as if
+    // dragged there; false where it may not be moved.
+    place({ step, inst }, dx, dy) {
+      const unit = units.find(u => u.step === step && u.inst === inst);
+      if (!unit) return false;
+      placing = { unit, dx, dy, clash: clashes(unit, dx, dy) };
+      draw();
+      return true;
     },
     // Selects `hit` ({ entity, route } or { subBlock }; null: nothing), as a tap would, quietly.
     select(hit) {
@@ -486,6 +726,14 @@ export function turnsSideways(e) {
 function directionOf({ x, y }) {
   if (Math.abs(x) > Math.abs(y)) return x > 0 ? 4 : 12;
   return y > 0 ? 8 : 0;
+}
+
+// How far a move goes: "3 east, 2 south".
+function offset(dx, dy) {
+  const parts = [];
+  if (dx) parts.push(`${Math.abs(dx)} ${dx > 0 ? 'east' : 'west'}`);
+  if (dy) parts.push(`${Math.abs(dy)} ${dy > 0 ? 'south' : 'north'}`);
+  return parts.join(', ');
 }
 
 // A name as people read it: "iron-pulp-01" is "Iron pulp 01".

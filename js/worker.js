@@ -9,14 +9,29 @@
 // { type: 'try', rate, machines } before each try, { type: 'best', …, rate, machines, goals } for
 // each that fits, and { type: 'done', tried, failure, rate, machines, goals, above } at the end
 // (`above`: the lowest rate tried that did not fit, and why).
+// A move (`move`: { edit (the shown block's), step, inst, dx, dy, score }) lays the shown block out
+// again with that Sub-Block moved (edit.js): { type: 'trying', tried, at, pushed } before each
+// layout it tries, then { type: 'moved', block, at, pushed, back, score, tried }, or { type:
+// 'stuck', message, tried } where none routes.
 import { search } from './search.js';
 import { maximize } from './maximize.js';
 import { context, designStep, random } from './design.js';
+import { moveCopies } from './layout/edit.js';
 
 const catalog = fetch(new URL('../data/catalog.json', import.meta.url)).then(r => r.json());
 
-self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = null, maximize: goals = null, strategy = 'search', design = null, designs = null } }) => {
+self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = null, maximize: goals = null, strategy = 'search', design = null, designs = null, move = null } }) => {
   try {
+    if (move) {
+      const ctx = context(entries, await catalog, logistics, site);
+      const { edit, score, ...where } = move;
+      const run = moveCopies(ctx, edit, where, { score, deadline: Date.now() + budgetMs });
+      let step = run.next();
+      for (; !step.done; step = run.next()) self.postMessage(step.value);
+      const { failure, ...out } = step.value;
+      self.postMessage(failure ? { type: 'stuck', message: failure.message, tried: out.tried } : { type: 'moved', ...out });
+      return;
+    }
     // One Sub-Block designed on its own (`design`: its index): its candidates, those built with
     // their design, the rest as what they are ({ type: 'designed', index, list }).
     if (design !== null) {

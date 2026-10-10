@@ -9,9 +9,11 @@ import { wirePairs } from './wires.js';
 // when it holds anything else. Straight pipe runs then go underground, and poles are placed on
 // the result. Returns a new block.
 // A block in a City Block is not squeezed: its Fixtures stay where they are, and so does the rest.
-export function finishBlock(block, catalog, logistics) {
+// Nor is one the user moved a Sub-Block of (`squeeze: false`): the rest stays where it stood.
+// The squeezed block keeps the lines it took out (`squeeze`, as squeezeEntities logs them).
+export function finishBlock(block, catalog, logistics, { squeeze = true } = {}) {
   const bury = b => buryPipes(b, catalog, logistics);
-  if (block.site) return power(bury(clone(block)), catalog, logistics);
+  if (block.site || !squeeze) return power(bury(clone(block)), catalog, logistics);
   const squeezed = compact(block);
   try {
     return power(bury(squeezed), catalog, logistics);
@@ -119,6 +121,7 @@ export function compact(block) {
   const { entities, log } = squeezeEntities(out.entities);
   const kept = new Set(entities);
   out.entities = entities;
+  out.squeeze = log;
   for (const r of out.routes) r.pieces = r.pieces.filter(p => kept.has(p));
   // Each Sub-Block's box, and those of machines broken out of it, shrink with the lines.
   for (const box of out.subBlocks.flatMap(sb => [sb, ...(sb.apart ?? [])])) {
