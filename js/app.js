@@ -169,7 +169,10 @@ $('calculate').addEventListener('click', () => build());
 $('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
 $('copy-json').addEventListener('click', () => copy($('bp-json').value, $('copy-json')));
-$('copy-setup').addEventListener('click', () => copy($('setup-json').value = setupText(), $('copy-setup')));
+$('copy-setup').addEventListener('click', () => {
+  $('setup').open = true;
+  copy($('setup-json').value = setupText(), $('copy-setup'));
+});
 $('setup').addEventListener('toggle', () => { if ($('setup').open) $('setup-json').value = setupText(); });
 $('picker-close').addEventListener('click', () => $('picker').close());
 $('picker-none').addEventListener('click', () => choose(null));
@@ -1105,13 +1108,34 @@ function setupText() {
   }, null, 2);
 }
 
+// The Clipboard API is missing over plain http (a phone opening the page by the computer's address)
+// and can be refused on iOS; the older copy of a selected text area works there.
 async function copy(text, button) {
   try {
     await navigator.clipboard.writeText(text);
     flash(button, 'Copied');
   } catch {
-    flash(button, 'Copy failed — select the text instead');
+    flash(button, copySelected(text) ? 'Copied' : 'Copy failed — select the text instead');
   }
+}
+
+function copySelected(text) {
+  const area = document.createElement('textarea');
+  area.value = text;
+  area.contentEditable = 'true';
+  area.style.cssText = 'position:fixed;top:0;left:0;opacity:0;font-size:16px';
+  document.body.append(area);
+  const range = document.createRange();
+  range.selectNodeContents(area);
+  const selection = getSelection();
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  area.setSelectionRange(0, text.length);
+  let copied = false;
+  try { copied = document.execCommand('copy'); } catch { /* not supported */ }
+  area.remove();
+  selection?.removeAllRanges();
+  return copied;
 }
 
 function flash(button, text) {
