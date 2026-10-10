@@ -237,11 +237,12 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       .sort((a, b) => b.rate - a.rate);
     const from = makers[0];
     if (!from || from.rate < input.rate * (1 - 1e-9)) continue;
-    // (A solid only where one lane carries all its step makes, the item with the rest: the
-    // feedback is tapped off one output belt, every product on its far lane.)
+    // (A solid only where one lane carries all its step makes, the item with the rest, or from a
+    // Goal's step: an Internal Path's belts, joined by splitters, take no tap, so the feedback is
+    // tapped off one of them; a Goal's belts on to the train each feed a belt of it.)
     const lane = belt && catalog.belts?.[belt] ? catalog.belts[belt].itemsPerSecond * 30 : Infinity;
     const solid = new Set(recipeOf(from.key).products.filter(p => p.type === 'item').map(p => p.name));
-    if (!fluid && [...solid].reduce((sum, name) => sum + makes(from.key, name) * ratesOf(from.key), 0) > lane * (1 + 1e-9)) continue;
+    if (!fluid && !goals.some(g => g.item === from.key) && [...solid].reduce((sum, name) => sum + makes(from.key, name) * ratesOf(from.key), 0) > lane * (1 + 1e-9)) continue;
     trainInputs.delete(item);
     for (const k of takers) {
       stepOf(k).byTrain.delete(item);

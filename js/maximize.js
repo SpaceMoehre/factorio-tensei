@@ -269,12 +269,16 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
   } catch (e) {
     return { block: null, tried: 0, designed, starves: true, failure: e };
   }
+  // (Sorting: the best so far, while its byproducts ride on. A first fit bringing a Recipe Loop's
+  // feedback by train: the best so far, while as long again finds one feeding it here — the
+  // search's clock then runs out.)
+  let kept = null, until = Infinity;
+  const start = now();
+  const clock = () => (now() > until ? Infinity : now());
   try {
     const run = search(entries, plan.catalog, plan.logistics, {
-      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now, perfect: true, precheck, designed: d => { designed = d; },
+      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: true, precheck, designed: d => { designed = d; },
     });
-    // (Sorting: the best so far, while its byproducts ride on.)
-    let kept = null;
     for (let step = run.next(); ; step = run.next()) {
       if (step.done) {
         if (kept) return { block: kept.block, score: kept.score, placed: kept.placed, tried: step.value.tried, designed, starves: false, failure: null };
@@ -282,12 +286,17 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
         return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), failure };
       }
       if (sorting && step.value.score[0] === 0 && step.value.score[2] > 0) kept = step.value;
-      else if (step.value.score[0] === 0) {
+      else if (!sorting && step.value.score[0] === 0 && step.value.score[1] > 0) {
+        if (!kept) until = now() + Math.max(1000, now() - start);
+        kept = step.value;
+      } else if (step.value.score[0] === 0) {
         run.return(undefined);
         return { block: step.value.block, score: step.value.score, placed: step.value.placed, tried: step.value.tried, designed, starves: false, failure: null };
       }
     }
   } catch (e) {
+    // (Out of the time a fit bringing a loop by train left: that one.)
+    if (kept && !sorting) return { block: kept.block, score: kept.score, placed: kept.placed, tried: kept.tried, designed, starves: false, failure: null };
     // A Sub-Block that cannot be built at this rate.
     if (!(e instanceof LayoutError)) throw e;
     return { block: null, tried: 0, designed, starves: true, failure: e };

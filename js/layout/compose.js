@@ -236,14 +236,16 @@ export function compose(ctx, prepared, positions, layout) {
         // A Recipe Loop's feedback starts at its splitter on the producer's output: routed with
         // that link (taps).
         if (route.tapOf !== undefined && k === 0 && !layout.plain) return;
-        tasks.push({ route, slot: k, ...(route.taps && k === route.tapAt && !layout.plain ? { taps: true } : {}) });
+        tasks.push({ route, slot: k, ...flags(route, k) });
       });
-      if (route.sink === 'side-output' && !route.fanOut) tasks.push({ route, slot: route.slots.length, ...(route.taps && route.tapAt === route.slots.length && !layout.plain ? { taps: true } : {}) });
+      if (route.sink === 'side-output' && !route.fanOut) tasks.push({ route, slot: route.slots.length, ...flags(route, route.slots.length) });
       // A Fan-out from the producers: their line, after their belt, and every consumer's belt.
       if (route.fanOut) tasks.push({ route, slot: route.slots.length, fanOut: route.fanOut });
     }
     return tasks;
   };
+  // (The link after a producer's belt's producers: through its taps, or its gatherer's splitter.)
+  const flags = (route, k) => (layout.plain ? {} : route.taps && k === route.tapAt ? { taps: true } : route.gather !== undefined && k === route.gatherAt ? { gather: true } : {});
   const endsOf = ({ route, slot: k }) => {
     if (k === route.slots.length) {
       const last = route.slots.at(-1).pieces.at(-1);
@@ -268,6 +270,8 @@ export function compose(ctx, prepared, positions, layout) {
     // A Recipe Loop's feedback runs back across the block (along its row on top), after every
     // other link.
     if (task.taps) return [5, 0];
+    // A gatherer joins its feedback belt: after it.
+    if (task.gather) return [5, 1];
     // A Fan-out from producers lays its line before the links between Sub-Blocks: the longest first.
     if (task.fanOut) return [0.5, -task.fanOut.length];
     if (k > 0 && k < route.slots.length && stacked(route.slots[k].inst, route.slots[k - 1].inst)) {
@@ -345,8 +349,10 @@ export function compose(ctx, prepared, positions, layout) {
   // (items) and the belt it is fed from (fedBy, the trunk), or for a belt from the west edge,
   // what it brings (brings).
   let fanned = new Map();
-  // A Recipe Loop's feedback belts routed from their splitters.
+  // A Recipe Loop's feedback belts routed from their splitters, and the belts gathering a
+  // byproduct into them from its producer's other output belts (gatherers, by id).
   let tapped = new Set();
+  let gathered = new Set();
   // Their spare's belts back onto their output belt (side-loading), by output route: no link of
   // a route's own, so kept apart.
   let spilled = new Map();
@@ -377,9 +383,21 @@ export function compose(ctx, prepared, positions, layout) {
     fanned = new Map();
     sortedOut = new Map();
     tapped = new Set();
+    gathered = new Set();
     spilled = new Map();
     piped = new Set();
     let failed = null;
+    // (Tasks routed ahead of their turn: a feedback's splitters, before a gatherer joining it.)
+    const done = new Set();
+    // Without room for the splitters, the link on its own and each feedback by train.
+    const runTaps = task => {
+      const feeds = task.route.taps.map(id => routes[id]);
+      const legs = routeTaps(grid, task, feeds) ?? [[task.route.id, task.slot, link(grid, task)], ...feeds.map(r => [r.id, 0, link(grid, { route: r, slot: 0 })])];
+      for (const [id, k, leg] of legs) {
+        if (!links.has(id)) links.set(id, new Map());
+        links.get(id).set(k, leg);
+      }
+    };
     for (const task of order) {
       // A search out of time gives up on the layout rather than route on.
       if (layout.until && layout.until()) throw new RoutingError('out of time routing the links');
@@ -422,14 +440,27 @@ export function compose(ctx, prepared, positions, layout) {
           }
           continue;
         }
-        if (task.taps) {
-          // Without room for the splitters, the link on its own and each feedback by train.
-          const feeds = task.route.taps.map(id => routes[id]);
-          const legs = routeTaps(grid, task, feeds) ?? [[task.route.id, task.slot, link(grid, task)], ...feeds.map(r => [r.id, 0, link(grid, { route: r, slot: 0 })])];
-          for (const [id, k, leg] of legs) {
+        if (task.gather) {
+          // Its feedback taken off another belt: without room for its splitter or a way to that
+          // feedback, the feedback would starve (the layout routed again: in the end plain, every
+          // feedback by train). Its feedback by train: the link on its own. (Its feedback's
+          // splitter first, where this comes before it.)
+          const feed = routes[routes[task.route.gather].feed];
+          const tapping = order.find(t => t.taps && t.route.id === feed.tapOf);
+          if (tapping && !done.has(tapping)) {
+            done.add(tapping);
+            runTaps(tapping);
+          }
+          const legs = routeGather(grid, task, links);
+          if (legs === null && tapped.has(routes[task.route.gather].feed)) throw new RoutingError(`belt ${task.route.id}: no way to gather its ${routes[task.route.gather].items[0].item} into its feedback`);
+          for (const [id, k, leg] of legs ?? [[task.route.id, task.slot, link(grid, task)]]) {
             if (!links.has(id)) links.set(id, new Map());
             links.get(id).set(k, leg);
           }
+          continue;
+        }
+        if (task.taps) {
+          if (!done.has(task)) runTaps(task);
           continue;
         }
         if (!links.has(task.route.id)) links.set(task.route.id, new Map());
@@ -490,6 +521,54 @@ export function compose(ctx, prepared, positions, layout) {
       if (j !== k - 1 && (j < route.slots.length - 1 || route.sink === 'side-output' || route.fanOut)) out.add(key(last.x + dx, last.y + dy));
     });
     return out;
+  }
+
+  // A gatherer (task.gather): the producer's other output belt's link after its producers runs
+  // through a splitter a few tiles on, filtering the byproduct off to its side (priority to it),
+  // whose belt side-loads it onto the feedback belt; the rest goes on. Returns [routeId, slot,
+  // pieces] for the link and the gatherer; null where none finds a way.
+  function routeGather(grid, task, links) {
+    const { route } = task;
+    const ends = endsOf(task);
+    const gatherer = routes[route.gather], feed = routes[gatherer.feed];
+    if (!ends || !tapped.has(feed.id)) return null;
+    const { item } = gatherer.items[0];
+    // Beside the feedback's straight belts, heading into their side.
+    const legs = [...(links.get(feed.id)?.values() ?? [])].flat().filter(p => p.kind === 'belt');
+    const joins = new Set();
+    legs.forEach((p, k) => {
+      if (k > 0 && legs[k - 1].travel === p.travel) for (const a of [turnRight(p.travel), turnLeft(p.travel)]) joins.add(`${p.x},${p.y},${a}`);
+    });
+    if (!joins.size) return null;
+    const free = (x, y, id) => grid.inBounds(x, y) && !grid.at(x, y) && [undefined, id].includes(grid.holder(x, y));
+    const from = ends.starts[0];
+    // (The feedback may run far from it: more spots, and a longer way to it, than a tap's.)
+    let budget = 4 * FAN_TRIES;
+    for (let x = from.x + 1; x <= from.x + FAN_REACH && budget > 0; x++) {
+      for (const y of [from.y - 1, from.y, from.y - 2, from.y + 1]) {
+        if (!free(x, y, route.id) || !free(x, y + 1, route.id)) continue;
+        for (const top of [true, false]) {
+          const branch = { x: x + 1, y: top ? y : y + 1, a: E }, on = { x: x + 1, y: top ? y + 1 : y, a: E };
+          for (const lane of [0, 1]) {
+            if (!free(branch.x, branch.y, gatherer.id) || !free(on.x, on.y, route.id) || !free(x - 1, y + lane, route.id) || budget-- <= 0) continue;
+            const saved = grid.snapshot({ holds: true });
+            try {
+              const splitter = { name: splitterName, kind: 'splitter', x, y, w: 1, h: 2, direction: E, travel: E, priority: top ? 'left' : 'right', filter: item };
+              grid.place(splitter);
+              const into = routeLink(grid, { id: route.id, starts: [from], goal: { x, y: y + lane, a: E } }, belts);
+              const away = routeLink(grid, { id: gatherer.id, starts: [branch], goal: 'join', joins, most: 5 * JOIN_STATES }, belts);
+              const onward = routeLink(grid, { id: route.id, starts: [on], goal: ends.goal }, belts);
+              gathered.add(gatherer.id);
+              return [[route.id, task.slot, [...into, splitter, ...onward]], [gatherer.id, 0, [splitter, ...away]]];
+            } catch (e) {
+              if (!(e instanceof RoutingError)) throw e;
+            }
+            grid.restore(saved);
+          }
+        }
+      }
+    }
+    return null;
   }
 
   // A Recipe Loop's feedback: the producer's output belt's link after its producers (task) runs
@@ -1072,16 +1151,22 @@ export function compose(ctx, prepared, positions, layout) {
 
   function finish(grid, entities, pieces) {
     const result = routes.map(r => {
-      const { slots, stubs, splitter, fan, taps, tapAt, tapOf, ...rest } = r;
-      // A Recipe Loop's feedback fed from its splitter, else by train (all a belt brings).
-      const fed = taps?.filter(id => tapped.has(id)) ?? [];
-      const loop = tapOf === undefined ? {} : tapped.has(r.id) ? { fedBy: tapOf } : { items: r.items.map(i => ({ ...i, supply: i.capacity })) };
+      const { slots, stubs, splitter, fan, taps, tapAt, tapOf, gather, gatherAt, feed, ...rest } = r;
+      // A Recipe Loop's feedback fed from its splitter (and what gatherers bring it), else by train
+      // (all a belt brings); a gatherer's output belt feeds it too.
+      const fed = [...taps?.filter(id => tapped.has(id)) ?? [], ...(gathered.has(gather) ? [routes[gather].feed] : [])];
+      const brought = routes.filter(g => g.feed === r.id && !gathered.has(g.id)).reduce((sum, g) => sum + g.items[0].rate, 0);
+      const loop = tapOf === undefined ? {} : tapped.has(r.id) ? { fedBy: tapOf, items: r.items.map(i => ({ ...i, supply: Math.max(0, i.supply - brought) })) }
+        : { items: r.items.map(i => ({ ...i, supply: i.capacity })) };
+      // (A gatherer: from its splitter, side-loading onto its feedback belt; one not routed, none.)
+      const gatherer = feed === undefined ? {} : gathered.has(r.id) ? { fedBy: routes.find(o => o.gather === r.id).id, joins: feed } : { dropped: true };
       return {
         ...rest,
         ...(balanced.has(r.id) ? { items: splitter.items, balancedWith: splitter.with } : {}),
         ...(fanned.get(r.id) ?? {}),
         ...loop,
         ...(fed.length ? { taps: fed } : {}),
+        ...gatherer,
         ...(networks.has(r.id) ? { network: networks.get(r.id) } : {}),
         pieces: pieces[r.id],
       };
@@ -1597,6 +1682,10 @@ function tapLoop(routes, feeds, base) {
   const { item } = base.items[0];
   const outs = routes.filter(r => r.kind === 'belt' && r.source === base.loop.from && !r.splitter && r.items.some(i => i.item === item))
     .map(r => ({ r, left: r.items.find(i => i.item === item).rate }));
+  // (Where belts a splitter joins carry too much of it for the rest to feed the loop, by train:
+  // a feedback fed short would starve.)
+  const need = feeds.reduce((sum, f) => sum + f.items[0].rate, 0);
+  if (outs.reduce((sum, o) => sum + o.left, 0) < need - 1e-6 && outs.length < routes.filter(r => r.kind === 'belt' && r.source === base.loop.from && r.items.some(i => i.item === item)).length) return;
   for (const feed of feeds) {
     const out = outs.sort((a, b) => b.left - a.left)[0];
     if (!out) return;
@@ -1606,6 +1695,26 @@ function tapLoop(routes, feeds, base) {
     feed.tapOf = out.r.id;
     feed.items = feed.items.map(i => ({ ...i, supply: Math.max(0, Math.min(i.capacity, out.left)) }));
     out.left -= feed.items[0].rate;
+  }
+  // The producer's other output belts each gather what they carry of it into a feedback belt
+  // short of it (a gatherer, a belt of its own: from a filter splitter on theirs, side-loading
+  // onto the feedback's). Only where the loop takes all its producer makes: a filter splitter
+  // whose side backs up would stop the belt.
+  const made = outs.reduce((sum, o) => sum + o.r.items.find(i => i.item === item).rate, 0);
+  if (made > need + 1e-6) return;
+  for (const out of outs.filter(o => !o.r.taps && o.left > 1e-6).sort((a, b) => b.left - a.left)) {
+    const feed = feeds.find(f => f.items[0].supply < f.items[0].rate - 1e-6);
+    if (!feed) return;
+    const at = out.r.slots.findIndex(slot => slot.inst.step !== out.r.source);
+    const gatherer = {
+      id: routes.length, kind: 'belt', source: 'side-input', sink: null, base: out.r.id, bases: [out.r.id], consumers: [], servesRows: {}, share: {}, slots: [],
+      items: [{ item, rate: out.left, supply: out.left, capacity: feed.items[0].capacity }], feed: feed.id,
+    };
+    routes.push(gatherer);
+    out.r.gather = gatherer.id;
+    out.r.gatherAt = at < 0 ? out.r.slots.length : at;
+    feed.items = feed.items.map(i => ({ ...i, supply: i.supply + out.left }));
+    out.left = 0;
   }
 }
 

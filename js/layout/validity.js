@@ -519,6 +519,8 @@ export function validateBlock(block, catalog, logistics) {
     ...insideSite(block),
   ];
   for (const route of block.routes) {
+    // (A gatherer that found no way: none.)
+    if (route.dropped) continue;
     if (!route.pieces.length) { problems.push(`route ${route.id} has no pieces`); continue; }
     if (route.kind === 'pipe') {
       const machines = [...(typeof route.source === 'number' ? machinesOf(route.source) : []), ...route.consumers.flatMap(machinesOf)];

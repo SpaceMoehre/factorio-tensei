@@ -9,6 +9,7 @@ import { spares } from '../js/annex.js';
 import { extensionOf } from '../js/maximize.js';
 import { readFileSync } from 'node:fs';
 import { logistics as base } from './fixtures/catalog.js';
+import { assertValid } from './support/invariants.js';
 
 const pyCatalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe' };
@@ -42,11 +43,30 @@ test('an Annex’s Sub-Block of a fluid made here is what an Extension makes', (
   assert.deepEqual(extensionOf(annex, goals, ['lime']), {});
 });
 
-// A Recycled Byproduct only where a lane of the belt carries all its step makes: Py sodium
-// hydroxide's limestone at 60/min (90 items a minute), not at 750/min (1125; a yellow lane 450).
-test('a solid is fed back only where one lane carries all its step makes', () => {
-  const at = rate => expandChain([{ item: 'sodium-hydroxide', rate }], pyCatalog, { made, belt: 'transport-belt' }).recycled.map(r => r.item);
-  assert.deepEqual(at(60), ['limestone']);
-  assert.deepEqual(at(750), []);
-  assert.deepEqual(expandChain([{ item: 'sodium-hydroxide', rate: 750 }], pyCatalog, { made }).recycled.map(r => r.item), ['limestone']);
+// A Recycled Byproduct only where a lane of the belt carries all its step makes, or from a
+// Goal's step: Py sodium hydroxide's limestone for aramid at 60/min of it (90 items a minute),
+// not at 750/min (1125; a yellow lane 450); as the Goal, at any rate (gathered, ADR 0040).
+test('a solid is fed back only where one lane carries all its step makes, or from a Goal', () => {
+  const aramid = rate => expandChain([{ item: 'aramid', rate }], pyCatalog, { made: [...made, 'sodium-hydroxide'], belt: 'transport-belt' }).recycled.map(r => r.item);
+  assert.deepEqual(aramid(48), ['limestone']);
+  assert.deepEqual(aramid(600), []);
+  assert.deepEqual(expandChain([{ item: 'sodium-hydroxide', rate: 750 }], pyCatalog, { made, belt: 'transport-belt' }).recycled.map(r => r.item), ['limestone']);
+});
+
+// A Goal's byproduct fed back from every output belt: Py sodium hydroxide at 2000/min on express
+// belts makes 3000 items a minute on 2 belts; one feeds the lime's feedback through a splitter,
+// the other's limestone side-loads onto that feedback through a filter splitter of its own (a
+// gatherer), and the lime starves of nothing.
+test('a byproduct on several output belts is gathered into one feedback', () => {
+  const logistics = { ...base, belt: 'express-transport-belt', inserter: 'bulk-inserter', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
+  const selections = { water: { recipe: 'offshore-water' }, lime: { recipe: 'lime', building: 'hpf-mk04' }, 'slacked-lime': { recipe: 'slacked-lime', building: 'chemical-plant-mk01' }, 'sodium-hydroxide': { recipe: 'py-sodium-hydroxide', building: 'chemical-plant-mk01' } };
+  const chain = expandChain([{ item: 'sodium-hydroxide', rate: 2000 }], pyCatalog, { made: ['water', 'slacked-lime', 'lime'], selections, belt: logistics.belt });
+  assert.deepEqual(chain.recycled.map(r => r.item), ['limestone']);
+  const block = solve(chain.entries, pyCatalog, logistics, { maxCandidates: 8 });
+  assert.deepEqual(simulate(block).starvation, []);
+  const gatherer = block.routes.find(r => r.joins !== undefined && r.fedBy !== undefined);
+  assert.ok(gatherer, 'no gatherer');
+  assert.equal(block.routes[gatherer.joins].fedBy !== undefined, true);
+  assert.ok(block.entities.some(e => e.kind === 'splitter' && e.filter === 'limestone' && gatherer.pieces[0] === e));
+  assertValid(block, pyCatalog, logistics);
 });
