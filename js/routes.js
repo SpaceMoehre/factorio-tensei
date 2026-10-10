@@ -38,7 +38,8 @@ export function buildRoutes(plan, flows, laneCapacity) {
   plan.forEach((sb, i) => {
     const internalConsumers = item => flows.internal.filter(e => e.from === i && e.item === item).map(e => e.to).sort(byOrder);
     // (What of it no Sub-Block takes leaves by train.)
-    const leavesBlock = o => o.rate - taken(plan, flows, i, o.name) > 1e-9 * Math.max(1, o.rate);
+    // (An Extension's extra stays on its pipe for an Annex to draw.)
+    const leavesBlock = o => o.rate - (o.name === sb.item ? sb.extra ?? 0 : 0) - taken(plan, flows, i, o.name) > 1e-9 * Math.max(1, o.rate);
     const solidOut = sb.outputs.filter(o => o.type === 'item');
     if (solidOut.length) {
       // (Those taking a byproduct, Byproduct Uses, as those taking its item.)

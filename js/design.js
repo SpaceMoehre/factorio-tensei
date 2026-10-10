@@ -88,7 +88,21 @@ function spareSpeed(sb, index, routes, lane) {
 // its belts free to chain with the other modules' (as a Copy's are); with `rest`, the machines
 // a Breakout leaves, cutting an Internal Path into as many parts as the whole would. only: rows
 // only as long as `lengths` (no copies, no Side Belts).
-export function designStep(ctx, index, rng, { now = () => Date.now(), deadline = Infinity, machines = null, rest = false, draws = RANDOM_VARIANTS, lengths = [], only = false } = {}) {
+// Where none routes, tried again with other random numbers (RETRIES times): routing one may
+// fail by chance where the next does not (Py tpa's rectisols, 2 seeds in 5).
+export function designStep(ctx, index, rng, options = {}) {
+  for (let k = 0; ; k++) {
+    try {
+      return designOnce(ctx, index, k ? random(Math.floor(rng() * 2 ** 31)) : rng, options);
+    } catch (e) {
+      if (!(e instanceof LayoutError) || k >= RETRIES || (options.now ?? Date.now)() > (options.deadline ?? Infinity)) throw e;
+    }
+  }
+}
+
+const RETRIES = 3;
+
+function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infinity, machines = null, rest = false, draws = RANDOM_VARIANTS, lengths = [], only = false } = {}) {
   const whole = !machines || machines === ctx.plan[index].count;
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const building = ctx.catalog.buildings[sb.building];

@@ -85,7 +85,8 @@ function draws(block, site, ports, made) {
 // What each pipe route of `block` has to spare of its fluid (by route id): a Side Input's all
 // (the train brings more), else what its producers make at full speed beyond what its consumers
 // take — none where they feed more than one pipe of it, or take anything but the train's fluids
-// (what else they take comes only as fast as they were planned to run).
+// (what else they take comes only as fast as they were planned to run), unless an Extension's
+// (planned to make more than is taken: that much).
 export function spares(block) {
   const out = new Map();
   for (const route of block.routes.filter(r => r.kind === 'pipe')) {
@@ -95,11 +96,12 @@ export function spares(block) {
     }
     if (typeof route.source !== 'number') continue;
     if (block.routes.some(r => r !== route && r.kind === 'pipe' && r.source === route.source && r.fluid === route.fluid)) continue;
-    if (block.routes.some(r => r.consumers.includes(route.source) && !(r.kind === 'pipe' && r.source === 'side-input'))) continue;
     const producer = block.subBlocks[route.source];
-    const made = (producer.outputs.find(f => f.name === route.fluid)?.rate ?? 0) * (producer.headroom ?? 1);
+    // (An Extension's what it was planned to make: what it takes was planned for that.)
+    if (!producer.extra && block.routes.some(r => r.consumers.includes(route.source) && !(r.kind === 'pipe' && r.source === 'side-input'))) continue;
+    const made = (producer.outputs.find(f => f.name === route.fluid)?.rate ?? 0) * (producer.extra ? 1 : producer.headroom ?? 1);
     const taken = route.consumers.reduce((sum, i) => sum + (block.subBlocks[i].inputs.find(f => f.name === route.fluid)?.rate ?? 0) * (route.share?.[i] ?? 1), 0);
-    out.set(route.id, Math.max(0, Math.floor((made - taken) * 100) / 100));
+    out.set(route.id, Math.max(0, Math.floor((made - taken) * 100 + 1e-6) / 100));
   }
   return out;
 }

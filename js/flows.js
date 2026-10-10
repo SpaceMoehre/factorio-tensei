@@ -42,7 +42,8 @@ export function buildFlows(plan) {
   plan.forEach((sb, i) => {
     // (Its item first, then its byproducts.)
     for (const o of [sb.outputs.find(o => o.name === sb.item), ...sb.byproducts]) {
-      const left = o.rate - taken(plan, { internal, feedback }, i, o.name);
+      // (An Extension's extra stays on its pipe for an Annex to draw.)
+      const left = o.rate - (o.name === sb.item ? sb.extra ?? 0 : 0) - taken(plan, { internal, feedback }, i, o.name);
       if (left > 1e-9 * Math.max(1, o.rate)) addRate(sideOutput, o.name, o.type, left);
     }
   });

@@ -61,6 +61,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(byTrain.length ? { byTrain } : {}),
       ...(goal.part ? { part: true } : {}),
       ...(goal.from ? { from: goal.from } : {}),
+      // (An Extension: so much of its item made beyond what is taken, for an Annex to draw.)
+      ...(goal.extra ? { extra: goal.extra } : {}),
       ...(use ? { use: true } : {}),
     };
   });

@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v29: Extensions (implemented)
+Annexes grow built Sub-Blocks before building small ones of their own (ADR 0038); where v29 differs from v28, v29 wins.
+- **Extensions:** an Annex may make a fluid made here in a Sub-Block of its own while a layout before it makes that fluid too. If so, that layout's Sub-Block of the fluid is grown to make as much more as the Annex takes, with the steps feeding it grown to match. The layouts after it are laid out again, and the Annex draws the fluid from the grown Sub-Block's pipe; it no longer makes the fluid, nor what fed only that. This is kept only where all of it fits without Starvation and the Annex has fewer Sub-Blocks. A solid's Sub-Block is not extended.
+
 ## v28: Offshore pumps, Recycled Byproducts, Belt Merge built (implemented)
 Water from the sea, byproducts fed back where a step takes them, and merged belts built (ADR 0035, ADR 0036, ADR 0037); where v28 differs from v27, v28 wins.
 - **Offshore pumps:** water made here comes from an offshore pump by default (`offshore-water`, 1200/s a pump, no power). It takes 3 × 3 tiles: the pump in the middle of the south row, its pipe leaving south, and 3 × 2 tiles of shallow water before it, which the blueprint lays (`water-shallow`, placed with Py's shallow safefill).

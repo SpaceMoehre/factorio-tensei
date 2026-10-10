@@ -59,7 +59,9 @@ export function recipeOptions(catalog) {
 //              a step of `recipe`, whose products leave by train (or go to Byproduct Uses of their
 //              own); one whose step no longer makes the item, or whose recipe no longer takes it,
 //              is left out,
-//            index: recipeOptions(catalog) }
+//            index: recipeOptions(catalog),
+//            extra: { [item]: rate } an Extension's: so much more of a step's item made, not taken
+//              (its entry's goal.extra) }
 // A step's modules are the chosen ones its building takes, or else its building's default.
 // Returns the chain's steps as solve() entries — each item's rate is its Goal rate plus what its
 // consumers take, Recipe Loops included (each step makes what its consumers take, a machine's
@@ -80,7 +82,7 @@ export function useKey(from, item) {
 
 // The chain, its Recipe Loops fed in the block (or with `loopsByTrain`, by train); null when they
 // cannot be (a loop takes more than it makes).
-function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog) }, loopsByTrain) {
+function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {} }, loopsByTrain) {
   const makeHere = new Set([...made, ...goals.map(g => g.item)]);
   const steps = new Map();
   const trainInputs = new Map();
@@ -204,6 +206,8 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   });
   const goal = new Float64Array(n);
   for (const g of goals) goal[at.get(g.item)] += g.rate;
+  // (An Extension's: made beyond what is taken, for an Annex to draw.)
+  for (const [item, rate] of Object.entries(extra)) if (steps.has(item)) goal[at.get(item)] += rate;
   const rates = loops.length || used.size ? solve(a, goal)?.map(r => Math.round(r * 1e9) / 1e9) : consumersFirst(a, goal);
   if (!rates || rates.some(r => !Number.isFinite(r) || r < 0)) return null;
   keys.forEach((key, t) => {
@@ -250,7 +254,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   return {
     entries: [
       ...[...order].reverse().map(item => ({
-        goal: { item, rate: rates[at.get(item)], ...fromOf(item) }, selection: steps.get(item).selection,
+        goal: { item, rate: rates[at.get(item)], ...fromOf(item), ...(extra[item] > 0 ? { extra: extra[item] } : {}) }, selection: steps.get(item).selection,
         ...(looping(item).length ? { byTrain: looping(item) } : {}),
       })),
       ...[...used].map(([key, u]) => ({

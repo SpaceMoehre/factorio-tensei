@@ -142,15 +142,25 @@ export function* maximize(goals, catalog, logistics, options) {
   // layout found with the one before it (checked together too: a tunnel of one may pair with the
   // other's). Where one drawing a fluid made here from a built pipe finds none (no way to that
   // pipe), once more making it itself.
+  // Extensions (ADR 0038): a fluid made here that an Annex makes in a Sub-Block of its own, while
+  // a layout before it makes it too: the last such layout once more, its Sub-Block of the fluid
+  // making as much more as the Annex's (those feeding it as much more for it), the layouts after
+  // it again as before, and the Annex again, as many of the first Goal's machines, drawing the
+  // fluid from there; kept where the Annex then needs fewer Sub-Blocks.
   let annexAbove = null;
   const plus = (a, b) => Math.round((a + b) * 100) / 100;
-  for (let built = bestBlock; built && options.annexes !== false && options.site && most - best.count >= LEAST;) {
-    const before = best;
+  // The layouts laid out, in turn: { n, extra (what it makes beyond what it takes, for Annexes
+  // to draw), alone (the layout itself), base (those before it together; null: none), block (it
+  // with them) }. None after Bands.
+  let stages = bestN !== null ? [{ n: bestN, extra: {}, alone: bestBlock, base: null, block: bestBlock }] : null;
+  // An Annex beside `built`, no more than `cap` of the first Goal's machines: { block (the
+  // two together), score, best, stage }, else null.
+  function* annexOf(built, before, cap) {
     const site = annexSite(options.site, built, catalog, options.made);
     const alone = { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) };
     let found = null;
     for (const room of Object.values(site.draws).some(d => d.only) ? [site, alone] : [site]) {
-      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: most - before.count });
+      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap });
       let step;
       for (step = run.next(); !step.done; step = run.next()) {
         const v = step.value;
@@ -159,19 +169,83 @@ export function* maximize(goals, catalog, logistics, options) {
         const block = annexed(built, v.block, options.site, catalog, logistics);
         if (validateBlock(block, catalog, logistics).length || simulate(block).starvation.length) continue;
         const list = before.goals.map((g, k) => ({ ...g, rate: plus(g.rate, v.goals[k].rate) }));
-        found = { block, best: { rate: list[0].rate, machines: before.machines + v.machines, count: before.count + v.count, goals: list } };
+        found = {
+          block, score: v.score, best: { rate: list[0].rate, machines: before.machines + v.machines, count: before.count + v.count, goals: list },
+          stage: { n: v.count, extra: {}, alone: v.block, base: built, block },
+        };
         yield { type: 'best', block, score: v.score, tried: tried + v.tried, ...found.best };
       }
       tried += step.value.tried;
       annexAbove = step.value.above && { ...step.value.above, rate: plus(step.value.above.rate, before.rate), machines: step.value.above.machines + before.machines };
       if (found) break;
     }
+    return found;
+  }
+  // n of the first Goal's machines laid out beside `built` (null: alone in the City Block), making
+  // `extra` beyond what they take: { alone, block (with `built`), score }, else null.
+  function relay(n, extra, built) {
+    let rooms = [options.site];
+    if (built) {
+      const site = annexSite(options.site, built, catalog, options.made);
+      rooms = Object.values(site.draws).some(d => d.only) ? [site, { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) }] : [site];
+    }
+    for (const site of rooms) {
+      const out = attempt(planner(goals, catalog, logistics, { ...options, site, extra }), n, { ...options, site, unsorted: true });
+      tried += out.tried;
+      if (!out.block) continue;
+      if (!built) return { alone: out.block, block: out.block, score: out.score };
+      const block = annexed(built, out.block, options.site, catalog, logistics);
+      if (!validateBlock(block, catalog, logistics).length && !simulate(block).starvation.length) return { alone: out.block, block, score: out.score };
+    }
+    return null;
+  }
+  // The Annex `found` with an Extension: { found, stages }, else null.
+  function extend(found) {
+    const wants = extensionOf(found.stage.alone, goals, options.made);
+    const last = item => stages.map(s => s.alone.subBlocks.some(sb => sb.item === item)).lastIndexOf(true);
+    const j = Math.max(-1, ...Object.keys(wants).map(last));
+    if (j < 0) return null;
+    const extra = { ...stages[j].extra };
+    for (const [item, rate] of Object.entries(wants)) if (last(item) === j) extra[item] = (extra[item] ?? 0) + rate;
+    const redone = [];
+    let built = stages[j].base;
+    for (let i = j; i < stages.length; i++) {
+      const stage = { n: stages[i].n, extra: i === j ? extra : stages[i].extra, base: built };
+      const out = relay(stage.n, stage.extra, built);
+      if (!out) return null;
+      redone.push({ ...stage, alone: out.alone, block: out.block });
+      built = out.block;
+    }
+    const out = relay(found.stage.n, {}, built);
+    if (!out || out.alone.subBlocks.length >= found.stage.alone.subBlocks.length) return null;
+    const stage = { n: found.stage.n, extra: {}, alone: out.alone, base: built, block: out.block };
+    return { found: { ...found, block: out.block, score: out.score, stage }, stages: [...stages.slice(0, j), ...redone, stage] };
+  }
+  for (let built = bestBlock; built && options.annexes !== false && options.site && most - best.count >= LEAST;) {
+    const before = best;
+    let found = yield* annexOf(built, before, most - before.count);
     if (!found) break;
+    const better = stages && extend(found);
+    if (better) {
+      ({ found, stages } = better);
+      yield { type: 'best', block: found.block, score: found.score, tried, ...found.best };
+    } else if (stages) stages.push(found.stage);
     [best, built] = [found.best, found.block];
   }
   // (A number that starved may lie below the highest that fit.)
   const above = annexAbove ?? misses.filter(m => m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
   return { ...(best ?? { rate: 0, machines: 0, count: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above };
+}
+
+// What an Extension makes beyond what it takes for the Annex `annex` (its layout alone): each
+// fluid made here (no Goal) that a Sub-Block of the Annex makes, as much as that makes.
+export function extensionOf(annex, goals, made = []) {
+  const extra = {};
+  for (const sb of annex.subBlocks) {
+    if (goals.some(g => g.item === sb.item) || !made.includes(sb.item) || sb.outputs.find(o => o.name === sb.item)?.type !== 'fluid') continue;
+    extra[sb.item] = (extra[sb.item] ?? 0) + sb.rate;
+  }
+  return extra;
 }
 
 // One try: the layout search for n of the first Goal's machines, to its first layout without
@@ -238,15 +312,15 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates, `wanted` as many running as fast as those take.
 /** @param {any[]} goals @param {any} catalog @param {any} logistics @param {any} options */
-export function planner(goals, catalog, logistics, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), site, least = LEAST }) {
+export function planner(goals, catalog, logistics, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), site, least = LEAST, extra = {} }) {
   // In an Annex's City Block, a fluid made here that a pipe built before it has to spare comes
   // from there instead, while that has enough (ADR 0032).
   const draws = Object.entries(site?.draws ?? {}).filter(([fluid]) => made.includes(fluid));
   const chainOf = list => {
     const drawn = new Set(draws.map(([fluid]) => fluid));
     for (;;) {
-      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index });
-      const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare);
+      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index, extra });
+      const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare + 1e-6);
       if (!short.length) return chain;
       for (const [fluid] of short) drawn.delete(fluid);
     }

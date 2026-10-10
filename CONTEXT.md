@@ -108,6 +108,10 @@ _Avoid_: spill-over, second factory, Part (a Part is one Sub-Block's piece in Ba
 An Annex's Side Input of a fluid joining a pipe built before it rather than coming from the west edge: a pipe of the train's fluid (from there or the west edge, whichever is nearer), or of one made here whose producers make enough more at full speed than their consumers take (from there only; with too little, the Annex makes it itself). The Annex's pipe becomes part of the route it draws from.
 _Avoid_: tap (a Recipe Loop's feedback is tapped off its producers' belt)
 
+**Extension**:
+A built Sub-Block of a fluid made here grown, rather than an Annex making that fluid in a small Sub-Block of its own. The last layout with a Sub-Block of the fluid is laid out again, making as much more of it as the Annex takes, with the steps feeding it grown to match. That extra stays on its pipe and does not leave by train. The layouts after it are laid out again as they were, then the Annex, which now draws the fluid from that pipe. This is kept only where all of it fits and the Annex needs fewer Sub-Blocks.
+_Avoid_: growing (Filling grows the first Goal's machines)
+
 **Foretelling**:
 How much room a Compound Block in a City Block takes, told before it is laid out: each Sub-Block's machines take so many tiles each (at first their building with a band of belts above and below and a column beside it, then what that Sub-Block's last design took), spread out by how loosely the City Block packs them (at first a guess, then what a layout found spans), against the City Block's room (inside the Buffer, less its Fixtures — and the more of its stretches as big as a few machines' Modules its Fixtures break, the less room, since a grid of substations leaves room only for what fits between them). The page tells it with the City Block — about how high a rate fits, and how many tiles the Goals' own rates take — and Maximize tries by it. It knows nothing of designs that starve; only a try tells.
 _Avoid_: estimate (says nothing of what it is for), prediction
