@@ -1242,7 +1242,11 @@ function groupRoutes(ctx, instances, laneCapacity) {
     const machines = new Map(producers.flatMap(s => s.part.drops.map(d => [machineKey(s, d), full])));
     // What a belt must deliver: what its consumers take; a belt on to the train all it carries
     // (null); a belt merging into another, nothing of its own.
-    const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) ? wants(g.consumers) : null);
+    // (With what its consumers take, the belt brings what rides along with it in step: a Recycled
+    // Byproduct on its way to its feedback's splitter, Py sodium hydroxide's limestone.)
+    const along = base.sorted ? 1 : base.items.reduce((sum, i) => sum + i.rate, 0)
+      / Math.max(1e-9, base.items.filter(i => base.consumers.some(step => plan[step].inputs.some(x => x.name === i.item))).reduce((sum, i) => sum + i.rate, 0));
+    const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) ? wants(g.consumers) * along : null);
     // What each belt of an option delivers: its producers' machines through its lanes, joined by
     // its splitters (with `joins`) or each going straight on.
     const deliver = (option, joins) => pathFlow({

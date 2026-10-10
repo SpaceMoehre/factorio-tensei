@@ -319,7 +319,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   const chainOf = list => {
     const drawn = new Set(draws.map(([fluid]) => fluid));
     for (;;) {
-      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index, extra });
+      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index, extra, belt: logistics.belt });
       const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare + 1e-6);
       if (!short.length) return chain;
       for (const [fluid] of short) drawn.delete(fluid);

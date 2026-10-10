@@ -109,6 +109,8 @@ for (const key of SELECTS) {
   $(key).addEventListener('change', () => {
     state.logistics[key] = $(key).value;
     if (key === 'pipe') state.logistics.plainPipe = plainOf($(key).value);
+    // (The belt decides which byproducts are fed back.)
+    if (key === 'belt') renderChain();
     save();
   });
   const select = $(key);
@@ -286,7 +288,7 @@ function showFuels() {
 function drawChain() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
-    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, index }) : null;
+    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, index, belt: state.logistics.belt }) : null;
   } catch (e) {
     chain = { error: e.message };
   }

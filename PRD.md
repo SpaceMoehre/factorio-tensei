@@ -85,8 +85,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
 ## v29: Extensions (implemented)
-Annexes grow built Sub-Blocks before building small ones of their own (ADR 0038); where v29 differs from v28, v29 wins.
+Annexes grow built Sub-Blocks before building small ones of their own (ADR 0038), and Py aramid builds (ADR 0039); where v29 differs from v28, v29 wins.
 - **Extensions:** an Annex may make a fluid made here in a Sub-Block of its own while a layout before it makes that fluid too. If so, that layout's Sub-Block of the fluid is grown to make as much more as the Annex takes, with the steps feeding it grown to match. The layouts after it are laid out again, and the Annex draws the fluid from the grown Sub-Block's pipe; it no longer makes the fluid, nor what fed only that. This is kept only where all of it fits without Starvation and the Annex has fewer Sub-Blocks. A solid's Sub-Block is not extended.
+- **Designs tried again:** a Sub-Block none of whose candidates routes is designed again with other random numbers, up to 3 more times (ADR 0039).
+- **Belts carrying what rides along:** an Internal Path's belt also brings a Recycled Byproduct riding along to its feedback.
+- **Recycled Byproducts within a lane:** a solid is fed back only where one lane of the chosen belt carries all the solids its step makes; otherwise it comes by train as before.
 
 ## v28: Offshore pumps, Recycled Byproducts, Belt Merge built (implemented)
 Water from the sea, byproducts fed back where a step takes them, and merged belts built (ADR 0035, ADR 0036, ADR 0037); where v28 differs from v27, v28 wins.

@@ -41,3 +41,12 @@ test('an Annex’s Sub-Block of a fluid made here is what an Extension makes', (
   assert.deepEqual(extensionOf(annex, goals, made), { 'slacked-lime': 500 });
   assert.deepEqual(extensionOf(annex, goals, ['lime']), {});
 });
+
+// A Recycled Byproduct only where a lane of the belt carries all its step makes: Py sodium
+// hydroxide's limestone at 60/min (90 items a minute), not at 750/min (1125; a yellow lane 450).
+test('a solid is fed back only where one lane carries all its step makes', () => {
+  const at = rate => expandChain([{ item: 'sodium-hydroxide', rate }], pyCatalog, { made, belt: 'transport-belt' }).recycled.map(r => r.item);
+  assert.deepEqual(at(60), ['limestone']);
+  assert.deepEqual(at(750), []);
+  assert.deepEqual(expandChain([{ item: 'sodium-hydroxide', rate: 750 }], pyCatalog, { made }).recycled.map(r => r.item), ['limestone']);
+});

@@ -33,7 +33,7 @@ An output of a Recipe Selection's recipe other than the Goal's target item, prod
 _Avoid_: treating byproducts as satisfying other Goals automatically
 
 **Recycled Byproduct**:
-An ingredient a step would bring by train that another step of the chain makes at least as much of as a byproduct: it comes from that step instead (fed back through a splitter where that closes a loop), what is left over leaving by train (Py's sodium hydroxide gives its lime the limestone it takes; ADR 0035).
+An ingredient a step would bring by train that another step of the chain makes at least as much of as a byproduct: it comes from that step instead (fed back through a splitter where that closes a loop), what is left over leaving by train (Py's sodium hydroxide gives its lime the limestone it takes; ADR 0035). A solid only where one lane of the chosen belt carries all the solids its step makes (ADR 0039).
 
 **Byproduct Use**:
 A step the user adds for a byproduct of a step — a recipe taking it — that takes all of it, sized by what that step makes (Py's iron slime from the hydroclassifiers making iron pulp, to unslimed iron). What it makes leaves by train, unless a Byproduct Use of its own takes it; it never feeds another step nor counts towards a Goal, so its item may also be made by a step of the chain (ADR 0034).

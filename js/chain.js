@@ -61,7 +61,9 @@ export function recipeOptions(catalog) {
 //              is left out,
 //            index: recipeOptions(catalog),
 //            extra: { [item]: rate } an Extension's: so much more of a step's item made, not taken
-//              (its entry's goal.extra) }
+//              (its entry's goal.extra),
+//            belt: the belt the block is built with (a Recycled Byproduct's step must make no more
+//              solids than a lane of it carries) }
 // A step's modules are the chosen ones its building takes, or else its building's default.
 // Returns the chain's steps as solve() entries — each item's rate is its Goal rate plus what its
 // consumers take, Recipe Loops included (each step makes what its consumers take, a machine's
@@ -82,7 +84,7 @@ export function useKey(from, item) {
 
 // The chain, its Recipe Loops fed in the block (or with `loopsByTrain`, by train); null when they
 // cannot be (a loop takes more than it makes).
-function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {} }, loopsByTrain) {
+function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {}, belt = null }, loopsByTrain) {
   const makeHere = new Set([...made, ...goals.map(g => g.item)]);
   const steps = new Map();
   const trainInputs = new Map();
@@ -235,6 +237,11 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       .sort((a, b) => b.rate - a.rate);
     const from = makers[0];
     if (!from || from.rate < input.rate * (1 - 1e-9)) continue;
+    // (A solid only where one lane carries all its step makes, the item with the rest: the
+    // feedback is tapped off one output belt, every product on its far lane.)
+    const lane = belt && catalog.belts?.[belt] ? catalog.belts[belt].itemsPerSecond * 30 : Infinity;
+    const solid = new Set(recipeOf(from.key).products.filter(p => p.type === 'item').map(p => p.name));
+    if (!fluid && [...solid].reduce((sum, name) => sum + makes(from.key, name) * ratesOf(from.key), 0) > lane * (1 + 1e-9)) continue;
     trainInputs.delete(item);
     for (const k of takers) {
       stepOf(k).byTrain.delete(item);
