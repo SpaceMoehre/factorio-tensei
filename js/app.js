@@ -394,7 +394,6 @@ function useRow({ goal, selection, use }, recipes, buildings) {
     save();
   });
   const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${label(use.item).toLowerCase()} ${stepsNamed(use.sources ?? [use.from])} make${(use.sources ?? [use.from]).length > 1 ? '' : 's'}`);
-  row.classList.add('use');
   return row;
 }
 

@@ -115,15 +115,13 @@
   .step > .hint { margin: 2px 0 0 38px; }
   .train-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
   .train-head::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
-  /* A Byproduct Use is a step of its own, marked; the byproducts leaving by train stand under
-     what comes by train, each with a step to process it. */
-  .step.use { border-left: 2px solid var(--accent); padding-left: 10px; }
+  /* The byproducts leaving by train stand under what comes by train, each with a step to process
+     it (a step like any other). */
   .step.byproduct { padding: 6px 0; }
   .step.byproduct .step-head .sprite { width: 24px; height: 24px; }
   .step.byproduct .name { font-weight: 400; }
   .step.byproduct > .hint { margin: 0 0 0 32px; font-size: 12px; }
   .selection { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 6px 10px; align-items: center; margin: 8px 0 0 38px; font-size: 13px; color: var(--muted); }
-  .step.use .selection { margin-left: 0; }
   .step.byproduct .selection { margin: 6px 0 0 32px; }
   .modules { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .module { display: flex; gap: 6px; align-items: center; min-width: 0; }
