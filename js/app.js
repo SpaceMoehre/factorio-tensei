@@ -1,5 +1,5 @@
 import { simulate } from './sim.js';
-import { expandChain, recipeOptions, useKey } from './chain.js';
+import { expandChain, recipeOptions, useKey, EVERY } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { encodeBlueprint } from './blueprint.js';
 import { clocksOf, clockLabel } from './clocks.js';
@@ -305,13 +305,14 @@ function drawChain() {
     seen.add(id);
     return chainRows.get(id).el;
   };
-  // Each step, then its Byproduct Uses (each with its own) and the byproducts it leaves by train.
+  // Each step, the Byproduct Uses among them; then what comes by train, and the byproducts that
+  // leave by train, each with the recipes that could process it.
   const step = entry => {
     const { goal, selection, use } = entry;
     const key = use?.key ?? goal.item;
     const recipes = use ? index.consumers.get(use.item).filter(r => index.buildingsFor.has(r)) : index.producers.get(goal.item);
     const buildings = index.buildingsFor.get(selection.recipe);
-    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, !!use?.general]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection)));
+    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, use?.sources ?? use?.from ?? null]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection)));
     const building = catalog.buildings[selection.building];
     const recipe = catalog.recipes[selection.recipe];
     const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
@@ -338,16 +339,24 @@ function drawChain() {
       ...supplies.map(s => `→ its ${fmt(s.rate)}/min of ${label(s.item).toLowerCase()} joins what the ${label(s.item).toLowerCase()} step makes`),
     ].join(' · ');
     loop.hidden = !back.length && !takes.length && !joined.length && !supplies.length;
-    for (const next of chain.entries.filter(e => e.use?.from === key)) step(next);
-    for (const b of chain.byproducts.filter(b => b.from === key)) {
-      row(`byproduct:${useKey(key, b.item)}`, JSON.stringify(['byproduct', key, b.item, b.recipes]), () => byproductRow(b))
-        .querySelector('.rate').textContent = `${fmt(b.rate)}/min`;
-    }
   };
-  for (const entry of chain.entries) if (!entry.use) step(entry);
+  for (const entry of chain.entries) step(entry);
   if (chain.trainInputs.length) row('train-head', 'train-head', () => el('div', { className: 'train-head', textContent: 'By train' }));
   for (const input of chain.trainInputs) {
     row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
+  }
+  // (Each byproduct once, whichever steps make it.)
+  const byproducts = new Map();
+  for (const b of chain.byproducts) {
+    const seen = byproducts.get(b.item);
+    if (seen) Object.assign(seen, { rate: seen.rate + b.rate, from: [...seen.from, b.from] });
+    else byproducts.set(b.item, { item: b.item, rate: b.rate, from: [b.from], recipes: b.recipes });
+  }
+  if (byproducts.size) row('byproduct-head', 'byproduct-head', () => el('div', { className: 'train-head', textContent: 'Leaves by train' }));
+  for (const b of byproducts.values()) {
+    const shown = row(`byproduct:${b.item}`, JSON.stringify(['byproduct', b.item, b.recipes]), () => byproductRow(b));
+    shown.querySelector('.rate').textContent = `${fmt(b.rate)}/min`;
+    shown.querySelector('.hint').textContent = `from ${stepsNamed(b.from)}`;
   }
   for (const k of [...chainRows.keys()]) if (!seen.has(k)) chainRows.delete(k);
   if (rows.some((row, i) => list.children[i] !== row) || list.children.length !== rows.length) list.replaceChildren(...rows);
@@ -369,66 +378,58 @@ function stepRow(item, recipes, buildings, selection) {
   return stepBody(item, recipes, buildings, selection, choose, train);
 }
 
-// A Byproduct Use: a step taking all its step's byproduct, of a recipe that takes it — or a
-// General Use's, every step's making it. Removing it removes the Uses of what it makes too (a
-// General Use's, at every step).
+// A Byproduct Use: a step taking all of a byproduct, of a recipe that takes it — every step's
+// making it (a General Use: `uses` without `from`), or one step's. Removing it removes the Uses of
+// what it makes too.
 function useRow({ goal, selection, use }, recipes, buildings) {
-  const general = !!use.general;
-  const wanted = () => state.uses.find(u => (general ? u.from == null && u.item === use.item : u.from != null && useKey(u.from, u.item) === use.key));
+  const general = !!use.sources;
+  const wanted = () => state.uses.find(u => (general ? (u.from == null || u.from === EVERY) && u.item === use.item
+    : u.from != null && u.from !== EVERY && useKey(u.from, u.item) === use.key));
   const choose = changes => { Object.assign(wanted(), selection, changes); renderChain(); save(); };
   const under = u => u.from != null && (u.from === use.key || u.from.startsWith(`${use.key} > `));
-  const remove = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: general ? `Send ${use.item} away by train instead, from every step` : `Send ${use.item} away by train instead` });
+  const remove = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Send ${use.item} away by train instead` });
   remove.addEventListener('click', () => {
     state.uses = state.uses.filter(u => u !== wanted() && !under(u));
     renderChain();
     save();
   });
-  // Every step making it, or this one only.
-  const every = el('input', { type: 'checkbox', checked: general, ariaLabel: `Use ${label(use.item)} so at every step making it` });
-  every.addEventListener('change', () => {
-    const { from, ...rule } = { ...wanted(), ...selection };
-    state.uses = state.uses.filter(u => u !== wanted());
-    state.uses.push(every.checked ? rule : { from: use.from, ...rule });
-    renderChain();
-    save();
-  });
-  const from = chain.entries.find(e => (e.use?.key ?? e.goal.item) === use.from).goal.item;
-  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${label(use.item).toLowerCase()} the ${label(from).toLowerCase()} step makes`,
-    [el('span', { textContent: 'Steps' }), el('label', { className: 'check' }, every, el('span', { textContent: `Every step making ${label(use.item).toLowerCase()}` }))]);
+  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${label(use.item).toLowerCase()} ${stepsNamed(use.sources ?? [use.from])} make${(use.sources ?? [use.from]).length > 1 ? '' : 's'}`);
   row.classList.add('use');
-  row.style.setProperty('--depth', String(depthOf(use.key)));
   return row;
 }
 
-// A byproduct leaving by train, with the recipes that could take it instead (a Byproduct Use),
-// at this step or every step making it (a General Use).
-function byproductRow({ from, item, recipes }) {
-  const add = el('select', { ariaLabel: `Use ${item}` });
+// The steps by their keys, as words: "the grade 3 ti and ti enriched dust steps" (a Use: "the ti
+// rejects use").
+function stepsNamed(keys) {
+  const names = keys.map(k => {
+    const entry = chain.entries.find(e => (e.use?.key ?? e.goal.item) === k);
+    return entry?.use ? `${label(entry.use.item).toLowerCase()} use` : label(entry?.goal.item ?? k).toLowerCase();
+  });
+  const list = names.length > 1 ? `${names.slice(0, -1).join(', ')} and ${names.at(-1)}` : names[0];
+  return keys.every(k => !k.includes(' > ')) ? `the ${list} step${names.length > 1 ? 's' : ''}` : `the ${list}`;
+}
+
+// A byproduct leaving by train, whichever steps make it, with the recipes that could process it
+// instead: a step of one takes all of it (a General Use).
+function byproductRow({ item, recipes }) {
+  const add = el('select', { ariaLabel: `Process ${item}` });
   // (Filling barrels and voiding last.)
   const aside = r => /barrel|void/.test(r);
   add.append(new Option('', ''), ...[...recipes].sort((a, b) => Number(aside(a)) - Number(aside(b))).map(r => new Option(r, r)));
-  const every = el('input', { type: 'checkbox', ariaLabel: `Use ${label(item)} so at every step making it` });
   add.addEventListener('change', () => {
     if (!add.value) return;
-    state.uses.push(every.checked ? { item, recipe: add.value } : { from, item, recipe: add.value });
+    state.uses.push({ item, recipe: add.value });
     renderChain();
     save();
   });
-  const row = el('div', { className: 'step byproduct' },
-    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: `${label(item)} — leaves by train`, title: item }), el('span', { className: 'rate' })),
-    el('div', { className: 'selection' }, el('span', { textContent: 'Byproduct' }),
-      pictured(add, { kind: 'recipes', title: `Use ${label(item)} in a recipe`, placeholder: recipes.length ? 'Use it in a recipe…' : 'No recipe takes it' }),
-      ...(recipes.length ? [el('span'), el('label', { className: 'check' }, every, el('span', { textContent: `At every step making ${label(item).toLowerCase()}` }))] : [])));
-  row.style.setProperty('--depth', String(depthOf(useKey(from, item))));
-  return row;
+  return el('div', { className: 'step byproduct' },
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: label(item), title: item }), el('span', { className: 'rate' })),
+    el('div', { className: 'hint' }),
+    el('div', { className: 'selection' }, el('span', { textContent: 'Process' }),
+      pictured(add, { kind: 'recipes', title: `Process ${label(item)} in a recipe`, placeholder: recipes.length ? 'Add a step processing it…' : 'No recipe takes it' })));
 }
 
-// How many Byproduct Uses down a key is (a step's: 0).
-function depthOf(key) {
-  return key.split(' > ').length - 1;
-}
-
-function stepBody(item, recipes, buildings, selection, choose, button, hint = '', more = []) {
+function stepBody(item, recipes, buildings, selection, choose, button, hint = '') {
   const recipe = el('select', { ariaLabel: `Recipe for ${item}` });
   fillSelect(recipe, recipes, selection.recipe);
   const building = el('select', { ariaLabel: `Building for ${item}` });
@@ -443,7 +444,7 @@ function stepBody(item, recipes, buildings, selection, choose, button, hint = ''
     el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), pictured(recipe, { kind: 'recipes', title: `Recipe for ${label(item)}` }),
       el('span', { textContent: 'Building' }), pictured(building, { title: `Building for ${label(item)}` }),
       ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : []),
-      el('span', { textContent: 'Speed' }), el('span', { className: 'speed hint' }), ...more));
+      el('span', { textContent: 'Speed' }), el('span', { className: 'speed hint' })));
 }
 
 // A step's modules: a row per module type with its count, and a button to add another type while

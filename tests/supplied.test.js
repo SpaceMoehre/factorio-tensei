@@ -24,24 +24,29 @@ const recrush = { item: 'ti-rejects', recipe: 'ti-rejects-recrush' };
 const entriesOf = chain => /** @type {any[]} */ (chain.entries);
 const rate = (chain, key) => entriesOf(chain).find(e => (e.use?.key ?? e.goal.item) === key).goal.rate;
 
-test('a General Use takes its byproduct at every step making it, a Use naming a step there instead', () => {
+test('a General Use is one step taking its byproduct from every step making it, but one a Use names', () => {
   const chain = expandChain([{ item: 'ti-enriched-dust', rate: 360 }], shipped, { made, uses: [recrush] });
-  assert.deepEqual(entriesOf(chain).filter(e => e.use).map(e => [e.use.key, !!e.use.general]).sort(),
-    [['grade-3-ti > ti-rejects', true], ['ti-enriched-dust > ti-rejects', true]]);
+  const uses = entriesOf(chain).filter(e => e.use);
+  assert.deepEqual(uses.map(e => [e.use.key, [...e.use.sources].sort(), e.use.from]), [['* > ti-rejects', ['grade-3-ti', 'ti-enriched-dust'], 'grade-3-ti']]);
+  // (All of both: a recrusher makes a gravel a reject.)
+  assert.ok(Math.abs(uses[0].goal.rate - (rate(chain, 'grade-3-ti') / 2 + 180)) < 1e-6);
   assert.ok(!chain.byproducts.some(b => b.item === 'ti-rejects'));
-  const named = expandChain([{ item: 'ti-enriched-dust', rate: 360 }], shipped, { made, uses: [recrush, { from: 'grade-3-ti', item: 'ti-rejects', recipe: 'grade-1-ti' }] });
-  assert.equal(entriesOf(named).find(e => e.use?.key === 'grade-3-ti > ti-rejects')?.selection.recipe, undefined, 'grade-1-ti takes no rejects: left out');
-  assert.equal(entriesOf(named).find(e => e.use?.key === 'ti-enriched-dust > ti-rejects').selection.recipe, 'ti-rejects-recrush');
+  // (The dust's rejects join the grade 3 screeners' on their way to it.)
+  const step = item => entriesOf(chain).findIndex(e => e.goal.item === item && !e.use);
+  assert.deepEqual(entriesOf(chain)[step('ti-enriched-dust')].goal.joins, { 'ti-rejects': step('grade-3-ti') });
+  assert.deepEqual(uses[0].goal.from, { 'ti-rejects': step('grade-3-ti') });
+  const named = expandChain([{ item: 'ti-enriched-dust', rate: 360 }], shipped, { made, uses: [recrush, { from: 'grade-3-ti', item: 'ti-rejects', recipe: 'ti-rejects-recrush' }] });
+  assert.deepEqual(entriesOf(named).filter(e => e.use).map(e => [e.use.key, e.use.sources ?? null]), [['grade-3-ti > ti-rejects', null], ['* > ti-rejects', ['ti-enriched-dust']]]);
 });
 
 test('what a Use makes of an item a step makes joins it: the step makes so much less', () => {
   const plain = expandChain([{ item: 'ti-enriched-dust', rate: 360 }], shipped, { made });
   const chain = expandChain([{ item: 'ti-enriched-dust', rate: 360 }], shipped, { made, uses: [recrush] });
-  // (The grade 4 ball mills take as much grade 3 as before, the recrushers making some of it.)
+  // (The grade 4 ball mills take as much grade 3 as before, the recrusher making some of it.)
   const supplied = chain.supplies.filter(s => s.item === 'grade-3-ti').reduce((sum, s) => sum + s.rate, 0);
   assert.ok(supplied > 100);
   assert.ok(Math.abs(rate(chain, 'grade-3-ti') + supplied - rate(plain, 'grade-3-ti')) < 1e-6);
-  assert.deepEqual(entriesOf(chain).find(e => e.use?.key === 'grade-3-ti > ti-rejects').goal.joins, { 'grade-3-ti': entriesOf(chain).findIndex(e => e.goal.item === 'grade-3-ti' && !e.use) });
+  assert.deepEqual(entriesOf(chain).find(e => e.use?.key === '* > ti-rejects').goal.joins, { 'grade-3-ti': entriesOf(chain).findIndex(e => e.goal.item === 'grade-3-ti' && !e.use) });
   assert.ok(!chain.byproducts.some(b => b.item === 'grade-3-ti'));
 });
 
@@ -88,4 +93,18 @@ test('a Use’s belt of nothing but a Supplied Item joins the step’s belt itse
   const use = block.subBlocks.findIndex(sb => sb.use && sb.item === 'grade-4-ti');
   const own = block.routes.find(r => r.kind === 'belt' && r.source === use);
   assert.equal(block.routes[own.joins].source, block.subBlocks.findIndex(sb => sb.item === 'grade-4-ti' && !sb.use));
+});
+
+// A General Use's byproduct from two steps: the ti-enriched dust's rejects leave its belt through a
+// filter splitter, side-loading onto the grade 3 screeners' belt ahead of the recrusher.
+test('a General Use laid out: the other steps’ byproduct joins the belt into it', () => {
+  const chain = expandChain([{ item: 'ti-enriched-dust', rate: 60 }], shipped, { made, uses: [recrush] });
+  const { block, score } = best(chain.entries);
+  assert.equal(score[0], 0, 'starves');
+  assertValid(block, shipped, logistics);
+  const step = item => block.subBlocks.findIndex(sb => sb.item === item && !sb.use);
+  const use = block.subBlocks.findIndex(sb => sb.use);
+  const target = block.routes.find(r => r.kind === 'belt' && r.source === step('grade-3-ti') && r.consumers.includes(use) && r.items.some(i => i.item === 'ti-rejects' && i.joined));
+  assert.ok(target, 'the rejects join the grade 3 belt into the recrusher');
+  assert.ok(block.routes.some(r => r.joins === target.id && r.items[0].item === 'ti-rejects' && block.routes[r.fedBy].source === step('ti-enriched-dust')));
 });

@@ -59,9 +59,9 @@ export function recipeOptions(catalog) {
 //              a step of `recipe`, whose products go to the steps taking them (Supplied Items,
 //              Recycled Byproducts) or leave by train (or go to Byproduct Uses of their own); one
 //              whose step no longer makes the item, or whose recipe no longer takes it, is left
-//              out. Without `from`, a General Use: every step (and Use) making `item` besides its
-//              own item gives it to a step of `recipe` of its own, but where a Use names that
-//              step for it (and a step of `recipe` itself),
+//              out. Without `from`, a General Use: one step of `recipe` takes all of `item` every
+//              step (and Use) makes besides its own item, but where a Use names that step for it
+//              (and a step of `recipe` itself), its key useKey(EVERY, item),
 //            index: recipeOptions(catalog),
 //            extra: { [item]: rate } an Extension's: so much more of a step's item made, not taken
 //              (its entry's goal.extra),
@@ -71,9 +71,11 @@ export function recipeOptions(catalog) {
 // Returns the chain's steps as solve() entries — each item's rate is its Goal rate plus what its
 // consumers take, Recipe Loops included (each step makes what its consumers take, a machine's
 // productivity counted), less what Byproduct Uses supply of it, then the Byproduct Uses' (`use`:
-// { key, from, item, general? }; `goal.from` the entry they take the item from; `goal.joins`:
-// item → the entry whose consumers what they make of it goes to), each making what all of its
-// item takes — the Supplied Items ({ from, item, into, rate }), the Train Inputs with
+// { key, from, item, sources? }: a General Use's `from` the step making most of its item, its
+// `sources` every one; `goal.from` the entry they take the item from; `goal.joins`: item → the
+// entry whose belt or pipe of it what they make of it joins — a Supplied Item's, or a General
+// Use's other sources'), each making what all of its item takes — the Supplied Items ({ from,
+// item, into, rate }), the Train Inputs with
 // the rate the chain needs and why each comes by train, the Recipe Loops ({ item, into: the step
 // taking it back, rate }), and the Byproducts ({ from, item, type, rate, recipes: those taking
 // it }: what a step makes besides its item, a Byproduct Use's every product, but those used).
@@ -81,6 +83,9 @@ export function recipeOptions(catalog) {
 export function expandChain(goals, catalog, options = {}) {
   return expand(goals, catalog, options, false) ?? expand(goals, catalog, options, true);
 }
+
+// A General Use's `from` in its key: every step.
+export const EVERY = '*';
 
 // A Byproduct Use's key: the step it takes from and the item.
 export function useKey(from, item) {
@@ -165,10 +170,15 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     if (!step) return [];
     return catalog.recipes[step.selection.recipe].products.filter(p => !steps.has(key) || p.name !== key);
   };
-  const addUse = (u, from, general) => {
-    const key = useKey(from, u.item);
-    if (used.has(key) || !byproductsOf(from).some(p => p.name === u.item) || !index.consumers.get(u.item)?.includes(u.recipe)) return false;
-    if (!index.buildingsFor.has(u.recipe)) return false;
+  const named = uses.filter(u => u.from != null && u.from !== EVERY);
+  // (A General Use's: every step and Use making it besides its own item, but one a Use names for
+  // it, a step of its recipe and itself.)
+  const sourcesOf = (u, key) => [...order, ...used.keys()].filter(from => from !== key && stepOf(from).selection.recipe !== u.recipe
+    && !named.some(v => v.from === from && v.item === u.item) && byproductsOf(from).some(p => p.name === u.item));
+  const addUse = (u, from) => {
+    const key = useKey(from ?? EVERY, u.item);
+    if (used.has(key) || !index.consumers.get(u.item)?.includes(u.recipe) || !index.buildingsFor.has(u.recipe)) return false;
+    if (from ? !byproductsOf(from).some(p => p.name === u.item) : !sourcesOf(u, key).length) return false;
     tooMany();
     const selection = selectionOf(u.recipe, u);
     const recipe = catalog.recipes[u.recipe];
@@ -176,21 +186,19 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const product = (others.find(p => p.name === u.recipe) ?? others[0] ?? recipe.products[0]).name;
     const byTrain = new Set();
     for (const { name } of recipe.ingredients) if (name !== u.item && visit(name, false)) byTrain.add(name);
-    used.set(key, { selection, byTrain, from, item: u.item, product, ...(general ? { general: true } : {}) });
+    used.set(key, { selection, byTrain, from, item: u.item, product, ...(from ? {} : { general: u }) });
     return true;
   };
-  const named = uses.filter(u => u.from != null);
   for (let more = true; more;) {
     more = false;
-    for (const u of named) more = addUse(u, u.from, false) || more;
-    // (General Uses: each step's and Use's byproduct no Use names it for.)
-    for (const u of uses.filter(u => u.from == null)) {
-      for (const from of [...order, ...used.keys()]) {
-        if (stepOf(from).selection.recipe === u.recipe || named.some(v => v.from === from && v.item === u.item)) continue;
-        more = addUse(u, from, true) || more;
-      }
-    }
+    for (const u of named) more = addUse(u, u.from) || more;
+    for (const u of uses.filter(u => u.from == null || u.from === EVERY)) more = addUse(u, null) || more;
   }
+  // (A General Use's sources once every Use is in: the one making most of it named later.)
+  for (const [key, u] of used) if (u.general) u.sources = sourcesOf(u.general, key);
+  const sourcesOfUse = u => u.sources ?? [u.from];
+  // Whether a Use takes the item step `key` makes.
+  const takenBy = (key, item) => used.has(useKey(key, item)) || [...used.values()].some(u => u.sources && u.item === item && u.sources.includes(key));
 
   // Each step makes its Goal rate plus what its consumers take: R = g + A R, A[s][t] what of s's
   // item one of t's takes (its recipe's amount over the item a craft makes, productivity
@@ -216,8 +224,10 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     }
     if (use) {
       const takes = recipeOf(key).ingredients.filter(i => i.name === use.item).reduce((sum, i) => sum + i.amount, 0);
-      const from = at.get(use.from);
-      a[t][from] += makes(use.from, use.item) / perCraft[from] / takes * perCraft[t];
+      for (const source of sourcesOfUse(use)) {
+        const from = at.get(source);
+        a[t][from] += makes(source, use.item) / perCraft[from] / takes * perCraft[t];
+      }
     }
   });
   const goal = new Float64Array(n);
@@ -227,13 +237,13 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // Supplied Items: what a Byproduct Use makes of an item a step makes (no Use of its own taking
   // it) joins that step's on its way to the steps taking it, the step making so much less: a
   // row of A less what one of the Use's gives. A solid only where one lane of the belt carries
-  // all the solids the Use makes (its belt sends it off onto the step's). One the step would then
-  // make none of leaves by train.
+  // it (each of the Use's belts sends its share off onto a lane of the step's). One the step
+  // would then make none of leaves by train.
   const lane = belt && catalog.belts?.[belt] ? catalog.belts[belt].itemsPerSecond * 30 : Infinity;
   let supplies = [];
   for (const [key, u] of used) {
     for (const p of recipeOf(key).products) {
-      if (p.name === u.item || !steps.has(p.name) || used.has(useKey(key, p.name)) || supplies.some(s => s.from === key && s.item === p.name)) continue;
+      if (p.name === u.item || !steps.has(p.name) || takenBy(key, p.name) || supplies.some(s => s.from === key && s.item === p.name)) continue;
       supplies.push({ from: key, item: p.name, type: p.type, per: makes(key, p.name) / perCraft[at.get(key)] });
     }
   }
@@ -242,8 +252,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   let rates;
   for (;;) {
     rates = loops.length || used.size ? solve(a, goal)?.map(r => Math.round(r * 1e9) / 1e9) : consumersFirst(a, goal);
-    const solids = key => recipeOf(key).products.filter(p => p.type === 'item').reduce((sum, p) => sum + p.amount, 0) * productivity[at.get(key)] * rates[at.get(key)] / perCraft[at.get(key)];
-    const off = supplies.filter(s => !rates || !(rates[at.get(s.item)] > 1e-6) || (s.type === 'item' && solids(s.from) > lane * (1 + 1e-9)));
+    const off = supplies.filter(s => !rates || !(rates[at.get(s.item)] > 1e-6) || (s.type === 'item' && s.per * rates[at.get(s.from)] > lane * (1 + 1e-9)));
     if (!off.length) break;
     off.forEach(s => supply(s, -1));
     supplies = supplies.filter(s => !off.includes(s));
@@ -262,7 +271,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // (Through what a step takes of another's item, a Use of its byproduct, what a Use supplies.)
   const gives = a => new Set([itemOf(a), ...supplies.filter(s => s.from === a).map(s => s.item)]);
   const feeds = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a)
-    && keys.some(k => (used.get(k)?.from === a || recipeOf(k).ingredients.some(i => gives(a).has(i.name) && !stepOf(k).byTrain.has(i.name))) && feeds(k, b, seen)));
+    && keys.some(k => ((used.has(k) && sourcesOfUse(used.get(k)).includes(a)) || recipeOf(k).ingredients.some(i => gives(a).has(i.name) && !stepOf(k).byTrain.has(i.name))) && feeds(k, b, seen)));
   const recycled = [];
   const takesFrom = new Map();
   for (const input of [...trainInputs.values()]) {
@@ -271,7 +280,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const takers = keys.filter(k => stepOf(k).byTrain.has(item));
     const fluid = recipeOf(takers[0]).ingredients.find(i => i.name === item).type === 'fluid';
     // (A Byproduct Use's product too.)
-    const makers = keys.filter(k => !takers.includes(k) && !used.has(useKey(k, item)) && recipeOf(k).products.some(p => p.name === item))
+    const makers = keys.filter(k => !takers.includes(k) && !takenBy(k, item) && recipeOf(k).products.some(p => p.name === item))
       .filter(k => !fluid || !takers.some(t => feeds(t, k)))
       .map(k => ({ key: k, rate: makes(k, item) * ratesOf(k) }))
       .sort((a, b) => b.rate - a.rate);
@@ -299,19 +308,28 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const taken = Object.entries(takesFrom.get(key) ?? {}).map(([item, k]) => [item, entryOf.get(k)]);
     return taken.length || Object.keys(from).length ? { from: { ...from, ...Object.fromEntries(taken) } } : {};
   };
+  // A General Use takes its item from the source making most of it, the others' joining that one's
+  // belt or pipe of it.
+  for (const u of used.values()) {
+    if (!u.sources) continue;
+    u.from = u.sources.reduce((best, k) => (makes(k, u.item) * ratesOf(k) > makes(best, u.item) * ratesOf(best) + 1e-9 ? k : best));
+  }
   const joinsOf = key => {
-    const list = supplies.filter(s => s.from === key);
-    return list.length ? { joins: Object.fromEntries(list.map(s => [s.item, entryOf.get(s.item)])) } : {};
+    const list = [
+      ...supplies.filter(s => s.from === key).map(s => [s.item, entryOf.get(s.item)]),
+      ...[...used.values()].filter(u => u.sources?.includes(key) && u.from !== key).map(u => [u.item, entryOf.get(u.from)]),
+    ];
+    return list.length ? { joins: Object.fromEntries(list) } : {};
   };
   return {
     entries: [
       ...[...order].reverse().map(item => ({
-        goal: { item, rate: rates[at.get(item)], ...fromOf(item), ...(extra[item] > 0 ? { extra: extra[item] } : {}) }, selection: steps.get(item).selection,
+        goal: { item, rate: rates[at.get(item)], ...fromOf(item), ...joinsOf(item), ...(extra[item] > 0 ? { extra: extra[item] } : {}) }, selection: steps.get(item).selection,
         ...(looping(item).length ? { byTrain: looping(item) } : {}),
       })),
       ...[...used].map(([key, u]) => ({
         goal: { item: u.product, rate: rates[at.get(key)], ...fromOf(key, { [u.item]: entryOf.get(u.from) }), ...joinsOf(key) }, selection: u.selection,
-        use: { key, from: u.from, item: u.item, ...(u.general ? { general: true } : {}) },
+        use: { key, from: u.from, item: u.item, ...(u.sources ? { sources: u.sources } : {}) },
       })),
     ],
     supplies: supplies.map(s => ({ from: s.from, item: s.item, into: s.item, rate: s.per * rates[at.get(s.from)] })),
@@ -321,7 +339,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     })),
     recycled,
     // (What a Recycled Byproduct's step makes beyond what is taken back.)
-    byproducts: keys.flatMap((key, t) => byproductsOf(key).filter((p, k, all) => all.findIndex(q => q.name === p.name) === k && !used.has(useKey(key, p.name))
+    byproducts: keys.flatMap((key, t) => byproductsOf(key).filter((p, k, all) => all.findIndex(q => q.name === p.name) === k && !takenBy(key, p.name)
       && !supplies.some(s => s.from === key && s.item === p.name)).map(p => ({
       from: key, item: p.name, type: p.type,
       rate: makes(key, p.name) * rates[t] / perCraft[t] - recycled.filter(r => r.from === key && r.item === p.name).reduce((sum, r) => sum + r.rate, 0),

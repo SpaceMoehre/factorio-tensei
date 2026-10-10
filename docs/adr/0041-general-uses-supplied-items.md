@@ -1,5 +1,5 @@
 ---
-status: accepted — refines ADR 0034, ADR 0035 and ADR 0040
+status: accepted — refines ADR 0034, ADR 0035 and ADR 0040; its General Use and app refined by ADR 0042
 ---
 
 # General Uses and Supplied Items

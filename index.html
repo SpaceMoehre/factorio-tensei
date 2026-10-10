@@ -115,12 +115,16 @@
   .step > .hint { margin: 2px 0 0 38px; }
   .train-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 2px; font-size: 13px; font-weight: 600; color: var(--muted); }
   .train-head::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
-  /* A Byproduct Use and a byproduct leaving by train stand under the step making it. */
-  .step.use, .step.byproduct { margin-left: calc(var(--depth, 1) * 14px); border-top: none; border-left: 2px solid var(--border); padding-left: 10px; margin-top: 4px; }
-  .step.use { border-left-color: var(--accent); }
-  .step.byproduct .name { color: var(--muted); font-weight: 400; }
+  /* A Byproduct Use is a step of its own, marked; the byproducts leaving by train stand under
+     what comes by train, each with a step to process it. */
+  .step.use { border-left: 2px solid var(--accent); padding-left: 10px; }
+  .step.byproduct { padding: 6px 0; }
+  .step.byproduct .step-head .sprite { width: 24px; height: 24px; }
+  .step.byproduct .name { font-weight: 400; }
+  .step.byproduct > .hint { margin: 0 0 0 32px; font-size: 12px; }
   .selection { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 6px 10px; align-items: center; margin: 8px 0 0 38px; font-size: 13px; color: var(--muted); }
-  .step.use .selection, .step.byproduct .selection { margin-left: 0; }
+  .step.use .selection { margin-left: 0; }
+  .step.byproduct .selection { margin: 6px 0 0 32px; }
   .modules { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
   .module { display: flex; gap: 6px; align-items: center; min-width: 0; }
   .module .pictured { flex: 1; min-width: 0; }
@@ -310,7 +314,7 @@
         <img class="art" data-art="oil-processing" alt="">
         <div>
           <h2 id="chain-title"><span class="num">2</span>How it's made</h2>
-          <p class="hint">Ingredients come by train. <em>Make here</em> builds one in the block. A byproduct leaves by train unless you use it in a recipe, at its step or every step making it; what that recipe makes goes to the steps taking it first.</p>
+          <p class="hint">Ingredients come by train. <em>Make here</em> builds one in the block. Byproducts leave by train, listed at the end: <em>Add a step processing it</em> takes all of one, from every step making it; what that step makes goes to the steps taking it first.</p>
         </div>
       </div>
       <div id="chain"></div>

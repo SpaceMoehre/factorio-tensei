@@ -40,7 +40,7 @@ A step the user adds for a byproduct of a step — a recipe taking it — that t
 _Avoid_: byproduct recipe (it is a step of the chain), sharing a byproduct among Uses
 
 **General Use**:
-A Byproduct Use the user adds for an item rather than a step's byproduct: every step (and Use) making the item besides its own gets a Use of that recipe, each a Sub-Block of its own, but where a Use names that step for the item (Py's ti rejects from the grade 3 screeners and the ti-enriched dust's, both recrushed; ADR 0041). Its rows say so; turning it off keeps it at the one step.
+A Byproduct Use the user adds for an item rather than a step's byproduct, from the byproducts leaving by train: one step of its recipe takes all of the item every step (and Use) makes besides its own, but where a Use names that step for it. It takes it from the step making the most, the others' belts or pipes of it joining that one's on its way (Py's ti rejects from the grade 3 screeners and the ti-enriched dust, one recrusher; ADR 0041, ADR 0042).
 
 **Supplied Item**:
 What a Byproduct Use makes of an item a step of the chain makes: it joins that step's on its way to the steps taking it, and the step makes that much less (Py titanium: the recrushers' grade 3 titanium joins the grade 3 screeners'). The Use's belt side-loads onto the step's belt ahead of the first consumer taking it — from a filter splitter after its producers where the rest goes on — and its pipe joins the step's network. A solid only where one lane of the chosen belt carries all the solids the Use makes; none where the step would then make none. Where its belt or pipe finds no way there, it goes to the train and that consumer starves (ADR 0041).

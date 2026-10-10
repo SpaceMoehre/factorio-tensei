@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v31: Byproducts processed (implemented)
+The byproducts listed once and processed by one step (ADR 0042); where v31 differs from v30, v31 wins.
+- **Leaves by train:** the byproducts that leave by train are listed once each after what comes by train, with their rate in all and the steps making them. *Add a step processing it* adds a step of a recipe taking it. That step takes all of it from every step making it: from the one making most, the others' belts or pipes of it joining that one's on the way. Py titanium: one recrusher takes the rejects of the grade 3 screeners and the ti-enriched dust.
+- **Uses as steps:** every step, those processing byproducts included, stands at the top level of the Production Chain.
+
 ## v30: General Uses and Supplied Items (implemented)
 Byproducts used at every step, what their Uses make used by the chain (ADR 0041); where v30 differs from v29, v30 wins.
 - **General Uses:** a byproduct's Use can be for every step making it, not one step: each step and Use making it gets a Use of that recipe, a Sub-Block of its own, unless a Use names that step for it. A Use's row turns it on or off, and *By train* on a General Use removes it everywhere.
