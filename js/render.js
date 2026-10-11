@@ -10,15 +10,15 @@ const MIN_SCALE = 2, MAX_SCALE = 64;
 const HOLD = 420, SLOP = 8, EDGE = 36;
 
 // circuit: the circuit wires to draw, { colors: ['red', 'green'], pairs (circuitPairs) }, or null.
-// onMove: called with ({ step, inst }, dx, dy) where a Sub-Block (its stack; `inst`: a machine
-// stood apart) was put down that many tiles off (null: nothing moves; only a block with `edit`
-// may be moved, edit.js). onContext: called with ({ step, inst }, { x, y }: where on the page) on a
+// onMove: called with ({ step, inst }, dx, dy, turns) where a Sub-Block (its stack; `inst`: a
+// machine stood apart) was put down that many tiles off, turned so many quarter turns clockwise
+// (R while carried; null: nothing moves; only a block with `edit` may be moved, edit.js). onContext: called with ({ step, inst }, { x, y }: where on the page) on a
 // right click on a Sub-Block that may be moved, which it selects. view: where the map starts
 // ({ scale, x, y }), else it fits the block.
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {any} block
- * @param {{ onHover?: (entity: any, block: any) => void, onSelect?: (hit: any, block: any) => void, onMove?: ((unit: { step: number, inst?: number }, dx: number, dy: number) => void) | null, onContext?: ((unit: { step: number, inst?: number }, at: { x: number, y: number }) => void) | null, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null, view?: { scale: number, x: number, y: number } | null }} [options]
+ * @param {{ onHover?: (entity: any, block: any) => void, onSelect?: (hit: any, block: any) => void, onMove?: ((unit: { step: number, inst?: number }, dx: number, dy: number, turns: number) => void) | null, onContext?: ((unit: { step: number, inst?: number }, at: { x: number, y: number }) => void) | null, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null, view?: { scale: number, x: number, y: number } | null }} [options]
  */
 export function createMap(canvas, block, { onHover = () => {}, onSelect = () => {}, onMove: onPut = null, onContext = null, starving = new Set(), icon = () => null, circuit = null, view: start = null } = {}) {
   const ctx = canvas.getContext('2d');
@@ -90,12 +90,13 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   };
   // Whether a unit `dx`, `dy` off stands outside the City Block ('outside'), or on another's
   // pieces or a Fixture ('taken'); else false.
-  const clashes = (u, dx, dy) => {
+  const clashes = (u, dx, dy, turns = 0) => {
     let taken = false;
     for (const e of u.pieces) {
       for (let ax = 0; ax < e.w; ax++) {
         for (let ay = 0; ay < e.h; ay++) {
-          const x = e.x + ax + dx, y = e.y + ay + dy, k = `${x},${y}`;
+          const [tx, ty] = turned(u.box, e.x + ax, e.y + ay, turns);
+          const x = tx + dx, y = ty + dy, k = `${x},${y}`;
           if (site && (x < site.inner.x || y < site.inner.y || x >= site.inner.x + site.inner.w || y >= site.inner.y + site.inner.h)) return 'outside';
           if ((owner.get(k) ?? u) !== u || fixed.has(k)) taken = true;
         }
@@ -285,13 +286,20 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     // room; or outside the City Block), with how far it goes; put down, while its move is laid
     // out, the same.
     if (away) {
-      const { dx, dy, clash } = lift ?? placing;
+      const { dx, dy, clash, turns = 0 } = lift ?? placing;
       ctx.globalAlpha = 0.28;
       for (const e of away.pieces) drawEntity(e, 0, 0);
       ctx.globalAlpha = 1;
+      // (Turned: drawn turned about its box's middle, where it goes.)
+      const o = away.box, mid = { x: sx(o.x + dx + o.w / 2), y: sy(o.y + dy + o.h / 2) };
+      ctx.save();
+      ctx.translate(mid.x, mid.y);
+      ctx.rotate(turns * Math.PI / 2);
+      ctx.translate(-mid.x, -mid.y);
       for (const e of away.pieces) drawEntity(e, dx, dy);
       if (s >= 8) for (const e of away.pieces) if (e.kind === 'building' && e.drop) drawDrop(e, dx, dy);
-      const b = away.box, color = clash ? t.starve : t.subBlock;
+      ctx.restore();
+      const b = turns % 2 ? { x: o.x + (o.w - o.h) / 2, y: o.y + (o.h - o.w) / 2, w: o.h, h: o.w } : o, color = clash ? t.starve : t.subBlock;
       ctx.fillStyle = clash ? 'rgba(255, 92, 92, 0.12)' : 'rgba(232, 160, 60, 0.12)';
       ctx.fillRect(sx(b.x + dx), sy(b.y + dy), b.w * s, b.h * s);
       ctx.strokeStyle = color;
@@ -300,7 +308,9 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       ctx.strokeRect(sx(b.x + dx) - 3, sy(b.y + dy) - 3, b.w * s + 6, b.h * s + 6);
       ctx.setLineDash([]);
       const sb = block.subBlocks[away.step];
-      const how = placing ? 'laying it out…' : clash === 'outside' ? 'outside the city block' : clash ? 'on another: it goes to the nearest room' : offset(dx, dy);
+      const turn = turns ? `turned ${turns * 90}°` : '';
+      const how = placing ? 'laying it out…' : clash === 'outside' ? 'outside the city block' : clash ? 'on another: it goes to the nearest room'
+        : [offset(dx, dy), turn].filter(Boolean).join(', ');
       ctx.font = `600 ${Math.max(11, Math.min(14, s))}px system-ui, sans-serif`;
       const text = `${words(sb.item)} ×${sb.count}${how ? ` · ${how}` : ''}`;
       const tx = sx(b.x + dx), ty = sy(b.y + dy) - 10;
@@ -456,7 +466,7 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   const pickUp = (unit, at) => {
     clearTimeout(press?.timer);
     press = null;
-    lift = { unit, from: world(at), at, dx: 0, dy: 0, clash: false };
+    lift = { unit, from: world(at), at, dx: 0, dy: 0, clash: false, turns: 0 };
     selected = { subBlock: unit.step };
     canvas.style.cursor = 'grabbing';
     canvas.dataset.carrying = '';
@@ -471,7 +481,7 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     const w = world(at);
     const dx = Math.round(w.x - lift.from.x), dy = Math.round(w.y - lift.from.y);
     if (dx === lift.dx && dy === lift.dy) return;
-    Object.assign(lift, { dx, dy, clash: clashes(lift.unit, dx, dy) });
+    Object.assign(lift, { dx, dy, clash: clashes(lift.unit, dx, dy, lift.turns) });
     draw();
   };
   // Near the map's edge, a unit carried pans the map that way.
@@ -498,20 +508,28 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   // Puts the unit carried down: moved, onMove hears where, and it shows there while its move is
   // laid out (until settle(), or the map made again); not moved, it is selected as a tap would.
   const putDown = () => {
-    const { unit, dx, dy, clash } = lift;
+    const { unit, dx, dy, clash, turns } = lift;
     stopLift();
-    if (dx || dy) {
-      placing = { unit, dx, dy, clash };
-      onPut({ step: unit.step, ...(unit.inst !== undefined ? { inst: unit.inst } : {}) }, dx, dy);
+    if (dx || dy || turns) {
+      placing = { unit, dx, dy, clash, turns };
+      onPut({ step: unit.step, ...(unit.inst !== undefined ? { inst: unit.inst } : {}) }, dx, dy, turns);
     } else onSelect({ subBlock: unit.step }, block);
     draw();
   };
-  // Escape: the unit carried goes back where it stood.
+  // Escape: the unit carried goes back where it stood. R turns it a quarter clockwise (Shift+R
+  // the other way), as in the game; a machine stood apart does not turn.
   const onKey = e => {
-    if (e.key !== 'Escape' || !lift) return;
-    stopLift();
-    drag = null;
-    draw();
+    if (!lift) return;
+    if (e.key === 'Escape') {
+      stopLift();
+      drag = null;
+      draw();
+    } else if ((e.key === 'r' || e.key === 'R') && !e.ctrlKey && !e.metaKey && !e.altKey && lift.unit.inst === undefined) {
+      e.preventDefault();
+      lift.turns = (lift.turns + (e.shiftKey ? 3 : 1)) % 4;
+      lift.clash = clashes(lift.unit, lift.dx, lift.dy, lift.turns);
+      draw();
+    }
   };
   const onDown = e => {
     canvas.setPointerCapture(e.pointerId);
@@ -694,10 +712,10 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     },
     // Shows a Sub-Block ({ step, inst }) `dx`, `dy` tiles off while its move is laid out, as if
     // dragged there; false where it may not be moved.
-    place({ step, inst }, dx, dy) {
+    place({ step, inst }, dx, dy, turns = 0) {
       const unit = units.find(u => u.step === step && u.inst === inst);
       if (!unit) return false;
-      placing = { unit, dx, dy, clash: clashes(unit, dx, dy) };
+      placing = { unit, dx, dy, turns, clash: clashes(unit, dx, dy, turns) };
       draw();
       return true;
     },
@@ -746,6 +764,17 @@ export function turnsSideways(e) {
 function directionOf({ x, y }) {
   if (Math.abs(x) > Math.abs(y)) return x > 0 ? 4 : 12;
   return y > 0 ? 8 : 0;
+}
+
+// Where a tile of a unit's `box` stands, the unit turned `turns` quarter turns clockwise about
+// its box's middle (as edit.js turns it, about).
+function turned(box, x, y, turns) {
+  let lx = x - box.x, ly = y - box.y, w = box.w, h = box.h;
+  for (let k = 0; k < turns; k++) {
+    [lx, ly] = [h - 1 - ly, lx];
+    [w, h] = [h, w];
+  }
+  return [Math.round(box.x + (box.w - w) / 2) + lx, Math.round(box.y + (box.h - h) / 2) + ly];
 }
 
 // How far a move goes: "3 east, 2 south".

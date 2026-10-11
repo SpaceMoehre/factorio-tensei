@@ -221,6 +221,10 @@
   .toolbar { position: absolute; top: 12px; right: 12px; display: flex; gap: 6px; z-index: 2; }
   .toolbar button { background: rgba(42,40,38,.92); }
   main:has(#undo:not([hidden])) .area { max-width: calc(100% - 250px); }
+  main:has(#compact:not([hidden])) .area { max-width: calc(100% - 300px); }
+  main:has(#compact:not([hidden])):has(#undo:not([hidden])) .area { max-width: calc(100% - 380px); }
+  /* (On a phone the toolbar takes the top: the block's size goes to the bottom.) */
+  @media (max-width: 860px) { main:has(#compact:not([hidden])) .area { top: auto; bottom: 12px; max-width: calc(100% - 24px); } }
   .tooltip { position: absolute; left: 12px; bottom: 12px; background: rgba(29,28,27,.94); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 6px 10px; font-size: 13px; pointer-events: none; max-width: 60%; z-index: 2; }
   .tooltip:empty { display: none; }
   /* A Sub-Block carried: the panels over the map fade, so where it goes shows. */
@@ -282,6 +286,8 @@
   .glyph::before { content: ''; display: block; border: 2px solid var(--accent); border-radius: 2px; }
   .glyph.squarer::before { width: 13px; height: 13px; }
   .glyph.longer::before { width: 20px; height: 7px; }
+  .glyph.turn { color: var(--accent); font-size: 17px; line-height: 1; }
+  .glyph.turn::before { display: none; }
   /* A Sub-Block's menu on the map (a right click on it). */
   .map-menu { position: absolute; z-index: 4; width: 260px; padding: 6px; background: rgba(37,35,33,.98); border: 1px solid var(--border); border-radius: var(--radius);
     box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 18px 40px -18px rgba(10,6,2,.9); animation: inspector-in .16s var(--ease); }
@@ -462,6 +468,7 @@
   <main>
     <canvas id="map" aria-label="Factory block map"></canvas>
     <div class="toolbar">
+      <button id="compact" type="button" title="Slide every Sub-Block toward the middle as far as its belts and pipes still find their way: none changes its design or turns" hidden>Pull together</button>
       <button id="undo" type="button" title="Undo the last move (Ctrl+Z)" aria-label="Undo the last move" hidden>↶ Undo</button>
       <button class="icon" id="zoom-in" type="button" title="Zoom in">+</button>
       <button class="icon" id="zoom-out" type="button" title="Zoom out">−</button>

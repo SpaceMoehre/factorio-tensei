@@ -254,6 +254,14 @@ _Avoid_: Refinement (the search's own slides), relayout (the whole search again)
 The user's making a Sub-Block squarer or longer where it stands (a right click on it): its stack of Copies a column more or fewer at a time, else its machines in rows of other lengths, Copies of a smaller Module, or another of its designs, never starving more than its own design. Its Links are laid as a Move's: every other Copy where it stands (ADR 0044).
 _Avoid_: resize (its machines stay as many)
 
+**Turn**:
+The user's turning a Sub-Block's stack a quarter (clockwise or not) where it stands, as a blueprint turns in the game: its machines, inserters, belts and pipes turn with it, its belts entering and leaving on the sides they turned to, every Link routed again as a Move's (ADR 0045).
+_Avoid_: rotation (the design's own variants turn machines: `rotation`)
+
+**Pull together**:
+Sliding every Sub-Block of a layout the user is happy with toward its middle, each as it is (its design, its shape, its Turn), as far as its Links still find their way and the block gets no worse: each slide kept only where the block's Compactness beats what it was (ADR 0045).
+_Avoid_: Squeeze (that takes out empty lines; pulling together moves Sub-Blocks), Refinement (the search's slides)
+
 **Breakout**:
 Some of a Sub-Block's machines taken out of its rectangle, so the rest packs smaller, each standing apart in a gap of the Compound Block: one machine (of repeated Modules, the one for the machines left over, else one Copy), and where that packs no looser before routing, two or three together or each alone. Its machines left and those broken out are Modules of their own, designed like any other (the rest cutting an Internal Path into as many parts as the whole Sub-Block would, each broken-out machine joining one); they stand apart last in Placement, where they grow the block least and their Links run shortest, clear of the corridors other Links take, with a corridor and a column per belt between them and what they link to. Their belts chain like a neighbour's, downstream of the rest: a belt runs on from the rest through them, never back. Tried on every new best, one Sub-Block at a time, a trial after every two slides (never for a lone Sub-Block, which has no gaps); a trial is routed only where it packs no looser than the best before routing.
 _Avoid_: detach (code word), split (Parallel Belts split a route)

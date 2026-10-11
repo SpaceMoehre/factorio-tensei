@@ -1,4 +1,5 @@
-import { Grid, N, E, S, W, VEC, key, turnLeft, turnRight } from './grid.js';
+import { Grid, N, E, S, W, VEC, key, turnLeft, turnRight, opposite } from './grid.js';
+import { turnSide } from './turn.js';
 import { routeLink, routePipe, RoutingError } from './router.js';
 import { PowerError } from './poles.js';
 import { trim, maxFlow } from './module.js';
@@ -182,7 +183,8 @@ export function compose(ctx, prepared, positions, layout) {
       const mine = instances.filter(inst => inst.step === step && !inst.detached);
       const snaking = routes.filter(r => r.kind === 'belt' && r.slots.some((slot, k) => k > 0
         && slot.inst.step === step && stacked(r.slots[k - 1].inst, slot.inst)));
-      if (mine.length < 2 || !snaking.length || 2 * snaking.length + 2 > Math.min(belts.reach, pipes.reach)) continue;
+      // (A turned stack's belts turn above and below it: the router finds their way.)
+      if (mine.length < 2 || !snaking.length || 2 * snaking.length + 2 > Math.min(belts.reach, pipes.reach) || mine.some(inst => inst.module.turns)) continue;
       for (const column of new Set(mine.map(inst => inst.column ?? 0))) {
         const boxes = mine.filter(inst => (inst.column ?? 0) === column).map(inst => placed[inst.index].box);
         const x0 = Math.min(...boxes.map(b => b.x)), x1 = Math.max(...boxes.map(b => b.x + b.w - 1));
@@ -200,7 +202,7 @@ export function compose(ctx, prepared, positions, layout) {
     // The tile where each copy's pipes leave it belongs to their network: a belt routed first
     // (after a link failed) must not take it.
     for (const route of routes.filter(r => r.kind === 'pipe')) {
-      for (const { inst, x, y, side } of route.stubs) hold(grid, x + placed[inst.index].x + (side === 'W' ? -1 : 1), y + placed[inst.index].y, route.id);
+      for (const { inst, x, y, side } of route.stubs) hold(grid, x + placed[inst.index].x + OUT[side][0], y + placed[inst.index].y + OUT[side][1], route.id);
     }
     // The tile before each copy's entry and after its exit belongs to the link that meets it
     // there: no other link may pass in front of it.
@@ -325,7 +327,7 @@ export function compose(ctx, prepared, positions, layout) {
   const routeFluid = (grid, route, pieces) => {
     const terminals = route.stubs.map(({ inst, x, y, side }) => {
       const { x: ox, y: oy } = placed[inst.index];
-      return side === 'W' ? [x + ox - 1, y + oy, W] : [x + ox + 1, y + oy, E];
+      return [x + ox + OUT[side][0], y + oy + OUT[side][1], OUT[side][2]];
     }).filter(([x, y]) => grid.inBounds(x, y));
     const reachesWest = route.stubs.some(s => s.side === 'W' && placed[s.inst.index].x + s.x === area.x);
     const reachesEast = route.stubs.some(s => s.side === 'E' && placed[s.inst.index].x + s.x === area.x + area.w - 1);
@@ -1343,12 +1345,18 @@ function groupRoutes(ctx, instances, laneCapacity) {
   const flowOf = (step, name, role) => (role === 'input' ? plan[step].inputs : plan[step].outputs).find(f => f.name === name)?.rate ?? 0;
   // One copy's belt goes on into the next: beside the stack (it leaves one copy on the side the
   // next one takes it in) or on east into a consumer.
-  const exitSide = s => (s.part.dir === W ? W : E), entrySide = s => (s.part.dir === W ? E : W);
+  // (A turned module's belts leave and enter on whichever sides it turned them to.)
+  const exitSide = s => s.part.dir ?? E, entrySide = s => opposite(s.part.dir ?? E);
   // A copy's parts never chain into each other. Machines broken out of a Sub-Block chain like a
   // neighbour's, downstream of its stack: a belt runs on from the stack to them, never back.
+  // (Between Sub-Blocks, a turned one's belts chain on whatever side: the router turns them.)
   const backward = (a, b) => a.inst.step === b.inst.step && a.inst.detached && !b.inst.detached;
   const chainable = (a, b) => a.inst !== b.inst && !backward(a, b) && a.part.canExit && b.part.canEnter
-    && (stacked(a.inst, b.inst) ? exitSide(a) === entrySide(b) : exitSide(a) === E && entrySide(b) === W);
+    && (stacked(a.inst, b.inst) ? exitSide(a) === entrySide(b) : (exitSide(a) === E && entrySide(b) === W) || !!a.inst.module.turns || !!b.inst.module.turns);
+  // A run of copies' parts ends at one leaving east (a turned one's on any side), and starts at one
+  // entering from the west (a turned one's from any side).
+  const leavesEast = s => s.part.canExit && (exitSide(s) === E || !!s.inst.module.turns);
+  const entersWest = s => s.part.canEnter && (entrySide(s) === W || !!s.inst.module.turns);
 
   for (const base of ctx.routes) {
     if (base.kind === 'pipe') {
@@ -1464,7 +1472,7 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const made = prefix(producers, production);
       const carried = laneFlow(producers, perMachine, laneCapacity);
       const short = (i, j) => Math.max(0, made(i, j) - carried(i, j));
-      const runs = splits(producers, producers.length, chainable, () => true, s => s.part.canExit && exitSide(s) === E,
+      const runs = splits(producers, producers.length, chainable, () => true, leavesEast,
         (k, i, j) => 1e6 * short(i, j) + made(i, j) ** 2);
       let best = null;
       for (let count = 1; count <= producers.length; count++) {
@@ -1518,8 +1526,8 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const makes = run => run.reduce((sum, s) => sum + production(s), 0);
       const carriedBy = run => deliver([{ producers: run, consumers: [] }], false).total;
       const machinesIn = prefix(consumers, s => s.part.machines);
-      const consumerRuns = splits(consumers, consumers.length, chainable, s => s.part.canEnter && entrySide(s) === W, () => true, (k, i, j) => machinesIn(i, j) ** 2);
-      const endsEast = s => s.part.canExit && exitSide(s) === E;
+      const consumerRuns = splits(consumers, consumers.length, chainable, entersWest, () => true, (k, i, j) => machinesIn(i, j) ** 2);
+      const endsEast = leavesEast;
       const making = prefix(producers, production);
       // Producers in count + 1 runs, the extra run merging into consumer run j's belt.
       const merges = (cs, targets) => {
@@ -2156,13 +2164,19 @@ function splits(slots, most, chainable, startOk, endOk, runCost) {
 }
 
 // Where a module's fluid reaches its west edge (an input) or east edge (an output).
+// Where a copy's pipes of a fluid leave it: an input on its west edge, an output on its east (a
+// turned module's turned with it).
 function stubOf(module, fluid) {
   const { area } = module;
-  const edge = fluid.role === 'input' ? area.x : area.x + area.w - 1;
-  const at = fluid.pieces.find(p => p.x === edge);
+  const side = turnSide(fluid.role === 'input' ? 'W' : 'E', module.turns);
+  const on = { W: p => p.x === area.x, E: p => p.x === area.x + area.w - 1, N: p => p.y === area.y, S: p => p.y === area.y + area.h - 1 }[side];
+  const at = fluid.pieces.find(on);
   if (!at) throw new RoutingError(`${fluid.fluid}: its pipes do not reach the module's edge`);
-  return { x: at.x, y: at.y, side: fluid.role === 'input' ? 'W' : 'E' };
+  return { x: at.x, y: at.y, side };
 }
+
+// The tile beside a stub its link joins it from, and the way a pipe heads out to it.
+const OUT = { W: [-1, 0, W], E: [1, 0, E], N: [0, -1, N], S: [0, 1, S] };
 
 const pipeRouteOf = (routes, baseId) => routes.find(r => r.kind === 'pipe' && r.base === baseId).id;
 

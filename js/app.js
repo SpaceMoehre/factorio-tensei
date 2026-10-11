@@ -101,6 +101,8 @@ let built = null;
 let undo = [];
 let moving = null;
 const UNDOS = 30;
+// Pulling the block together (ADR 0045): { run, before, slid }.
+let pulling = null;
 
 // The page's pictures: technologies' (catalog.art) and items' icons.
 for (const img of /** @type {any[]} */ (Array.from(document.querySelectorAll('img[data-art], img[data-icon]')))) {
@@ -190,6 +192,7 @@ $('chooser-close').addEventListener('click', () => $('chooser').close());
 $('chooser-filter').addEventListener('input', drawChooser);
 $('chooser').addEventListener('click', e => { if (e.target === $('chooser')) $('chooser').close(); });
 $('undo').addEventListener('click', undoMove);
+$('compact').addEventListener('click', compactBlock);
 // A Sub-Block's menu closes on a press elsewhere, Escape or the map moving; its arrows go from item
 // to item.
 document.addEventListener('pointerdown', e => {
@@ -771,6 +774,7 @@ async function build(upTo = false) {
   stopMoving();
   undo = [];
   $('undo').hidden = true;
+  $('compact').hidden = true;
   upTo = Boolean(site && !state.city.maximize && (upTo || foretoldShort()));
   built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && (state.city.maximize || upTo)), upTo, trying: null, foretold: null, job: null, designs: null };
   map?.destroy();
@@ -914,6 +918,7 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
     map.select(selected);
     inspect(selected, block);
   }
+  $('compact').hidden = !block.edit;
   const { bounds, site } = block;
   // Compactness, as the search scores it: its parts, and the score.
   const score = compactness(block);
@@ -937,9 +942,10 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
 // The user's move (ADR 0043): the shown block laid out again with a Sub-Block (its stack, or a
 // machine stood apart: `inst`) `dx`, `dy` tiles off, everything else where it stands; where its
 // links find no way, it goes a little further, else what stands in its way moves off.
-function moveSubBlock(unit, dx, dy) {
+function moveSubBlock(unit, dx, dy, turns = 0) {
   const sb = best?.block.subBlocks[unit.step];
   if (!sb) return map?.settle();
+  if (turns) return turnSubBlock(unit.step, turns, dx, dy);
   const name = `${label(sb.item)}${unit.inst !== undefined ? ' (a machine apart)' : ''}`;
   relayout({ move: { ...unit, dx, dy } }, unit.step, {
     busy: `Moving ${name} ${where(dx, dy)}: laying its belts, pipes and poles again…`,
@@ -965,10 +971,90 @@ function reshapeSubBlock(step, way) {
     trying: data => `Making ${name} ${way}: trying its shapes and room for its links (${count(data.tried, 'layout')} tried)…`,
     stuck: message => `${name} keeps its shape: ${message}.`,
     done: data => {
-      const moved = data.at.dx || data.at.dy ? `, ${where(data.at.dx, data.at.dy)} off to give its links room` : '';
+      const moved = data.at.dx || data.at.dy ? ` It moved ${where(data.at.dx, data.at.dy)} to give its links room.` : '';
       const columns = data.shape.columns > 1 ? ` in ${data.shape.columns} columns` : '';
-      return `${name} stands ${way} now: ${data.shape.w} × ${data.shape.h} tiles${columns} (was ${data.was.w} × ${data.was.h})${moved}.`;
+      return `${name} stands ${way} now: ${data.shape.w} × ${data.shape.h} tiles${columns} (was ${data.was.w} × ${data.was.h}).${moved}`;
     },
+  });
+}
+
+// The user's turn (ADR 0045): the shown block laid out again with a Sub-Block's stack turned
+// `turns` quarter turns clockwise (and `dx`, `dy` tiles off: turned while dragged), standing where
+// it stood, everything else where it stands.
+function turnSubBlock(step, turns, dx = 0, dy = 0) {
+  const sb = best?.block.subBlocks[step];
+  if (!sb) return map?.settle();
+  const name = label(sb.item);
+  const how = `${turns === 3 ? 'a quarter anticlockwise' : turns === 2 ? 'half round' : 'a quarter clockwise'}${dx || dy ? ` and ${where(dx, dy)}` : ''}`;
+  if (!dx && !dy) map?.place({ step }, 0, 0, turns);
+  relayout({ turn: { step, turns, dx, dy } }, step, {
+    busy: `Turning ${name} ${how}: laying its belts, pipes and poles again…`,
+    trying: data => `Turning ${name}: its links find no way there yet; ${data.pushed.length ? 'moving what stands in its way' : 'trying close by'} (${count(data.tried, 'layout')} tried)…`,
+    stuck: message => `${name} stays as it was: ${message}.`,
+    done: data => {
+      const off = where(data.at.dx - dx, data.at.dy - dy);
+      const moved = data.at.dx !== dx || data.at.dy !== dy ? ` (${dx || dy ? `${off} past where it was put` : `moved ${off}`}, to give its links room)` : '';
+      return `Turned ${name} ${how}${moved}.`;
+    },
+  });
+}
+
+// Pulling the shown block together (ADR 0045): every Sub-Block as it is, slid toward the block's
+// middle as far as its links still find their way and the block gets no worse; each slide kept
+// shown as it comes. Again (the button reads Stop) stops it, keeping what it pulled so far.
+function compactBlock() {
+  if (pulling) {
+    stopMoving();
+    return;
+  }
+  const before = best;
+  if (!before?.block.edit || !built?.job) return;
+  if (workers.length) finish('Stopped');
+  stopMoving();
+  const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }) };
+  moving = run;
+  pulling = { run, before, slid: 0 };
+  $('compact').textContent = 'Stop pulling';
+  const was = before.block.bounds;
+  showStatus('', 'Pulling the Sub-Blocks together…');
+  const over = () => {
+    run.worker.terminate();
+    if (moving === run) moving = null;
+    if (pulling?.run === run) pulling = null;
+    $('compact').textContent = 'Pull together';
+  };
+  run.worker.onmessage = async ({ data }) => {
+    if (moving !== run) return;
+    if (data.type === 'trying') {
+      if (data.tried > 1) showStatus('', `Pulling the Sub-Blocks together: ${count(pulling.slid, 'slide')} kept (${count(data.tried, 'layout')} tried)…`);
+      return;
+    }
+    if (data.type === 'better') {
+      // (The first kept: Undo goes back to the block before.)
+      if (!pulling.slid) {
+        undo = [...undo, before].slice(-UNDOS);
+        $('undo').hidden = false;
+      }
+      pulling.slid = data.slid;
+      await show(data.block, before.tried, before.found, data.score, { view: map?.viewport() });
+      if (moving === run) showStatus('', `Pulling the Sub-Blocks together: ${count(data.slid, 'slide')} kept…`);
+      return;
+    }
+    const slid = pulling.slid;
+    over();
+    if (data.type !== 'moved') return showStatus('error', `The Sub-Blocks stay where they are: ${(data.message ?? 'no way found to route their links').replace(/\.$/, '')}.`);
+    if (!slid) return report(best.block, best.starvation, 'Already as close together as their links allow.');
+    const { w, h } = best.block.bounds;
+    report(best.block, best.starvation, `Pulled together: ${count(slid, 'slide')}, ${was.w} × ${was.h} → ${w} × ${h} tiles.${data.back ? ` (It opened up by ${count(data.back, 'tile')} first, to lay its belts again.)` : ''}`);
+  };
+  run.worker.onerror = e => {
+    over();
+    showStatus('error', `The Sub-Blocks stay where they are: ${e.message}.`);
+  };
+  const { logistics, site } = built.job;
+  run.worker.postMessage({
+    entries: before.block.edit.entries ?? built.job.entries, logistics, site, seed: 1, budgetMs: Math.max(10, state.logistics.budget) * 1000,
+    compact: { edit: before.block.edit, score: rankOf(before.block) },
   });
 }
 
@@ -1016,8 +1102,9 @@ function relayout(request, step, texts) {
   run.worker.onerror = e => stuck(e.message);
   const { logistics, site } = built.job;
   const [kind] = Object.keys(request);
+  // (A move looks a few seconds at least; a turn or reshape, which may design and try more, ten.)
   run.worker.postMessage({
-    entries: before.block.edit.entries ?? built.job.entries, logistics, site, seed: 1, budgetMs: Math.max(5, state.logistics.budget) * 1000,
+    entries: before.block.edit.entries ?? built.job.entries, logistics, site, seed: 1, budgetMs: Math.max(kind === 'move' ? 5 : 10, state.logistics.budget) * 1000,
     [kind]: { ...request[kind], edit: before.block.edit, score: rankOf(before.block) },
   });
 }
@@ -1037,6 +1124,13 @@ function stopMoving() {
   moving.worker.terminate();
   moving = null;
   map?.settle();
+  if (pulling) {
+    // (Pulling stopped: what it pulled so far stays.)
+    const { slid } = pulling;
+    pulling = null;
+    $('compact').textContent = 'Pull together';
+    if (best) report(best.block, best.starvation, slid ? `Pulled together: ${count(slid, 'slide')}, stopped.` : 'Pulling together stopped.');
+  }
 }
 
 // How far a move goes: "3 tiles east, 2 south".
@@ -1412,6 +1506,10 @@ function moveHint(step) {
     el('div', { className: 'nudges', role: 'group', ariaLabel: 'Move it a tile' },
       el('span', { className: 'hint', textContent: 'A tile at a time' }),
       arrow('←', 'west', -1, 0), arrow('↑', 'north', 0, -1), arrow('↓', 'south', 0, 1), arrow('→', 'east', 1, 0)),
+    el('div', { className: 'nudges', role: 'group', ariaLabel: 'Turn it' },
+      el('span', { className: 'hint', textContent: 'Turn it (R while dragging)' }),
+      el('button', { type: 'button', className: 'icon nudge', textContent: '↺', ariaLabel: 'Turn it a quarter anticlockwise', title: 'A quarter anticlockwise', onclick: () => turnSubBlock(step, 3) }),
+      el('button', { type: 'button', className: 'icon nudge', textContent: '↻', ariaLabel: 'Turn it a quarter clockwise', title: 'A quarter clockwise', onclick: () => turnSubBlock(step, 1) })),
     el('div', { className: 'nudges', role: 'group', ariaLabel: 'Its shape' },
       el('span', { className: 'hint', textContent: one ? 'One machine: one shape' : 'Its shape' }),
       ...SHAPES.map(([way, text, title]) => el('button', { type: 'button', className: 'shape-button', disabled: one || (way === 'squarer' && square(sb)), title, onclick: () => reshapeSubBlock(step, way) },
@@ -1443,7 +1541,14 @@ function openMenu(unit, at) {
         reshapeSubBlock(unit.step, way);
       },
     }, el('span', { className: `glyph ${way}`, ariaHidden: 'true' }), el('span', { className: 'menu-text' }, el('strong', { textContent: text }), el('span', { textContent: title.split(':')[0] })))),
-    el('p', { className: 'menu-note', textContent: one ? 'One machine: it has one shape.' : square(sb) ? 'About square already. Drag it to move it.' : 'Drag it to move it.' }));
+    ...(unit.inst === undefined ? [[1, '↻', 'Turn clockwise', 'a quarter turn, as R does while dragging'], [3, '↺', 'Turn anticlockwise', 'a quarter turn the other way']].map(([turns, glyph, text, hint]) => el('button', {
+      type: 'button', role: 'menuitem', className: 'menu-item', disabled: !!moving,
+      onclick: () => {
+        closeMenu();
+        turnSubBlock(unit.step, turns);
+      },
+    }, el('span', { className: 'glyph turn', ariaHidden: 'true', textContent: glyph }), el('span', { className: 'menu-text' }, el('strong', { textContent: text }), el('span', { textContent: hint })))) : []),
+    el('p', { className: 'menu-note', textContent: one ? 'One machine: it has one shape. Drag it to move it.' : square(sb) ? 'About square already. Drag it to move it.' : 'Drag it to move it.' }));
   menu.hidden = false;
   // (Inside the map: flipped to the pointer's other side near its edges.)
   const room = /** @type {HTMLElement} */ (menu.parentElement).getBoundingClientRect();

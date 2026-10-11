@@ -5,7 +5,9 @@ import { context, designStep, designOf, random, breakoutDesign } from '../js/des
 import { prepare, compose } from '../js/layout/compose.js';
 import { placeBlocks } from '../js/layout/place.js';
 import { finishBlock } from '../js/layout/compact.js';
-import { moveCopies, standing, editOf, reshapeCopies, shapesToward } from '../js/layout/edit.js';
+import { moveCopies, standing, editOf, reshapeCopies, shapesToward, turnCopies, compactCopies } from '../js/layout/edit.js';
+import { turnModule } from '../js/layout/turn.js';
+import { compactness } from '../js/layout/score.js';
 import { rankOf } from '../js/layout/score.js';
 import { siteOf } from '../js/city.js';
 import { annexed } from '../js/annex.js';
@@ -201,4 +203,77 @@ test('a reshape takes its own stack a column at a time first, longer along the s
   assert.deepEqual(shapesToward({ now: { w: 20, h: 21 }, options: [{ rowLength: 3, w: 19, h: 20 }] }, 'squarer'), []);
   // No other design more than twice its box.
   assert.deepEqual(shapesToward({ now: tall, options: [{ rowLength: 2, w: 40, h: 30 }] }, 'squarer'), []);
+});
+
+/** @returns {any} */
+function drive(run) {
+  let next = run.next();
+  for (; !next.done; next = run.next()) assert.ok(['trying', 'better'].includes(next.value.type));
+  return next.value;
+}
+
+test('a module turned a quarter four times is the module again; its machines, inserters, belts and drops turn with it', () => {
+  const ctx = context(entries, catalog, logistics);
+  const module = designOf(designStep(ctx, 0, random(1))[0]).kinds[0].module;
+  const once = turnModule(module, 1);
+  assert.equal(once.turns, 1);
+  assert.deepEqual([once.area.w, once.area.h], [module.area.h, module.area.w]);
+  const machine = module.entities.find(e => e.kind === 'building'), turned = once.entities[module.entities.indexOf(machine)];
+  assert.deepEqual([turned.x, turned.y, turned.direction], [-(machine.y + machine.h), machine.x, (machine.direction + 4) % 16]);
+  assert.equal(once.parts[0].dir, ((module.parts[0].dir ?? 4) + 4) % 16);
+  const round = turnModule(turnModule(turnModule(once, 1), 1), 1);
+  assert.deepEqual(round.entities.map(e => [e.x, e.y, e.w, e.h, e.direction]), module.entities.map(e => [e.x, e.y, e.w, e.h, e.direction]));
+  assert.deepEqual(round.parts.map(p => p.pieces.map(q => [q.x, q.y, q.direction, q.out])), module.parts.map(p => p.pieces.map(q => [q.x, q.y, q.direction, q.out])));
+  // (Kept: the same module turned as far is the same object.)
+  assert.equal(turnModule(module, 1), once);
+});
+
+test('a Sub-Block turned stands turned where it stood, every link routed again, every other Sub-Block where it stood', () => {
+  const block = best();
+  const ctx = context(entries, catalog, logistics);
+  const cable = block.subBlocks.findIndex(sb => sb.item === 'copper-cable');
+  // (Its box half round, as laid out again: a squeezed block's copies whole again.)
+  let half = null;
+  for (const turns of [2, 1, 3]) {
+    const out = drive(turnCopies(ctx, block.edit, { step: cable, turns }, { score: rankOf(block) }));
+    assert.ok(out.block, `${turns}: ${out.failure?.message}`);
+    assertValid(out.block, catalog, logistics);
+    assert.equal(starving(out.block), 0);
+    assert.equal(out.block.edit.turns[cable], turns);
+    const now = out.block.subBlocks[cable];
+    half ??= now;
+    assert.deepEqual([now.w, now.h], turns % 2 ? [half.h, half.w] : [half.w, half.h]);
+    // Its machines turned with it.
+    const directions = b => b.entities.filter(e => e.kind === 'building' && e.subBlock === cable).map(e => e.direction ?? 0).sort();
+    assert.deepEqual(directions(out.block), directions(block).map(d => (d + 4 * turns) % 16).sort());
+    if (!out.back && !out.pushed.length) assert.deepEqual(machines(out.block, 1 - cable), machines(block, 1 - cable));
+    // (Turned once more from there, it keeps its turn.)
+    if (turns === 1) {
+      const again = drive(turnCopies(ctx, out.block.edit, { step: cable, turns: 1 }, { score: rankOf(out.block) }));
+      assert.ok(again.block, again.failure?.message);
+      assert.equal(again.block.edit.turns[cable], 2);
+    }
+  }
+});
+
+test('pulled together, a block spread out comes back closer, every Sub-Block as it was, every machine fed', () => {
+  let block = best();
+  const ctx = context(entries, catalog, logistics);
+  for (const [step, dx, dy] of [[0, 12, 0], [1, 0, 10]]) {
+    const out = drive(moveCopies(ctx, block.edit, { step, dx, dy }, { score: rankOf(block) }));
+    assert.ok(out.block, out.failure?.message);
+    block = out.block;
+  }
+  const spread = compactness(block).value;
+  const out = drive(compactCopies(ctx, block.edit, { score: rankOf(block) }));
+  assert.ok(out.block && out.slid > 0, 'pulled together');
+  assertValid(out.block, catalog, logistics);
+  assert.equal(starving(out.block), 0);
+  assert.ok(compactness(out.block).value < spread, `${compactness(out.block).value} < ${spread}`);
+  assert.ok(out.block.bounds.w * out.block.bounds.h < block.bounds.w * block.bounds.h);
+  // (Nothing changes its design: the same machines in each, as many.)
+  for (let i = 0; i < 2; i++) assert.equal(machines(out.block, i).size, machines(block, i).size);
+  // Pulled together again: nothing closer.
+  const again = drive(compactCopies(ctx, out.block.edit, { score: rankOf(out.block) }));
+  assert.ok(!again.block || compactness(again.block).value < compactness(out.block).value);
 });

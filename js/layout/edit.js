@@ -7,6 +7,7 @@ import { E, S, W, N, VEC, key } from './grid.js';
 import { trim } from './module.js';
 import { LayoutError } from './core.js';
 import { designStep, designOf, random, shapeOf, copiesDesign } from '../design.js';
+import { turnDesign } from './turn.js';
 import { coreLinks } from '../routes.js';
 
 // The user's moves (ADR 0043): a shown Compound Block laid out again with one of its Sub-Blocks
@@ -23,14 +24,20 @@ const GAPS = [1, 2, 3];
 // a whole module of other rows may have, how many shapes it lays out at most, and how much bigger
 // than its box a shape of another design may be.
 const STEP = 1.15, COLUMNS = 12, WHOLE = 40, SHAPES = 4, GROW = 2;
+// Room round a turned Sub-Block (tiles every way) for its belts to turn back toward its links.
+const TURN_ROOM = 3;
+// How many layouts a turn or reshape tries in a squeezed block as it stands before it tries the
+// block as it was routed (every line back).
+const SQUEEZED = 12;
 
 // What it takes to lay a block out again: its copies and routes as the search prepared them
 // (compose.js prepare: and what it made them of, its designs, the columns each stack stands in,
 // the routes chained through their consumers), where each copy stood (`positions`, its module's
 // area's top-left), each Sub-Block's box with the room beside its stack from its first copy
 // (`rooms`, place.js), how its links were routed (compose's layout), the lines squeezing took out
-// of it (compact.js), and the Production Chain's entries it was laid out for.
-export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), squeeze = [], rooms = positions.rooms, entries = null } = {}) {
+// of it (compact.js), the Production Chain's entries it was laid out for, and how far the user
+// turned each Sub-Block (`turns`, quarter turns clockwise; its designs as designed, unturned).
+export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), squeeze = [], rooms = positions.rooms, entries = null, turns = null } = {}) {
   const { until, ...rest } = layout ?? {};
   return {
     instances: prepared.instances,
@@ -44,7 +51,15 @@ export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), 
     columns: prepared.columns ?? null,
     chained: prepared.chained ?? null,
     entries,
+    turns: turns ?? null,
   };
+}
+
+// The layout prepared again (compose.js prepare) from the designs as designed (unturned), each
+// Sub-Block's turned as far as the user turned it; it keeps the designs unturned.
+function prepareTurned(ctx, edit, designs, columns, turns) {
+  const ready = prepare({ ...ctx, chained: edit.chained ?? undefined }, designs.map((d, i) => turnDesign(d, turns?.[i] ?? 0)), columns);
+  return { ...ready, designs };
 }
 
 // The lines a squeeze took out, as they stood before it: per axis, ascending. (Each logged line
@@ -162,62 +177,16 @@ function copyTiles(edit) {
 // tried }, or { failure, tried }.
 // options: { score (the block's rank, score.js), deadline, now, reach (how far past where it was
 //            put a move goes: REACH), first (the first layout that routes, as good as before or
-//            not) }
+//            not), plainToo (each layout also without splitters where it finds no way with them),
+//            limit (no more layouts than so many) }
 export function* moveCopies(ctx, edit, move, options = {}) {
-  const { catalog, logistics, site = null } = ctx;
   const now = options.now ?? (() => Date.now());
   const deadline = options.deadline ?? Infinity;
   const reach = options.reach ?? REACH;
   const { instances } = edit;
-  const prepared = { instances, routes: edit.routes, designs: edit.designs, columns: edit.columns, chained: edit.chained };
-  // What moves together: a Sub-Block's stack, or one machine stood apart.
-  const units = [];
-  for (const inst of instances) {
-    if (inst.detached) units.push({ step: inst.step, inst: inst.index, members: [inst.index] });
-    else {
-      const stack = units.find(u => u.step === inst.step && u.inst === undefined);
-      if (stack) stack.members.push(inst.index);
-      else units.push({ step: inst.step, members: [inst.index] });
-    }
-  }
+  const { units, inside, fixtures, tilesAt, boxOf, shifted, attempt, tried } = layer(ctx, edit, { ...options, now, deadline });
   const mover = units.find(u => (move.inst !== undefined && instances[move.inst]?.detached ? u.inst === move.inst : u.step === move.step && u.inst === undefined));
   if (!mover) return { failure: new Error('nothing to move there'), tried: 0 };
-  const rel = copyTiles(edit);
-  const fixtures = new Set();
-  for (const f of site?.fixtures ?? []) for (let dx = 0; dx < f.w; dx++) for (let dy = 0; dy < f.h; dy++) fixtures.add(key(f.x + dx, f.y + dy));
-  const inside = (x, y) => !site || (x >= site.inner.x && y >= site.inner.y && x < site.inner.x + site.inner.w && y < site.inner.y + site.inner.h);
-  const tilesAt = (unit, positions) => unit.members.flatMap(n => rel[n].map(([x, y]) => [x + positions[n].x, y + positions[n].y]));
-  // A unit's box: a stack's with the room beside it, a machine apart's its module's.
-  const boxOf = (unit, positions) => {
-    const room = unit.inst === undefined ? edit.rooms[unit.step] : null;
-    if (room) return { x: positions[room.inst].x + room.x, y: positions[room.inst].y + room.y, w: room.w, h: room.h };
-    const { area } = instances[unit.members[0]].module;
-    return { ...positions[unit.members[0]], w: area.w, h: area.h };
-  };
-  const shifted = (positions, unit, dx, dy) => {
-    const out = positions.map(p => ({ ...p }));
-    for (const n of unit.members) out[n] = { x: positions[n].x + dx, y: positions[n].y + dy };
-    return out;
-  };
-
-  let tried = 0;
-  // Each layout tried: null where its links find no way (or it is not valid).
-  const attempt = positions => {
-    tried++;
-    const boxes = units.map(u => boxOf(u, positions));
-    const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
-    const bounds = { x: x0, y: y0, w: Math.max(...boxes.map(b => b.x + b.w)) - x0, h: Math.max(...boxes.map(b => b.y + b.h)) - y0 };
-    try {
-      const composed = compose(ctx, prepared, Object.assign(positions.map(p => ({ ...p })), { bounds }), { ...edit.layout, until: () => now() > deadline });
-      const block = finishBlock(composed, catalog, logistics, { squeeze: false });
-      if (validateBlock(block, catalog, logistics).length) return null;
-      block.edit = editOf(prepared, positions, { layout: edit.layout, rooms: edit.rooms, entries: edit.entries });
-      return { block, score: rankOf(block) };
-    } catch (e) {
-      if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
-      return null;
-    }
-  };
   // As good as before: starving no more, no more Recipe Loops fed by train, no more byproducts
   // riding on.
   const before = options.score ?? null;
@@ -327,21 +296,21 @@ export function* moveCopies(ctx, edit, move, options = {}) {
   const AGAIN = Symbol('again');
   const run = function* () {
     for (const c of candidates()) {
-      if (now() > deadline) return null;
+      if (now() > deadline || (options.limit && tried() >= options.limit)) return null;
       // (One routed, though it starves more: one that does not only a little further on.)
       if (fallback && (c.pushed.length || off(c.at) > off(fallback.at) + 2)) return null;
-      yield { type: 'trying', tried, at: c.at, pushed: c.pushed };
+      yield { type: 'trying', tried: tried(), at: c.at, pushed: c.pushed };
       const out = attempt(c.positions);
       if (!out) {
         if (checked) continue;
         checked = true;
-        yield { type: 'trying', tried, at: { dx: 0, dy: 0 }, pushed: [] };
+        yield { type: 'trying', tried: tried(), at: { dx: 0, dy: 0 }, pushed: [] };
         if (attempt(frame.positions)) continue;
         // (It does not: laid out as it was routed, every line back.)
         frame = standing(edit, { whole: true });
         return AGAIN;
       }
-      const found = { ...out, at: c.at, pushed: c.pushed, back: frame.back, tried };
+      const found = { ...out, at: c.at, pushed: c.pushed, back: frame.back, tried: tried() };
       if (asGood(out.score) || options.first) return found;
       if (!fallback || compare(out.score.slice(0, 3), fallback.score.slice(0, 3)) < 0) fallback = found;
     }
@@ -350,12 +319,12 @@ export function* moveCopies(ctx, edit, move, options = {}) {
   let found = yield* run();
   if (found === AGAIN) found = yield* run();
   const kept = (found === AGAIN ? null : found) ?? fallback;
-  if (kept) return { ...kept, tried };
+  if (kept) return { ...kept, tried: tried() };
   const drop = shifted(frame.positions, mover, move.dx, move.dy);
   const why = now() > deadline ? 'out of time laying it out there'
     : tilesAt(mover, drop).some(([x, y]) => !inside(x, y)) ? 'there it would stand outside the city block'
       : 'its belts and pipes find no way there, nor close by';
-  return { failure: new RoutingError(why), tried };
+  return { failure: new RoutingError(why), tried: tried() };
 }
 
 function compare(a, b) {
@@ -371,6 +340,14 @@ function compare(a, b) {
 //   candidate  another of its designs the search had (`list`: designStep's candidates, revived).
 // Rows no longer than one belt of each of its routes feeds (shapeOf's rowCap).
 export function shapesOf(ctx, edit, step, list = []) {
+  // (A turned Sub-Block's as designed, unturned; its boxes turned back at the end.)
+  const turns = edit.turns?.[step] ?? 0;
+  if (turns) {
+    const flat = prepareTurned(ctx, edit, edit.designs, edit.columns, null);
+    const shapes = shapesOf(ctx, { ...edit, instances: flat.instances, routes: flat.routes, turns: null }, step, list);
+    const turn = b => (turns % 2 ? { ...b, w: b.h, h: b.w } : b);
+    return { now: turn(shapes.now), options: shapes.options.map(turn) };
+  }
   const sb = ctx.plan[step];
   const cap = Math.max(1, Math.min(sb.count, shapeOf(ctx, sb, step, coreLinks(sb, step, ctx.routes)).rowCap));
   const stack = stackOf(edit, step);
@@ -505,28 +482,28 @@ export function* reshapeCopies(ctx, edit, { step, way }, options = {}) {
         if (!designed.get(k)) continue;
         designs[step] = designed.get(k);
       }
-      let next;
+      let next, stack;
       try {
-        next = reshaped(ctx, edit, frame.positions, step, designs, columns);
+        ({ edit: next, stack } = reshaped(ctx, edit, frame.positions, step, designs, columns, edit.turns));
       } catch (e) {
         if (!(e instanceof RoutingError)) throw e;
         continue;
       }
       // (Only a shape that turns out squarer, or longer, as laid out: another design no more than
       // GROW times its box.)
-      const stack = stackOf(next, step), box = copiesBox(stack);
+      const box = stack.box;
       if (way === 'squarer' ? ratio(box) * STEP > ratio(shapes.now) : ratio(box) < ratio(shapes.now) * STEP) continue;
       if (shape.steps === undefined && box.w * box.h > GROW * shapes.now.w * shapes.now.h) continue;
       laid++;
       // (A shape that routes but starves more starves wherever it stands: the next shape. Layouts
       // tried counted over all of them.)
-      const run = moveCopies(ctx, next, { step, dx: 0, dy: 0 }, { ...options, now, deadline, first: true });
+      const run = moveCopies(ctx, next, { step, dx: 0, dy: 0 }, { ...options, now, deadline, first: true, ...(frame !== frames.at(-1) ? { limit: SQUEEZED } : {}) });
       let r = run.next();
       for (; !r.done; r = run.next()) yield { ...r.value, tried: tried + r.value.tried };
       const out = /** @type {any} */ (r.value);
       tried += out.tried;
       if (out.failure) continue;
-      const found = { ...out, back: out.back + frame.back, tried, was: shapes.now, shape: { columns: stack.shape.columns, copies: stack.instances.length, w: box.w, h: box.h } };
+      const found = { ...out, back: out.back + frame.back, tried, was: shapes.now, shape: { columns: stack.columns, copies: stack.copies, w: box.w, h: box.h } };
       if (asGood(out.score)) return found;
       if (!fallback || compare(out.score.slice(0, 3), fallback.score.slice(0, 3)) < 0) fallback = found;
     }
@@ -536,11 +513,13 @@ export function* reshapeCopies(ctx, edit, { step, way }, options = {}) {
   return { failure: new RoutingError(now() > deadline ? 'out of time laying it out' : `no ${way} shape of it keeps its machines fed and finds room for its belts`), tried };
 }
 
-// The block's edit with Sub-Block `step` made of `designs[step]` in `columns[step]` columns, prepared
-// again (compose.js), every other copy where it stands (`positions`, as before), its box's middle
-// where it was.
-function reshaped(ctx, edit, positions, step, designs, columns) {
-  const ready = prepare({ ...ctx, chained: edit.chained ?? undefined }, designs, columns);
+// The block's edit with Sub-Block `step` made of `designs[step]` in `columns[step]` columns, turned
+// `turns[step]` quarter turns, prepared again (compose.js), every other copy where it stands
+// (`positions`, as before) with the room beside it as it was, its box's middle where it was.
+// Returns the edit, and the stack it stands in (stood): its copies' box (as the map shows it),
+// its columns and copies.
+function reshaped(ctx, edit, positions, step, designs, columns, turns) {
+  const ready = prepareTurned(ctx, edit, designs, columns, turns);
   // Each Sub-Block's copies, the stacks' and those apart, in the order they were made.
   const byStep = list => {
     const out = new Map();
@@ -564,14 +543,234 @@ function reshaped(ctx, edit, positions, step, designs, columns) {
   // (Its box's middle where it was.)
   const room = edit.rooms[step];
   const middle = { x: positions[room.inst].x + room.x + room.w / 2, y: positions[room.inst].y + room.y + room.h / 2 };
-  const stack = stackOf(ready, step);
+  const stack = arrangement(ctx, edit, designs, columns, step, turns?.[step] ?? 0);
   const corner = { x: Math.round(middle.x - stack.w / 2), y: Math.round(middle.y - stack.h / 2) };
   for (const n of now.get(`${step}:stack`) ?? []) out[n] = { x: corner.x + stack.at.get(n).x, y: corner.y + stack.at.get(n).y };
   if (out.some(p => !p)) throw new RoutingError('a copy with nowhere to stand');
+  // (Every other Sub-Block's room as it was, from its first copy.)
+  const first = new Map([...now].map(([k, list]) => [k, list[0]]));
   const rooms = ctx.plan.map((_, i) => {
-    const s = stackOf(ready, i);
-    const first = s.instances[0];
-    return first ? { inst: first.index, x: -s.at.get(first.index).x, y: -s.at.get(first.index).y, w: s.w, h: s.h } : null;
+    if (i === step) {
+      const n = first.get(`${i}:stack`);
+      return { inst: n, x: -stack.at.get(n).x, y: -stack.at.get(n).y, w: stack.w, h: stack.h };
+    }
+    const r = edit.rooms[i];
+    return r && { ...r, inst: first.get(`${i}:stack`) ?? r.inst };
   });
-  return editOf(ready, out, { layout: edit.layout, rooms, entries: edit.entries });
+  return {
+    edit: editOf(ready, out, { layout: edit.layout, rooms, entries: edit.entries, turns }),
+    stack: { box: stack.box, columns: stack.columns, copies: stack.copies },
+  };
+}
+
+// A Sub-Block's stack of copies as placement stands it (stackOf), from its designs as designed,
+// then turned `turns` quarter turns clockwise within its box: each copy's offset in the box
+// (`at`, by instance index: the same in its turned layout), the box, and its copies' box.
+function arrangement(ctx, edit, designs, columns, step, turns) {
+  const flat = prepareTurned(ctx, edit, designs, columns, null);
+  const s = stackOf(flat, step);
+  let at = new Map([...s.at].map(([n, p]) => [n, { ...p }]));
+  let w = s.w, h = s.h;
+  const size = new Map(s.instances.map(inst => [inst.index, { w: inst.module.area.w, h: inst.module.area.h }]));
+  for (let k = 0; k < turns; k++) {
+    // (A box of a × b at (x, y) in a box of w × h, a quarter turn on: b × a at (h - y - b, x).)
+    at = new Map([...at].map(([n, p]) => [n, { x: h - p.y - size.get(n).h, y: p.x }]));
+    for (const [n, d] of size) size.set(n, { w: d.h, h: d.w });
+    [w, h] = [h, w];
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const [n, p] of at) [x0, y0, x1, y1] = [Math.min(x0, p.x), Math.min(y0, p.y), Math.max(x1, p.x + size.get(n).w), Math.max(y1, p.y + size.get(n).h)];
+  return { at, w, h, box: { w: x1 - x0, h: y1 - y0 }, columns: s.shape.columns, copies: s.instances.length };
+}
+
+// Lays the block out again with a Sub-Block (its stack) turned `turns` quarter turns clockwise
+// (ADR 0045), standing where it stood (its box's middle; with `dx`, `dy`, that many tiles off),
+// every other copy where it stands: its modules turned as a blueprint turns, its belts entering
+// and leaving them on the sides they turned to, every link routed again; then laid out as a move
+// (moveCopies: a little further where its links find no way, else the Sub-Blocks in its way pushed
+// off; where its links find no way with the layout's splitters, once more without). Yields and
+// returns as moveCopies does.
+// options: as moveCopies's.
+export function* turnCopies(ctx, edit, { step, turns, dx = 0, dy = 0 }, options = {}) {
+  const was = edit.turns ?? ctx.plan.map(() => 0);
+  const next = was.map((t, i) => (i === step ? (((t + turns) % 4) + 4) % 4 : t ?? 0));
+  // (A squeezed block's corridors may be too narrow for a turned Sub-Block's belts to turn back:
+  // a few layouts there, then as it was routed, every line back.)
+  const frames = [standing(edit), ...(edit.squeeze.length ? [standing(edit, { whole: true })] : [])];
+  let out = null, tried = 0;
+  for (const [k, frame] of frames.entries()) {
+    let turned;
+    try {
+      ({ edit: turned } = reshaped(ctx, edit, frame.positions, step, edit.designs, edit.columns, next));
+    } catch (e) {
+      if (!(e instanceof RoutingError)) throw e;
+      return { failure: e, tried };
+    }
+    const run = moveCopies(ctx, turned, { step, dx, dy }, { ...options, plainToo: true, ...(k < frames.length - 1 ? { limit: SQUEEZED } : {}) });
+    let r = run.next();
+    for (; !r.done; r = run.next()) yield { ...r.value, tried: tried + r.value.tried };
+    out = /** @type {any} */ (r.value);
+    tried += out.tried;
+    if (!out.failure) return { ...out, back: out.back + frame.back, tried };
+  }
+  return { ...out, tried };
+}
+
+// Pulls the block's Sub-Blocks together (ADR 0045): each as it is (its design, its shape, how it
+// is turned) slid toward the block's middle, one at a time, the farthest first: as far as it goes
+// without standing on another copy (or a Fixture, or outside the City Block) or next to one, then
+// half as far and so on where its links find no way there; kept where the block is as good as
+// before (starving no more, no more Recipe Loops by train or byproducts riding on) and its
+// Compactness no worse. Round after round, until none moves, or the time is out. The block as it
+// stands is laid out again first (a squeezed one may open up a little: lines squeezing took out
+// through copies back), so a layout counts only where its Compactness beats the block's own.
+// Yields { type: 'trying', tried } before each layout it tries and { type: 'better', block, score,
+// slid } for each slide kept that beats the block; returns { block (the best that beat it, null
+// where none did), score, slid (slides kept), back, tried }.
+// options: { score (the block's rank, score.js), deadline, now }
+export function* compactCopies(ctx, edit, options = {}) {
+  const now = options.now ?? (() => Date.now());
+  const deadline = options.deadline ?? Infinity;
+  const { units, inside, fixtures, tilesAt, boxOf, attempt, tried } = layer(ctx, edit, { ...options, now, deadline });
+  const asGood = score => !options.score || compare(score.slice(0, 3), options.score.slice(0, 3)) <= 0;
+  // (The block as it stands, laid out again: what each slide must beat. A squeezed block whose
+  // links find no way as it stands: as it was routed, every line back.)
+  let frame = standing(edit);
+  yield { type: 'trying', tried: tried() };
+  let best = attempt(frame.positions);
+  if (!best && edit.squeeze.length) {
+    frame = standing(edit, { whole: true });
+    yield { type: 'trying', tried: tried() };
+    best = attempt(frame.positions);
+  }
+  if (!best) return { block: null, failure: new RoutingError('its links find no way as it stands'), slid: 0, back: frame.back, tried: tried() };
+  let positions = frame.positions, slid = 0, kept = null;
+  for (let moved = true; moved && now() <= deadline;) {
+    moved = false;
+    const boxes = units.map(u => boxOf(u, positions));
+    const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+    const x1 = Math.max(...boxes.map(b => b.x + b.w)), y1 = Math.max(...boxes.map(b => b.y + b.h));
+    const middle = { x: (x0 + x1) / 2, y: (y0 + y1) / 2 };
+    const centreOf = b => ({ x: b.x + b.w / 2, y: b.y + b.h / 2 });
+    const order = units.map((u, k) => ({ u, c: centreOf(boxes[k]) }))
+      .sort((a, b) => Math.hypot(b.c.x - middle.x, b.c.y - middle.y) - Math.hypot(a.c.x - middle.x, a.c.y - middle.y));
+    for (const { u, c } of order) {
+      if (now() > deadline) break;
+      const away = { x: middle.x - c.x, y: middle.y - c.y };
+      for (const axis of Math.abs(away.x) >= Math.abs(away.y) ? ['x', 'y'] : ['y', 'x']) {
+        const sign = Math.sign(away[axis]);
+        if (!sign) continue;
+        // (As far as it slides clear of the others, not past the middle.)
+        const taken = new Set();
+        for (const o of units) {
+          if (o === u) continue;
+          for (const [x, y] of tilesAt(o, positions)) for (let ax = -1; ax <= 1; ax++) for (let ay = -1; ay <= 1; ay++) taken.add(key(x + ax, y + ay));
+        }
+        const mine = tilesAt(u, positions);
+        const limit = Math.floor(Math.abs(away[axis]));
+        let most = 0;
+        for (let d = 1; d <= limit; d++) {
+          const dx = axis === 'x' ? sign * d : 0, dy = axis === 'y' ? sign * d : 0;
+          if (mine.some(([x, y]) => taken.has(key(x + dx, y + dy)) || fixtures.has(key(x + dx, y + dy)) || !inside(x + dx, y + dy))) break;
+          most = d;
+        }
+        for (const d of [...new Set([most, Math.ceil(most / 2), Math.ceil(most / 4), 1])].filter(d => d >= 1 && d <= most)) {
+          if (now() > deadline) break;
+          const next = positions.map(p => ({ ...p }));
+          for (const n of u.members) next[n] = { x: positions[n].x + (axis === 'x' ? sign * d : 0), y: positions[n].y + (axis === 'y' ? sign * d : 0) };
+          yield { type: 'trying', tried: tried() };
+          const out = attempt(next);
+          if (!out || !asGood(out.score) || out.score[4] > best.score[4]) continue;
+          best = out;
+          positions = next;
+          slid++;
+          moved = true;
+          // (Shown where it beats the block as it was, and the best so far.)
+          if ((!options.score || out.score[4] < options.score[4]) && (!kept || out.score[4] <= kept.score[4])) {
+            kept = out;
+            yield { type: 'better', block: out.block, score: out.score, slid };
+          }
+          break;
+        }
+        if (moved) break;
+      }
+    }
+  }
+  return { block: kept?.block ?? null, score: kept?.score ?? null, slid: kept ? slid : 0, back: frame.back, tried: tried() };
+}
+
+// What a move, a turn or pulling together lays a block out with (`edit`, its copies standing
+// anywhere): what moves together (`units`), where they may stand (`inside` the City Block, off
+// its `fixtures`), the tiles a unit's pieces stand on (`tilesAt`) and its box (`boxOf`: a
+// stack's with the room beside it, a turned one's 3 tiles more round it to turn its belts
+// back; a machine apart's its module's), a unit shifted (`shifted`), and each layout tried
+// (`attempt`: its block and rank, null where its links find no way or it is not valid; with
+// `plainToo`, once more without splitters where they find none with them), `tried()` counting
+// them.
+function layer(ctx, edit, { now, deadline, plainToo = false }) {
+  const { catalog, logistics, site = null } = ctx;
+  const { instances } = edit;
+  const prepared = { instances, routes: edit.routes, designs: edit.designs, columns: edit.columns, chained: edit.chained };
+  const units = unitsOf(instances);
+  const rel = copyTiles(edit);
+  const fixtures = new Set();
+  for (const f of site?.fixtures ?? []) for (let dx = 0; dx < f.w; dx++) for (let dy = 0; dy < f.h; dy++) fixtures.add(key(f.x + dx, f.y + dy));
+  const inside = (x, y) => !site || (x >= site.inner.x && y >= site.inner.y && x < site.inner.x + site.inner.w && y < site.inner.y + site.inner.h);
+  const tilesAt = (unit, positions) => unit.members.flatMap(n => rel[n].map(([x, y]) => [x + positions[n].x, y + positions[n].y]));
+  const boxOf = (unit, positions) => {
+    const room = unit.inst === undefined ? edit.rooms[unit.step] : null;
+    if (room) {
+      const r = (edit.turns?.[unit.step] ?? 0) ? TURN_ROOM : 0;
+      return { x: positions[room.inst].x + room.x - r, y: positions[room.inst].y + room.y - r, w: room.w + 2 * r, h: room.h + 2 * r };
+    }
+    const { area } = instances[unit.members[0]].module;
+    return { ...positions[unit.members[0]], w: area.w, h: area.h };
+  };
+  const shifted = (positions, unit, dx, dy) => {
+    const out = positions.map(p => ({ ...p }));
+    for (const n of unit.members) out[n] = { x: positions[n].x + dx, y: positions[n].y + dy };
+    return out;
+  };
+  let count = 0;
+  const attempt = positions => {
+    count++;
+    const boxes = units.map(u => boxOf(u, positions));
+    const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
+    const bounds = { x: x0, y: y0, w: Math.max(...boxes.map(b => b.x + b.w)) - x0, h: Math.max(...boxes.map(b => b.y + b.h)) - y0 };
+    let used = edit.layout, composed = null;
+    for (const lay of [edit.layout, ...(plainToo && !edit.layout.plain ? [{ ...edit.layout, plain: true }] : [])]) {
+      try {
+        composed = compose(ctx, prepared, Object.assign(positions.map(p => ({ ...p })), { bounds }), { ...lay, until: () => now() > deadline });
+        used = lay;
+        break;
+      } catch (e) {
+        if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+      }
+    }
+    if (!composed) return null;
+    try {
+      const block = finishBlock(composed, catalog, logistics, { squeeze: false });
+      if (validateBlock(block, catalog, logistics).length) return null;
+      block.edit = editOf(prepared, positions, { layout: used, rooms: edit.rooms, entries: edit.entries, turns: edit.turns });
+      return { block, score: rankOf(block) };
+    } catch (e) {
+      if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+      return null;
+    }
+  };
+  return { units, inside, fixtures, tilesAt, boxOf, shifted, attempt, tried: () => count };
+}
+
+// What moves together: a Sub-Block's stack, or one machine a Breakout stood apart.
+function unitsOf(instances) {
+  const units = [];
+  for (const inst of instances) {
+    if (inst.detached) units.push({ step: inst.step, inst: inst.index, members: [inst.index] });
+    else {
+      const stack = units.find(u => u.step === inst.step && u.inst === undefined);
+      if (stack) stack.members.push(inst.index);
+      else units.push({ step: inst.step, members: [inst.index] });
+    }
+  }
+  return units;
 }
