@@ -1,6 +1,7 @@
 // Pan/zoom map of a Compound Block on a <canvas>: drag to pan, wheel or pinch to zoom around the
-// cursor or the fingers, a double tap to zoom in; a tap or click selects what is there (an entity,
-// else the Sub-Block whose box it is in), outlined with its route, and onSelect hears of it.
+// cursor or the fingers; a tap or click selects what is there (an entity, else the Sub-Block whose
+// box it is in), outlined with its route, and onSelect hears of it; a double tap or click selects
+// the whole Sub-Block it is on, anywhere on it, and elsewhere zooms in.
 // A Sub-Block (its stack, or a machine a Breakout stood apart) picked up — pressed and held, or
 // dragged once selected — follows the pointer tile by tile, and onMove hears where it was put.
 const ARROW = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
@@ -117,6 +118,16 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     if (entity) return { entity, route: entity.route ?? routeOf.get(entity) ?? null };
     const sb = block.subBlocks.find(b => [b, ...(b.apart ?? [])].some(r => tx >= r.x && ty >= r.y && tx < r.x + r.w && ty < r.y + r.h));
     return sb ? { subBlock: sb.index ?? block.subBlocks.indexOf(sb) } : null;
+  };
+  // The Sub-Block a tile is part of: its machine or inserter, a piece of its stack, or a tile of
+  // its box (or a machine's it stood apart); else null.
+  const subBlockAt = (tx, ty) => {
+    const entity = byTile.get(`${tx},${ty}`);
+    if (entity?.subBlock !== undefined && entity.subBlock !== null) return entity.subBlock;
+    const mine = owner.get(`${tx},${ty}`);
+    if (mine) return mine.step;
+    const sb = block.subBlocks.find(b => [b, ...(b.apart ?? [])].some(r => tx >= r.x && ty >= r.y && tx < r.x + r.w && ty < r.y + r.h));
+    return sb ? sb.index ?? block.subBlocks.indexOf(sb) : null;
   };
 
   const theme = () => {
@@ -623,11 +634,19 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     drag = null;
     pinch = null;
     if (!tap) return;
-    // A double tap (or click) zooms in there.
+    // A double tap (or click) on a Sub-Block, anywhere on it, selects the whole Sub-Block;
+    // elsewhere it zooms in there.
     const now = performance.now();
     if (lastTap && now - lastTap.time < 300 && Math.hypot(at.x - lastTap.x, at.y - lastTap.y) < 24) {
       lastTap = null;
-      zoomAt(at.x, at.y, 2);
+      const step = subBlockAt(...tileOf(at));
+      if (step === null) {
+        zoomAt(at.x, at.y, 2);
+        return;
+      }
+      selected = { subBlock: step };
+      draw();
+      onSelect(selected, block);
       return;
     }
     lastTap = { time: now, x: at.x, y: at.y };

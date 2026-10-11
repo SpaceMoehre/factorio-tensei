@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v35: Giving Way (implemented)
+Where v35 differs from v34, v35 wins.
+- **Giving Way:** in a City Block with Fixtures in its room, once Maximize has the highest that fits, it tries more of the first Goal's machines, their copies closer together. The machines a Fixture stands on are given up (a quarter at most), not built elsewhere, and the layout runs at the rate of the machines it has. It is kept where more machines stand than before, then Annexes fill the room left. The status says "Giving way: trying …" (ADR 0047).
+
 ## v34: Turning Sub-Blocks, pulling them together (implemented)
 Sub-Blocks turned, and the layout pulled together (ADR 0045); where v34 differs from v33, v34 wins.
 - **Turning:** a Sub-Block's menu (Turn clockwise, anticlockwise), its Inspector (↺ ↻), or R while dragging it (Shift+R the other way) turns its stack a quarter as a blueprint turns, where it stood; its belts enter and leave on the sides they turned to, every link is routed again, and it makes room as a move does.
@@ -119,7 +123,7 @@ Annexes grow built Sub-Blocks before building small ones of their own (ADR 0038)
 - **Designs tried again:** a Sub-Block none of whose candidates routes is designed again with other random numbers, up to 3 more times (ADR 0039).
 - **Belts carrying what rides along:** an Internal Path's belt also brings a Recycled Byproduct riding along to its feedback.
 - **Gatherers:** a Goal's step feeds its Recycled Byproduct back at any rate. Each of its output belts without a tap filters the byproduct off through a splitter of its own onto a belt that side-loads it onto the feedback belt; where one finds no way, the byproduct comes by train (ADR 0040).
-- **The map on phones and the Inspector:** pinch to zoom, a double tap zooms in. A tap or click selects what is there (else the Sub-Block whose box it is in), outlined with its belt's or pipe's whole route. A panel shows it in detail: a machine's recipe and what each machine takes and makes, a belt's or pipe's items with how full they run, where they come from and go, an inserter's load and clock, a Sub-Block's totals and any shortfall. Names of Sub-Blocks in it select them. On a phone it is a sheet from the bottom, and the map pans what it shows above it.
+- **The map on phones and the Inspector:** pinch to zoom, a double tap zooms in (on a Sub-Block, anywhere on it, it selects the whole Sub-Block). A tap or click selects what is there (else the Sub-Block whose box it is in), outlined with its belt's or pipe's whole route. A panel shows it in detail: a machine's recipe and what each machine takes and makes, a belt's or pipe's items with how full they run, where they come from and go, an inserter's load and clock, a Sub-Block's totals and any shortfall. Names of Sub-Blocks in it select them. On a phone it is a sheet from the bottom, and the map pans what it shows above it.
 - **Recycled Byproducts within a lane:** a solid is fed back only where one lane of the chosen belt carries all the solids its step makes; otherwise it comes by train as before.
 
 ## v28: Offshore pumps, Recycled Byproducts, Belt Merge built (implemented)
