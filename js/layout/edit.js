@@ -1,9 +1,13 @@
-import { compose, RoutingError, PowerError } from './compose.js';
+import { compose, prepare, RoutingError, PowerError } from './compose.js';
 import { finishBlock } from './compact.js';
 import { validateBlock } from './validity.js';
 import { rankOf } from './score.js';
+import { stackOf } from './place.js';
 import { E, S, W, N, VEC, key } from './grid.js';
 import { trim } from './module.js';
+import { LayoutError } from './core.js';
+import { designStep, designOf, random, shapeOf, copiesDesign } from '../design.js';
+import { coreLinks } from '../routes.js';
 
 // The user's moves (ADR 0043): a shown Compound Block laid out again with one of its Sub-Blocks
 // (its stack of copies, or a machine a Breakout stood apart) standing elsewhere, every other copy
@@ -14,12 +18,19 @@ import { trim } from './module.js';
 const REACH = 6;
 // The gaps a Sub-Block in the way is pushed off to, round the one moved.
 const GAPS = [1, 2, 3];
+// A reshape (ADR 0044): how much squarer or longer a shape must be (its longer side over its
+// shorter one) to count, how many columns a stack of copies is tried in at most, how many machines
+// a whole module of other rows may have, how many shapes it lays out at most, and how much bigger
+// than its box a shape of another design may be.
+const STEP = 1.15, COLUMNS = 12, WHOLE = 40, SHAPES = 4, GROW = 2;
 
 // What it takes to lay a block out again: its copies and routes as the search prepared them
-// (compose.js prepare), where each copy stood (`positions`, its module's area's top-left), each
-// Sub-Block's box with the room beside its stack from its first copy (`rooms`, place.js), how its
-// links were routed (compose's layout) and the lines squeezing took out of it (compact.js).
-export function editOf(prepared, positions, layout, squeeze = [], rooms = positions.rooms) {
+// (compose.js prepare: and what it made them of, its designs, the columns each stack stands in,
+// the routes chained through their consumers), where each copy stood (`positions`, its module's
+// area's top-left), each Sub-Block's box with the room beside its stack from its first copy
+// (`rooms`, place.js), how its links were routed (compose's layout), the lines squeezing took out
+// of it (compact.js), and the Production Chain's entries it was laid out for.
+export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), squeeze = [], rooms = positions.rooms, entries = null } = {}) {
   const { until, ...rest } = layout ?? {};
   return {
     instances: prepared.instances,
@@ -29,6 +40,10 @@ export function editOf(prepared, positions, layout, squeeze = [], rooms = positi
     rooms: rooms ?? [],
     layout: rest,
     squeeze: squeeze ?? [],
+    designs: prepared.designs ?? null,
+    columns: prepared.columns ?? null,
+    chained: prepared.chained ?? null,
+    entries,
   };
 }
 
@@ -146,14 +161,15 @@ function copyTiles(edit) {
 // dy }]: the Sub-Blocks moved off), back (lines squeezing had taken out that went back), score,
 // tried }, or { failure, tried }.
 // options: { score (the block's rank, score.js), deadline, now, reach (how far past where it was
-//            put a move goes: REACH) }
+//            put a move goes: REACH), first (the first layout that routes, as good as before or
+//            not) }
 export function* moveCopies(ctx, edit, move, options = {}) {
   const { catalog, logistics, site = null } = ctx;
   const now = options.now ?? (() => Date.now());
   const deadline = options.deadline ?? Infinity;
   const reach = options.reach ?? REACH;
   const { instances } = edit;
-  const prepared = { instances, routes: edit.routes };
+  const prepared = { instances, routes: edit.routes, designs: edit.designs, columns: edit.columns, chained: edit.chained };
   // What moves together: a Sub-Block's stack, or one machine stood apart.
   const units = [];
   for (const inst of instances) {
@@ -195,7 +211,7 @@ export function* moveCopies(ctx, edit, move, options = {}) {
       const composed = compose(ctx, prepared, Object.assign(positions.map(p => ({ ...p })), { bounds }), { ...edit.layout, until: () => now() > deadline });
       const block = finishBlock(composed, catalog, logistics, { squeeze: false });
       if (validateBlock(block, catalog, logistics).length) return null;
-      block.edit = editOf(prepared, positions, edit.layout, [], edit.rooms);
+      block.edit = editOf(prepared, positions, { layout: edit.layout, rooms: edit.rooms, entries: edit.entries });
       return { block, score: rankOf(block) };
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
@@ -326,7 +342,7 @@ export function* moveCopies(ctx, edit, move, options = {}) {
         return AGAIN;
       }
       const found = { ...out, at: c.at, pushed: c.pushed, back: frame.back, tried };
-      if (asGood(out.score)) return found;
+      if (asGood(out.score) || options.first) return found;
       if (!fallback || compare(out.score.slice(0, 3), fallback.score.slice(0, 3)) < 0) fallback = found;
     }
     return null;
@@ -345,4 +361,217 @@ export function* moveCopies(ctx, edit, move, options = {}) {
 function compare(a, b) {
   for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
   return 0;
+}
+
+// The shapes a Sub-Block may take instead (a reshape, ADR 0044), each with about the box its
+// copies take (`w`, `h`, as the map shows a Sub-Block), as the box they take now (`now`) scales:
+//   columns    its stack of copies in other columns (exactly);
+//   rowLength  a whole module of rows of that many machines (up to WHOLE machines);
+//   copies     copies of a module of `rows` rows of `n` machines, in `columns` columns;
+//   candidate  another of its designs the search had (`list`: designStep's candidates, revived).
+// Rows no longer than one belt of each of its routes feeds (shapeOf's rowCap).
+export function shapesOf(ctx, edit, step, list = []) {
+  const sb = ctx.plan[step];
+  const cap = Math.max(1, Math.min(sb.count, shapeOf(ctx, sb, step, coreLinks(sb, step, ctx.routes)).rowCap));
+  const stack = stackOf(edit, step);
+  const now = copiesBox(stack);
+  const mine = edit.instances.filter(inst => inst.step === step && !inst.detached);
+  // Rows of a machine's width with a band of belts above and below; copies stacked with the
+  // room beside them for the belts turning.
+  const { w: bw, h: bh } = ctx.catalog.buildings[sb.building].size;
+  const pitch = Math.min(bw, bh), depth = Math.max(bw, bh) + 3;
+  const module = (rows, n) => ({ w: n * pitch + 2, h: rows * depth + 1 });
+  const stacked = (m, copies, k) => ({ w: k * m.w + (k - 1) * 6, h: Math.ceil(copies / k) * m.h });
+  // (The shape it has, as modelled: its first module's rows, and how its copies stand.)
+  const machines = mine[0].module.entities.filter(e => e.kind === 'building');
+  const perRow = new Map();
+  for (const m of machines) perRow.set(m.row, (perRow.get(m.row) ?? 0) + 1);
+  const rows = perRow.size, n = Math.max(...perRow.values());
+  const model = mine.length > 1 ? stacked(module(rows, n), mine.length, stack.shape.columns) : module(rows, n);
+  const scale = { x: now.w / model.w, y: now.h / model.h };
+  const scaled = b => ({ w: Math.max(1, Math.round(b.w * scale.x)), h: Math.max(1, Math.round(b.h * scale.y)) });
+  const options = [];
+  if (mine.length > 1) {
+    for (let k = 1; k <= Math.min(mine.length, COLUMNS); k++) {
+      if (k === stack.shape.columns) continue;
+      // (Copies in columns as compose.js stands them: as many to a column, the first ones first.)
+      const per = Math.ceil(mine.length / k);
+      const them = mine.map((inst, j) => ({ ...inst, column: Math.floor(j / per), columns: k }));
+      options.push({ columns: k, steps: Math.abs(k - stack.shape.columns), ...copiesBox(stackOf({ instances: them, routes: edit.routes }, step)) });
+    }
+  }
+  if (sb.count <= WHOLE) {
+    for (let length = 1; length <= cap; length++) {
+      if (mine.length === 1 && length === n) continue;
+      options.push({ rowLength: length, ...scaled(module(Math.ceil(sb.count / length), length)) });
+    }
+  }
+  for (const r of [1, 2]) {
+    for (let length = 1; length <= cap; length++) {
+      const m = r * length, copies = Math.ceil(sb.count / m);
+      if (copies < 2) continue;
+      for (let k = 1; k <= Math.min(copies, COLUMNS); k++) {
+        if (mine.length > 1 && r === rows && length === n && k === stack.shape.columns) continue;
+        options.push({ copies: { rows: r, n: length }, columns: k, ...scaled(stacked(module(r, length), copies, k)) });
+      }
+    }
+  }
+  // (The search's other designs: their modules where routed, else their cores; copies in a column.)
+  list.forEach((c, k) => {
+    const kinds = c.design?.kinds.filter(kind => !kind.detached);
+    const copies = kinds ? kinds.reduce((sum, kind) => sum + kind.count, 0) : (c.copies ?? 0) + (c.spec?.copies?.rest ? 1 : 0) || 1;
+    const one = kinds ? kinds[0].module.area : c.estimate?.w ? { w: c.estimate.w + 2, h: c.estimate.h + 2 } : null;
+    if (one) options.push({ candidate: k, ...(copies > 1 ? stacked(one, copies, 1) : { w: one.w, h: one.h }) });
+  });
+  return { now, options };
+}
+
+// How far a box's sides differ: its longer side over its shorter one.
+const ratio = b => Math.max(b.w, b.h) / Math.min(b.w, b.h);
+
+// The box a stack's copies take (stackOf), as the map shows a Sub-Block: without the room beside
+// it.
+function copiesBox(stack) {
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const inst of stack.instances) {
+    const { x, y } = stack.at.get(inst.index), { w, h } = inst.module.area;
+    [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x + w), Math.max(y1, y + h)];
+  }
+  return { w: x1 - x0, h: y1 - y0 };
+}
+
+// The shapes a reshape tries, in turn (`way`: 'squarer' or 'longer'): those whose sides differ at
+// least STEP times less (more) than now, inside the City Block. Its own stack of copies first,
+// a column more or fewer at a time (nothing to design); then other designs no more than GROW
+// times its box, the least change first, then the smaller box. Longer, along the side it lies
+// along first: one that turns it comes after.
+export function shapesToward({ now, options }, way, site = null) {
+  const lies = b => (ratio(b) < 1.3 ? 0 : b.w >= b.h ? 1 : -1);
+  const turned = b => (lies(b) && lies(now) && lies(b) !== lies(now) ? 1 : 0);
+  const change = b => Math.round(8 * Math.abs(Math.log(ratio(b) / ratio(now))));
+  const fit = options.filter(o => (way === 'squarer' ? ratio(o) * STEP <= ratio(now) : ratio(o) >= ratio(now) * STEP) && (!site || (o.w <= site.inner.w && o.h <= site.inner.h)));
+  const own = fit.filter(o => o.steps !== undefined).sort((a, b) => a.steps - b.steps || a.w * a.h - b.w * b.h);
+  const made = fit.filter(o => o.steps === undefined && o.w * o.h <= GROW * now.w * now.h).sort((a, b) => change(a) - change(b) || a.w * a.h - b.w * b.h);
+  if (way === 'squarer') return [...own, ...made];
+  return [...own.filter(o => !turned(o)), ...made.filter(o => !turned(o)), ...own.filter(turned), ...made.filter(turned)];
+}
+
+// Lays the block out again with a Sub-Block squarer or longer (`way`), standing where it stood
+// (its box's middle), every other copy where it stands: its stack in other columns, or another
+// design of it (rows of other lengths, copies of a smaller module, the search's), starving no more
+// than its own. The shapes in turn (shapesToward), each laid out as a move (moveCopies: a little
+// further where its links find no way, else the Sub-Blocks in its way pushed off), until one
+// routes, as good as before (else the least starving of those that route). Yields as moveCopies does;
+// returns what it returns, with `shape` ({ columns, copies, w, h }: the shape it took) and `was`
+// (the box it took before), or { failure, tried }.
+// options: as moveCopies's, and `list` (its design candidates the search had: designStep's,
+// revived).
+export function* reshapeCopies(ctx, edit, { step, way }, options = {}) {
+  const now = options.now ?? (() => Date.now());
+  const deadline = options.deadline ?? Infinity;
+  const list = options.list ?? [];
+  const shapes = shapesOf(ctx, edit, step, list);
+  const toward = shapesToward(shapes, way, ctx.site);
+  let tried = 0, fallback = null;
+  if (!toward.length) return { failure: new RoutingError(way === 'squarer' ? 'it stands as square as it can' : 'it stands as long as it can'), tried };
+  // As good as before (moveCopies): starving no more, no more Recipe Loops fed by train, no more
+  // byproducts riding on. A shape that is not is kept only where none is.
+  const asGood = score => !options.score || compare(score.slice(0, 3), options.score.slice(0, 3)) <= 0;
+  // (A squeezed block whose links find no way as it stands: as it was routed, every line back.)
+  const frames = [standing(edit), ...(edit.squeeze.length ? [standing(edit, { whole: true })] : [])];
+  const designed = new Map();
+  for (const frame of frames) {
+    // (SHAPES of them laid out at most: those whose design does not route, or starves, or whose
+    // belts do not chain, cost little.)
+    let laid = 0;
+    for (const shape of toward) {
+      if (now() > deadline || laid >= SHAPES) break;
+      const designs = [...edit.designs], columns = [...edit.columns];
+      columns[step] = shape.columns ?? null;
+      if (shape.rowLength || shape.copies || shape.candidate !== undefined) {
+        // (Its design for that shape, routed the first time it is tried: rows of that length only,
+        // copies of a module of those rows, or the search's.)
+        const k = shape.rowLength ? `rows ${shape.rowLength}` : shape.copies ? `copies ${shape.copies.rows}x${shape.copies.n}` : `candidate ${shape.candidate}`;
+        if (!designed.has(k)) {
+          let design = null;
+          try {
+            design = shape.rowLength ? designStep(ctx, step, random(1 + step), { only: true, lengths: [shape.rowLength], draws: 0, deadline }).map(designOf).find(Boolean) ?? null
+              : shape.copies ? copiesDesign(ctx, step, shape.copies.rows, shape.copies.n, random(1 + step)) : designOf(list[shape.candidate]);
+          } catch (e) {
+            if (!(e instanceof LayoutError)) throw e;
+          }
+          designed.set(k, design && design.trouble <= edit.designs[step].trouble + 1e-6 ? design : null);
+        }
+        if (!designed.get(k)) continue;
+        designs[step] = designed.get(k);
+      }
+      let next;
+      try {
+        next = reshaped(ctx, edit, frame.positions, step, designs, columns);
+      } catch (e) {
+        if (!(e instanceof RoutingError)) throw e;
+        continue;
+      }
+      // (Only a shape that turns out squarer, or longer, as laid out: another design no more than
+      // GROW times its box.)
+      const stack = stackOf(next, step), box = copiesBox(stack);
+      if (way === 'squarer' ? ratio(box) * STEP > ratio(shapes.now) : ratio(box) < ratio(shapes.now) * STEP) continue;
+      if (shape.steps === undefined && box.w * box.h > GROW * shapes.now.w * shapes.now.h) continue;
+      laid++;
+      // (A shape that routes but starves more starves wherever it stands: the next shape. Layouts
+      // tried counted over all of them.)
+      const run = moveCopies(ctx, next, { step, dx: 0, dy: 0 }, { ...options, now, deadline, first: true });
+      let r = run.next();
+      for (; !r.done; r = run.next()) yield { ...r.value, tried: tried + r.value.tried };
+      const out = /** @type {any} */ (r.value);
+      tried += out.tried;
+      if (out.failure) continue;
+      const found = { ...out, back: out.back + frame.back, tried, was: shapes.now, shape: { columns: stack.shape.columns, copies: stack.instances.length, w: box.w, h: box.h } };
+      if (asGood(out.score)) return found;
+      if (!fallback || compare(out.score.slice(0, 3), fallback.score.slice(0, 3)) < 0) fallback = found;
+    }
+    if (fallback) break;
+  }
+  if (fallback) return { ...fallback, tried };
+  return { failure: new RoutingError(now() > deadline ? 'out of time laying it out' : `no ${way} shape of it keeps its machines fed and finds room for its belts`), tried };
+}
+
+// The block's edit with Sub-Block `step` made of `designs[step]` in `columns[step]` columns, prepared
+// again (compose.js), every other copy where it stands (`positions`, as before), its box's middle
+// where it was.
+function reshaped(ctx, edit, positions, step, designs, columns) {
+  const ready = prepare({ ...ctx, chained: edit.chained ?? undefined }, designs, columns);
+  // Each Sub-Block's copies, the stacks' and those apart, in the order they were made.
+  const byStep = list => {
+    const out = new Map();
+    for (const inst of list) {
+      const k = `${inst.step}:${inst.detached ? 'apart' : 'stack'}`;
+      if (!out.has(k)) out.set(k, []);
+      out.get(k).push(inst.index);
+    }
+    return out;
+  };
+  const was = byStep(edit.instances), now = byStep(ready.instances);
+  const out = [];
+  for (const [k, list] of now) {
+    if (k === `${step}:stack`) continue;
+    list.forEach((n, j) => {
+      const at = positions[(was.get(k) ?? [])[j]];
+      if (!at) throw new RoutingError('a copy with nowhere to stand');
+      out[n] = { ...at };
+    });
+  }
+  // (Its box's middle where it was.)
+  const room = edit.rooms[step];
+  const middle = { x: positions[room.inst].x + room.x + room.w / 2, y: positions[room.inst].y + room.y + room.h / 2 };
+  const stack = stackOf(ready, step);
+  const corner = { x: Math.round(middle.x - stack.w / 2), y: Math.round(middle.y - stack.h / 2) };
+  for (const n of now.get(`${step}:stack`) ?? []) out[n] = { x: corner.x + stack.at.get(n).x, y: corner.y + stack.at.get(n).y };
+  if (out.some(p => !p)) throw new RoutingError('a copy with nowhere to stand');
+  const rooms = ctx.plan.map((_, i) => {
+    const s = stackOf(ready, i);
+    const first = s.instances[0];
+    return first ? { inst: first.index, x: -s.at.get(first.index).x, y: -s.at.get(first.index).y, w: s.w, h: s.h } : null;
+  });
+  return editOf(ready, out, { layout: edit.layout, rooms, entries: edit.entries });
 }

@@ -5,7 +5,7 @@ import { context, designStep, designOf, random, breakoutDesign } from '../js/des
 import { prepare, compose } from '../js/layout/compose.js';
 import { placeBlocks } from '../js/layout/place.js';
 import { finishBlock } from '../js/layout/compact.js';
-import { moveCopies, standing, editOf } from '../js/layout/edit.js';
+import { moveCopies, standing, editOf, reshapeCopies, shapesToward } from '../js/layout/edit.js';
 import { rankOf } from '../js/layout/score.js';
 import { siteOf } from '../js/city.js';
 import { annexed } from '../js/annex.js';
@@ -122,7 +122,7 @@ test('a machine a Breakout stood apart moves on its own, the stack where it stoo
   const positions = placeBlocks(ctx, ready, {});
   const layout = { margin: { w: 0, e: 0, n: 1, s: 1 } };
   const block = finishBlock(compose(ctx, ready, positions, layout), catalog, logistics);
-  block.edit = editOf(ready, positions, layout, block.squeeze);
+  block.edit = editOf(ready, positions, { layout, squeeze: block.squeeze, entries });
   const [apart] = block.subBlocks[circuits].apart;
   assert.ok(apart.inst !== undefined);
   const out = moved(block, { step: circuits, inst: apart.inst, dx: 0, dy: 4 });
@@ -144,4 +144,61 @@ test("an Annex's layout, two layouts as one, is not moved", () => {
   const block = best(site);
   const both = annexed(block, { ...block, routes: [], subBlocks: [], entities: [] }, site, catalog, logistics);
   assert.equal(both.edit, undefined);
+});
+
+// Circuits, cable and gears, the gears' 10 machines in copies of a module.
+function withCopies() {
+  const three = [...entries, asm2('iron-gear-wheel', 900)];
+  const ctx = context(three, catalog, logistics);
+  const lists = ctx.plan.map((_, i) => designStep(ctx, i, random(1 + i)));
+  const gear = ctx.plan.findIndex(sb => sb.item === 'iron-gear-wheel');
+  const pick = lists[gear].findIndex(c => c.copies && designOf(c) && designOf(c).trouble <= 1e-6);
+  assert.ok(pick >= 0, 'a design of copies');
+  const ready = prepare(ctx, lists.map((list, i) => designOf(i === gear ? list[pick] : list[0])), []);
+  const positions = placeBlocks(ctx, ready, {});
+  const layout = { margin: { w: 0, e: 0, n: 1, s: 1 } };
+  const block = finishBlock(compose(ctx, ready, positions, layout), catalog, logistics);
+  block.edit = editOf(ready, positions, { layout, squeeze: block.squeeze, entries: three });
+  return { ctx, block, gear, list: lists[gear] };
+}
+
+/** @returns {any} */
+function reshaped(ctx, block, step, way, list) {
+  const run = /** @type {any} */ (reshapeCopies(ctx, block.edit, { step, way }, { score: rankOf(block), list }));
+  let next = run.next();
+  for (; !next.done; next = run.next()) assert.equal(next.value.type, 'trying');
+  return next.value;
+}
+
+const ratio = b => Math.max(b.w, b.h) / Math.min(b.w, b.h);
+
+test('a Sub-Block made squarer, or longer, takes another shape where it stood, every machine fed, every other Sub-Block where it stood', () => {
+  const { ctx, block, gear, list } = withCopies();
+  assertValid(block, catalog, logistics);
+  const was = block.subBlocks[gear];
+  for (const way of ['squarer', 'longer']) {
+    const out = reshaped(ctx, block, gear, way, list);
+    assert.ok(out.block, `${way}: ${out.failure?.message}`);
+    assertValid(out.block, catalog, logistics);
+    assert.equal(starving(out.block), 0);
+    const now = out.block.subBlocks[gear];
+    assert.equal(out.block.entities.filter(e => e.kind === 'building' && e.subBlock === gear).length, was.count);
+    if (way === 'squarer') assert.ok(ratio(now) * 1.15 <= ratio(was), `${way}: ${now.w} x ${now.h} from ${was.w} x ${was.h}`);
+    else assert.ok(ratio(now) >= ratio(was) * 1.15 && (now.h > now.w) === (was.h > was.w), `${way}: ${now.w} x ${now.h} from ${was.w} x ${was.h}`);
+    assert.deepEqual([out.shape.w, out.shape.h], [now.w, now.h]);
+    if (!out.back && !out.pushed.length) for (const i of [0, 1]) assert.deepEqual(machines(out.block, i), machines(block, i));
+    // (It carries its new design: shaped again from there.)
+    assert.notEqual(out.block.edit.designs[gear], block.edit.designs[gear]);
+  }
+});
+
+test('a reshape takes its own stack a column at a time first, longer along the side it lies along', () => {
+  const tall = { w: 10, h: 30 };
+  const options = [{ columns: 2, steps: 1, w: 26, h: 15 }, { columns: 3, steps: 2, w: 40, h: 10 }, { rowLength: 1, w: 9, h: 48 }, { rowLength: 4, w: 18, h: 18 }];
+  assert.deepEqual(shapesToward({ now: tall, options }, 'squarer').map(o => o.columns ?? `rows ${o.rowLength}`), [2, 'rows 4']);
+  assert.deepEqual(shapesToward({ now: tall, options }, 'longer').map(o => o.columns ?? `rows ${o.rowLength}`), ['rows 1', 3]);
+  // About square already: none squarer.
+  assert.deepEqual(shapesToward({ now: { w: 20, h: 21 }, options: [{ rowLength: 3, w: 19, h: 20 }] }, 'squarer'), []);
+  // No other design more than twice its box.
+  assert.deepEqual(shapesToward({ now: tall, options: [{ rowLength: 2, w: 40, h: 30 }] }, 'squarer'), []);
 });

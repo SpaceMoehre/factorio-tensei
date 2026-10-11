@@ -38,63 +38,17 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const steps = plan.map((_, i) => i);
   const site = ctx.site && siteRules(ctx.site);
 
-  // Each Sub-Block's copies stacked: their offsets inside the block, and the block's size. Copies
-  // touch unless their facing edges would join what must stay apart.
-  // Beside a stack of copies: a column against it, a lane (two columns) for each belt snaking
-  // through them (it turns on both sides), and room for a trunk joining each fluid's pipes (inputs
-  // west, outputs east).
-  const turns = steps.map(i => routes.filter(r => r.kind === 'belt' && r.slots.some((slot, k) => k > 0
-    && slot.inst.step === i && stacked(r.slots[k - 1].inst, slot.inst))).length);
-  const trunks = (i, side) => routes.filter(r => r.kind === 'pipe' && r.stubs.filter(st => st.inst.step === i && !st.inst.detached && st.side === side).length > 1).length;
-  // Many copies stand in several columns (compose.js decides which), so the Sub-Block comes out
-  // about square: the odd columns bottom to top, hanging from the bottom. Copies of later
-  // columns get their own belts through gaps left between the copies of earlier ones.
-  const solo = i => routes.filter(r => r.kind === 'belt' && r.slots.length === 1 && r.slots[0].inst.step === i).length;
+  // Each Sub-Block's copies stacked (stackOf): their offsets inside the block, and its size.
   const blocks = steps.map(i => {
-    const mine = instances.filter(inst => inst.step === i && !inst.detached);
-    const copies = mine.length > 1;
-    const padW = copies ? 2 * turns[i] + 2 + 3 * trunks(i, 'W') : 0, padE = copies ? 2 * turns[i] + 2 + 3 * trunks(i, 'E') : 0;
-    const mw = Math.max(...mine.map(inst => inst.module.area.w)) + padW + padE;
-    const columns = Math.max(...mine.map(inst => inst.columns ?? 1));
-    const cross = columns > 1 ? Math.min(6, Math.ceil(solo(i) / mine.length) * (columns - 1)) : 0;
-    // Above copies in columns, rows for each fluid's trunks to cross from column to column.
-    const over = columns > 1 ? 2 * (trunks(i, 'W') + trunks(i, 'E')) : 0;
-    const at = new Map();
-    let h = 0;
-    const columnOf = c => mine.filter(inst => (inst.column ?? 0) === c);
-    for (let c = 0; c < columns; c++) {
-      const order = c % 2 ? [...columnOf(c)].reverse() : columnOf(c);
-      let y = 0;
-      order.forEach((inst, k) => {
-        if (k > 0) y += Math.max(stack, cross, clash(order[k - 1].module, inst.module) ? 1 : 0);
-        at.set(inst.index, { x: c * (mw + cross) + padW, y: y + over });
-        y += inst.module.area.h;
-      });
-      h = Math.max(h, y + over);
-    }
-    for (let c = 1; c < columns; c += 2) {
-      const column = columnOf(c);
-      const used = Math.max(...column.map(inst => at.get(inst.index).y + inst.module.area.h));
-      for (const inst of column) at.get(inst.index).y += h - used;
-    }
-    // East of a Recipe Loop's producer, room for the splitters sending its feedback off; east of
-    // the Sub-Block it feeds back into, room for the feedback to come down to its entries.
-    // (Three more each on a belt carrying more than its item: a second splitter, for the spare.)
-    const taps = Math.max(0, ...routes.filter(r => r.taps && r.source === i).map(r => r.taps.length * (r.items.length > 1 ? 2.5 : 1)));
-    const tapRoom = taps ? Math.ceil(3 + 2 * taps) : 0;
-    const loopRoom = routes.some(r => r.tapOf !== undefined && r.consumers.includes(i)) ? 2 : 0;
     // Room the search made round it (`pad`: tiles on every side) where a link found none.
     const pad = params.pad?.[i] ?? 0;
-    for (const p of at.values()) {
-      p.x += pad;
-      p.y += pad;
-    }
+    const { instances: mine, at, w, h, shape } = stackOf(prepared, i, { stack, pad });
     // What a machine left out for a Fixture (Making Way) costs where it is placed: room for four.
     const { size } = ctx.catalog.buildings[plan[i].building];
-    const block = { step: i, instances: mine, at, w: columns * mw + (columns - 1) * cross + tapRoom + loopRoom + 2 * pad, h: h + 2 * pad, entries: [], pad, holeCost: 4 * size.w * size.h };
+    const block = { step: i, instances: mine, at, w, h, entries: [], pad, holeCost: 4 * size.w * size.h };
     // In a City Block, its Nooks: the room its box leaves another Sub-Block (none where the search
     // made room round it: a link found none).
-    return Object.assign(block, site && !pad ? nooksOf(block, { padW, mw, cross, over, columns }) : { need: null, nooks: [] });
+    return Object.assign(block, site && !pad ? nooksOf(block, shape) : { need: null, nooks: [] });
   });
   // Links from a producer's exit to a consumer's entry, by where each sits in its block; and the
   // rows each block's Side Inputs arrive on.
@@ -682,6 +636,63 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
       return new Map(items.map(it => [it.i, { x: it.x, y: it.y, ...(parted.has(it.i) ? { parted: parted.get(it.i) } : {}) }]));
     }
   }
+}
+
+// A Sub-Block's copies stacked (Placement): each copy's offset inside its box (`at`, by instance
+// index), the box's size, and its shape for the Nooks it leaves (nooksOf). Copies touch unless
+// their facing edges would join what must stay apart (`stack`: rows between them at least).
+// Beside a stack of copies: a column against it, a lane (two columns) for each belt snaking
+// through them (it turns on both sides), and room for a trunk joining each fluid's pipes (inputs
+// west, outputs east). Many copies stand in several columns (compose.js decides which), so the
+// Sub-Block comes out about square: the odd columns bottom to top, hanging from the bottom.
+// Copies of later columns get their own belts through gaps left between the copies of earlier
+// ones. `pad`: tiles round it on every side.
+export function stackOf(prepared, i, { stack = 0, pad = 0 } = {}) {
+  const { instances, routes } = prepared;
+  const turns = routes.filter(r => r.kind === 'belt' && r.slots.some((slot, k) => k > 0
+    && slot.inst.step === i && stacked(r.slots[k - 1].inst, slot.inst))).length;
+  const trunks = side => routes.filter(r => r.kind === 'pipe' && r.stubs.filter(st => st.inst.step === i && !st.inst.detached && st.side === side).length > 1).length;
+  const solo = routes.filter(r => r.kind === 'belt' && r.slots.length === 1 && r.slots[0].inst.step === i).length;
+  const mine = instances.filter(inst => inst.step === i && !inst.detached);
+  const copies = mine.length > 1;
+  const padW = copies ? 2 * turns + 2 + 3 * trunks('W') : 0, padE = copies ? 2 * turns + 2 + 3 * trunks('E') : 0;
+  const mw = Math.max(...mine.map(inst => inst.module.area.w)) + padW + padE;
+  const columns = Math.max(...mine.map(inst => inst.columns ?? 1));
+  const cross = columns > 1 ? Math.min(6, Math.ceil(solo / mine.length) * (columns - 1)) : 0;
+  // Above copies in columns, rows for each fluid's trunks to cross from column to column.
+  const over = columns > 1 ? 2 * (trunks('W') + trunks('E')) : 0;
+  const at = new Map();
+  let h = 0;
+  const columnOf = c => mine.filter(inst => (inst.column ?? 0) === c);
+  for (let c = 0; c < columns; c++) {
+    const order = c % 2 ? [...columnOf(c)].reverse() : columnOf(c);
+    let y = 0;
+    order.forEach((inst, k) => {
+      if (k > 0) y += Math.max(stack, cross, clash(order[k - 1].module, inst.module) ? 1 : 0);
+      at.set(inst.index, { x: c * (mw + cross) + padW, y: y + over });
+      y += inst.module.area.h;
+    });
+    h = Math.max(h, y + over);
+  }
+  for (let c = 1; c < columns; c += 2) {
+    const column = columnOf(c);
+    const used = Math.max(...column.map(inst => at.get(inst.index).y + inst.module.area.h));
+    for (const inst of column) at.get(inst.index).y += h - used;
+  }
+  // East of a Recipe Loop's producer, room for the splitters sending its feedback off; east of
+  // the Sub-Block it feeds back into, room for the feedback to come down to its entries.
+  // (Three more each on a belt carrying more than its item: a second splitter, for the spare.)
+  const taps = Math.max(0, ...routes.filter(r => r.taps && r.source === i).map(r => r.taps.length * (r.items.length > 1 ? 2.5 : 1)));
+  const tapRoom = taps ? Math.ceil(3 + 2 * taps) : 0;
+  const loopRoom = routes.some(r => r.tapOf !== undefined && r.consumers.includes(i)) ? 2 : 0;
+  for (const p of at.values()) {
+    p.x += pad;
+    p.y += pad;
+  }
+  return {
+    instances: mine, at, w: columns * mw + (columns - 1) * cross + tapRoom + loopRoom + 2 * pad, h: h + 2 * pad,
+    shape: { padW, mw, cross, over, columns },
+  };
 }
 
 // Breakout: each machine broken out of its Sub-Block stands in the spot, clear of every box

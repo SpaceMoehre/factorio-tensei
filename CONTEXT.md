@@ -250,6 +250,10 @@ _Avoid_: compaction (that is Squeeze)
 The user's drag of a Sub-Block (its stack of Copies, or a machine a Breakout stood apart) to another spot of the shown Compound Block. Every other Copy stays where the map shows it, every Link is routed again and the poles placed again, and the block is not squeezed again. Where its Links find no way, or it would starve more than before, it goes a little further, the least way first; with no room close by, the Sub-Blocks in its way move off instead (ADR 0043).
 _Avoid_: Refinement (the search's own slides), relayout (the whole search again)
 
+**Reshape**:
+The user's making a Sub-Block squarer or longer where it stands (a right click on it): its stack of Copies a column more or fewer at a time, else its machines in rows of other lengths, Copies of a smaller Module, or another of its designs, never starving more than its own design. Its Links are laid as a Move's: every other Copy where it stands (ADR 0044).
+_Avoid_: resize (its machines stay as many)
+
 **Breakout**:
 Some of a Sub-Block's machines taken out of its rectangle, so the rest packs smaller, each standing apart in a gap of the Compound Block: one machine (of repeated Modules, the one for the machines left over, else one Copy), and where that packs no looser before routing, two or three together or each alone. Its machines left and those broken out are Modules of their own, designed like any other (the rest cutting an Internal Path into as many parts as the whole Sub-Block would, each broken-out machine joining one); they stand apart last in Placement, where they grow the block least and their Links run shortest, clear of the corridors other Links take, with a corridor and a column per belt between them and what they link to. Their belts chain like a neighbour's, downstream of the rest: a belt runs on from the rest through them, never back. Tried on every new best, one Sub-Block at a time, a trial after every two slides (never for a lone Sub-Block, which has no gaps); a trial is routed only where it packs no looser than the best before routing.
 _Avoid_: detach (code word), split (Parallel Belts split a route)

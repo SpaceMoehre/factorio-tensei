@@ -361,6 +361,21 @@ function copyCandidates(ctx, index, shape, rng) {
   return out;
 }
 
+// A Sub-Block's design of copies of one module of `rows` rows of `n` machines (a reshape, ADR 0044):
+// as many as fill its machines, the machines left over in a smaller module; null where it does not
+// route.
+export function copiesDesign(ctx, index, rows, n, rng) {
+  const m = rows * n, count = Math.floor(ctx.plan[index].count / m), rest = ctx.plan[index].count - count * m;
+  // (One module of them all: a whole module, not copies.)
+  if (count < 1 || (count < 2 && !rest)) return null;
+  try {
+    return buildSpec(ctx, index, { copies: { m, n, count, rest } }, rng);
+  } catch (e) {
+    if (!(e instanceof LayoutError || e instanceof RoutingError || e instanceof PowerError)) throw e;
+    return null;
+  }
+}
+
 // A candidate's design from what it is (spec): a core routed as one module ({ core, whole }, the
 // Sub-Block's own machines or a share of them, `machines`), or copies of a repeated module
 // ({ copies: { m, n, count, rest } }). Throws RoutingError or PowerError where it does not route.

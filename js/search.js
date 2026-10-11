@@ -364,7 +364,7 @@ export function* search(entries, catalog, logistics, options = {}) {
         ...Array.from({ length: Math.max(trying.length, Math.ceil(sliding.length / 2)) }, (_, j) => [sliding[2 * j], sliding[2 * j + 1], trying[j]]).flat().filter(Boolean),
       ];
       // (With what it takes to lay it out again with Sub-Blocks the user moved.)
-      block.edit = editOf(work, positions, used, block.squeeze);
+      block.edit = editOf(work, positions, { layout: used, squeeze: block.squeeze, entries });
       delete block.squeeze;
       yield { block, score, tried, placed };
     }

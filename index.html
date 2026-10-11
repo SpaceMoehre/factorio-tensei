@@ -276,6 +276,25 @@
   .nudges { display: flex; align-items: center; gap: 4px; margin-top: 8px; }
   .nudges .hint { flex: 1; }
   .nudge { width: 32px; height: 30px; padding: 0; display: grid; place-items: center; font-size: 15px; }
+  .shape-button { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px 0 6px; font-size: 14px; }
+  /* A shape: a box as square as the Sub-Block will be, or as long. */
+  .glyph { flex: none; display: grid; place-items: center; width: 22px; height: 22px; }
+  .glyph::before { content: ''; display: block; border: 2px solid var(--accent); border-radius: 2px; }
+  .glyph.squarer::before { width: 13px; height: 13px; }
+  .glyph.longer::before { width: 20px; height: 7px; }
+  /* A Sub-Block's menu on the map (a right click on it). */
+  .map-menu { position: absolute; z-index: 4; width: 260px; padding: 6px; background: rgba(37,35,33,.98); border: 1px solid var(--border); border-radius: var(--radius);
+    box-shadow: 0 1px 0 rgba(255,255,255,.05) inset, 0 18px 40px -18px rgba(10,6,2,.9); animation: inspector-in .16s var(--ease); }
+  .menu-head { display: flex; gap: 10px; align-items: center; padding: 4px 6px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border-soft); }
+  .menu-head .titles { min-width: 0; display: grid; }
+  .menu-head strong { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .menu-head span:not(.sprite) { color: var(--muted); font-size: 12px; }
+  .menu-item { display: flex; gap: 10px; align-items: center; width: 100%; padding: 6px 8px; background: transparent; border-color: transparent; text-align: left; }
+  .menu-item:hover:not(:disabled), .menu-item:focus-visible { background: var(--accent-soft); border-color: var(--accent); outline: none; }
+  .menu-text { display: grid; min-width: 0; }
+  .menu-text strong { font-weight: 600; font-size: 14px; }
+  .menu-text span { color: var(--muted); font-size: 12px; }
+  .menu-note { margin: 6px 8px 2px; color: var(--faint); font-size: 12px; }
   .warn { margin: 12px 0 0; padding: 8px 10px; border-radius: var(--radius-sm); background: rgba(224,112,95,.12); color: var(--danger); font-size: 14px; }
   @media (max-width: 860px) {
     .inspector { top: auto; left: 8px; right: 8px; bottom: 8px; width: auto; max-height: 58%; border-radius: 14px 14px var(--radius) var(--radius); animation-name: sheet-in; }
@@ -451,6 +470,7 @@
     <div class="area" id="area" hidden></div>
     <div class="tooltip" id="tooltip"></div>
     <aside class="inspector" id="inspector" aria-label="Selected on the map" aria-live="polite" hidden></aside>
+    <div class="map-menu" id="map-menu" role="menu" aria-label="Sub-Block" hidden></div>
     <div class="empty" id="empty">
       <div class="empty-inner">
         <img class="empty-art" data-art="automation" alt="">

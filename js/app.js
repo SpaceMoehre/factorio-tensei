@@ -190,6 +190,23 @@ $('chooser-close').addEventListener('click', () => $('chooser').close());
 $('chooser-filter').addEventListener('input', drawChooser);
 $('chooser').addEventListener('click', e => { if (e.target === $('chooser')) $('chooser').close(); });
 $('undo').addEventListener('click', undoMove);
+// A Sub-Block's menu closes on a press elsewhere, Escape or the map moving; its arrows go from item
+// to item.
+document.addEventListener('pointerdown', e => {
+  if (!$('map-menu').hidden && !$('map-menu').contains(/** @type {Node} */ (e.target))) closeMenu();
+}, true);
+$('map').addEventListener('wheel', closeMenu, { passive: true });
+$('map-menu').addEventListener('keydown', e => {
+  const items = /** @type {HTMLElement[]} */ ([...$('map-menu').querySelectorAll('.menu-item:not(:disabled)')]);
+  const at = items.indexOf(/** @type {HTMLElement} */ (document.activeElement));
+  if (e.key === 'Escape' || e.key === 'Tab') {
+    closeMenu();
+    if (e.key === 'Escape') $('map').focus?.();
+  } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  }
+});
 // (Ctrl+Z or ⌘Z undoes a move, but in a field.)
 document.addEventListener('keydown', e => {
   if (e.key.toLowerCase() !== 'z' || !(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || !undo.length) return;
@@ -755,7 +772,7 @@ async function build(upTo = false) {
   undo = [];
   $('undo').hidden = true;
   upTo = Boolean(site && !state.city.maximize && (upTo || foretoldShort()));
-  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && (state.city.maximize || upTo)), upTo, trying: null, foretold: null, job: null };
+  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && (state.city.maximize || upTo)), upTo, trying: null, foretold: null, job: null, designs: null };
   map?.destroy();
   map = null;
   clocks = null;
@@ -784,6 +801,8 @@ async function build(upTo = false) {
       return finish('Stopped', 0, e.message);
     }
     if (built !== ticket || !designs) return;
+    // (A reshape tries a Sub-Block's other designs.)
+    built.designs = designs;
     showEmpty('Searching for a layout…', true);
   }
   // A Maximize tries one rate after another in one worker; a build runs every strategy at once,
@@ -883,12 +902,13 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
   inspect(null, block);
   const starving = new Set(starvation.map(s => s.subBlock).filter(sb => sb !== null));
   map?.destroy();
+  closeMenu();
   $('empty').hidden = true;
   const circuit = state.logistics.circuit;
   map = createMap($('map'), block, {
     starving, onHover: describe, onSelect: inspect, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null),
     circuit: circuit === 'none' ? null : { colors: circuit === 'both' ? ['red', 'green'] : [circuit], pairs: circuitPairs(block.entities, catalog, block.site?.fixtures ?? []) },
-    onMove: block.edit ? moveSubBlock : null, view,
+    onMove: block.edit ? moveSubBlock : null, onContext: block.edit ? openMenu : null, view,
   });
   if (selected) {
     map.select(selected);
@@ -914,20 +934,57 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
   $('results').hidden = false;
 }
 
-// The user's move (ADR 0043): the shown block laid out again, in a worker of its own, with a
-// Sub-Block (its stack, or a machine stood apart: `inst`) `dx`, `dy` tiles off, everything else
-// where it stands; where its links find no way, it goes a little further, else what stands in
-// its way moves off. A search still running stops: its layouts would replace the one moved.
+// The user's move (ADR 0043): the shown block laid out again with a Sub-Block (its stack, or a
+// machine stood apart: `inst`) `dx`, `dy` tiles off, everything else where it stands; where its
+// links find no way, it goes a little further, else what stands in its way moves off.
 function moveSubBlock(unit, dx, dy) {
+  const sb = best?.block.subBlocks[unit.step];
+  if (!sb) return map?.settle();
+  const name = `${label(sb.item)}${unit.inst !== undefined ? ' (a machine apart)' : ''}`;
+  relayout({ move: { ...unit, dx, dy } }, unit.step, {
+    busy: `Moving ${name} ${where(dx, dy)}: laying its belts, pipes and poles again…`,
+    trying: data => `Moving ${name}: its links find no way there yet; ${data.pushed.length ? 'moving what stands in its way' : 'trying close by'} (${count(data.tried, 'layout')} tried)…`,
+    stuck: message => `${name} stays where it was: ${message}.`,
+    done: data => {
+      const further = data.at.dx !== dx || data.at.dy !== dy ? ` (${where(data.at.dx - dx, data.at.dy - dy)} past where it was put, to give its links room)` : '';
+      return `Moved ${name} ${where(data.at.dx, data.at.dy)}${further}.`;
+    },
+  });
+}
+
+// The user's reshape (ADR 0044): the shown block laid out again with a Sub-Block squarer or longer
+// (`way`), standing where it stood, everything else where it stands: its stack in other columns,
+// or its machines in rows of other lengths, or another of its designs.
+function reshapeSubBlock(step, way) {
+  const sb = best?.block.subBlocks[step];
+  if (!sb || moving) return;
+  const name = label(sb.item);
+  map?.place({ step }, 0, 0);
+  relayout({ reshape: { step, way, list: built?.designs?.[step] ?? null } }, step, {
+    busy: `Making ${name} ${way}: designing it again and laying its belts, pipes and poles…`,
+    trying: data => `Making ${name} ${way}: trying its shapes and room for its links (${count(data.tried, 'layout')} tried)…`,
+    stuck: message => `${name} keeps its shape: ${message}.`,
+    done: data => {
+      const moved = data.at.dx || data.at.dy ? `, ${where(data.at.dx, data.at.dy)} off to give its links room` : '';
+      const columns = data.shape.columns > 1 ? ` in ${data.shape.columns} columns` : '';
+      return `${name} stands ${way} now: ${data.shape.w} × ${data.shape.h} tiles${columns} (was ${data.was.w} × ${data.was.h})${moved}.`;
+    },
+  });
+}
+
+// A move or reshape laid out in a worker of its own (`request`: what the worker is asked, besides
+// the shown block's edit and rank); `step` is selected once done. A search still running stops:
+// its layouts would replace this one. texts: what the status says while busy, while trying
+// again (data: the worker's 'trying'), where none is found (the reason), and once done (data:
+// its 'moved'), what was pushed and how far the block opened up after.
+function relayout(request, step, texts) {
   const before = best;
   if (!before?.block.edit || !built?.job) return map?.settle();
   if (workers.length) finish('Stopped');
   stopMoving();
-  const sb = before.block.subBlocks[unit.step];
-  const name = `${label(sb.item)}${unit.inst !== undefined ? ' (a machine apart)' : ''}`;
-  const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), ...unit, dx, dy };
+  const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }) };
   moving = run;
-  showStatus('', `Moving ${name} ${where(dx, dy)}: laying its belts, pipes and poles again…`);
+  showStatus('', texts.busy);
   const over = () => {
     run.worker.terminate();
     if (moving === run) moving = null;
@@ -935,12 +992,12 @@ function moveSubBlock(unit, dx, dy) {
   const stuck = message => {
     over();
     map?.settle();
-    showStatus('error', `${name} stays where it was: ${message.replace(/\.$/, '')}.`);
+    showStatus('error', texts.stuck(message.replace(/\.$/, '')));
   };
   run.worker.onmessage = async ({ data }) => {
     if (moving !== run) return;
     if (data.type === 'trying') {
-      if (data.tried) showStatus('', `Moving ${name}: its links find no way there yet; ${data.pushed.length ? 'moving what stands in its way' : 'trying close by'} (${count(data.tried, 'layout')} tried)…`);
+      if (data.tried) showStatus('', texts.trying(data));
       return;
     }
     if (data.type !== 'moved') return stuck(data.message ?? 'no way found to route its links there');
@@ -948,19 +1005,20 @@ function moveSubBlock(unit, dx, dy) {
     // (The last UNDOS layouts: each holds its modules.)
     undo = [...undo, before].slice(-UNDOS);
     $('undo').hidden = false;
-    const view = map?.viewport();
-    await show(data.block, before.tried, before.found, data.score, { view, selected: { subBlock: unit.step } });
-    const further = data.at.dx !== dx || data.at.dy !== dy ? ` (${where(data.at.dx - dx, data.at.dy - dy)} past where it was put, to give its links room)` : '';
+    await show(data.block, before.tried, before.found, data.score, { view: map?.viewport(), selected: { subBlock: step } });
     const pushed = data.pushed.map(p => `${label(best.block.subBlocks[p.step].item)}${p.inst !== undefined ? ' (a machine apart)' : ''} ${where(p.dx, p.dy)}`);
     const others = pushed.length ? ` To make room, moved ${pushed.join(', ')}.` : '';
     const opened = data.back ? ` The block opened up by ${count(data.back, 'tile')} to lay its belts again.` : '';
-    report(best.block, best.starvation, `Moved ${name} ${where(data.at.dx, data.at.dy)}${further}.${others}${opened}`);
+    // (Kept though it starves more: no layout there that does not; Undo takes it back.)
+    const worse = data.score[0] > rankOf(before.block)[0] + 1e-6 ? ' It starves more than before (no layout there starves less): Undo takes it back.' : '';
+    report(best.block, best.starvation, `${texts.done(data)}${others}${opened}${worse}`);
   };
   run.worker.onerror = e => stuck(e.message);
-  const { entries, logistics, site } = built.job;
+  const { logistics, site } = built.job;
+  const [kind] = Object.keys(request);
   run.worker.postMessage({
-    entries, logistics, site, budgetMs: Math.max(5, state.logistics.budget) * 1000,
-    move: { edit: before.block.edit, score: rankOf(before.block), ...unit, dx, dy },
+    entries: before.block.edit.entries ?? built.job.entries, logistics, site, seed: 1, budgetMs: Math.max(5, state.logistics.budget) * 1000,
+    [kind]: { ...request[kind], edit: before.block.edit, score: rankOf(before.block) },
   });
 }
 
@@ -1337,7 +1395,8 @@ function inspect(hit, block) {
   if (box && matchMedia('(max-width: 860px)').matches) map?.reveal(box, panel.getBoundingClientRect().height + 8);
 }
 
-// How a Sub-Block is moved (ADR 0043): dragged on the map, or a tile at a time.
+// How a Sub-Block is moved (ADR 0043): dragged on the map, or a tile at a time; and made squarer
+// or longer (ADR 0044).
 function moveHint(step) {
   const nudge = (dx, dy) => {
     if (moving) return;
@@ -1345,12 +1404,58 @@ function moveHint(step) {
     moveSubBlock({ step }, dx, dy);
   };
   const arrow = (text, name, dx, dy) => el('button', { type: 'button', className: 'icon nudge', textContent: text, ariaLabel: `Move it one tile ${name}`, title: `One tile ${name}`, onclick: () => nudge(dx, dy) });
+  const sb = best?.block.subBlocks[step];
+  const one = (sb?.count ?? 0) < 2;
   return el('div', { className: 'move-hint' },
     el('p', { className: 'hint' }, el('strong', { textContent: 'Drag it on the map to move it.' }),
       ' Its belts, pipes and poles are laid again; where they find no way, it goes a little further.'),
     el('div', { className: 'nudges', role: 'group', ariaLabel: 'Move it a tile' },
       el('span', { className: 'hint', textContent: 'A tile at a time' }),
-      arrow('←', 'west', -1, 0), arrow('↑', 'north', 0, -1), arrow('↓', 'south', 0, 1), arrow('→', 'east', 1, 0)));
+      arrow('←', 'west', -1, 0), arrow('↑', 'north', 0, -1), arrow('↓', 'south', 0, 1), arrow('→', 'east', 1, 0)),
+    el('div', { className: 'nudges', role: 'group', ariaLabel: 'Its shape' },
+      el('span', { className: 'hint', textContent: one ? 'One machine: one shape' : 'Its shape' }),
+      ...SHAPES.map(([way, text, title]) => el('button', { type: 'button', className: 'shape-button', disabled: one || (way === 'squarer' && square(sb)), title, onclick: () => reshapeSubBlock(step, way) },
+        el('span', { className: `glyph ${way}`, ariaHidden: 'true' }), el('span', { textContent: text })))));
+}
+
+// Whether a Sub-Block's box is about square already (as squarer as a reshape makes it: edit.js).
+const square = sb => Math.max(sb.w, sb.h) / Math.min(sb.w, sb.h) < 1.15;
+
+// The ways a Sub-Block's shape changes (ADR 0044): its name, what it does.
+const SHAPES = [
+  ['squarer', 'Squarer', 'Its sides closer in length: its stack in more columns, or its machines in more, shorter rows'],
+  ['longer', 'Longer', 'Stretched along its longer side: its stack in fewer columns, or its machines in fewer, longer rows'],
+];
+
+// A Sub-Block's menu on the map (a right click on it, at `at` on the page): squarer or longer.
+function openMenu(unit, at) {
+  const menu = $('map-menu');
+  const sb = best?.block.subBlocks[unit.step];
+  if (!sb) return;
+  const one = sb.count < 2;
+  menu.replaceChildren(
+    el('div', { className: 'menu-head' }, iconOf(sb.item),
+      el('div', { className: 'titles' }, el('strong', { textContent: `${label(sb.item)} ×${sb.count}` }), el('span', { textContent: `${sb.w} × ${sb.h} tiles` }))),
+    ...SHAPES.map(([way, text, title]) => el('button', {
+      type: 'button', role: 'menuitem', className: 'menu-item', disabled: one || !!moving || (way === 'squarer' && square(sb)), title,
+      onclick: () => {
+        closeMenu();
+        reshapeSubBlock(unit.step, way);
+      },
+    }, el('span', { className: `glyph ${way}`, ariaHidden: 'true' }), el('span', { className: 'menu-text' }, el('strong', { textContent: text }), el('span', { textContent: title.split(':')[0] })))),
+    el('p', { className: 'menu-note', textContent: one ? 'One machine: it has one shape.' : square(sb) ? 'About square already. Drag it to move it.' : 'Drag it to move it.' }));
+  menu.hidden = false;
+  // (Inside the map: flipped to the pointer's other side near its edges.)
+  const room = /** @type {HTMLElement} */ (menu.parentElement).getBoundingClientRect();
+  const { width, height } = menu.getBoundingClientRect();
+  const x = at.x - room.left, y = at.y - room.top;
+  menu.style.left = `${Math.max(8, x + width + 8 > room.width ? x - width : x)}px`;
+  menu.style.top = `${Math.max(8, y + height + 8 > room.height ? y - height : y)}px`;
+  /** @type {HTMLElement | null} */ (menu.querySelector('.menu-item:not(:disabled)'))?.focus();
+}
+
+function closeMenu() {
+  $('map-menu').hidden = true;
 }
 
 function fmtRate(n) {

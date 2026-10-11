@@ -23,7 +23,9 @@ const FAN_RUN = 16, FAN_SHORT = 3;
 
 // The copies of every Sub-Block's modules and the global routes between them, before any of
 // them is placed. designs: per Sub-Block { kinds: [{ module, count }] }; columns: per Sub-Block,
-// how many columns its copies stand in (by default one; 0 for about square).
+// how many columns its copies stand in (by default one; 0 for about square). It keeps what it was
+// made of (the designs, the columns each stack stands in, the routes chained through their
+// consumers), for the user's reshapes to make it again (edit.js).
 export function prepare(ctx, designs, columns = []) {
   const laneCapacity = ctx.catalog.belts[ctx.logistics.belt].itemsPerSecond * 30;
   // In a City Block, a stack of copies taller than its room stands in as many columns as it needs
@@ -34,7 +36,7 @@ export function prepare(ctx, designs, columns = []) {
     return height > ctx.site.inner.h ? Math.ceil(height / (ctx.site.inner.h - 2)) : null;
   }) : columns;
   const instances = makeInstances(ctx.plan, designs, fit);
-  return { instances, routes: groupRoutes(ctx, instances, laneCapacity) };
+  return { instances, routes: groupRoutes(ctx, instances, laneCapacity), designs, columns: fit, chained: ctx.chained ?? null };
 }
 
 // What a prepared layout starves at least, before it is placed (Starvation): its belts carry

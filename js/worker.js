@@ -12,20 +12,26 @@
 // A move (`move`: { edit (the shown block's), step, inst, dx, dy, score }) lays the shown block out
 // again with that Sub-Block moved (edit.js): { type: 'trying', tried, at, pushed } before each
 // layout it tries, then { type: 'moved', block, at, pushed, back, score, tried }, or { type:
-// 'stuck', message, tried } where none routes.
+// 'stuck', message, tried } where none routes. A reshape (`reshape`: { edit, step, way ('squarer'
+// or 'longer'), score, list (the Sub-Block's design candidates the build had, or null: designed
+// here) }) the same, its 'moved' with `shape` and `was`.
 import { search } from './search.js';
 import { maximize } from './maximize.js';
-import { context, designStep, random } from './design.js';
-import { moveCopies } from './layout/edit.js';
+import { context, designStep, random, revive } from './design.js';
+import { moveCopies, reshapeCopies } from './layout/edit.js';
 
 const catalog = fetch(new URL('../data/catalog.json', import.meta.url)).then(r => r.json());
 
-self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = null, maximize: goals = null, strategy = 'search', design = null, designs = null, move = null } }) => {
+self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = null, maximize: goals = null, strategy = 'search', design = null, designs = null, move = null, reshape = null } }) => {
   try {
-    if (move) {
-      const ctx = context(entries, await catalog, logistics, site);
-      const { edit, score, ...where } = move;
-      const run = moveCopies(ctx, edit, where, { score, deadline: Date.now() + budgetMs });
+    if (move || reshape) {
+      // (The Production Chain the block was laid out for: a Maximize's at the rate that fit.)
+      const { edit, score, list = null, ...what } = move ?? reshape;
+      const ctx = context(edit.entries ?? entries, await catalog, logistics, site);
+      const deadline = Date.now() + budgetMs;
+      const rng = random((seed ?? 1) + what.step);
+      const run = move ? moveCopies(ctx, edit, what, { score, deadline })
+        : reshapeCopies(ctx, edit, what, { score, deadline, list: list ? revive(ctx, what.step, list, rng) : designStep(ctx, what.step, rng, { deadline }) });
       let step = run.next();
       for (; !step.done; step = run.next()) self.postMessage(step.value);
       const { failure, ...out } = step.value;

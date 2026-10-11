@@ -12,13 +12,15 @@ const HOLD = 420, SLOP = 8, EDGE = 36;
 // circuit: the circuit wires to draw, { colors: ['red', 'green'], pairs (circuitPairs) }, or null.
 // onMove: called with ({ step, inst }, dx, dy) where a Sub-Block (its stack; `inst`: a machine
 // stood apart) was put down that many tiles off (null: nothing moves; only a block with `edit`
-// may be moved, edit.js). view: where the map starts ({ scale, x, y }), else it fits the block.
+// may be moved, edit.js). onContext: called with ({ step, inst }, { x, y }: where on the page) on a
+// right click on a Sub-Block that may be moved, which it selects. view: where the map starts
+// ({ scale, x, y }), else it fits the block.
 /**
  * @param {HTMLCanvasElement} canvas
  * @param {any} block
- * @param {{ onHover?: (entity: any, block: any) => void, onSelect?: (hit: any, block: any) => void, onMove?: ((unit: { step: number, inst?: number }, dx: number, dy: number) => void) | null, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null, view?: { scale: number, x: number, y: number } | null }} [options]
+ * @param {{ onHover?: (entity: any, block: any) => void, onSelect?: (hit: any, block: any) => void, onMove?: ((unit: { step: number, inst?: number }, dx: number, dy: number) => void) | null, onContext?: ((unit: { step: number, inst?: number }, at: { x: number, y: number }) => void) | null, starving?: Set<number>, icon?: (name: string) => string | null, circuit?: { colors: string[], pairs: number[][] } | null, view?: { scale: number, x: number, y: number } | null }} [options]
  */
-export function createMap(canvas, block, { onHover = () => {}, onSelect = () => {}, onMove: onPut = null, starving = new Set(), icon = () => null, circuit = null, view: start = null } = {}) {
+export function createMap(canvas, block, { onHover = () => {}, onSelect = () => {}, onMove: onPut = null, onContext = null, starving = new Set(), icon = () => null, circuit = null, view: start = null } = {}) {
   const ctx = canvas.getContext('2d');
   // Icons load in the background; the map redraws as each arrives.
   const images = new Map();
@@ -433,6 +435,9 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
   // pans the map, unless that Sub-Block is selected: then it carries it straight away.
   const pointers = new Map();
   let drag = null, pinch = null, moved = 0, lastTap = null, press = null, edgeFrame = 0;
+  // How the last press began (a mouse, a finger), and whether it opened a Sub-Block's menu (then it
+  // is no tap).
+  let pressedBy = 'mouse', menued = false;
   const local = e => {
     const r = canvas.getBoundingClientRect();
     return { x: e.clientX - r.left, y: e.clientY - r.top };
@@ -514,7 +519,10 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     if (pointers.size === 1) {
       drag = local(e);
       moved = 0;
-      const unit = placing ? null : unitAt(...tileOf(drag));
+      pressedBy = e.pointerType;
+      menued = false;
+      // (Only the main button picks a Sub-Block up: the other, or a Ctrl click, opens its menu.)
+      const unit = placing || e.button !== 0 || (e.ctrlKey && e.pointerType === 'mouse') ? null : unitAt(...tileOf(drag));
       if (unit) {
         const now = selected?.subBlock === unit.step;
         press = { unit, at: drag, last: drag, now, timer: now ? 0 : setTimeout(() => pickUp(unit, press?.last ?? drag), HOLD) };
@@ -593,7 +601,7 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       return;
     }
     if (pointers.size) return;
-    const tap = drag && moved < 8;
+    const tap = drag && moved < 8 && !menued && e.button === 0;
     drag = null;
     pinch = null;
     if (!tap) return;
@@ -620,9 +628,21 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
     }
     if (!pointers.size) [drag, pinch] = [null, null];
   };
-  // (A long press is a pick-up, not the browser's menu.)
+  // (A long press is a pick-up, not the browser's menu.) A right click on a Sub-Block that may be
+  // moved selects it and opens its menu (onContext).
   const onMenu = e => {
-    if (press || lift) e.preventDefault();
+    if (lift || (press && pressedBy !== 'mouse')) return e.preventDefault();
+    if (!onContext || placing) return;
+    const unit = unitAt(...tileOf(local(e)));
+    if (!unit) return;
+    e.preventDefault();
+    clearTimeout(press?.timer);
+    press = null;
+    menued = true;
+    selected = { subBlock: unit.step };
+    draw();
+    onSelect({ subBlock: unit.step }, block);
+    onContext({ step: unit.step, ...(unit.inst !== undefined ? { inst: unit.inst } : {}) }, { x: e.clientX, y: e.clientY });
   };
   const onWheel = e => {
     e.preventDefault();
