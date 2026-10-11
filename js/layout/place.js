@@ -29,6 +29,8 @@ const OTHER_SPOTS = 3;
 // Parting: how many rows more than its own height a copy may move down to keep a Fixture off its
 // belts (enough to pass the tallest).
 const PART = 6;
+// Giving Way: the share of its machines (1 in so many) the Sub-Block that gives way may give up.
+const GIVE = 4;
 const BACKTRACKS = 24;
 
 export function placeBlocks(ctx, prepared, params = {}) {
@@ -408,9 +410,11 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // Machines a Fixture may stand on in a Sub-Block, each left out of its copy and built apart
   // instead (Making Way): a tenth of them, at least one. None for a lone machine, where the search
   // made room round the Sub-Block, or where it builds the layout with them left out already
-  // (`solid`).
+  // (`solid`). The Sub-Block that gives way (`ctx.giving`, Giving Way) gives them up instead:
+  // a quarter of them.
   function budget(i) {
-    return params.solid || blocks[i].pad || plan[i].count < 2 ? 0 : Math.max(1, Math.round(plan[i].count / 10));
+    if (params.solid || blocks[i].pad || plan[i].count < 2) return 0;
+    return Math.max(1, Math.round(plan[i].count / (ctx.giving === i ? GIVE : 10)));
   }
 
   // A copy's tiles no Fixture may stand on, as blockTiles has them, by where they lie in it.

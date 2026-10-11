@@ -2,7 +2,7 @@ import { context, designStep, designOf, revive, random, breakoutDesign, detachCo
 import { LayoutError } from './layout/core.js';
 import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
 import { placeBlocks, roomFor } from './layout/place.js';
-import { finishBlock } from './layout/compact.js';
+import { finishBlock, given } from './layout/compact.js';
 import { validateBlock } from './layout/validity.js';
 import { rankOf } from './layout/score.js';
 import { editOf } from './layout/edit.js';
@@ -29,7 +29,9 @@ import { editOf } from './layout/edit.js';
 //            designed (called once the Sub-Blocks are designed, with each one's item, Count and
 //            its best design's area), routing (ms: the candidates get at least this long once the
 //            Sub-Blocks are designed, and no less than designing took), unsorted (no byproduct
-//            sorted out by a splitter after its producers: it rides on through their consumers) }
+//            sorted out by a splitter after its producers: it rides on through their consumers),
+//            giving (an item: its Sub-Block gives up the machines Fixtures stand on, none built
+//            elsewhere, and the layout runs at the rate of those left: Giving Way) }
 // Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }; returns { tried,
 // failure, timedOut (it stopped for want of time, not of candidates) }.
 export function* search(entries, catalog, logistics, options = {}) {
@@ -40,6 +42,8 @@ export function* search(entries, catalog, logistics, options = {}) {
   const ctx = context(entries, catalog, logistics, site);
   // (No byproduct sorted out: each producers' belt chained through its consumers.)
   if (options.unsorted) ctx.chained = 'all';
+  // Giving Way: the Sub-Block of this item gives up the machines Fixtures stand on.
+  if (options.giving) ctx.giving = ctx.plan.findIndex(sb => sb.item === options.giving);
   // Leaves first: every Sub-Block before the ones it feeds. Looking for a layout without
   // Starvation, once a Sub-Block's least starving design starves, no layout can do without, and
   // the search ends there.
@@ -142,6 +146,7 @@ export function* search(entries, catalog, logistics, options = {}) {
           const count = holes[i].reduce((n, s) => n + (s?.size ?? 0), 0);
           const base = designFor(candidate, i);
           if (!count || !base) return base;
+          if (i === ctx.giving) return leaveOut(base, holes[i], null, 0);
           const end = mode === 'end' && !candidate.breakout?.[i] && grownFor(i, Math.min(c, designs[i].length - 1), count);
           if (end) return leaveOut(end, holes[i], null, 0);
           const piece = (shareOf(i, mode === 'apart' ? 1 : count, false) ?? []).map(designOf).find(Boolean);
@@ -325,7 +330,7 @@ export function* search(entries, catalog, logistics, options = {}) {
         if (!(first instanceof RoutingError)) throw first;
         composed = fallBack(first);
       }
-      block = finishBlock(composed, catalog, logistics);
+      block = given(finishBlock(composed, catalog, logistics), ctx.giving);
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
       // No pole for a machine there: room round the Sub-Blocks about it.
@@ -364,7 +369,7 @@ export function* search(entries, catalog, logistics, options = {}) {
         ...Array.from({ length: Math.max(trying.length, Math.ceil(sliding.length / 2)) }, (_, j) => [sliding[2 * j], sliding[2 * j + 1], trying[j]]).flat().filter(Boolean),
       ];
       // (With what it takes to lay it out again with Sub-Blocks the user moved.)
-      block.edit = editOf(work, positions, { layout: used, squeeze: block.squeeze, entries });
+      block.edit = editOf(work, positions, { layout: used, squeeze: block.squeeze, entries, giving: ctx.giving });
       delete block.squeeze;
       yield { block, score, tried, placed };
     }

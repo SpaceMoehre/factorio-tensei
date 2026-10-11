@@ -11,6 +11,25 @@ import { wirePairs } from './wires.js';
 // A block in a City Block is not squeezed: its Fixtures stay where they are, and so does the rest.
 // Nor is one the user moved a Sub-Block of (`squeeze: false`): the rest stays where it stood.
 // The squeezed block keeps the lines it took out (`squeeze`, as squeezeEntities logs them).
+// Giving Way: a block whose Sub-Block `step` gave up machines to Fixtures (none built elsewhere)
+// runs at the rate of the machines it has. Every Sub-Block's rates and every route's items scale
+// down by as much (a Production Chain's rates are proportional to its Goals'), the rest running
+// below full speed, and that Sub-Block counts the machines it has. Else the block as it is.
+export function given(block, step) {
+  const sb = step === undefined ? null : block.subBlocks[step];
+  const left = sb ? block.entities.filter(e => e.kind === 'building' && e.subBlock === step).length : 0;
+  if (!sb || !left || left >= sb.count) return block;
+  const f = left / sb.count;
+  const scale = list => list?.map(x => ({ ...x, rate: x.rate * f }));
+  return {
+    ...block,
+    subBlocks: block.subBlocks.map((s, i) => ({ ...s, rate: s.rate * f, inputs: scale(s.inputs), outputs: scale(s.outputs), byproducts: scale(s.byproducts), ...(i === step ? { count: left } : {}) })),
+    routes: block.routes.map(r => ({
+      ...r, items: r.items.map(x => ({ ...x, rate: x.rate * f, supply: x.supply * f, ...(x.joined ? { joined: x.joined * f } : {}) })),
+    })),
+  };
+}
+
 export function finishBlock(block, catalog, logistics, { squeeze = true } = {}) {
   const bury = b => buryPipes(b, catalog, logistics);
   if (block.site || !squeeze) return power(bury(clone(block)), catalog, logistics);

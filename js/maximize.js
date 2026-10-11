@@ -32,7 +32,8 @@ import { simulate } from './sim.js';
 //            seed, now, upTo (no higher than the Goals' own rates: a City Block they do not fit
 //            filled up to them), annexes (false: none), bands (false: no Bands), most (no more of
 //            the first Goal's machines), probe (one of them first: none fitting, nothing more),
-//            least (Filling's fewest machines more, a quarter by default) }
+//            least (Filling's fewest machines more, a quarter by default), giving (false: no
+//            Giving Way) }
 export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
   const most = options.most ?? (options.upTo ? plan.wanted : Infinity);
@@ -127,13 +128,43 @@ export function* maximize(goals, catalog, logistics, options) {
     probing = null;
   }
   if (!banded && top > (best?.machines ?? 0)) yield* inBands(best?.machines ?? 0);
+  // Giving Way (ADR 0047): in a City Block with Fixtures in its room, the first Goal's Sub-Block
+  // gives up the machines Fixtures stand on (a quarter of them at most), none built elsewhere: its
+  // copies stand closer, a Fixture on a machine rather than between them, and more may stand in
+  // all. Each layout counts the machines it has, kept where they are more than stood before. From
+  // the most that fit, FILL machines more, again while they fit; half as many after each that does
+  // not. (No more of them than the cap, nor tried above a quarter more.)
+  let giving = false;
+  const lead = block => block.subBlocks.find(sb => sb.item === goals[0].item)?.count ?? 0;
+  if (best && bestN !== null && options.giving !== false && crowded(options.site)) {
+    let n = Math.ceil(bestN), more = FILL, high = Math.floor(most + most / 4);
+    for (; more >= 1; more = Math.floor(more / 2)) {
+      while (n + more < high) {
+        const list = plan.goalsFor(n + more);
+        yield { type: 'try', rate: list[0].rate, machines: n + more, giving: true };
+        const outcome = attempt(plan, n + more, { ...options, unsorted: true, giving: true });
+        tried += outcome.tried;
+        if (!outcome.block) {
+          high = n + more;
+          break;
+        }
+        n += more;
+        const m = lead(outcome.block);
+        if (m <= best.machines || m > most) continue;
+        const goalsOf = plan.goalsFor(m);
+        best = { rate: goalsOf[0].rate, machines: m, count: m, goals: goalsOf };
+        [bestN, bestScore, bestBlock, giving] = [n, outcome.score, outcome.block, true];
+        yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
+      }
+    }
+  }
   // The highest that fit found with every byproduct riding on through its producers' consumers
   // (a layout sorting them out by splitters takes far longer to find): once more with them
-  // sorted out, given longer, kept where it fits.
+  // sorted out, given longer, kept where it fits (as many machines, where they gave way).
   if (best && bestN !== null && bestScore[2] > 0) {
-    const sorted = attempt(plan, bestN, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true });
+    const sorted = attempt(plan, bestN, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true, giving });
     tried += sorted.tried;
-    if (sorted.block && sorted.score[2] < bestScore[2]) {
+    if (sorted.block && sorted.score[2] < bestScore[2] && (!giving || lead(sorted.block) >= best.machines)) {
       [bestScore, bestBlock] = [sorted.score, sorted.block];
       yield { type: 'best', block: sorted.block, score: sorted.score, tried, ...best };
     }
@@ -152,7 +183,7 @@ export function* maximize(goals, catalog, logistics, options) {
   // The layouts laid out, in turn: { n, extra (what it makes beyond what it takes, for Annexes
   // to draw), alone (the layout itself), base (those before it together; null: none), block (it
   // with them) }. None after Bands.
-  let stages = bestN !== null ? [{ n: bestN, extra: {}, alone: bestBlock, base: null, block: bestBlock }] : null;
+  let stages = bestN !== null ? [{ n: bestN, giving, extra: {}, alone: bestBlock, base: null, block: bestBlock }] : null;
   // An Annex beside `built`, no more than `cap` of the first Goal's machines: { block (the
   // two together), score, best, stage }, else null.
   function* annexOf(built, before, cap) {
@@ -160,7 +191,7 @@ export function* maximize(goals, catalog, logistics, options) {
     const alone = { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) };
     let found = null;
     for (const room of Object.values(site.draws).some(d => d.only) ? [site, alone] : [site]) {
-      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap });
+      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false });
       let step;
       for (step = run.next(); !step.done; step = run.next()) {
         const v = step.value;
@@ -171,7 +202,7 @@ export function* maximize(goals, catalog, logistics, options) {
         const list = before.goals.map((g, k) => ({ ...g, rate: plus(g.rate, v.goals[k].rate) }));
         found = {
           block, score: v.score, best: { rate: list[0].rate, machines: before.machines + v.machines, count: before.count + v.count, goals: list },
-          stage: { n: v.count, extra: {}, alone: v.block, base: built, block },
+          stage: { n: v.count, giving: false, extra: {}, alone: v.block, base: built, block },
         };
         yield { type: 'best', block, score: v.score, tried: tried + v.tried, ...found.best };
       }
@@ -182,15 +213,16 @@ export function* maximize(goals, catalog, logistics, options) {
     return found;
   }
   // n of the first Goal's machines laid out beside `built` (null: alone in the City Block), making
-  // `extra` beyond what they take: { alone, block (with `built`), score }, else null.
-  function relay(n, extra, built) {
+  // `extra` beyond what they take (`giving`: giving way, as they did): { alone, block (with
+  // `built`), score }, else null.
+  function relay(n, extra, built, giving = false) {
     let rooms = [options.site];
     if (built) {
       const site = annexSite(options.site, built, catalog, options.made);
       rooms = Object.values(site.draws).some(d => d.only) ? [site, { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) }] : [site];
     }
     for (const site of rooms) {
-      const out = attempt(planner(goals, catalog, logistics, { ...options, site, extra }), n, { ...options, site, unsorted: true });
+      const out = attempt(planner(goals, catalog, logistics, { ...options, site, extra }), n, { ...options, site, unsorted: true, giving });
       tried += out.tried;
       if (!out.block) continue;
       if (!built) return { alone: out.block, block: out.block, score: out.score };
@@ -210,15 +242,15 @@ export function* maximize(goals, catalog, logistics, options) {
     const redone = [];
     let built = stages[j].base;
     for (let i = j; i < stages.length; i++) {
-      const stage = { n: stages[i].n, extra: i === j ? extra : stages[i].extra, base: built };
-      const out = relay(stage.n, stage.extra, built);
+      const stage = { n: stages[i].n, giving: stages[i].giving, extra: i === j ? extra : stages[i].extra, base: built };
+      const out = relay(stage.n, stage.extra, built, stage.giving);
       if (!out) return null;
       redone.push({ ...stage, alone: out.alone, block: out.block });
       built = out.block;
     }
     const out = relay(found.stage.n, {}, built);
     if (!out || out.alone.subBlocks.length >= found.stage.alone.subBlocks.length) return null;
-    const stage = { n: found.stage.n, extra: {}, alone: out.alone, base: built, block: out.block };
+    const stage = { n: found.stage.n, giving: false, extra: {}, alone: out.alone, base: built, block: out.block };
     return { found: { ...found, block: out.block, score: out.score, stage }, stages: [...stages.slice(0, j), ...redone, stage] };
   }
   for (let built = bestBlock; built && options.annexes !== false && options.site && most - best.count >= LEAST;) {
@@ -261,7 +293,7 @@ export function extensionOf(annex, goals, made = []) {
 // sorting: on past layouts whose byproducts ride on, to the first that sorts them all out (else
 // the best of them).
 /** @param {any} plan @param {number} n @param {any} options */
-export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false }) {
+export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false }) {
   const list = plan.goalsFor(n);
   let designed = null, entries;
   try {
@@ -278,6 +310,7 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
   try {
     const run = search(entries, plan.catalog, plan.logistics, {
       seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: true, precheck, designed: d => { designed = d; },
+      ...(giving ? { giving: list[0].item } : {}),
     });
     for (let step = run.next(); ; step = run.next()) {
       if (step.done) {
@@ -590,6 +623,11 @@ const SORTING_MS = 120000;
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;
 const LEAST = 1 / 4;
+
+// Whether a City Block has Fixtures in its room.
+function crowded(site) {
+  return !!site && site.fixtures.some(f => overlap(f, site.inner) > 0);
+}
 
 function overlap(a, b) {
   const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);

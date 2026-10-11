@@ -48,9 +48,9 @@ const assertInside = block => {
   }
 };
 
-const inBlock = (entries, site, candidates = 12) => {
+const inBlock = (entries, site, candidates = 12, options = {}) => {
   let best = null;
-  const run = search(entries, catalog, logistics, { seed: 1, maxCandidates: candidates, site });
+  const run = search(entries, catalog, logistics, { seed: 1, maxCandidates: candidates, site, ...options });
   for (let step = run.next(); !step.done; step = run.next()) best = step.value.block;
   return best;
 };
@@ -191,6 +191,27 @@ test('in a City Block a Fixture standing where a machine would leaves that machi
   // The substation stands among the stack's machines.
   assert.ok(substation.x >= gears.x && substation.x + substation.w <= gears.x + gears.w && substation.y >= gears.y && substation.y + substation.h <= gears.y + gears.h,
     `${JSON.stringify(gears)}`);
+});
+
+// Giving Way: the same, the gears giving way. The machines the substation stands on (it straddles
+// two) are given up, none built apart: the block runs at the rate of those left, every rate scaled
+// down by as much.
+test('in a City Block the Sub-Block that gives way gives up the machine a Fixture stands on, the block running at the rate of those left', () => {
+  const substation = { name: 'substation', kind: 'fixture', number: 1, x: 14, y: 3, w: 2, h: 2 };
+  const site = siteOf({ area: { x: 0, y: 0, w: 37, h: 21 }, fixtures: [substation] }, 1);
+  const block = inBlock([asm2('iron-gear-wheel', 960)], site, 1, { giving: 'iron-gear-wheel' });
+  assert.ok(block, 'a layout');
+  assertValid(block, catalog, logistics);
+  assertInside(block);
+  assert.equal(simulate(block).starvation.length, 0);
+  const [gears] = block.subBlocks;
+  assert.equal(block.entities.filter(e => e.kind === 'building').length, 9);
+  assert.equal(gears.count, 9);
+  assert.equal(gears.apart, undefined);
+  // (Eleven machines make 960/min: nine, nine elevenths of that.)
+  assert.ok(Math.abs(gears.rate - 960 * 9 / 11) < 1e-6, String(gears.rate));
+  assert.ok(Math.abs(block.routes.find(r => r.sink === 'side-output').items[0].rate - 960 * 9 / 11) < 1e-6);
+  assert.equal(block.edit.giving, 0);
 });
 
 // Backtracking: ten assembling machines 2 of circuits and the fifteen of copper cable feeding them

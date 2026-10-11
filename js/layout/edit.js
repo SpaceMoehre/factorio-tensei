@@ -1,5 +1,5 @@
 import { compose, prepare, RoutingError, PowerError } from './compose.js';
-import { finishBlock } from './compact.js';
+import { finishBlock, given } from './compact.js';
 import { validateBlock } from './validity.js';
 import { rankOf } from './score.js';
 import { stackOf } from './place.js';
@@ -38,8 +38,9 @@ const SQUEEZED = 12;
 // from its first copy (`rooms`, place.js), how its links were routed (compose's layout), the lines
 // squeezing took out of it (compact.js), the Production Chain's entries it was laid out for, and
 // how far the user turned each Sub-Block (`turns`, quarter turns clockwise; its designs as
-// designed, unturned).
-export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), squeeze = [], rooms = positions.rooms, entries = null, turns = null } = {}) {
+// designed, unturned), and the Sub-Block that gave way (`giving`, Giving Way: the block runs at
+// the rate of the machines it has).
+export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), squeeze = [], rooms = positions.rooms, entries = null, turns = null, giving = undefined } = {}) {
   const { until, ...rest } = layout ?? {};
   return {
     instances: prepared.instances,
@@ -55,6 +56,7 @@ export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), 
     rode: prepared.rode ?? null,
     entries,
     turns: turns ?? null,
+    ...(giving !== undefined && giving >= 0 ? { giving } : {}),
   };
 }
 
@@ -577,7 +579,7 @@ function reshaped(ctx, edit, positions, step, designs, columns, turns) {
     return r && { ...r, inst: first.get(`${i}:stack`) ?? r.inst };
   });
   return {
-    edit: editOf(ready, out, { layout: edit.layout, rooms, entries: edit.entries, turns }),
+    edit: editOf(ready, out, { layout: edit.layout, rooms, entries: edit.entries, turns, giving: edit.giving }),
     stack: { box: stack.box, columns: stack.columns, copies: stack.copies },
   };
 }
@@ -781,9 +783,9 @@ function layer(ctx, edit, { now, deadline, plainToo = false }) {
     }
     if (!composed) return null;
     try {
-      const block = finishBlock(composed, catalog, logistics, { squeeze: false });
+      const block = given(finishBlock(composed, catalog, logistics, { squeeze: false }), edit.giving);
       if (validateBlock(block, catalog, logistics).length) return null;
-      block.edit = editOf(ready, positions, { layout: used, rooms: edit.rooms, entries: edit.entries, turns: edit.turns });
+      block.edit = editOf(ready, positions, { layout: used, rooms: edit.rooms, entries: edit.entries, turns: edit.turns, giving: edit.giving });
       return { block, score: rankOf(block) };
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
