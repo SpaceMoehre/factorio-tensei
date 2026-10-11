@@ -20,7 +20,7 @@ What changed:
   - Its belts may enter and leave on any side. Between Sub-Blocks, a turned one's parts chain into any other's; a run of them may end and start on any side. Its copies in a stack still chain one copy's exit to the next copy's entry.
   - A fluid's stub is on the edge its module's west (east) edge turned to, and its link joins it from that side.
   - A turned stack keeps no lanes beside it for the belts turning between its copies: the router finds their way.
-  - Fan-outs from producers and byproducts sorted out after their producers are still planned only for belts leaving east: a turned Sub-Block has neither, its byproduct riding on.
+  - Fan-outs from producers are still planned only for belts leaving east. (A byproduct sorted out after a turned Sub-Block's producers: its splitter turns with it, ADR 0046.)
 - **The turn** (edit.js `turnCopies`).
   - A layout's `edit` keeps its designs as designed, and how far the user turned each Sub-Block (`turns`). The layout is prepared again from the designs, each turned so far (`prepareTurned`).
   - The Sub-Block's stack stands as placement would stand it (`stackOf`), turned within its box about the box's middle where it stood. Every other copy stands where it stands, the room beside its stack as it was.
@@ -44,5 +44,5 @@ The test layout of fixture circuits and cable, its cable turned a quarter, half 
 Spread out by moves (the circuits 12 tiles east, the cable 10 south: 31 × 27, Compactness 910), pulled together: 19 × 22, Compactness 442, tighter than the search's own (19 × 23, 472), in about 0.2 s. Py small parts spread to 74 × 42 (Compactness 3,800): pulled together to 59 × 31 (2,057) in about 0.6 s.
 
 Still:
-- Fan-outs from producers, and byproducts sorted out by a filter splitter after their producers, are planned (groupRoutes) only for belts leaving east: a turned Sub-Block's byproduct rides on through its consumers, as good as before only where none was sorted out.
+- Fan-outs from producers into several Sub-Blocks are planned (groupRoutes) only for belts leaving east. (A byproduct sorted out by a filter splitter after a turned Sub-Block's producers rode on through its consumers; since ADR 0046 the splitter turns with it.)
 - Pulling together slides; it does not swap Sub-Blocks round or move one past another.

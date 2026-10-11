@@ -804,7 +804,8 @@ export function compose(ctx, prepared, positions, layout) {
       const slot = r.slots[0];
       return { x: slot.pieces[0].x, y: slot.pieces[0].y, a: slot.part.dir ?? E };
     };
-    if (members.some(r => entryOf(r).a !== E)) return null;
+    // (One belt off a line runs on into its entry from whatever side.)
+    if (members.length > 1 && members.some(r => entryOf(r).a !== E)) return null;
     const anywhere = source !== null || members.some(r => r.perConsumer);
     // Across Sub-Blocks, also any splitter up to FAN_REACH columns west of an entry and FAN_ROWS
     // rows above or below it, facing any way, the belt sent off from either side (a Part's entry
@@ -1047,11 +1048,12 @@ export function compose(ctx, prepared, positions, layout) {
         if (legs) return legs;
       }
     }
-    // Else a splitter a few tiles on (facing east, the line coming in on either side): with a
-    // byproduct, it sends that (filter) out of one side on to the east edge and the rest out of
-    // the other past every consumer (the last's belt holding the line); without, each side starts
-    // a line past some of them (the producers' belt holds the first, the last consumer's of the
-    // other the second; each line brings what the other's do not take).
+    // Else a splitter a few tiles on (facing the way their belt leaves them, the line coming in on
+    // either side: a turned Sub-Block's turned with it): with a byproduct, it sends that (filter)
+    // out of one side on to the east edge and the rest out of the other past every consumer (the
+    // last's belt holding the line); without, each side starts a line past some of them (the
+    // producers' belt holds the first, the last consumer's of the other the second; each line
+    // brings what the other's do not take).
     const owner = order => (id, leg) => [id, id === order.at(-1).id ? [splitterOf.get(order), ...leg] : leg];
     const splitterOf = new Map();
     const demand = list => new Map(trunk.items.map(i => [i.item, list.reduce((sum, r) => sum + (r.items.find(x => x.item === i.item)?.rate ?? 0), 0)]));
@@ -1071,55 +1073,68 @@ export function compose(ctx, prepared, positions, layout) {
       if (west.length && west.length < members.length) out.push([west, members.filter(r => !west.includes(r))]);
       return out;
     };
-    let budget = FAN_TRIES;
-    for (let x = start.x + 1; x <= start.x + FAN_REACH && budget > 0 && pool.left > 0; x++) {
-      for (const y of [start.y - 1, start.y, start.y - 2, start.y + 1]) {
-        if (!free(x, y) || !free(x, y + 1)) continue;
-        for (const top of [true, false]) {
-          const out = { x: x + 1, y: top ? y : y + 1, a: E }, on = { x: x + 1, y: top ? y + 1 : y, a: E };
-          for (const lane of [0, 1]) {
-            if (budget-- <= 0 || !free(out.x, out.y) || !free(on.x, on.y) || !free(x - 1, y + lane)) continue;
-            const saved = grid.snapshot({ holds: true });
-            const splitter = { name: splitterName, kind: 'splitter', x, y, w: 1, h: 2, direction: E, travel: E, ...(trunk.filter ? { priority: top ? 'left' : 'right', filter: trunk.filter } : {}) };
-            try {
-              grid.place(splitter);
-              const into = routeLink(grid, { id: trunk.id, starts: [start], goal: { x, y: y + lane, a: E } }, belts);
-              if (trunk.filter) {
-                // (To the east edge, or joining a belt that carries the same byproduct there.)
-                const { joins, offered } = joinsFor(trunk);
-                const away = (joins.size && joinedAway(grid, trunk, out, joins)) || routeLink(grid, { id: trunk.id, starts: [out], goal: 'east' }, belts);
-                for (const order of lineOrders(members, on)) {
-                  splitterOf.set(order, splitter);
-                  const legs = routeFan(grid, order, { start: on, trunk: order.at(-1), fedBy: trunk.id, brought: brought([]), pool });
-                  if (legs) {
-                    sortedAway(trunk, away, offered);
-                    return [[trunk.id, [...into, splitter, ...away]], ...legs.map(([id, leg]) => owner(order)(id, leg))];
-                  }
-                }
-              } else {
-                // (A few ways each: every way of every split takes long to fail.)
-                for (const [a, b] of halves().slice(0, 2)) {
-                  for (const first of lineOrders(a, out).slice(0, 2)) {
-                    const before = grid.snapshot({ holds: true });
-                    const legsA = routeFan(grid, first, { start: out, trunk, brought: brought(b), pool });
-                    if (!legsA) continue;
-                    for (const second of lineOrders(b, on).slice(0, 2)) {
-                      splitterOf.set(second, splitter);
-                      const legsB = routeFan(grid, second, { start: on, trunk: second.at(-1), fedBy: trunk.id, brought: brought(a), pool });
-                      if (!legsB) continue;
-                      return [
-                        ...legsA.map(([id, leg]) => [id, id === trunk.id ? [...into, splitter, ...leg] : leg]),
-                        ...legsB.map(([id, leg]) => owner(second)(id, leg)),
-                      ];
+    // (Where it leaves them other than east, facing east next, a few tries each.)
+    for (const d of new Set([start.a, E])) {
+      // (A tile `k` on from the start and `o` to its right, facing `d`.)
+      const [fx, fy] = VEC[d], [rx, ry] = VEC[turnRight(d)];
+      const tile = (k, o) => ({ x: start.x + k * fx + o * rx, y: start.y + k * fy + o * ry });
+      let budget = FAN_TRIES;
+      for (let k = 1; k <= FAN_REACH && budget > 0 && pool.left > 0; k++) {
+        for (const o of [-1, 0, -2, 1]) {
+          // (Its left side, then its right.)
+          const sides = [tile(k, o), tile(k, o + 1)];
+          if (!sides.every(p => free(p.x, p.y))) continue;
+          // (`out` from its left side and `on` from its right, else the other way round.)
+          for (const left of [true, false]) {
+            const out = { ...tile(k + 1, left ? o : o + 1), a: d }, on = { ...tile(k + 1, left ? o + 1 : o), a: d };
+            for (const lane of [0, 1]) {
+              const behind = tile(k - 1, o + lane);
+              if (budget-- <= 0 || !free(out.x, out.y) || !free(on.x, on.y) || !free(behind.x, behind.y)) continue;
+              const saved = grid.snapshot({ holds: true });
+              const splitter = {
+                name: splitterName, kind: 'splitter', x: Math.min(sides[0].x, sides[1].x), y: Math.min(sides[0].y, sides[1].y), w: fx ? 1 : 2, h: fx ? 2 : 1,
+                direction: d, travel: d, ...(trunk.filter ? { priority: left ? 'left' : 'right', filter: trunk.filter } : {}),
+              };
+              try {
+                grid.place(splitter);
+                const into = routeLink(grid, { id: trunk.id, starts: [start], goal: { ...sides[lane], a: d } }, belts);
+                if (trunk.filter) {
+                  // (To the east edge, or joining a belt that carries the same byproduct there.)
+                  const { joins, offered } = joinsFor(trunk);
+                  const away = (joins.size && joinedAway(grid, trunk, out, joins)) || routeLink(grid, { id: trunk.id, starts: [out], goal: 'east' }, belts);
+                  for (const order of lineOrders(members, on)) {
+                    splitterOf.set(order, splitter);
+                    const legs = routeFan(grid, order, { start: on, trunk: order.at(-1), fedBy: trunk.id, brought: brought([]), pool });
+                    if (legs) {
+                      sortedAway(trunk, away, offered);
+                      return [[trunk.id, [...into, splitter, ...away]], ...legs.map(([id, leg]) => owner(order)(id, leg))];
                     }
-                    grid.restore(before);
+                  }
+                } else {
+                  // (A few ways each: every way of every split takes long to fail.)
+                  for (const [a, b] of halves().slice(0, 2)) {
+                    for (const first of lineOrders(a, out).slice(0, 2)) {
+                      const before = grid.snapshot({ holds: true });
+                      const legsA = routeFan(grid, first, { start: out, trunk, brought: brought(b), pool });
+                      if (!legsA) continue;
+                      for (const second of lineOrders(b, on).slice(0, 2)) {
+                        splitterOf.set(second, splitter);
+                        const legsB = routeFan(grid, second, { start: on, trunk: second.at(-1), fedBy: trunk.id, brought: brought(a), pool });
+                        if (!legsB) continue;
+                        return [
+                          ...legsA.map(([id, leg]) => [id, id === trunk.id ? [...into, splitter, ...leg] : leg]),
+                          ...legsB.map(([id, leg]) => owner(second)(id, leg)),
+                        ];
+                      }
+                      grid.restore(before);
+                    }
                   }
                 }
+              } catch (e) {
+                if (!(e instanceof RoutingError)) throw e;
               }
-            } catch (e) {
-              if (!(e instanceof RoutingError)) throw e;
+              grid.restore(saved);
             }
-            grid.restore(saved);
           }
         }
       }
@@ -1460,11 +1475,12 @@ function groupRoutes(ctx, instances, laneCapacity) {
       && consumers.every(slot => slot.part.canEnter && entrySide(slot) === W)
       && deliver([{ producers, consumers }], false).total >= needOf([{ producers, consumers }]) - 1e-6;
     // A byproduct sorted out after the producers: they chain as one run that leaves east, the
-    // consumers as one entered from the west.
+    // consumers as one entered from the west (a turned Sub-Block's, on and from any side: its
+    // splitter turns with it).
     const sorts = route => ctx.chained !== 'all' && !ctx.chained?.has(route.id) && byproductOf(route) !== null
       && producers.length > 0 && producers.every((slot, k) => k === 0 || chainable(producers[k - 1], slot))
-      && producers.at(-1).part.canExit && exitSide(producers.at(-1)) === E
-      && consumers.every((slot, k) => k === 0 || chainable(consumers[k - 1], slot)) && consumers[0].part.canEnter && entrySide(consumers[0]) === W;
+      && leavesEast(producers.at(-1))
+      && consumers.every((slot, k) => k === 0 || chainable(consumers[k - 1], slot)) && entersWest(consumers[0]);
     let groups, riding = false;
     if (!consumers.length) {
       // To the train: as few belts as the lanes allow, each a run of producers ending at one

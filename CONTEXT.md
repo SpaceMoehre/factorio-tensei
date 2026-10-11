@@ -208,7 +208,7 @@ Two belts of one Internal Path that bring their consumers too little and too muc
 _Avoid_: merging parts on one belt (a part's belt carries one run of producers)
 
 **Splitter**:
-Two belts of one Internal Path side by side through a splitter between the producers and the consumers, lane to lane: 2 to 2, each consumer run gets what it takes from both belts' supply, so a belt of three producers' parts and a belt of one no longer starve the run fed by the one (paired greedily, the belt short the most with the partner that makes the Path Flow deliver the most); 2 to 1, a second producers' belt ends in it and both carry on as one; 1 to 2, one producers' belt feeds two consumer runs, shared by what each takes. Where no splitter fits, the belts go straight on. A splitter right after a Sub-Block's producers (or a Part's) filters off a byproduct (an item none of its consumers takes: Py's empty barrels, the stone from quartz crushers): that item goes out of its priority side on to the east edge, the rest on to the consumers. Where the byproduct and the rest take more than one belt, each of the Internal Path's belts has a filter splitter of its own, and no splitter joins them; their byproduct belts join one another (side-loading onto a lane with room) on the way to the east edge.
+Two belts of one Internal Path side by side through a splitter between the producers and the consumers, lane to lane: 2 to 2, each consumer run gets what it takes from both belts' supply, so a belt of three producers' parts and a belt of one no longer starve the run fed by the one (paired greedily, the belt short the most with the partner that makes the Path Flow deliver the most); 2 to 1, a second producers' belt ends in it and both carry on as one; 1 to 2, one producers' belt feeds two consumer runs, shared by what each takes. Where no splitter fits, the belts go straight on. A splitter right after a Sub-Block's producers (or a Part's) filters off a byproduct (an item none of its consumers takes: Py's empty barrels, the stone from quartz crushers): that item goes out of its priority side on to the east edge, the rest on to the consumers. It faces the way the producers' belt leaves them, so it turns with their Sub-Block (a Turn, ADR 0046). Where the byproduct and the rest take more than one belt, each of the Internal Path's belts has a filter splitter of its own, and no splitter joins them; their byproduct belts join one another (side-loading onto a lane with room) on the way to the east edge.
 _Avoid_: balancer (only pairs are joined)
 
 **Fan-out**:
@@ -255,7 +255,7 @@ The user's making a Sub-Block squarer or longer where it stands (a right click o
 _Avoid_: resize (its machines stay as many)
 
 **Turn**:
-The user's turning a Sub-Block's stack a quarter (clockwise or not) where it stands, as a blueprint turns in the game: its machines, inserters, belts and pipes turn with it, its belts entering and leaving on the sides they turned to, every Link routed again as a Move's (ADR 0045).
+The user's turning a Sub-Block's stack a quarter (clockwise or not) where it stands, as a blueprint turns in the game: its machines, inserters, belts and pipes turn with it, its belts entering and leaving on the sides they turned to, the filter splitter sorting its byproduct out turned with it, every Link routed again as a Move's (ADR 0045, ADR 0046).
 _Avoid_: rotation (the design's own variants turn machines: `rotation`)
 
 **Pull together**:

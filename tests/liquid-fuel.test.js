@@ -9,6 +9,8 @@ import { assertValid } from './support/invariants.js';
 import { search } from '../js/search.js';
 import { expandChain } from '../js/chain.js';
 import { context, designStep, designOf, random } from '../js/design.js';
+import { turnCopies } from '../js/layout/edit.js';
+import { rankOf } from '../js/layout/score.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe', liquidFuel: 'natural-gas' };
@@ -72,6 +74,36 @@ test('a byproduct is sorted out after its producers: stone off the crushed quart
   assert.deepEqual([splitter.filter, splitter.priority !== undefined], ['stone', true]);
   assert.equal(sorter.pieces.at(-1).x, block.bounds.x + block.bounds.w - 1);
   assertValid(block, shipped, logistics);
+});
+
+// Turned (ADR 0045), the crushers keep the splitter sorting out their stone: it stands where their
+// belt leaves them, facing the way it leaves, turned with them; the glassworks turned, their belt
+// comes off its other side into them from wherever they take it in.
+test('a Sub-Block turned keeps the filter splitter sorting its byproduct out, turned with it', () => {
+  const entries = [
+    { goal: { item: 'molten-glass', rate: 1800 }, selection: { recipe: 'glass-2', building: 'glassworks-mk01' } },
+    { goal: { item: 'crushed-quartz', rate: 120 }, selection: { recipe: 'crushing-quartz', building: 'jaw-crusher' } },
+  ];
+  let block = null;
+  const run = search(entries, shipped, logistics, { seed: 1, maxCandidates: 8 });
+  for (let step = run.next(); !step.done; step = run.next()) block = step.value.block;
+  const ctx = context(block.edit.entries, shipped, logistics);
+  const splitterOf = b => b.routes.find(r => r.filter === 'stone')?.pieces.find(p => p.kind === 'splitter');
+  const before = splitterOf(block);
+  assert.ok(before, 'sorted out before');
+  for (const [item, turns] of /** @type {[string, number][]} */ ([['crushed-quartz', 1], ['crushed-quartz', 2], ['crushed-quartz', 3], ['molten-glass', 1]])) {
+    const step = block.subBlocks.findIndex(sb => sb.item === item);
+    const run = turnCopies(ctx, block.edit, { step, turns }, { score: rankOf(block) });
+    let next = run.next();
+    while (!next.done) next = run.next();
+    const out = /** @type {any} */ (next.value);
+    assert.ok(out.block, `${item} ${turns}: ${out.failure?.message}`);
+    assertValid(out.block, shipped, logistics);
+    assert.equal(out.score[2], 0, `${item} ${turns}: no byproduct rides on`);
+    const splitter = splitterOf(out.block);
+    assert.ok(splitter, `${item} ${turns}: sorted out`);
+    if (item === 'crushed-quartz') assert.equal(splitter.direction, (before.direction + 4 * turns) % 16, `${turns}: facing as turned`);
+  }
 });
 
 // Pipes of one fluid join into one network (ADR 0033): Py's slaughterhouses bleeding auogs for

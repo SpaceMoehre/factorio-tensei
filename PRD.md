@@ -87,6 +87,7 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 ## v34: Turning Sub-Blocks, pulling them together (implemented)
 Sub-Blocks turned, and the layout pulled together (ADR 0045); where v34 differs from v33, v34 wins.
 - **Turning:** a Sub-Block's menu (Turn clockwise, anticlockwise), its Inspector (↺ ↻), or R while dragging it (Shift+R the other way) turns its stack a quarter as a blueprint turns, where it stood; its belts enter and leave on the sides they turned to, every link is routed again, and it makes room as a move does.
+- **Its sorting splitter:** the filter splitter sorting a byproduct out after a Sub-Block's producers faces the way their belt leaves them, so it turns with them. Where it finds no way, the byproduct rides on through its consumers, as the search lays it, but only where nothing that sorts it out routes (ADR 0046).
 - **Pull together:** the map's toolbar slides every Sub-Block, as it is, toward the block's middle as far as its links still find their way and the block gets no worse, keeping each slide that beats the block; Stop pulling keeps what it pulled, Undo goes back.
 
 ## v33: Reshaping Sub-Blocks (implemented)

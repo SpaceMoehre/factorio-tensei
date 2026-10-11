@@ -1097,7 +1097,12 @@ function relayout(request, step, texts) {
     const opened = data.back ? ` The block opened up by ${count(data.back, 'tile')} to lay its belts again.` : '';
     // (Kept though it starves more: no layout there that does not; Undo takes it back.)
     const worse = data.score[0] > rankOf(before.block)[0] + 1e-6 ? ' It starves more than before (no layout there starves less): Undo takes it back.' : '';
-    report(best.block, best.starvation, `${texts.done(data)}${others}${opened}${worse}`);
+    // (Kept though a byproduct rides on through its consumers now: no splitter sorting it out
+    // finds a way there.)
+    const sorted = b => new Set(b.routes.filter(r => r.filter).map(r => r.filter));
+    const left = sorted(best.block), rode = [...sorted(before.block)].filter(item => !left.has(item)).map(item => label(item));
+    const riding = data.score[2] > rankOf(before.block)[2] ? ` ${rode.length ? rode.join(', ') : 'A byproduct'} ${rode.length > 1 ? 'ride' : 'rides'} on through ${rode.length > 1 ? 'their' : 'its'} consumers now: no splitter sorting ${rode.length > 1 ? 'them' : 'it'} out finds a way there. Undo takes it back.` : '';
+    report(best.block, best.starvation, `${texts.done(data)}${others}${opened}${worse}${riding}`);
   };
   run.worker.onerror = e => stuck(e.message);
   const { logistics, site } = built.job;

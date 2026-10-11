@@ -32,11 +32,13 @@ const SQUEEZED = 12;
 
 // What it takes to lay a block out again: its copies and routes as the search prepared them
 // (compose.js prepare: and what it made them of, its designs, the columns each stack stands in,
-// the routes chained through their consumers), where each copy stood (`positions`, its module's
-// area's top-left), each Sub-Block's box with the room beside its stack from its first copy
-// (`rooms`, place.js), how its links were routed (compose's layout), the lines squeezing took out
-// of it (compact.js), the Production Chain's entries it was laid out for, and how far the user
-// turned each Sub-Block (`turns`, quarter turns clockwise; its designs as designed, unturned).
+// the routes chained through their consumers — of those, the ones a move or turn chained, `rode`:
+// their byproducts riding on where their splitters found no way), where each copy stood
+// (`positions`, its module's area's top-left), each Sub-Block's box with the room beside its stack
+// from its first copy (`rooms`, place.js), how its links were routed (compose's layout), the lines
+// squeezing took out of it (compact.js), the Production Chain's entries it was laid out for, and
+// how far the user turned each Sub-Block (`turns`, quarter turns clockwise; its designs as
+// designed, unturned).
 export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), squeeze = [], rooms = positions.rooms, entries = null, turns = null } = {}) {
   const { until, ...rest } = layout ?? {};
   return {
@@ -50,6 +52,7 @@ export function editOf(prepared, positions, { layout = /** @type {any} */ ({}), 
     designs: prepared.designs ?? null,
     columns: prepared.columns ?? null,
     chained: prepared.chained ?? null,
+    rode: prepared.rode ?? null,
     entries,
     turns: turns ?? null,
   };
@@ -170,7 +173,9 @@ function copyTiles(edit) {
 // feed a Recipe Loop by train, or let a byproduct ride on) than before, the copies move a little
 // further — the least way first, up to REACH tiles, never onto another Sub-Block — and where
 // none of those works, the Sub-Blocks in the way move off instead (each way, as little as gives
-// the moved one a gap round it; those they would run into with them).
+// the moved one a gap round it; those they would run into with them). Where a byproduct's
+// splitter after its producers finds no way, the byproduct rides on through its consumers there,
+// as the search lays it: kept where nothing as good routes (at once where it is as good).
 // Yields { type: 'trying', tried } before each layout it tries; returns { block (with its own
 // `edit`), at ({ dx, dy }: where the copies went, as `move` counts), pushed ([{ step, inst?, dx,
 // dy }]: the Sub-Blocks moved off), back (lines squeezing had taken out that went back), score,
@@ -184,7 +189,7 @@ export function* moveCopies(ctx, edit, move, options = {}) {
   const deadline = options.deadline ?? Infinity;
   const reach = options.reach ?? REACH;
   const { instances } = edit;
-  const { units, inside, fixtures, tilesAt, boxOf, shifted, attempt, tried } = layer(ctx, edit, { ...options, now, deadline });
+  const { units, inside, fixtures, tilesAt, boxOf, shifted, attempt, riding, tried } = layer(ctx, edit, { ...options, now, deadline });
   const mover = units.find(u => (move.inst !== undefined && instances[move.inst]?.detached ? u.inst === move.inst : u.step === move.step && u.inst === undefined));
   if (!mover) return { failure: new Error('nothing to move there'), tried: 0 };
   // As good as before: starving no more, no more Recipe Loops fed by train, no more byproducts
@@ -194,6 +199,10 @@ export function* moveCopies(ctx, edit, move, options = {}) {
 
   let frame = standing(edit);
   let fallback = null;
+  // (A layout where a byproduct's splitter found no way, the byproduct riding on: the first
+  // place one did, once, kept for where none as good routes, without looking any less far for
+  // one.)
+  let spare = null, ridden = false;
   // Where the copies may stand, for `positions`: on no other copy or Fixture, inside the City
   // Block; `apart`, nowhere next to another's either.
   // (Only the moved copies move while it looks close by: what the others take, once a frame.)
@@ -302,6 +311,12 @@ export function* moveCopies(ctx, edit, move, options = {}) {
       yield { type: 'trying', tried: tried(), at: c.at, pushed: c.pushed };
       const out = attempt(c.positions);
       if (!out) {
+        const rode = ridden ? undefined : riding(c.positions);
+        ridden ||= rode !== undefined;
+        if (rode) {
+          spare = { ...rode, at: c.at, pushed: c.pushed, back: frame.back, tried: tried() };
+          if (asGood(rode.score) || options.first) return spare;
+        }
         if (checked) continue;
         checked = true;
         yield { type: 'trying', tried: tried(), at: { dx: 0, dy: 0 }, pushed: [] };
@@ -318,7 +333,7 @@ export function* moveCopies(ctx, edit, move, options = {}) {
   };
   let found = yield* run();
   if (found === AGAIN) found = yield* run();
-  const kept = (found === AGAIN ? null : found) ?? fallback;
+  const kept = (found === AGAIN ? null : found) ?? [fallback, spare].filter(Boolean).sort((a, b) => compare(a.score.slice(0, 3), b.score.slice(0, 3)))[0];
   if (kept) return { ...kept, tried: tried() };
   const drop = shifted(frame.positions, mover, move.dx, move.dy);
   const why = now() > deadline ? 'out of time laying it out there'
@@ -519,7 +534,11 @@ export function* reshapeCopies(ctx, edit, { step, way }, options = {}) {
 // Returns the edit, and the stack it stands in (stood): its copies' box (as the map shows it),
 // its columns and copies.
 function reshaped(ctx, edit, positions, step, designs, columns, turns) {
-  const ready = prepareTurned(ctx, edit, designs, columns, turns);
+  // (Its byproducts a move or turn left riding on sorted out again, turned or reshaped: where
+  // their splitters find no way still, they ride on again, moveCopies. The search's stay so.)
+  const again = new Set([...(edit.rode ?? [])].filter(k => touches(ctx, k, step)));
+  const chained = edit.chained instanceof Set ? new Set([...edit.chained].filter(k => !again.has(k))) : edit.chained;
+  const ready = { ...prepareTurned(ctx, { ...edit, chained }, designs, columns, turns), rode: new Set([...(edit.rode ?? [])].filter(k => !again.has(k))) };
   // Each Sub-Block's copies, the stacks' and those apart, in the order they were made.
   const byStep = list => {
     const out = new Map();
@@ -561,6 +580,13 @@ function reshaped(ctx, edit, positions, step, designs, columns, turns) {
     edit: editOf(ready, out, { layout: edit.layout, rooms, entries: edit.entries, turns }),
     stack: { box: stack.box, columns: stack.columns, copies: stack.copies },
   };
+}
+
+// Whether a route chained through its consumers (compose.js prepare: `chained`, by route or by a
+// run of its producers) runs into or out of Sub-Block `step`.
+function touches(ctx, k, step) {
+  const base = ctx.routes[Number(String(k).split('/')[0])];
+  return !!base && (base.source === step || base.consumers.includes(step));
 }
 
 // A Sub-Block's stack of copies as placement stands it (stackOf), from its designs as designed,
@@ -705,12 +731,13 @@ export function* compactCopies(ctx, edit, options = {}) {
 // stack's with the room beside it, a turned one's 3 tiles more round it to turn its belts
 // back; a machine apart's its module's), a unit shifted (`shifted`), and each layout tried
 // (`attempt`: its block and rank, null where its links find no way or it is not valid; with
-// `plainToo`, once more without splitters where they find none with them), `tried()` counting
-// them.
+// `plainToo`, once more without splitters where they find none with them), the last one tried
+// again with the byproducts whose splitters found no way there riding on (`riding`), `tried()`
+// counting them.
 function layer(ctx, edit, { now, deadline, plainToo = false }) {
   const { catalog, logistics, site = null } = ctx;
   const { instances } = edit;
-  const prepared = { instances, routes: edit.routes, designs: edit.designs, columns: edit.columns, chained: edit.chained };
+  const prepared = { instances, routes: edit.routes, designs: edit.designs, columns: edit.columns, chained: edit.chained, rode: edit.rode };
   const units = unitsOf(instances);
   const rel = copyTiles(edit);
   const fixtures = new Set();
@@ -732,33 +759,56 @@ function layer(ctx, edit, { now, deadline, plainToo = false }) {
     return out;
   };
   let count = 0;
-  const attempt = positions => {
+  // (Where a byproduct's splitter after its producers found no way, the route's `chain` key,
+  // compose.js.)
+  let chain;
+  const laid = (ready, positions) => {
     count++;
+    chain = undefined;
     const boxes = units.map(u => boxOf(u, positions));
     const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
     const bounds = { x: x0, y: y0, w: Math.max(...boxes.map(b => b.x + b.w)) - x0, h: Math.max(...boxes.map(b => b.y + b.h)) - y0 };
     let used = edit.layout, composed = null;
     for (const lay of [edit.layout, ...(plainToo && !edit.layout.plain ? [{ ...edit.layout, plain: true }] : [])]) {
       try {
-        composed = compose(ctx, prepared, Object.assign(positions.map(p => ({ ...p })), { bounds }), { ...lay, until: () => now() > deadline });
+        composed = compose(ctx, ready, Object.assign(positions.map(p => ({ ...p })), { bounds }), { ...lay, until: () => now() > deadline });
         used = lay;
         break;
       } catch (e) {
         if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+        chain ??= /** @type {any} */ (e).chain;
       }
     }
     if (!composed) return null;
     try {
       const block = finishBlock(composed, catalog, logistics, { squeeze: false });
       if (validateBlock(block, catalog, logistics).length) return null;
-      block.edit = editOf(prepared, positions, { layout: used, rooms: edit.rooms, entries: edit.entries, turns: edit.turns });
+      block.edit = editOf(ready, positions, { layout: used, rooms: edit.rooms, entries: edit.entries, turns: edit.turns });
       return { block, score: rankOf(block) };
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
       return null;
     }
   };
-  return { units, inside, fixtures, tilesAt, boxOf, shifted, attempt, tried: () => count };
+  const attempt = positions => laid(prepared, positions);
+  // The last layout tried, where a byproduct's splitter found no way there: its producers' belt
+  // chained through their consumers instead, the byproduct riding on (as the search lays it),
+  // route by route — a run of them whose line past them finds no way either, the whole route;
+  // null where it finds none so either (undefined where no splitter failed).
+  const riding = positions => {
+    if (chain === undefined || !edit.designs || edit.chained === 'all') return undefined;
+    const chained = new Set(edit.chained ?? []), rode = new Set(edit.rode ?? []);
+    while (chain !== undefined) {
+      const k = chained.has(chain) ? Number(String(chain).split('/')[0]) : chain;
+      if (chained.has(k)) break;
+      chained.add(k);
+      rode.add(k);
+      const out = laid({ ...prepareTurned(ctx, { ...edit, chained: new Set(chained) }, edit.designs, edit.columns, edit.turns), rode: new Set(rode) }, positions);
+      if (out) return out;
+    }
+    return null;
+  };
+  return { units, inside, fixtures, tilesAt, boxOf, shifted, attempt, riding, tried: () => count };
 }
 
 // What moves together: a Sub-Block's stack, or one machine a Breakout stood apart.
