@@ -1,0 +1,296 @@
+{
+ "goals": [
+  {
+   "item": "molybdenum-oxide",
+   "rate": 200
+  }
+ ],
+ "logistics": {
+  "belt": "transport-belt",
+  "pipe": "niobium-pipe-to-ground",
+  "pole": "medium-electric-pole",
+  "inserter": "fast-inserter",
+  "longInserter": "long-handed-inserter",
+  "fuel": "coal",
+  "liquidFuel": "natural-gas",
+  "rightAngle": true,
+  "handSize": 1,
+  "circuit": "red",
+  "plainPipe": "niobium-pipe"
+ },
+ "made": [
+  "pcb1",
+  "vacuum",
+  "vacuum-tube",
+  "graphite",
+  "inductor1",
+  "ceramic",
+  "clay",
+  "capacitor1",
+  "resistor1",
+  "steam",
+  "yaedols",
+  "fungal-substrate",
+  "yaedols-spores",
+  "cytostatics",
+  "artificial-blood",
+  "flutec-pp6",
+  "decalin",
+  "sea-sponge",
+  "soil",
+  "sea-sponge-sprouts",
+  "kicalk-seeds",
+  "retrovirus",
+  "cocoon",
+  "lab-instrument",
+  "equipment-chassi",
+  "bio-sample",
+  "bio-container",
+  "plasmids",
+  "polybutadiene",
+  "carbon-black",
+  "latex",
+  "latex-slab",
+  "creamy-latex",
+  "sodium-alginate",
+  "clean-nexelit",
+  "vrauks-food-01",
+  "wood-seeds",
+  "agar",
+  "saps",
+  "iron-gear-wheel",
+  "copper-cable",
+  "bolts",
+  "iron-stick",
+  "unslimed-iron",
+  "iron-slime",
+  "wood-seedling",
+  "moss",
+  "cellulose",
+  "wood",
+  "limestone",
+  "sodium-hydroxide",
+  "slacked-lime",
+  "lime",
+  "pure-sand",
+  "powdered-quartz",
+  "crushed-quartz",
+  "sand",
+  "carbon-dioxide",
+  "water-saline",
+  "molybdenum-sulfide",
+  "molybdenum-pulp",
+  "molybdenum-concentrate",
+  "nitrogen",
+  "purest-nitrogen-gas",
+  "molybdenite-pulp",
+  "molybdenite-dust",
+  "crushed-molybdenite",
+  "pressured-air"
+ ],
+ "selections": {
+  "steam": {
+   "recipe": "electric-boiler-water-to-steam",
+   "building": ""
+  },
+  "copper-cable": {
+   "recipe": "copper-cable",
+   "building": "automated-factory-mk01"
+  },
+  "electronic-circuit": {
+   "recipe": "electronic-circuit-2",
+   "building": ""
+  },
+  "wood": {
+   "recipe": "log-wood",
+   "building": "wpu-mk01"
+  },
+  "fungal-substrate": {
+   "recipe": "fungal-substrate",
+   "building": "automated-factory-mk01"
+  },
+  "yaedols": {
+   "recipe": "yaedols-1",
+   "building": "yaedols-culture-mk01"
+  },
+  "paragen": {
+   "recipe": "cottongut-science-green-seeds",
+   "building": ""
+  },
+  "decalin": {
+   "recipe": "decalin",
+   "building": "chemical-plant-mk01"
+  },
+  "sea-sponge": {
+   "recipe": "sea-sponge-1",
+   "building": ""
+  },
+  "fertilizer": {
+   "recipe": "fertilizer-1",
+   "building": ""
+  },
+  "small-lamp": {
+   "recipe": "small-lamp",
+   "building": "automated-factory-mk01"
+  },
+  "urea": {
+   "recipe": "waste-water-urea",
+   "building": ""
+  },
+  "kicalk": {
+   "recipe": "kicalk-1",
+   "building": "kicalk-plantation-mk01",
+   "modules": [
+    {
+     "name": "kicalk-mk02",
+     "count": 20
+    }
+   ]
+  },
+  "cdna": {
+   "recipe": "cdna",
+   "building": "genlab-mk01",
+   "modules": []
+  },
+  "cocoon": {
+   "recipe": "vrauks-cocoon-2",
+   "building": "rc-mk01",
+   "modules": [
+    {
+     "name": "vrauks-mk02",
+     "count": 2
+    }
+   ]
+  },
+  "moss": {
+   "recipe": "Moss-1",
+   "building": "moss-farm-mk01",
+   "modules": [
+    {
+     "name": "moss",
+     "count": 15
+    }
+   ]
+  },
+  "carbon-dioxide": {
+   "recipe": "moondrop-co2",
+   "building": "moondrop-greenhouse-mk01",
+   "modules": [
+    {
+     "name": "moondrop-mk02",
+     "count": 16
+    }
+   ]
+  },
+  "lab-instrument": {
+   "recipe": "lab-instrument",
+   "building": "automated-factory-mk01"
+  },
+  "saps": {
+   "recipe": "sap-01",
+   "building": "sap-extractor-mk01",
+   "modules": [
+    {
+     "name": "sap-tree-mk02",
+     "count": 2
+    }
+   ]
+  },
+  "nexelit-plate": {
+   "recipe": "nexelit-plate-2",
+   "building": ""
+  },
+  "vrauks": {
+   "recipe": "vrauks-2",
+   "building": "vrauks-paddock-mk01",
+   "modules": [
+    {
+     "name": "vrauks-mk02",
+     "count": 10
+    }
+   ]
+  },
+  "wood-seeds": {
+   "recipe": "wood-seeds",
+   "building": "automated-factory-mk01"
+  },
+  "vrauks-food-01": {
+   "recipe": "vrauks-food-01",
+   "building": "automated-factory-mk01"
+  },
+  "small-parts-01": {
+   "recipe": "small-parts-01",
+   "building": "automated-factory-mk01"
+  },
+  "bolts": {
+   "recipe": "bolts",
+   "building": "automated-factory-mk01"
+  },
+  "iron-stick": {
+   "recipe": "iron-stick",
+   "building": "automated-factory-mk01"
+  },
+  "iron-gear-wheel": {
+   "recipe": "iron-gear-wheel",
+   "building": "automated-factory-mk01"
+  },
+  "molten-iron": {
+   "recipe": "molten-iron-06",
+   "building": ""
+  },
+  "unslimed-iron": {
+   "recipe": "unslimed-iron",
+   "building": ""
+  },
+  "gasoline": {
+   "recipe": "gasoline-cellulose",
+   "building": ""
+  },
+  "log": {
+   "recipe": "log5",
+   "building": "fwf-mk01",
+   "modules": [
+    {
+     "name": "tree-mk02",
+     "count": 10
+    }
+   ]
+  },
+  "cellulose": {
+   "recipe": "cellulose-02",
+   "building": ""
+  },
+  "sodium-hydroxide": {
+   "recipe": "py-sodium-hydroxide",
+   "building": "chemical-plant-mk01"
+  },
+  "molten-glass": {
+   "recipe": "glass-3",
+   "building": ""
+  },
+  "sand": {
+   "recipe": "soil-washing",
+   "building": ""
+  },
+  "seaweed": {
+   "recipe": "seaweed-4",
+   "building": ""
+  },
+  "nitrogen": {
+   "recipe": "nitrogen",
+   "building": ""
+  },
+  "purest-nitrogen-gas": {
+   "recipe": "purest-nitrogen-gas",
+   "building": ""
+  }
+ },
+ "city": {
+  "on": true,
+  "blueprint": "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",
+  "w": 236,
+  "h": 236,
+  "buffer": 4,
+  "maximize": true
+ }
+}

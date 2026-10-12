@@ -1,0 +1,123 @@
+# Lessons from ADR 0001–0047
+
+These were distilled from the ADRs. Each item cites its ADR: read the ADR before touching that mechanism. Add new lessons at the end of each section (step 9 of SKILL.md).
+
+## How gains were found
+
+- **Find a try that should have fit, and find out why it did not.**
+  - ADRs 0019, 0023, 0024 and 0025 each list causes "found in a try that should have fitted". Nearly every gain came this way.
+  - Each cause was concrete and nameable. For example: a link took the tile another link of its route starts from; a belt took a pipe's way out; machines built apart stood one tile from a box; copies each wanted a belt from one machine.
+  - Guessing at a global tweak did not produce gains.
+- **The user's rule, built as they said it.**
+  - Several features started from a rule the user stated plainly: Filling (0015, "+10, halve"), Nooks (0016), Making Way (0017), Space-out (0014), Annexes (0031), Extensions (0038), byproduct belts merged (0030), pipes of one fluid join (0033) and Giving Way (0047).
+  - Build the literal rule first. Then measure it.
+- **Look at the picture.**
+  - 0019 ran a loop: judge the screenshot, find why usable room stays empty, fix it, go again. That took Py nexelit from 1260 to 1458/min.
+  - Empty strips are the symptom. The reason is usually one step: placement, design shape, routing or the Maximize schedule.
+- **Number everything.**
+  - Every ADR has a before/after table: rate, machines, size and time on a named setup.
+  - The reference setups show where a change pays and where it regresses: small parts (busy belts), vrauks/kicalk among roboports (Fixture rows), moss (fluids), molybdenum (byproducts) and sodium hydroxide (loops).
+
+## What worked (keep, build on)
+
+| Mechanism | Gain | ADR |
+|---|---|---|
+| Bottom-up Modules, composed; Copies of one Module | Big chains became searchable at all | 0005 |
+| Foretelling picks the first try; a try ends at its first layout without Starvation, and early when a design starves | Most of Maximize's time had gone on tries that told nothing new | 0008 |
+| Layers (columns chosen together) in a City Block | Py small parts 2400 → 3000/min | 0009 |
+| Compactness score (square, empty, bends), not area | 111 × 27 → 62 × 55 | 0010 |
+| Spread strategy beside the tight search, in parallel | Faster first layout on huge Sub-Blocks; neither strategy wins everywhere | 0013 |
+| Space out on a link failure (the error names the Sub-Blocks; pad 4, doubling) | Kicalk pack routed: 151k → 135k score | 0014 |
+| Filling: +10, again while it fits, then halve | Small parts 3150 → 3375 | 0015 |
+| Nooks | Kicalk 187 → 206/min | 0016 |
+| Making Way (a Fixture on a machine, built apart) | Nexelit 797 → 1019 | 0017 |
+| Backtracking: up to 3 spots, far apart, 24 in all | Nexelit 1019 → 1260 | 0018 |
+| Rows as wide as the block; pairings of the best 8 designs | Nexelit → 1458 | 0019 |
+| Starvation is not monotonic in the Count: pass a starving number once | Small parts 5175 → 7200 | 0023 |
+| Two-Way Copies; a corridor across columns | Same | 0023 |
+| Snake order; narrow designs together; Parting round Fixture rows | Vrauks 22 → 35.8 | 0024 |
+| Bands (Slots between Fixture rows, Sub-Blocks in Parts) | Vrauks 35.8 → 55.8 | 0025 |
+| Fan-out across Sub-Blocks; capped splitter spots; give up at once when there is no way on | 13 belts → 2; 49 s → 10 s | 0026 |
+| Bands for busy recipes (pole slots band by band, producer lines, byproduct filter, layouts tried in turn) | Vrauks-2 27 → 55 | 0027 |
+| Fluids Between; snug rows; structured-only whole modules for big Sub-Blocks in a City Block | Moss 940 → 1152 | 0029 |
+| Maximize tries unsorted, then sorts once at the end; a try's budget is the candidates', after designing | Molybdenum 0 → 600 | 0030 |
+| Annexes; Draws; probe with 1 machine; whole machines only in Annexes | Moss 648 → 806 | 0031, 0032 |
+| Extensions (grow the built fluid Sub-Block before an Annex makes its own) | NaOH 2000 → 2300 | 0038 |
+| Gatherers; keep searching briefly for a loop fed here | NaOH 2500 → 3100 | 0040 |
+| Giving Way: first Goal gives up to a quarter of its machines to Fixtures, nothing built apart, rates scaled | Kicalk 114 → 120 machines (one try) | 0047 |
+
+## What failed, was reverted, or must not be done
+
+- **Templates and fixed rules** (0002, 0004). A static rule (max-reach tunnels, fixed rows) blocked the layouts it was meant to enable. Add an option the search can choose instead.
+- **Routing Modules again inside the Compound Block** (0005, 0006, 0017). Do not route a copy round a Fixture either. Give the Module a design that routes on its own, leave machines out, or stand them apart.
+- **Maximize tries in parallel workers** (0008). They slowed the deciding try by a third. Maximize stays one worker.
+- **Fan-out runs across columns** (0011). Their lines crossed and failed to route more often than they saved.
+- **A design check letting a splitter balance an Internal Path's belts** (0019). More designs passed, but each try spent its time on layouts whose splitter then found no room: 1458 → 1150. It was dropped.
+  - General lesson: letting more designs pass that later fail to route lowers the result.
+- **Searching every spot for every Sub-Block** (0018). A few spots far apart let the search see more candidates.
+- **Designs whose rows span the City Block** (0018). They changed nothing that backtracking did not.
+- **Every splitter spot tried** (0026). Py science pack 2 went from 40 s to 340 s. Capping at the 8 cheapest missed the spot that was needed. Rank spots by belt length, and give up at once when there is no way on.
+- **Lending Band corridors top first** (0025). Links found no way.
+- **Mirrored twins kept freely** (0028). They crowded out other designs (a row 901 wide). Keep a variant only where it beats every non-variant.
+- **Sorting the search's chained routes out after a turn** (0046). Titanium starved 90/min, or took 30 s to fail.
+- **Assuming more machines always starve more** (0023). Starvation comes and goes with the Count, and so does routing (0025, 0027). Never bound tries hard on one starving or unrouted number. Room is monotonic: a try that found no room bounds everything above it.
+- **Squeezing in a City Block** (0007). Fixtures cannot move.
+- **Making Way's tenth and building apart in crowded rows** (0047). The budget went on one row, and the machines built apart found no room. That is why Giving Way exists.
+- **Fractional machines in Annexes** (0032). Each failing try cost 15–35 s for nothing.
+- **Caching designs between tries** (0032). Rates differ per try, so a cache would seldom hit.
+- **Aggregate starvation** (0001). Keep the per-edge, belt-order walk.
+- **A Foretelling from the box round the Sub-Blocks** (0024). In Layers that spans nearly the whole block, so Maximize climbs one machine a try: vrauks 31 → 50 at about 30 s each; kicalk took more than 50 min to reach 89.
+
+## Rules every change keeps
+
+- **Rank order:** Starvation, then Recipe Loops by train, then byproducts riding, then output inserters at drops, then Compactness, then entities (`rankOf`). A Maximize fit is a layout without Starvation.
+- **A try is one layout search at one Count** (0007). Do not search the rate inside one layout search: designs change with the Count.
+- **Every aggressive mode has a fallback to the old behaviour,** tried next on failure:
+  - Making Way → solid;
+  - Fan-outs → last → none → no splitters;
+  - sorted → riding;
+  - gatherer → by train;
+  - Draw → make it after all;
+  - Extension → own Sub-Block.
+- **Gate new phases to where they pay:**
+  - Giving Way runs only in a crowded site, for the first Goal only, after Filling.
+  - Sorting runs only where something rides.
+  - Bands runs only for Fixture rows.
+
+  A phase that runs everywhere costs time on every setup.
+- **Time is part of the result.**
+  - Report seconds for each run.
+  - Failing tries above the best dominate (0015: 16 s → 47 s for +7%).
+  - Every new try type needs an early exit: a probe, a precheck, `timedOut` bounding only like starvation, or giving up when there is no way on.
+- **Wall-clock budgets** (0032).
+  - On a busy host the same run finds less: one run alone reached only 101 farms in its first layout.
+  - A/B runs go side by side on the same host, same seed, same budget.
+- **Checks:** `validateBlock` and `simulate` on every result. Check joined layouts (Annexes) together: a tunnel of one can pair with the other's.
+- **Edits** (move, reshape, turn) must keep a layout's own properties: `edit.giving`, `rode`, `entries`.
+
+## Open limits: candidate next steps
+
+These come from the ADRs' "Still:" sections.
+
+- **Kicalk/vrauks Maximize** climbs one machine a try, because the Foretelling learns from a box that spans the block (0024). A better room estimate, or bigger steps once the climb is steady, would save tens of minutes.
+- **Bands:**
+  - cuts at one Fixture column at most;
+  - a Part is one or two rows of a whole design;
+  - Parts that divide unevenly cannot share a producer Part (0025).
+- **Fan-outs:** none from producers in the search alone (0027). Splitters stand within 8 tiles of the entries. Copies in several columns do not share.
+- **Annexes:**
+  - do not draw items on belts (0032);
+  - a fluid is drawn whole or not at all;
+  - small Sub-Blocks are not shared (0031);
+  - each Annex costs a whole Maximize.
+- **Extensions:** fluids only; a solid's Sub-Block is not extended (0038).
+- **Giving Way:** first Goal only. A try lays out n and then gives some up; it does not know in advance how many it will lose (0047).
+- **Byproducts:**
+  - one byproduct per belt is sorted out (0028);
+  - a sorted route gets no splitter between its belts (0030);
+  - the side-loaded lane's room is not checked (0040, 0041).
+- **City Block:**
+  - a Sub-Block never bends round a Fixture;
+  - Nooks are taken only whole (copies are not spread over several Nooks).
+- **Turned Sub-Blocks:** Fan-outs from producers are planned only for belts leaving east (0045).
+- **Pull together:** slides only; it never swaps Sub-Blocks (0045).
