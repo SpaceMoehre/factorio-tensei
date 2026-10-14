@@ -46,7 +46,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Gatherers; keep searching briefly for a loop fed here | NaOH 2500 → 3100 | 0040 |
 | Giving Way: first Goal gives up to a quarter of its machines to Fixtures, nothing built apart, rates scaled | Kicalk 114 → 120 machines (one try) | 0047 |
 | Placement in crowded rooms: integral image turns crowded spots away, spot checks memoized, deadline inside backtracking, retries capped | An Annex try 274 s → 47 s | 0049 |
-| Copies' lanes counted as built (every second copy reversed); belts into copies checked; runs may end at a reversed copy; consumers cut to what producer belts bring; spare producer machines; turning lanes shared; one-column stack retried in two | Silicon 675 → SILICON_AFTER | 0048 |
+| Copies' lanes counted as built (every second copy reversed); belts into copies checked; runs may end at a reversed copy; consumers cut to what producer belts bring; spare producer machines; turning lanes shared; one-column stack retried in two | Silicon first layout 3.6 → 4.9 furnaces; 675 → 712.5–795/min | 0048 |
 
 ## What failed, was reverted, or must not be done
 
