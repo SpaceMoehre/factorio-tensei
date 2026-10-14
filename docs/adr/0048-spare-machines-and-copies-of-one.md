@@ -53,6 +53,7 @@ Py silicon in that City Block, budget 1000 s a try:
 | Before (three runs, the page's too) | 435/min (3.6) | 675/min | 3.6 + Annexes of 1 and 1 |
 | Without the shared lanes, two columns and Giving Way's top (side by side with Before) | 555/min (4.6) | 795/min | 4.6 + Annex of 2 |
 | Now (alone, on a host busy with the test suite) | 592.5/min (4.9) | 712.5/min | 4.9 + Annex of 1 |
+| Now, side by side with Before on the same host (Before: 675/min, best at 502 s, 2620 s in all) | 592.5/min (4.9) | 712.5/min, best at 348 s, 894 s in all | 4.9 + Annex of 1 |
 
 The first layout grows each time. What the Annexes then add depends on the room it leaves and on how far their tries get within the wall-clock budget, so the totals vary from run to run.
 
