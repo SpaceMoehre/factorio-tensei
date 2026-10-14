@@ -242,6 +242,10 @@ _Avoid_: building round a Fixture (what Placement did before), hole
 In a City Block, the first Goal's Sub-Block giving up the machines Fixtures stand on (up to a quarter of them) instead of building them elsewhere, so its Copies stand closer together, a Fixture on a machine rather than between Copies. The layout then runs at the rate of the machines it has: every Sub-Block's rates scale down by as much, the others running below full speed. Maximize tries it after the highest that fits, from there ten machines more at a time, keeping each layout with more machines than before.
 _Avoid_: sacrificing (the machines are never built), Making Way (that builds them elsewhere)
 
+**Spare Machines**:
+A few more machines of a Sub-Block than its Count, where a Maximize try found its every design, or the layouts it passed over, short because of that Sub-Block's belts alone (whole machines cut into belts that bring less than the runs of consumers they feed take). No more than a few of its machines make, 2 or a tenth of its Count; the try is made again with them, and they run below full speed.
+_Avoid_: headroom (what rounding the Count up leaves), Extension (that grows a built Sub-Block for an Annex)
+
 **Strategy**:
 How the layout search picks its candidates. Search places the Sub-Blocks tightly from the start and varies that. Spread places them a wide buffer apart first, so their links find room, then ever tighter, then packs the smaller Sub-Blocks beside the biggest. A build runs every strategy at once, each in a web worker of its own, from the same designs (each Sub-Block designed in a worker of its own first), and keeps the best layout any finds.
 _Avoid_: algorithm, mode

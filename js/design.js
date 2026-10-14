@@ -386,7 +386,7 @@ function buildSpec(ctx, index, spec, rng) {
     const kinds = [{ ...main, count }];
     if (rest) kinds.push({ ...repeatable(ctx, index, rest, share ? Math.min(n, rest) : n, rng, count + 1, main.chained, share), count: 1 });
     const area = kinds.reduce((sum, k) => sum + k.count * k.module.area.w * k.module.area.h, 0);
-    const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds);
+    const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds) + copiesUnfed(ctx, index, kinds);
     return { kinds, trouble, area, copies: count };
   }
   const { core, variant, machines, whole } = spec;
@@ -682,16 +682,45 @@ function pathShortfall(ctx, sb, belts, wants, join = false) {
 }
 
 // Copies chain their parts into the path's belts, a run of copies to each (as the Compound Block
-// groups them): what those belts cannot bring their consumers.
+// groups them): what those belts cannot bring their consumers. Copies alternate between a kind's
+// module and its reverse (compose.js makeInstances, taken as one column): a belt snaking through
+// them runs the other way in every second copy, so its machines drop onto the other lane there.
 function copiesShortfall(ctx, index, kinds) {
   const sb = ctx.plan[index];
-  const parts = kinds.flatMap((k, n) => Array.from({ length: k.count }, (_, c) => k.module.parts.filter(p => p.drops.length)
+  let copy = 0;
+  const moduleOf = k => (copy++ % 2 && k.reverse ? k.reverse : k.module);
+  const parts = kinds.flatMap((k, n) => Array.from({ length: k.count }, (_, c) => moduleOf(k).parts.filter(p => p.drops.length)
     .map(p => ({ ...p, drops: p.drops.map(d => ({ ...d, machine: `${n}.${c}:${d.machine}` })) }))).flat());
   if (!parts.length) return 0;
   const route = ctx.routes[parts[0].routeIds[0]];
   if (!isInternal(route)) return 0;
   const groups = runs(parts, Math.min(parts.length, pathBelts(ctx, route)));
   return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), pathWants(ctx, route, groups.length), !route.sorted);
+}
+
+// What copies take of an Internal Path into them that its belts cannot bring: each belt feeds a
+// run of parts, no more machines than one belt carries for, and a part that does not snake
+// through the copies (it runs the same way in a copy and its reverse) starts a run of its own in
+// every copy. Where that takes more runs than the path has belts (pathBelts: as both ends cut
+// it), the machines of the runs beyond them go short.
+function copiesUnfed(ctx, index, kinds) {
+  const sb = ctx.plan[index];
+  let short = 0;
+  for (const route of ctx.routes) {
+    if (route.kind !== 'belt' || route.consumers[0] !== index || !isInternal(route)) continue;
+    const each = route.items.reduce((sum, i) => sum + (sb.inputs.find(x => x.name === i.item)?.rate ?? 0), 0) / sb.count;
+    const fed = Math.max(1, Math.floor(2 * route.items[0].capacity / each + 1e-9));
+    let runs = 0;
+    for (const k of kinds) {
+      for (const p of k.module.parts.filter(q => q.routeIds.includes(route.id))) {
+        const snakes = k.count > 1 && k.reverse?.parts.find(q => q.key === p.key)?.dir !== p.dir;
+        runs += snakes ? Math.ceil(k.count * p.machines / fed) : k.count * Math.ceil(p.machines / fed);
+      }
+    }
+    const belts = pathBelts(ctx, route);
+    if (runs > belts) short += (runs - belts) * Math.min(fed, sb.count / runs) * each;
+  }
+  return short;
 }
 
 // What each of an Internal Path's n belts brings its consumer: a run of the consumer's machines

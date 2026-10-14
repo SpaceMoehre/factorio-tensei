@@ -84,6 +84,26 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v38: Pipes in squares thin out (implemented)
+Where v38 differs from v37, v38 wins.
+- **Pipe bands:** a plain pipe in a square of four goes before burying, where everything beside it still joins without it and no machine connects to it. Bands two wide thin to a line, which can then go underground (ADR 0050).
+
+## v37: Annex tries return (implemented)
+Where v37 differs from v36, v37 wins.
+- **Placement in a crowded room:** a spot whose box holds more Fixture tiles than tiles a Fixture may stand on is turned away at once (an integral image), and each spot is checked once per Placement. Backtracking stops when the try is out of time. No more than 24 candidates queued again by failing ones count beyond a try's patience. An Annex try that took 274 s takes 47 s (ADR 0049).
+
+## v36: Spare Machines, copies of one machine (implemented)
+Where v36 differs from v35, v36 wins.
+- **Spare Machines:** a Maximize try whose producer Sub-Block starves its consumers by a little (every design, or the layouts passed over) is made again with a few more of its machines (ADR 0048).
+- **Copies:**
+  - Copies' belts out are judged lane by lane as they are built, every second copy reversed. Their belts in are checked against the path's belts.
+  - A run of copies' belts may end at a reversed copy, and start at one entered from the east, where nothing else chains.
+  - Consumers are cut into runs that take what each producer belt brings.
+- **Stacks:**
+  - Belts turning beside a stack share lanes where they turn beside different copies.
+  - A one-column stack with no room is tried in two.
+- **Giving Way:** it tries no more than a third above the lowest number that did not fit.
+
 ## v35: Giving Way (implemented)
 Where v35 differs from v34, v35 wins.
 - **Giving Way:** in a City Block with Fixtures in its room, once Maximize has the highest that fits, it tries more of the first Goal's machines, their copies closer together. The machines a Fixture stands on are given up (a quarter at most), not built elsewhere, and the layout runs at the rate of the machines it has. It is kept where more machines stand than before, then Annexes fill the room left. The status says "Giving way: trying …" (ADR 0047).

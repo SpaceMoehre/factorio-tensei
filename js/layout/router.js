@@ -26,6 +26,8 @@ export class RoutingError extends Error {
   chain;
   /** @type {object | undefined} the routing task that failed, though another routed it ahead of its turn */
   task;
+  /** @type {number | undefined} the Sub-Block Placement found no room for */
+  unplaced;
 }
 
 // Routes a belt through its waypoints (a chain), committing each leg to the grid as it goes.

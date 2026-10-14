@@ -23,6 +23,8 @@
 //   --root DIR        the repo to run (another worktree for an A/B), default this one
 //   --out DIR         where log.txt, best.json and summary.json go (default ./out-<setup name>)
 //   --strategy S      build: one strategy only (search|spread); default both side by side
+//   --profile-slow S  once a try runs S seconds with no event, sample the CPU for --profile-for
+//                     seconds (60): <out>/slow-<k>.txt (hottest functions and stack), .cpuprofile
 //
 // Prints each event as it comes (seconds, type, rate, machines), then the summary (summary.json).
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
@@ -37,10 +39,18 @@ const opt = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;
 };
-const file = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.match(/^--(mode|n|budget|total|seed|root|out|strategy)$/));
+const file = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.match(/^--(mode|n|budget|total|seed|root|out|strategy|profile-slow|profile-for)$/));
 if (!file) {
   console.error('usage: node run.mjs <setup.json> [--mode auto|maximize|build|attempt] [--n N] [--budget S] [--total S] [--root DIR] [--out DIR]');
   process.exit(2);
+}
+// (--profile-slow: the run itself under V8's tick profiler, its log in <out>/v8.log.)
+if (opt('profile-slow') && !process.execArgv.includes('--prof')) {
+  const outDir = resolve(opt('out', `out-${basename(file, '.json')}`));
+  mkdirSync(outDir, { recursive: true });
+  const { spawnSync } = await import('node:child_process');
+  const r = spawnSync(process.execPath, ['--prof', `--logfile=${outDir}/v8.log`, '--no-logfile-per-isolate', fileURLToPath(import.meta.url), ...process.argv.slice(2)], { stdio: 'inherit' });
+  process.exit(r.status ?? 1);
 }
 const root = resolve(opt('root', resolve(here, '../../../..')));
 const out = resolve(opt('out', `out-${basename(file, '.json')}`));
@@ -90,6 +100,12 @@ const log = line => {
   appendFileSync(`${out}/log.txt`, line + '\n');
 };
 writeFileSync(`${out}/log.txt`, '');
+if (opt('profile-slow')) {
+  const { Worker } = await import('node:worker_threads');
+  new Worker(new URL('./profiler-worker.mjs', import.meta.url), {
+    workerData: { log: `${out}/log.txt`, out, slow: Number(opt('profile-slow')), span: Number(opt('profile-for', 60)), v8log: `${out}/v8.log`, start: Date.now() - performance.now() },
+  }).on('error', e => console.error('profiler:', e.message)).unref();
+}
 
 const plan = () => planner(goals, catalog, logistics, { made, selections, uses, index, site });
 let mode = opt('mode', 'auto');
@@ -117,6 +133,7 @@ const keep = (block, extra = {}) => {
 if (mode === 'attempt') {
   const n = Number(opt('n'));
   const p = plan();
+  log(`${secs()} try machines=${n}`);
   const outcome = attempt(p, n, { site, budgetMs, seed, unsorted: flag('unsorted'), sorting: flag('sorting'), giving: flag('giving') });
   result = { n, tried: outcome.tried, failure: outcome.failure?.message ?? null, timedOut: outcome.timedOut ?? null, starves: outcome.starves ?? null };
   if (outcome.block) keep(outcome.block, { machines: n, rate: p.goalsFor(n)[0].rate });

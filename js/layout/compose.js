@@ -44,11 +44,28 @@ export function prepare(ctx, designs, columns = []) {
 // what their Path Flow delivers, through every splitter it asks for or none (compose places
 // what it can), and its inserters move what they move. Routing only adds to it.
 export function leastStarvation(ctx, prepared) {
+  return starvedBy(ctx, prepared).total;
+}
+
+// The same, and the Sub-Block whose belts bring their consumers least of what they take
+// (`producer`: null where it is no Sub-Block's, a Side Input's or an inserter's).
+export function starvedBy(ctx, prepared) {
   const subBlocks = ctx.plan.map((sb, i) => ({ ...sb, inserters: supplyOf(prepared.instances.filter(inst => inst.step === i)) }));
-  const starving = routes => simulate({ routes, subBlocks }).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
+  const starving = routes => {
+    const list = simulate({ routes, subBlocks }).starvation;
+    const by = new Map();
+    for (const s of list) {
+      const source = routes[s.route]?.source;
+      const key = typeof source === 'number' ? source : null;
+      by.set(key, (by.get(key) ?? 0) + s.demand - s.available);
+    }
+    const [producer = null] = [...by].sort((a, b) => b[1] - a[1])[0] ?? [];
+    return { total: list.reduce((sum, s) => sum + s.demand - s.available, 0), producer: by.size === 1 ? producer : null };
+  };
   const plain = starving(prepared.routes);
   if (!prepared.routes.some(r => r.splitter)) return plain;
-  return Math.min(plain, starving(prepared.routes.map(r => (r.splitter ? { ...r, items: r.splitter.items } : r))));
+  const joined = starving(prepared.routes.map(r => (r.splitter ? { ...r, items: r.splitter.items } : r)));
+  return joined.total < plain.total ? joined : plain;
 }
 
 // The Compound Block from routed modules (bottom-up): each Sub-Block's design is one or more
@@ -178,7 +195,9 @@ export function compose(ctx, prepared, positions, layout) {
     // side, where it turns between copies: two columns out from the stack (the column against it
     // holds the tiles links enter and leave by), lanes two apart so a belt crossing to an outer
     // lane dives under the inner ones and surfaces between them; other belts and the fluids'
-    // pipes dive across them to the trunks further out.
+    // pipes dive across them to the trunks further out. (Placement keeps room for the lanes
+    // turnLanes shares; reserved here only where every belt's own lane is within reach: shared
+    // lanes reserved hemmed in the links of Py vrauks' paddocks, ADR 0048.)
     for (const step of new Set(instances.map(inst => inst.step))) {
       const mine = instances.filter(inst => inst.step === step && !inst.detached);
       const snaking = routes.filter(r => r.kind === 'belt' && r.slots.some((slot, k) => k > 0
@@ -1333,6 +1352,26 @@ function makeInstances(plan, designs, wanted) {
 // Sub-Block, neither broken out of it.
 export const stacked = (a, b) => a.step === b.step && !a.detached && !b.detached;
 
+// How many lanes beside Sub-Block `step`'s stack its belts turn in between copies: a lane for
+// each belt, shared by belts that turn between other copies (runs of copies one below another
+// never turn beside the same ones: Py washers' 5 runs of soil and 2 of sand take 2 lanes, not 7,
+// ADR 0048).
+export function turnLanes(routes, step) {
+  const spans = [];
+  for (const r of routes) {
+    if (r.kind !== 'belt') continue;
+    const at = r.slots.flatMap((slot, k) => (k > 0 && slot.inst.step === step && stacked(r.slots[k - 1].inst, slot.inst) ? [r.slots[k - 1].inst.index, slot.inst.index] : []));
+    if (at.length) spans.push({ lo: Math.min(...at), hi: Math.max(...at) });
+  }
+  spans.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+  const ends = [];
+  for (const span of spans) {
+    const lane = ends.findIndex(end => end < span.lo);
+    ends[lane < 0 ? ends.length : lane] = span.hi;
+  }
+  return ends.length;
+}
+
 // Global routes. Each base belt route becomes one belt or several, each visiting a run of
 // copies' parts (slots) in order: producers first, then consumers. A belt takes on slots while
 // it can carry them all: a Side Input as long as its demand fits the belt (a lane per item when
@@ -1542,8 +1581,13 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const makes = run => run.reduce((sum, s) => sum + production(s), 0);
       const carriedBy = run => deliver([{ producers: run, consumers: [] }], false).total;
       const machinesIn = prefix(consumers, s => s.part.machines);
-      const consumerRuns = splits(consumers, consumers.length, chainable, entersWest, () => true, (k, i, j) => machinesIn(i, j) ** 2);
-      const endsEast = leavesEast;
+      let startsOk = entersWest;
+      let consumerRuns = splits(consumers, consumers.length, chainable, entersWest, () => true, (k, i, j) => machinesIn(i, j) ** 2);
+      // (Where no runs chain them so, or none without Starvation, a run of producers may end at a
+      // reversed copy leaving west, and a run of consumers start at one entered from the east: a
+      // stack of an even number of copies in one column ends with one, and runs of copies of a
+      // single machine are cut evenly only where every second one is reversed.)
+      let endsEast = leavesEast;
       const making = prefix(producers, production);
       // Producers in count + 1 runs, the extra run merging into consumer run j's belt.
       const merges = (cs, targets) => {
@@ -1595,6 +1639,16 @@ function groupRoutes(ctx, instances, laneCapacity) {
             // them gives each what its consumers take (plain if it fails to route).
             if (consider(option, short < 1e-6 || !joins ? short : pairUp(option, wantOf, deliver))) break;
           }
+          // (Runs of producers about equal by what they make, the consumers cut to take what each
+          // run makes: producer belts of unlike runs, 912, 456, 912… a minute, each into its
+          // consumers' share.)
+          const even = count > most ? null : splits(producers, count, chainable, () => true, endsEast, (k, i, j) => (making(i, j) - total / count) ** 2)(count);
+          const matched = even && splits(consumers, count, chainable, startsOk, () => true, (k, i, j) => (wants(consumers.slice(i, j)) - makes(even[k])) ** 2)(count);
+          if (matched) {
+            const option = even.map((run, j) => ({ producers: run, consumers: matched[j] }));
+            const short = needOf(option) - deliver(option, false).total;
+            if (consider(option, short < 1e-6 || !joins ? short : pairUp(option, wantOf, deliver))) break;
+          }
           if (!joins) continue;
           if (forks(cs, targets).concat(merges(cs, targets)).some(option => consider(option, needOf(option) - deliver(option, true).total))) break;
         }
@@ -1609,7 +1663,15 @@ function groupRoutes(ctx, instances, laneCapacity) {
       // are joined as any Internal Path's, the byproduct riding on through the consumers to the
       // east edge.
       const through = ctx.chained === 'all' || !!ctx.chained?.has(base.id);
-      const alone = pick(!base.sorted);
+      let alone = pick(!base.sorted);
+      if (!alone || alone.short > 1e-6) {
+        const strict = { alone, endsEast, startsOk, consumerRuns };
+        endsEast = slot => slot.part.canExit;
+        startsOk = slot => slot.part.canEnter;
+        consumerRuns = splits(consumers, consumers.length, chainable, slot => slot.part.canEnter, () => true, (k, i, j) => machinesIn(i, j) ** 2);
+        alone = pick(!base.sorted);
+        if (strict.alone && !(alone && alone.short < strict.alone.short - 1e-6)) ({ alone, endsEast, startsOk, consumerRuns } = strict);
+      }
       if (base.sorted && !through) {
         const sorting = alone && alone.short < 1e-6 ? alone.option.map(g => ({ producers: g.producers, runs: [g.consumers] })) : fanned();
         if (sorting) {

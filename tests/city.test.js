@@ -540,3 +540,21 @@ test('Filling in an Annex: one machine more at least, and the cap', () => {
   assert.ok(tries(1).every(m => m >= 1 && Number.isInteger(m)), JSON.stringify(tries(1)));
   assert.deepEqual(tries(1, 0.5), [0.5]);
 });
+
+// Spare machines (ADR 0048): 8 Py washers making sand take 3600 soil a minute, 450 each, which
+// 30 soil extractors make exactly; on 5 belts of 6 extractors each brings 720, which runs of
+// washers taking 450 each never use up, so every design of the extractors starves. The try is
+// made again with 2 extractors more, and fits.
+test('Spare machines: a producer whose every design starves a little gets a few machines more', () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const site = siteOf({ area: { x: 0, y: 0, w: 100, h: 100 }, fixtures: [] }, 2);
+  const selections = { sand: { recipe: 'soil-washing', building: 'washer' }, soil: { recipe: 'soil', building: 'soil-extractor-mk01' }, water: { recipe: 'offshore-water', building: 'offshore-pump' } };
+  const plan = planner([{ item: 'sand', rate: 1200 }], shipped, logistics, { made: ['soil', 'water'], selections, site });
+  const { block, failure } = attempt(plan, 8, { site, budgetMs: 60000, unsorted: true });
+  assert.ok(block, failure?.message);
+  const count = item => block.subBlocks.find(sb => sb.item === item).count;
+  assert.equal(count('sand'), 8);
+  assert.ok(count('soil') > 30 && count('soil') <= 33, String(count('soil')));
+  assertValid(block, shipped, logistics);
+  assert.deepEqual(simulate(block).starvation, []);
+});

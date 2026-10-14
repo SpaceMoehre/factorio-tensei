@@ -45,6 +45,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Extensions (grow the built fluid Sub-Block before an Annex makes its own) | NaOH 2000 → 2300 | 0038 |
 | Gatherers; keep searching briefly for a loop fed here | NaOH 2500 → 3100 | 0040 |
 | Giving Way: first Goal gives up to a quarter of its machines to Fixtures, nothing built apart, rates scaled | Kicalk 114 → 120 machines (one try) | 0047 |
+| Placement in crowded rooms: integral image turns crowded spots away, spot checks memoized, deadline inside backtracking, retries capped | An Annex try 274 s → 47 s | 0049 |
+| Copies' lanes counted as built (every second copy reversed); belts into copies checked; runs may end at a reversed copy; consumers cut to what producer belts bring; spare producer machines; turning lanes shared; one-column stack retried in two | Silicon 675 → SILICON_AFTER | 0048 |
 
 ## What failed, was reverted, or must not be done
 
@@ -66,6 +68,15 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Fractional machines in Annexes** (0032). Each failing try cost 15–35 s for nothing.
 - **Caching designs between tries** (0032). Rates differ per try, so a cache would seldom hit.
 - **Aggregate starvation** (0001). Keep the per-edge, belt-order walk.
+- **A design-level check counting only one side** (0048).
+  - Copies were checked on their belts out, not their belts in.
+  - Fixing the out side alone promoted copies of two washers, whose second input belt cannot chain.
+  - When a check gets looser, check the other end of the same path too.
+- **Reserving shared turning lanes in compose** (0048).
+  - Narrower stacks in Placement, together with reservations that newly applied (one lane now within reach), hemmed in vrauks' links: "out of time routing the links".
+  - Each half alone passed. When two changes interact, bisect by halves in a scratch copy of `js/` before giving up on either.
+- **A Giving Way top taken from the cap alone** (0048). With no cap (plain Maximize), it tried 14 furnaces when 5 did not fit.
+- **Time limits checked only between candidates** (0049). One candidate's Placement in an Annex's crowded room took 5–8 s, and its retries raised the try's candidate count. Tries ran half an hour past a 1000 s budget. Any loop that can grow (backtracking, retries) needs the deadline inside it.
 - **A Foretelling from the box round the Sub-Blocks** (0024). In Layers that spans nearly the whole block, so Maximize climbs one machine a try: vrauks 31 → 50 at about 30 s each; kicalk took more than 50 min to reach 89.
 
 ## Rules every change keeps
@@ -121,3 +132,5 @@ These come from the ADRs' "Still:" sections.
   - Nooks are taken only whole (copies are not spread over several Nooks).
 - **Turned Sub-Blocks:** Fan-outs from producers are planned only for belts leaving east (0045).
 - **Pull together:** slides only; it never swaps Sub-Blocks (0045).
+- **Pipes:** one network per fluid, at most 6000 a second (routes.js `PIPE_CAPACITY`). A chain whose water passes that, like Py silicon above about 5.2 furnaces, can't fit one layout. Pipes split by consumer would help (0048).
+- **Search order:** a design is paired with column counts only one change at a time, so a stack needing two columns *and* another Sub-Block's other design is seldom tried (0048).

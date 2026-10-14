@@ -21,6 +21,27 @@ The setup decides the target. The user's complaint (for example "not maxed, put 
 | `node $SKILL/scripts/draw.mjs <best.json> <out.png> [scale]` | Draws the layout as a PNG: Fixtures grey, each Sub-Block's machines a colour labelled `index item ×count`, belts yellow, pipes blue, splitters red, the Buffer outlined red. Then Read the PNG to look at it. |
 | `node $SKILL/scripts/compare.mjs a/summary.json b/summary.json …` | A table of those summaries side by side. |
 
+The probes below go one level under a failed try. Each takes the same setup file, `ROOT=` for another repo, and `[spare JSON]` (for example `'{"soil":240}'`) to give a step spare output.
+
+| Probe | Answers |
+|---|---|
+| `node $SKILL/scripts/designs.mjs <setup> <n> <item> [count] [spare]` | A Sub-Block's design candidates: core or copies, size, trouble (Starvation), each part's machines and drops by lane, and whether copies alternate with a reverse. Use it for "every design starves" or "no design without starvation fits". |
+| `node $SKILL/scripts/trace.mjs <setup> <n> [secs] [spare]` | One try's search: every candidate's failure counted with its design choice and columns, and each layout found with its Starvation. `PERFECT=0` also counts starving layouts. |
+| `node $SKILL/scripts/place.mjs <setup> <n> [spare] [choice] [columns]` | Placement alone: each Sub-Block's stack size, and whether one-by-one placement and Layers find room. Use it for "no room for X" or "fit no columns". |
+
+**A try that runs long or never returns:**
+
+```
+run.mjs … --profile-slow 300 [--profile-for 60]
+```
+
+The run goes under V8's tick profiler. Once a try has had no event for 300 s, the next 60 s are written to `<out>/slow-<k>.txt`: the functions taking the time, and the bottom-up callers.
+
+- The inspector can't be used for this: the main thread never yields inside a try.
+- Read the profile before guessing. ADR 0049's hung Annex tries were all in Placement's backtracking, not routing.
+
+The search in a Maximize try (`perfect`) passes over candidates silently when a chosen design or the prepared layout starves (search.js `if (!ready)`, `ready.least`). To see those, add a temporary env-gated `console.log` there, and for which route starves, in compose.js `leastStarvation`. Keep a clean copy of the file in `$S` and restore it after; never commit the debug lines.
+
 `attempt --n N [--giving] [--unsorted]` runs one Maximize try at N of the first Goal's machines. It prints the failure message, which names the Sub-Blocks or links that failed. This is the main diagnostic.
 
 Reference setups in `$SKILL/setups/` are for regressions:
@@ -146,6 +167,8 @@ Tell the user, tersely:
 
 ## Pitfalls
 
+- **`pkill -f <pattern>` kills your own shell** when the pattern appears in that shell's command line, for example a path in the same command. Find the PIDs with `pgrep -f` (or `ps -eo pid,etime,pcpu,comm`, never with arguments) and kill those PIDs.
+- **A try's failure message names only the last cause.** A Count often fails for several reasons in turn: designs starve, then belts don't chain, then the prepared layout starves, then placement. Fix one, then run the same try again. Expect three or four rounds before the try fits, each a cause and a bullet in the ADR.
 - **Maximize on Fixture-heavy blocks can run for an hour.**
   - Use `--total` for quick looks, and attempts for diagnosis.
   - Keep the full run for the A/B.

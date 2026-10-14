@@ -1,4 +1,4 @@
-import { stacked } from './compose.js';
+import { turnLanes } from './compose.js';
 import { RoutingError } from './router.js';
 import { VEC, E } from './grid.js';
 import { SQUARE } from './score.js';
@@ -14,7 +14,8 @@ import { SQUARE } from './score.js';
 // params: { corridor, gap, stack, order: { [step]: number } (nudges the placing order),
 //           lift: { [step]: number } (nudges a Sub-Block up or down), weight (link length cost),
 //           spot: { [step]: number } (the broken-out machines' next best spots: 1, 2, …),
-//           solid (no Fixture on a machine), stay (no slide west: where it stood) }
+//           solid (no Fixture on a machine), stay (no slide west: where it stood), until (true
+//           once the try is out of time: no more Backtracking) }
 // Returns, besides, `holes` (the machines Fixtures stand on: instance index → machine numbers)
 // and `at` (where each Sub-Block's box stood, as `at` takes it).
 // In a City Block (ctx.site) everything stands inside its Buffer, placed from its east edge (the
@@ -110,6 +111,8 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const placed = new Map();
   const tileSets = new Map();
   const partings = new Map();
+  // Where each Sub-Block may stand (lands), by spot: Backtracking asks again for the same spots.
+  const landed = new Map();
   // Sub-Blocks placed parted round the Fixtures (Parting), while placing one by one: their shape.
   const partedNow = new Map();
   const shapeOf = i => partedNow.get(i)?.block ?? blocks[i];
@@ -131,6 +134,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     if (p.parted) {
       Object.assign(blocks[i], { at: p.parted.at, h: p.parted.h, nooks: [], need: null, near: undefined });
       tileSets.delete(i);
+      landed.clear();
     }
     placed.set(i, { x: p.x, y: p.y });
   }
@@ -269,20 +273,26 @@ export function placeBlocks(ctx, prepared, params = {}) {
       if (placeFrom(k + 1)) return true;
       leave();
     } else stuck = i;
-    if (!site) return false;
+    // (Out of the try's time, `until`: no more Backtracking, ADR 0049.)
+    if (!site || params.until?.()) return false;
     for (const spot of others()) {
-      if (backtracks++ >= BACKTRACKS) return false;
+      if (backtracks++ >= BACKTRACKS || params.until?.()) return false;
       stand(spot);
       if (placeFrom(k + 1)) return true;
       leave();
     }
     return false;
   };
-  if (!columns && !placeFrom(0)) throw new RoutingError(`no room for ${plan[stuck ?? order[0]].item} in the city block`);
+  if (!columns && !placeFrom(0)) {
+    const e = new RoutingError(`no room for ${plan[stuck ?? order[0]].item} in the city block`);
+    e.unplaced = stuck ?? order[0];
+    throw e;
+  }
   // Stacks placed parted stand with their copies where they part.
   for (const [i, p] of partedNow) {
     Object.assign(blocks[i], { at: p.at, h: p.h, nooks: [], need: null, near: undefined });
     tileSets.delete(i);
+    landed.clear();
   }
   partedNow.clear();
   // In a City Block, the whole block slides west as far as it fits: the Side Inputs, its many
@@ -366,7 +376,12 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // tiles but its machines and their inserters, and on no more of those than its budget. The
   // machines Fixtures stand on (`index:machine`), else null.
   function lands(i, box) {
-    return site.landing(blockTiles(i), box, budget(i));
+    if (!landed.has(i)) landed.set(i, new Map());
+    const mine = landed.get(i);
+    const key = ((box.x + 512) * 1024 + box.y + 512) * 1048576 + box.w * 1024 + box.h;
+    let out = mine.get(key);
+    if (out === undefined) mine.set(key, (out = site.landing(blockTiles(i), box, budget(i))));
+    return out;
   }
 
   // Parting (in a City Block): where a Fixture would stand on the belts of a stack of copies
@@ -645,16 +660,16 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
 // A Sub-Block's copies stacked (Placement): each copy's offset inside its box (`at`, by instance
 // index), the box's size, and its shape for the Nooks it leaves (nooksOf). Copies touch unless
 // their facing edges would join what must stay apart (`stack`: rows between them at least).
-// Beside a stack of copies: a column against it, a lane (two columns) for each belt snaking
-// through them (it turns on both sides), and room for a trunk joining each fluid's pipes (inputs
+// Beside a stack of copies: a column against it, a lane (two columns) for the belts snaking
+// through them to turn in (on both sides; turnLanes: shared by belts turning beside other
+// copies), and room for a trunk joining each fluid's pipes (inputs
 // west, outputs east). Many copies stand in several columns (compose.js decides which), so the
 // Sub-Block comes out about square: the odd columns bottom to top, hanging from the bottom.
 // Copies of later columns get their own belts through gaps left between the copies of earlier
 // ones. `pad`: tiles round it on every side.
 export function stackOf(prepared, i, { stack = 0, pad = 0 } = {}) {
   const { instances, routes } = prepared;
-  const turns = routes.filter(r => r.kind === 'belt' && r.slots.some((slot, k) => k > 0
-    && slot.inst.step === i && stacked(r.slots[k - 1].inst, slot.inst))).length;
+  const turns = turnLanes(routes, i);
   const trunks = side => routes.filter(r => r.kind === 'pipe' && r.stubs.filter(st => st.inst.step === i && !st.inst.detached && st.side === side).length > 1).length;
   const solo = routes.filter(r => r.kind === 'belt' && r.slots.length === 1 && r.slots[0].inst.step === i).length;
   const mine = instances.filter(inst => inst.step === i && !inst.detached);
@@ -879,6 +894,40 @@ function makeRules(site) {
       }
     }
   });
+  // Every tile a Fixture stands on, summed over rectangles (an integral image): how many lie in a
+  // box, at once. An Annex's room holds every belt and machine built before it, thousands of
+  // Fixtures, and a box over more of them than it has tiles they may stand on is turned away
+  // without looking at them one by one (ADR 0049).
+  const gx = inner.x - 2, gy = inner.y - 2, gw = inner.w + 4, gh = inner.h + 4;
+  const sum = new Int32Array((gw + 1) * (gh + 1));
+  {
+    const on = new Uint8Array(gw * gh);
+    for (const f of fixtures) {
+      for (let x = Math.max(f.x, gx); x < Math.min(f.x + f.w, gx + gw); x++) for (let y = Math.max(f.y, gy); y < Math.min(f.y + f.h, gy + gh); y++) on[(y - gy) * gw + (x - gx)] = 1;
+    }
+    for (let y = 0; y < gh; y++) for (let x = 0; x < gw; x++) sum[(y + 1) * (gw + 1) + x + 1] = on[y * gw + x] + sum[y * (gw + 1) + x + 1] + sum[(y + 1) * (gw + 1) + x] - sum[y * (gw + 1) + x];
+  }
+  const fixtureTiles = box => {
+    const x0 = Math.max(0, box.x - gx), y0 = Math.max(0, box.y - gy), x1 = Math.min(gw, box.x + box.w - gx), y1 = Math.min(gh, box.y + box.h - gy);
+    if (x1 <= x0 || y1 <= y0) return 0;
+    return sum[y1 * (gw + 1) + x1] - sum[y0 * (gw + 1) + x1] - sum[y1 * (gw + 1) + x0] + sum[y0 * (gw + 1) + x0];
+  };
+  // The tiles of a box no Fixture may stand on that lie inside it (by the box's size).
+  const hardInside = new WeakMap();
+  const insideOf = (hard, w, h) => {
+    if (!hardInside.has(hard)) hardInside.set(hard, new Map());
+    const by = hardInside.get(hard);
+    const k = w * 65536 + h;
+    if (!by.has(k)) {
+      let n = 0;
+      for (const t of hard) {
+        const x = Math.floor(t / 1048576) - 4, y = (t % 1048576) - 4;
+        if (x >= 0 && y >= 0 && x < w && y < h) n++;
+      }
+      by.set(k, n);
+    }
+    return by.get(k);
+  };
   const fits = (tiles, box) => {
     if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return false;
     const seen = new Set();
@@ -900,6 +949,7 @@ function makeRules(site) {
   // Block only.
   const landing = ({ hard, soft }, box, most) => {
     if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return null;
+    if (fixtureTiles(box) > box.w * box.h - insideOf(hard, box.w, box.h)) return null;
     const hit = new Set();
     const seen = new Set();
     for (let cx = Math.floor((box.x - 1) / CELL); cx <= Math.floor((box.x + box.w) / CELL); cx++) {

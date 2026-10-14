@@ -1,6 +1,6 @@
 import { context, designStep, designOf, revive, random, breakoutDesign, detachCopy, leaveOut, grownDesign } from './design.js';
 import { LayoutError } from './layout/core.js';
-import { prepare, compose, leastStarvation, RoutingError, PowerError } from './layout/compose.js';
+import { prepare, compose, starvedBy, RoutingError, PowerError } from './layout/compose.js';
 import { placeBlocks, roomFor } from './layout/place.js';
 import { finishBlock, given } from './layout/compact.js';
 import { validateBlock } from './layout/validity.js';
@@ -33,7 +33,10 @@ import { editOf } from './layout/edit.js';
 //            giving (an item: its Sub-Block gives up the machines Fixtures stand on, none built
 //            elsewhere, and the layout runs at the rate of those left: Giving Way) }
 // Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }; returns { tried,
-// failure, timedOut (it stopped for want of time, not of candidates) }.
+// failure, timedOut (it stopped for want of time, not of candidates), short (where a Sub-Block's
+// every design starves: { item, rate (what its least starving design starves), each (what one of
+// its machines makes), count }; where no layout was found, the same for the Sub-Block whose belts
+// alone starved the layout passed over that starved least) }.
 export function* search(entries, catalog, logistics, options = {}) {
   const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null, strategy = 'search' } = options;
   const spread = strategy === 'spread';
@@ -48,6 +51,10 @@ export function* search(entries, catalog, logistics, options = {}) {
   // Starvation, once a Sub-Block's least starving design starves, no layout can do without, and
   // the search ends there.
   const order = [...ctx.flows.order];
+  // (What a Sub-Block's designs starve at least, and what one of its machines makes: Maximize may
+  // try again with a few spare machines of it, ADR 0048.)
+  let nearest = null;
+  const shortOf = (i, least) => ({ item: ctx.plan[i].item, rate: least, each: ctx.plan[i].rate / ctx.plan[i].count, count: ctx.plan[i].count });
   // (Looking for a layout without Starvation, a Sub-Block's designs are routed past one that
   // starves however long that takes: the search ends at the first that does.)
   const designing = perfect ? Infinity : deadline;
@@ -59,7 +66,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     const checkRng = random(seed + 2);
     for (const i of order.filter(i => ctx.routes.some(r => r.source === i && r.sink === 'side-output')).reverse()) {
       const least = designOf(designStep(ctx, i, checkRng, { now, deadline: designing, draws: 0 })[0])?.trouble ?? 0;
-      if (least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
+      if (least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) };
     }
   }
   const designs = [];
@@ -68,7 +75,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     // elsewhere and handed over): built again only where the search tries one not built yet.
     designs[i] = options.designs?.[i] ? revive(ctx, i, options.designs[i], rng) : designStep(ctx, i, rng, { now, deadline: designing });
     const least = designOf(designs[i][0])?.trouble ?? 0;
-    if (perfect && least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true };
+    if (perfect && least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) };
     // In a City Block, a Sub-Block none of whose designs without Starvation fits inside it at all
     // leaves no layout either: its designs in turn (routed if they must be: not one whose core
     // alone is too big, or that starves before it is routed) until one does.
@@ -207,6 +214,10 @@ export function* search(entries, catalog, logistics, options = {}) {
   // Each new best is refined first: every Sub-Block slid a few tiles each way, and Breakouts.
   let refining = [];
   let timedOut = false;
+  // Candidates queued again by failing ones (made room round, kept off the Fixtures, in two
+  // columns): each tried first and, up to RETRIES of them, not counted against `patience` (in
+  // an Annex's crowded room every candidate fails and queues more, ADR 0049).
+  let retries = 0;
   while (tried < maxCandidates && (tried === 0 || !(timedOut = now() >= until))) {
     // In a City Block, a search whose structured candidates found no room for a layout (or,
     // looking for one without Starvation, none of those) seldom finds one later.
@@ -237,7 +248,13 @@ export function* search(entries, catalog, logistics, options = {}) {
     if (!ready) continue;
     // A layout whose belts and inserters starve more than the best's cannot beat it, however it
     // is placed.
-    ready.least ??= Math.round(leastStarvation(ctx, ready) * 1000) / 1000;
+    if (ready.least === undefined) {
+      const starved = starvedBy(ctx, ready);
+      ready.least = Math.round(starved.total * 1000) / 1000;
+      // (The least a layout passed over starves, where only one Sub-Block's belts fall short:
+      // Maximize may try again with a few spare machines of it.)
+      if (perfect && ready.least > 0 && starved.producer !== null && !(nearest && nearest.rate <= ready.least)) nearest = shortOf(starved.producer, ready.least);
+    }
     if ((best && ready.least > best.score[0]) || (perfect && ready.least > 0)) continue;
     let block, placed, boxes, composed = null;
     // A link that found no room makes room (spacedOut): the same candidate is tried next with
@@ -249,7 +266,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       roomy = true;
       if (!roomier) return;
       queue.unshift(roomier);
-      structured++;
+      if (retries++ < RETRIES) structured++;
     };
     // Fixtures standing on machines leave them out (Making Way); where that layout fails, the same
     // candidate is tried next with every Fixture kept off its machines (`solid`).
@@ -257,11 +274,20 @@ export function* search(entries, catalog, logistics, options = {}) {
     const solidly = () => {
       if (!way || candidate.solid) return;
       queue.unshift({ ...candidate, solid: true });
-      structured++;
+      if (retries++ < RETRIES) structured++;
+    };
+    // A stack of copies in one column that finds no room: the same candidate next with it in two
+    // (a column of copies about as tall as the City Block stands nowhere among its Fixtures; the
+    // candidates in columns come late, ADR 0048).
+    const inTwo = i => {
+      const copies = ready.instances.filter(inst => inst.step === i && !inst.detached).length;
+      if (candidate.columns[i] !== null || (ready.columns[i] ?? 1) !== 1 || copies < 4) return;
+      queue.unshift({ ...candidate, columns: candidate.columns.map((v, j) => (j === i ? 2 : v)) });
+      if (retries++ < RETRIES) structured++;
     };
     let work = ready, used = null, positions = null;
     try {
-      positions = placeBlocks(ctx, ready, candidate);
+      positions = placeBlocks(ctx, ready, perfect ? { ...candidate, until: () => now() > until } : candidate);
       if (positions.holes?.size) {
         way = true;
         const made = makeWay(candidate, k, ready, positions);
@@ -336,6 +362,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       // No pole for a machine there: room round the Sub-Blocks about it.
       if (e instanceof PowerError && e.at && composed) makeRoom(near(composed.subBlocks, e.at));
       else if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
+      else if (e instanceof RoutingError && e.unplaced !== undefined) inTwo(e.unplaced);
       solidly();
       failure = e;
       trace(candidate, e);
@@ -374,7 +401,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       yield { block, score, tried, placed };
     }
   }
-  return { tried, failure, timedOut };
+  return { tried, failure, timedOut, short: best ? null : nearest };
 
   // Breakout trials as candidates, each remembered with what it tries.
   function register(list) {
@@ -386,6 +413,8 @@ export function* search(entries, catalog, logistics, options = {}) {
 // Room for a link that found none: the Sub-Blocks it runs between (`steps`; every one when none
 // is known) get ROOM tiles more on every side, then twice as many and twice again; past that
 // every corridor and gap widens by ROOM as well, each time. Null once spaced out SPACING times.
+// How many candidates queued again by failing ones a search tries beyond its patience.
+const RETRIES = 24;
 const ROOM = 4;
 const SPACING = 6;
 export function spacedOut(candidate, steps) {

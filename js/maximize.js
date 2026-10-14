@@ -133,11 +133,15 @@ export function* maximize(goals, catalog, logistics, options) {
   // copies stand closer, a Fixture on a machine rather than between them, and more may stand in
   // all. Each layout counts the machines it has, kept where they are more than stood before. From
   // the most that fit, FILL machines more, again while they fit; half as many after each that does
-  // not. (No more of them than the cap, nor tried above a quarter more.)
+  // not. (No more of them than the cap, nor tried above a quarter more; nor so many that the
+  // three quarters kept would be as many as a try that did not fit: 14 and 9 tried after 5 did
+  // not, the best 4, took a fifth of a Maximize, ADR 0048.)
   let giving = false;
   const lead = block => block.subBlocks.find(sb => sb.item === goals[0].item)?.count ?? 0;
   if (best && bestN !== null && options.giving !== false && crowded(options.site)) {
     let n = Math.ceil(bestN), more = FILL, high = Math.floor(most + most / 4);
+    const missed = misses.map(m => m.machines).filter(m => m > bestN);
+    if (missed.length) high = Math.min(high, Math.floor(Math.min(...missed) * 4 / 3));
     for (; more >= 1; more = Math.floor(more / 2)) {
       while (n + more < high) {
         const list = plan.goalsFor(n + more);
@@ -286,18 +290,39 @@ export function extensionOf(annex, goals, made = []) {
 // fits the City Block: a Count's designs come and go like its Starvation), not of room, or the
 // try ran out of time (not for want of room either); `budgetMs` is the time its candidates get once
 // its Sub-Blocks are designed;
-// `designed` lists each Sub-Block's item, Count and best design's area.
+// `designed` lists each Sub-Block's item, Count and best design's area. Where a Sub-Block other
+// than the first Goal's starves by a few of its machines' worth, the try is made again with that
+// many spare machines of it (ADR 0048).
 // precheck: the Side Output's Sub-Blocks are checked for Starvation first (worth it above the
 // highest n whose Sub-Blocks were all designed without). unsorted: no byproduct sorted out after
 // its producers (search.js); routing: how long its candidates get once designed (budgetMs);
 // sorting: on past layouts whose byproducts ride on, to the first that sorts them all out (else
 // the best of them).
 /** @param {any} plan @param {number} n @param {any} options */
-export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false }) {
+export function attempt(plan, n, options) {
   const list = plan.goalsFor(n);
+  const first = once(plan, list, {}, options);
+  // Spare machines (ADR 0048): where a Sub-Block's every design starves, or its belts alone starve
+  // the layouts passed over, by no more than a few of its machines make (its belts each bring less
+  // than the runs of consumers they feed take: 30 soil extractors on 5 belts of 720 a minute for
+  // washers taking 450 each), the try again with that many more of them, their belts bringing
+  // more than they are wanted for.
+  const short = first.short;
+  if (!short || short.item === list[0].item) return first;
+  const machines = Math.ceil(short.rate / short.each - 1e-9);
+  if (machines > Math.max(SPARE, Math.ceil(short.count / 10))) return first;
+  const again = once(plan, list, { [short.item]: machines * short.each }, options);
+  return again.block ? again : first;
+}
+
+// The fewest spare machines a try may add to a Sub-Block (else a tenth of its Count).
+const SPARE = 2;
+
+// One try at the Goals `list` (attempt), with `spare` more of some steps' items.
+function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false }) {
   let designed = null, entries;
   try {
-    ({ entries } = plan.chainOf(list));
+    ({ entries } = plan.chainOf(list, spare));
   } catch (e) {
     return { block: null, tried: 0, designed, starves: true, failure: e };
   }
@@ -316,7 +341,7 @@ export function attempt(plan, n, { site, seed = 1, budgetMs = 10000, maxCandidat
       if (step.done) {
         if (kept) return { block: kept.block, score: kept.score, placed: kept.placed, tried: step.value.tried, designed, starves: false, failure: null };
         const failure = step.value.failure ?? new Error(`no layout without starvation fits ${list[0].rate}/min`);
-        return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), failure };
+        return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), failure, short: step.value.short ?? null };
       }
       if (sorting && step.value.score[0] === 0 && step.value.score[2] > 0) kept = step.value;
       else if (!sorting && step.value.score[0] === 0 && step.value.score[1] > 0) {
@@ -358,10 +383,13 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
   // In an Annex's City Block, a fluid made here that a pipe built before it has to spare comes
   // from there instead, while that has enough (ADR 0032).
   const draws = Object.entries(site?.draws ?? {}).filter(([fluid]) => made.includes(fluid));
-  const chainOf = list => {
+  // (`spare`: more of some steps' items than they take, beside `extra`: spare machines.)
+  const chainOf = (list, spare = {}) => {
     const drawn = new Set(draws.map(([fluid]) => fluid));
+    const more = { ...extra };
+    for (const [item, rate] of Object.entries(spare)) more[item] = (more[item] ?? 0) + rate;
     for (;;) {
-      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index, extra, belt: logistics.belt });
+      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index, extra: more, belt: logistics.belt });
       const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare + 1e-6);
       if (!short.length) return chain;
       for (const [fluid] of short) drawn.delete(fluid);

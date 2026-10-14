@@ -56,3 +56,24 @@ test('a run that another network\'s tunnel crosses along its line stays above gr
   assert.equal(block.entities.filter(e => e.kind === 'pipe').length, water.length);
   assert.deepEqual(separateNetworks(block, catalogOf(10), logistics), []);
 });
+
+// Two legs of one pipe routed side by side, rows 0 and 1 from x 0 to 8, joined at both ends:
+// the band thins to one row (ADR 0050), which then goes underground; the ends stay.
+test('pipes in a square of four thin out to a line, which then goes underground', () => {
+  const pieces = [...[0, 1, 2, 3, 4, 5, 6, 7, 8].map(x => pipe(0, x, 0)), ...[0, 1, 2, 3, 4, 5, 6, 7, 8].map(x => pipe(0, x, 1))];
+  const block = buryPipes(blockOf(pieces), catalogOf(10), logistics);
+  const at = new Set(block.entities.map(e => `${e.x},${e.y}`));
+  for (const e of block.entities) assert.ok(!(at.has(`${e.x + 1},${e.y}`) && at.has(`${e.x},${e.y + 1}`) && at.has(`${e.x + 1},${e.y + 1}`)), `a square at ${e.x},${e.y}`);
+  assert.ok(block.entities.some(e => e.kind === 'pipe-to-ground'), JSON.stringify(shape(block)));
+  assert.ok(at.has('0,0') && at.has('8,1'), 'the route\'s ends stay');
+  assert.deepEqual(pipeNetwork(block, block.routes[0], catalogOf(10), logistics, []), []);
+});
+
+// A square whose pipe a machine's connection meets keeps that pipe.
+test('a pipe a machine connects to stays, though it stands in a square of four', () => {
+  const pieces = [pipe(0, 0, 0), pipe(0, 1, 0), pipe(0, 0, 1), pipe(0, 1, 1)];
+  const tank = { name: 'tank', kind: 'building', recipe: 'x', x: 1, y: 2, w: 1, h: 1, direction: 0 };
+  const block = buryPipes(blockOf(pieces, tank), catalogOf(10), logistics);
+  assert.ok(block.entities.some(e => e.kind === 'pipe' && e.x === 1 && e.y === 1));
+  assert.deepEqual(pipeNetwork(block, block.routes[0], catalogOf(10), logistics, []), []);
+});
