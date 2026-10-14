@@ -86,7 +86,7 @@ function undergroundsOnLine(entities, name, horizontal, line) {
 
 // Where an inserter picks up and drops, as tiles: custom vectors when it has them, otherwise its
 // prototype's vectors turned to face its direction (the side it picks up from).
-function inserterTiles(ins, catalog) {
+export function inserterTiles(ins, catalog) {
   const cx = ins.x + 0.5, cy = ins.y + 0.5;
   const tile = v => key(Math.floor(cx + v.x), Math.floor(cy + v.y));
   if (ins.vectors) return { pickup: tile(ins.vectors.pickup), drop: tile(ins.vectors.drop) };

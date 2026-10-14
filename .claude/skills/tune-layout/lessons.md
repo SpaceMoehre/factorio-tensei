@@ -47,6 +47,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Giving Way: first Goal gives up to a quarter of its machines to Fixtures, nothing built apart, rates scaled | Kicalk 114 → 120 machines (one try) | 0047 |
 | Placement in crowded rooms: integral image turns crowded spots away, spot checks memoized, deadline inside backtracking, retries capped | An Annex try 274 s → 47 s | 0049 |
 | Copies' lanes counted as built (every second copy reversed); belts into copies checked; runs may end at a reversed copy; consumers cut to what producer belts bring; spare producer machines; turning lanes shared; one-column stack retried in two | Silicon first layout 3.6 → 4.9 furnaces; 675 → 712.5–795/min (same host: 712.5 vs 675, 894 s vs 2620 s) | 0048 |
+| Belts straightened after burying (stretches between anchors routed again on the finished block); Fan-out splitter spots ranked by their belt sent off | Aramid 24: 3 loops → 0, 2710 → 2663 entities, 49 → 26 s | 0051 |
 
 ## What failed, was reverted, or must not be done
 
@@ -78,6 +79,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A Giving Way top taken from the cap alone** (0048). With no cap (plain Maximize), it tried 14 furnaces when 5 did not fit.
 - **Time limits checked only between candidates** (0049). One candidate's Placement in an Annex's crowded room took 5–8 s, and its retries raised the try's candidate count. Tries ran half an hour past a 1000 s budget. Any loop that can grow (backtracking, retries) needs the deadline inside it.
 - **A Foretelling from the box round the Sub-Blocks** (0024). In Layers that spans nearly the whole block, so Maximize climbs one machine a try: vrauks 31 → 50 at about 30 s each; kicalk took more than 50 min to reach 89.
+
+- **A post-pass anchored only on belt pieces** (0051). An inserter picks from a tunnel's end too: anchoring only plain belts let straightening move a copy's internal path and broke "no inserter moves route …". Use validity.js `inserterTiles` for what an inserter reaches.
 
 ## Rules every change keeps
 

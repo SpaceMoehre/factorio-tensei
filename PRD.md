@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v39: Belts take the short way (implemented)
+Where v39 differs from v38, v39 wins.
+- **Belts straightened:** once pipes are buried, each belt's stretches between its splitters and the tiles inserters reach are routed again, and kept where they are shorter (tiles, turns, tunnels). A belt no longer loops round pipes that went underground (ADR 0051).
+- **Fan-out splitters:** the first few spots for each entry are tried in the order of the belt they send off, so a splitter whose side faces a Fixture no longer comes first.
+
 ## v38: Pipes in squares thin out (implemented)
 Where v38 differs from v37, v38 wins.
 - **Pipe bands:** a plain pipe in a square of four goes before burying, where everything beside it still joins without it and no machine connects to it. Bands two wide thin to a line, which can then go underground (ADR 0050).

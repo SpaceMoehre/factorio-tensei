@@ -15,6 +15,20 @@ const EXPANSIONS_PER_STEP = 100;
 // How many states a pipe tree explores looking for a pipe of its network to join.
 const JOIN_STATES = 4000;
 
+// What a leg of pieces costs, as the router counts it: a tile each, a turn (from `heading`, then
+// each piece's travel) TURN_COST more, a tunnel its length and TUNNEL_COST (an underground's
+// input followed by its output).
+export function legCost(pieces, heading) {
+  let c = 0;
+  pieces.forEach((p, i) => {
+    const q = pieces[i + 1];
+    if (p.underground === 'input' && q) c += Math.abs(q.x - p.x) + Math.abs(q.y - p.y) + 1 + TUNNEL_COST;
+    else if (p.underground !== 'output') c += 1 + (p.travel === heading ? 0 : TURN_COST);
+    heading = p.travel;
+  });
+  return c;
+}
+
 export class RoutingError extends Error {
   /** @type {number[] | undefined} the Sub-Blocks a link that found no room runs between */
   steps;

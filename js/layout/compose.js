@@ -1,6 +1,6 @@
 import { Grid, N, E, S, W, VEC, key, turnLeft, turnRight, opposite } from './grid.js';
 import { turnSide } from './turn.js';
-import { routeLink, routePipe, RoutingError } from './router.js';
+import { routeLink, routePipe, RoutingError, legCost } from './router.js';
 import { PowerError } from './poles.js';
 import { trim, maxFlow } from './module.js';
 import { pathFlow } from './flow.js';
@@ -19,6 +19,9 @@ const FAN_TRIES = 4;
 const FAN_EFFORT = 3000, FAN_EFFORT_PER_STEP = 60;
 // Across Sub-Blocks, a splitter may also stand up to this many rows above or below the entry.
 const FAN_ROWS = 4;
+// A Fan-out's splitter spots: so many of the first are tried in the order of their belt sent off
+// (its tiles, turns and tunnels to the entry), the rest after them as they come.
+const FAN_RANKED = 8;
 // A Fan-out's run holds at most this many belts (across Sub-Blocks, in a `short` layout, so many).
 const FAN_RUN = 16, FAN_SHORT = 3;
 
@@ -943,7 +946,30 @@ export function compose(ctx, prepared, positions, layout) {
           && (!spot.off || open(spot.off.x, spot.off.y, member.id)) && open(spot.on.x, spot.on.y, on.id))
           .flatMap(spot => [0, 1].filter(lane => open(...spot.lanes[lane].at, trunk.id) && (!join || open(...spot.lanes[1 - lane].at, member.id)))
             .map(lane => ({ ...spot, lane })));
-        for (const spot of usable) {
+        // The spots nearest the entry first, but where one's belt sent off has to loop round to
+        // it (its side against a Fixture, or a belt in the way) and another's goes straight in,
+        // the latter (ADR 0051).
+        const offCost = spot => {
+          if (!spot.off) return 0;
+          const before = grid.snapshot(), count = held.length;
+          let cost = Infinity;
+          try {
+            const line = spot.lanes[spot.lane], other = spot.lanes[1 - spot.lane];
+            reserve(...line.at, trunk.id);
+            if (join) reserve(...other.at, member.id);
+            reserve(spot.off.x, spot.off.y, member.id);
+            reserve(spot.on.x, spot.on.y, on.id);
+            grid.place({ name: splitterName, kind: 'splitter', ...spot.splitter, travel: spot.splitter.direction });
+            cost = legCost(routeLink(grid, { id: member.id, starts: [spot.off], goal: entry, most: FAN_EFFORT }, belts), spot.off.a);
+          } catch (e) {
+            if (!(e instanceof RoutingError)) throw e;
+          }
+          undo(before, count);
+          return cost;
+        };
+        const first = usable.slice(0, FAN_RANKED).map((spot, k) => ({ spot, k, cost: offCost(spot) }))
+          .sort((a, b) => a.cost - b.cost || a.k - b.k).map(e => e.spot);
+        for (const spot of [...first, ...usable.slice(FAN_RANKED)]) {
           if (budget-- <= 0 || (source?.pool && source.pool.left-- <= 0)) break;
           const before = grid.snapshot(), count = held.length, length = pieces.get(trunk.id).length;
           try {

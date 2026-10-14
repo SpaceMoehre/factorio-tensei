@@ -20,6 +20,8 @@ The setup decides the target. The user's complaint (for example "not maxed, put 
 | `node $SKILL/scripts/run.mjs <setup.json> [--mode auto\|maximize\|build\|attempt] [--n N] [--budget S] [--total S] [--root DIR] [--out DIR]` | Runs the setup as the page does (auto). Logs each event and writes `log.txt`, `best.json` and `summary.json`: rate, goal machines, Sub-Blocks, valid, starving, byproducts riding, room empty, machine share, tries with ✓/✗ and seconds. |
 | `node $SKILL/scripts/draw.mjs <best.json> <out.png> [scale]` | Draws the layout as a PNG: Fixtures grey, each Sub-Block's machines a colour labelled `index item ×count`, belts yellow, pipes blue, splitters red, the Buffer outlined red. Then Read the PNG to look at it. |
 | `node $SKILL/scripts/compare.mjs a/summary.json b/summary.json …` | A table of those summaries side by side. |
+| `node $SKILL/scripts/ascii.mjs <best.json> x0 y0 x1 y1` | A region as text, tile by tile: quicker than a PNG for one belt's shape. |
+| `node $SKILL/scripts/loops.mjs <best.json> [pieces]` | Belts turning 180° or more just after a splitter (ADR 0051). |
 
 The probes below go one level under a failed try. Each takes the same setup file, `ROOT=` for another repo, and `[spare JSON]` (for example `'{"soil":240}'`) to give a step spare output.
 
