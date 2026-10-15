@@ -316,23 +316,53 @@
   }
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
 
-  /* Saved blueprints */
-  #library-filter { width: 100%; margin-bottom: 6px; }
-  .folder { margin-top: 10px; }
-  .folder-head { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
-  .folder-head input { flex: 1; min-width: 0; font-weight: 600; background: transparent; border-color: transparent; box-shadow: none; padding: 2px 6px; }
-  .folder-head input:hover, .folder-head input:focus { border-color: var(--border); background: var(--inset); }
-  .folder-head .count { color: var(--faint); white-space: nowrap; }
-  ul.kept { list-style: none; padding: 0; margin: 4px 0 0; }
-  ul.kept li { padding: 6px 0; border-top: 1px solid var(--border-soft); min-width: 0; }
-  .kept-head { display: flex; gap: 8px; align-items: center; min-width: 0; }
-  .kept-head .sprite { width: 26px; height: 26px; }
-  .kept-head input { flex: 1; min-width: 0; padding: 3px 6px; }
-  .kept-note { margin: 2px 0 0 34px; color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .kept .row { margin: 4px 0 0 34px; flex-wrap: wrap; align-items: center; }
-  .kept .row button { padding: 2px 8px; font-size: 13px; }
-  .kept .row input { width: 120px; min-width: 0; flex: 1; padding: 2px 6px; font-size: 13px; }
-  .kept .row button.danger:hover:not(:disabled), .kept .row button.danger.sure { border-color: var(--danger); color: var(--danger); }
+
+  /* Saved blueprints: Save beside a blueprint, and the library dialog. */
+  .lib-open { flex: none; margin-left: auto; align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+  .badge { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; line-height: 1; }
+  .badge:empty { display: none; }
+  button.save.is-saved { color: var(--ok); border-color: rgba(145,196,122,.45); }
+  button.save.is-saved:hover:not(:disabled) { border-color: var(--ok); background: rgba(145,196,122,.08); }
+  .saved-note { margin: 6px 0 0; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+  .saved-note strong { color: var(--text); font-weight: 600; }
+  button.link { padding: 0; border: none; background: none; color: var(--accent); font-size: inherit; text-decoration: underline; text-decoration-color: transparent; text-underline-offset: 2px; }
+  button.link:hover:not(:disabled) { background: none; text-decoration-color: currentColor; }
+  .segmented { display: flex; gap: 4px; margin: 12px 16px 2px; padding: 3px; background: var(--inset); border: 1px solid var(--border-soft); border-radius: 8px; }
+  .segmented button { flex: 1; display: inline-flex; justify-content: center; align-items: center; gap: 6px; border-color: transparent; background: transparent; color: var(--muted); font-weight: 600; }
+  .segmented button[aria-selected=true] { background: var(--panel-2); border-color: var(--border); color: var(--text); box-shadow: 0 1px 0 rgba(255,255,255,.04) inset; }
+  #library .picker { position: relative; }
+  #library .picker-list { padding-top: 0; }
+  .folder-head { display: flex; gap: 4px; align-items: center; margin: 12px 0 2px; }
+  .folder-toggle { flex: 1; min-width: 0; display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-color: transparent; background: transparent; color: var(--muted); font-size: 13px; font-weight: 600; text-align: left; }
+  .folder-toggle .chev { display: inline-block; width: 10px; color: var(--faint); transition: transform .2s var(--ease); }
+  .folder-toggle[aria-expanded=true] .chev { transform: rotate(90deg); }
+  .folder-toggle .folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .folder-head input { flex: 1; min-width: 0; font-size: 13px; padding: 3px 7px; }
+  .folder-head .icon { color: var(--muted); border-color: transparent; background: transparent; font-size: 14px; }
+  ul.kept { list-style: none; padding: 0; margin: 0; }
+  .kept li { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 12px; align-items: center; padding: 8px; border: 1px solid transparent; border-radius: 8px; transition: background .2s var(--ease), border-color .2s var(--ease); }
+  .kept li:hover, .kept li:focus-within { background: var(--panel-2); }
+  .kept li.found { border-color: var(--accent); background: var(--accent-soft); }
+  .thumb { width: 64px; height: 64px; border-radius: 6px; border: 1px solid var(--border); background: var(--map-bg); }
+  .kept-text { min-width: 0; display: grid; gap: 2px; }
+  .kept-name { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kept-text input { font-weight: 600; padding: 2px 6px; }
+  .kept-meta { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kept-actions { display: flex; gap: 4px; align-items: center; }
+  .kept-actions .icon { font-size: 18px; line-height: 1; padding: 4px 8px; letter-spacing: 1px; }
+  .lib-empty { display: grid; justify-items: center; gap: 6px; padding: 32px 16px; text-align: center; color: var(--muted); }
+  .lib-empty .thumb { border-style: dashed; background: repeating-linear-gradient(45deg, #1d1c1b 0 6px, #222120 6px 12px); }
+  .lib-empty strong { color: var(--text); }
+  .lib-menu { width: 240px; z-index: 5; }
+  .menu-label { margin: 6px 8px 2px; color: var(--faint); font-size: 12px; font-weight: 600; }
+  .menu-sep { height: 1px; margin: 6px 4px; background: var(--border-soft); }
+  .menu-item.danger { color: var(--danger); }
+  .menu-item.danger.sure { background: rgba(224,112,95,.14); border-color: var(--danger); }
+  .menu-form { display: flex; gap: 4px; padding: 4px; }
+  .menu-form input { flex: 1; min-width: 0; }
+  .saved-note.error { color: var(--danger); }
+  #library-foot.error { color: var(--danger); }
+  @media (max-width: 520px) { .kept li { grid-template-columns: 48px minmax(0, 1fr) auto; gap: 10px; } .kept li .thumb { width: 48px; height: 48px; } }
 </style>
 </head>
 <body>
@@ -345,6 +375,7 @@
         <h1>Factory Block Planner</h1>
         <p>Pick what to make. Get a compact, belted, piped and powered block as a blueprint.</p>
       </div>
+      <button id="library-open" class="lib-open" type="button" title="Saved blueprints: city blocks and factory blocks kept in this browser">Saved <span class="badge" id="library-count">0</span></button>
     </header>
 
     <section class="card" aria-labelledby="goals-title">
@@ -411,9 +442,11 @@
         <div class="row">
           <button id="city-load" type="button">Load file…</button>
           <input type="file" id="city-file" accept=".txt,.json,text/plain,application/json" hidden>
+          <button id="city-pick" type="button" title="Pick a city block you saved">Saved…</button>
+          <button id="city-save" type="button" class="save" title="Keep this city block in Saved blueprints">Save</button>
           <button id="city-clear" type="button">Clear</button>
-          <button id="city-save" type="button" title="Keep this city block in Saved blueprints">Save</button>
         </div>
+        <p class="saved-note" id="city-saved" hidden></p>
         <p class="hint" id="city-info"></p>
         <div class="settings">
           <label for="city-w">Size</label>
@@ -458,7 +491,8 @@
           </div>
         </div>
         <textarea id="bp-string" readonly aria-label="Blueprint string"></textarea>
-        <div class="row"><button id="copy-string" type="button" class="primary">Copy blueprint string</button><button id="bp-save" type="button" title="Keep this factory block in Saved blueprints">Save</button></div>
+        <div class="row"><button id="copy-string" type="button" class="primary">Copy blueprint string</button><button id="bp-save" type="button" class="save" title="Keep this factory block in Saved blueprints">Save</button></div>
+        <p class="saved-note" id="bp-saved" hidden></p>
         <details>
           <summary>Blueprint JSON</summary>
           <textarea id="bp-json" readonly aria-label="Blueprint JSON" style="height:160px"></textarea>
@@ -483,19 +517,6 @@
         <p class="hint" id="clocks-wires" hidden>Circuit wires are None (Logistics): the inserters need wires to the network carrying the signals.</p>
       </section>
     </div>
-    <section class="card" aria-labelledby="library-title">
-      <div class="section-head">
-        <img class="art" data-icon="blueprint" alt="">
-        <div>
-          <h2 id="library-title">Saved blueprints</h2>
-          <p class="hint">City blocks and factory blocks you saved, kept in this browser. Rename them, give them a folder, use or copy them again.</p>
-        </div>
-      </div>
-      <input type="search" id="library-filter" placeholder="Search saved…" aria-label="Search saved blueprints" autocomplete="off" hidden>
-      <div id="library"></div>
-      <datalist id="library-folders"></datalist>
-      <p class="hint" id="library-note" aria-live="polite"></p>
-    </section>
   </aside>
   <main>
     <canvas id="map" aria-label="Factory block map"></canvas>
@@ -548,6 +569,24 @@
     </div>
     <div class="picker-list" id="chooser-list"></div>
     <div class="chooser-foot" id="chooser-foot"></div>
+  </div>
+</dialog>
+<dialog id="library" aria-labelledby="library-title">
+  <div class="picker">
+    <div class="picker-head">
+      <h3 id="library-title">Saved blueprints</h3>
+      <button type="button" class="icon" id="library-close" aria-label="Close">×</button>
+    </div>
+    <div class="segmented" id="library-tabs" role="tablist" aria-label="Kind">
+      <button type="button" role="tab" data-kind="city">City blocks <span class="badge"></span></button>
+      <button type="button" role="tab" data-kind="block">Factory blocks <span class="badge"></span></button>
+    </div>
+    <div class="row picker-tools">
+      <input type="search" id="library-filter" placeholder="Search names and folders…" aria-label="Search saved blueprints" autocomplete="off">
+    </div>
+    <div class="picker-list" id="library-list"></div>
+    <div class="chooser-foot" id="library-foot" aria-live="polite"></div>
+    <div class="map-menu lib-menu" id="library-menu" role="menu" hidden></div>
   </div>
 </dialog>
 <script type="module" src="js/app.js"></script>

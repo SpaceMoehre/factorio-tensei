@@ -183,9 +183,51 @@ $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('c
 $('copy-json').addEventListener('click', () => copy($('bp-json').value, $('copy-json')));
 $('city-save').addEventListener('click', saveCity);
 $('bp-save').addEventListener('click', saveBlock);
-$('library-filter').addEventListener('input', renderLibrary);
+$('city-pick').addEventListener('click', () => openLibrary('city'));
+$('library-open').addEventListener('click', () => openLibrary());
+$('library-close').addEventListener('click', () => $('library').close());
+$('library').addEventListener('click', e => { if (e.target === $('library')) $('library').close(); });
+$('library').addEventListener('close', () => {
+  closeShelfMenu();
+  shelf.editing = shelf.found = null;
+});
+$('library-filter').addEventListener('input', drawLibrary);
+$('library-list').addEventListener('scroll', () => closeShelfMenu(), { passive: true });
+for (const tab of $('library-tabs').children) {
+  tab.addEventListener('click', () => {
+    shelf.kind = tab.dataset.kind;
+    shelf.found = null;
+    drawLibrary();
+  });
+  tab.addEventListener('keydown', e => {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const other = /** @type {HTMLElement} */ (tab.nextElementSibling ?? tab.previousElementSibling);
+    other.click();
+    other.focus();
+  });
+}
+document.addEventListener('pointerdown', e => {
+  if ($('library-menu').hidden || $('library-menu').contains(/** @type {Node} */ (e.target))) return;
+  // (A press on the ⋯ button that opened it only closes it.)
+  shelf.reopen = /** @type {HTMLElement} */ (e.target).closest?.('.more') !== shelf.menuFor;
+  closeShelfMenu();
+}, true);
+$('library-menu').addEventListener('keydown', e => {
+  const items = /** @type {HTMLElement[]} */ ([...$('library-menu').querySelectorAll('.menu-item, input')]);
+  const at = items.indexOf(/** @type {HTMLElement} */ (document.activeElement));
+  if (e.key === 'Escape') {
+    // (Escape closes the menu, not the dialog under it.)
+    e.preventDefault();
+    closeShelfMenu(true);
+  } else if (e.key === 'Tab') closeShelfMenu();
+  else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && items.length) {
+    e.preventDefault();
+    items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+  }
+});
 library = readLibrary(storageOf());
-renderLibrary();
+tellLibrary();
+refreshLibrary();
 $('copy-setup').addEventListener('click', () => {
   $('setup').open = true;
   copy($('setup-json').value = setupText(), $('copy-setup'));
@@ -700,6 +742,7 @@ function renderCity() {
   $('city-info').textContent = info;
   $('calculate').textContent = state.city.on && state.city.maximize ? 'Find the highest rate' : 'Build factory block';
   renderForetell();
+  refreshLibrary();
 }
 
 // The City Block's Site (from its blueprint, else its size), or why there is none.
@@ -1164,6 +1207,7 @@ async function writeBlueprint(block) {
   if (mine !== encoding || best?.block !== block) return;
   $('bp-string').value = string;
   $('bp-json').value = JSON.stringify(JSON.parse(json), null, 2);
+  refreshLibrary();
 }
 
 // Every clock of the shown block (fastest first): its signal (a button opening the picker), what
@@ -1636,114 +1680,340 @@ function copySelected(text) {
   return copied;
 }
 
-// Saved blueprints (library.js): kept in this browser, apart from the setup.
+// Saved blueprints (library.js): kept in this browser, apart from the setup. The dialog shows one
+// kind at a time, by folder (those `closed` folded), with what is being renamed (`editing`: an
+// entry's name, or a folder) and the entry it was opened at (`found`).
+const shelf = { kind: 'city', closed: new Set(), editing: null, found: null, menuFor: null, reopen: true };
+// Each entry's picture, read once.
+const thumbs = new Map();
+
 function storageOf() {
   try { return localStorage; } catch { return null; }
 }
 
-
 // Keeps `entries` as the library; where storage refuses, the library stays as it was.
 function keep(entries) {
   if (!writeLibrary(storageOf(), entries)) {
-    $('library-note').textContent = 'Not saved: this browser\'s storage is full or unavailable. Delete saved blueprints to make room.';
+    tellLibrary('Not saved: this browser\'s storage is full or unavailable. Delete saved blueprints to make room.', true);
     return false;
   }
   library = entries;
-  $('library-note').textContent = '';
-  renderLibrary();
+  tellLibrary();
+  refreshLibrary();
   return true;
 }
 
-function saveEntry(button, fields) {
-  if (!fields.string) return flash(button, 'Nothing to save');
-  const { entries, entry, added } = addEntry(library, fields);
-  if (added && !keep(entries)) return flash(button, 'Storage full');
-  flash(button, added ? 'Saved' : 'Saved already');
-  // (Named at once: its name field takes the focus.)
-  const name = /** @type {any} */ (document.querySelector(`[data-entry="${entry.id}"] .kept-head input`));
-  name?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-  if (added) name?.select();
+function tellLibrary(text = '', error = false) {
+  $('library-foot').textContent = text || 'Kept in this browser only. Copy a blueprint to keep it anywhere else.';
+  $('library-foot').classList.toggle('error', error);
+}
+
+// Everything showing the library: its count, the Save buttons and their notes, the open dialog.
+function refreshLibrary() {
+  $('library-count').textContent = library.length ? String(library.length) : '';
+  savedState('city', state.city.blueprint, $('city-save'), $('city-saved'));
+  savedState('block', $('bp-string').value, $('bp-save'), $('bp-saved'));
+  if ($('library').open) drawLibrary();
+}
+
+function savedEntry(kind, string) {
+  const text = string.trim();
+  return text ? library.find(e => e.kind === kind && e.string === text) ?? null : null;
+}
+
+// A Save button and its note: once saved, "✓ Saved" (showing it in the library) and the name.
+function savedState(kind, string, button, note) {
+  const entry = savedEntry(kind, string);
+  button.disabled = !string.trim();
+  button.classList.toggle('is-saved', Boolean(entry));
+  button.textContent = entry ? '✓ Saved' : 'Save';
+  button.title = entry ? `Saved as “${entry.name}”: show it in Saved blueprints` : `Keep this ${kind === 'city' ? 'city block' : 'factory block'} in Saved blueprints`;
+  note.classList.remove('error');
+  note.hidden = !entry;
+  if (!entry) return;
+  const rename = el('button', { type: 'button', className: 'link', textContent: 'Rename' });
+  rename.addEventListener('click', () => openLibrary(kind, entry.id, true));
+  note.replaceChildren('Saved as ', el('strong', { textContent: entry.name }), entry.folder ? ` in ${entry.folder}` : '', ' · ', rename);
+}
+
+// Saves `fields`, or shows where they are saved already.
+function saveEntry(fields, note) {
+  const kept = savedEntry(fields.kind, fields.string);
+  if (kept) return openLibrary(fields.kind, kept.id);
+  if (keep(addEntry(library, fields).entries)) return;
+  note.hidden = false;
+  note.classList.add('error');
+  note.textContent = 'Not saved: this browser\'s storage is full or unavailable. Delete saved blueprints to make room.';
 }
 
 function saveCity() {
   const read = city && !city.error ? city : null;
   const size = read ? `${read.area.w} × ${read.area.h}` : '';
-  saveEntry($('city-save'), {
+  saveEntry({
     kind: 'city', string: state.city.blueprint,
     name: read?.blueprint?.label || `City block${size ? ` ${size}` : ''}`,
-    note: read ? `${size} tiles · ${`${read.fixtures.length} ${read.fixtures.length === 1 ? 'entity' : 'entities'}`}` : '',
-  });
+    note: read ? `${size} tiles · ${read.fixtures.length} ${read.fixtures.length === 1 ? 'entity' : 'entities'}` : '',
+  }, $('city-saved'));
 }
 
 function saveBlock() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
-  const rates = best?.found?.goals ?? goals;
-  const made = rates.map(g => `${label(g.item)} ${fmt(g.rate)}/min`).join(', ');
-  const { bounds, site } = best?.block ?? {};
-  const size = site ? `city block ${site.area.w} × ${site.area.h}` : bounds ? `${bounds.w} × ${bounds.h}` : '';
-  saveEntry($('bp-save'), { kind: 'block', string: $('bp-string').value, name: made || 'Factory block', note: [made, size].filter(Boolean).join(' · ') });
+  const made = (best?.found?.goals ?? goals).map(g => `${label(g.item)} ${fmt(g.rate)}/min`).join(', ');
+  const block = best?.block;
+  const size = !block ? '' : block.site ? `${block.site.area.w} × ${block.site.area.h} city block` : `${block.bounds.w} × ${block.bounds.h} tiles`;
+  const note = block ? [size, `${block.entities.length} entities`].join(' · ') : '';
+  saveEntry({ kind: 'block', string: $('bp-string').value, name: made || 'Factory block', note }, $('bp-saved'));
 }
 
-function renderLibrary() {
-  $('library-filter').hidden = library.length < 6;
-  $('library-folders').replaceChildren(...foldersOf(library).map(f => new Option(f)));
-  const groups = grouped(library, $('library-filter').value);
-  if (!groups.length) {
-    $('library').replaceChildren(el('p', { className: 'hint', textContent: library.length ? 'Nothing saved matches.' : 'Nothing saved yet: Save beside a city block\'s blueprint or a built factory block\'s.' }));
-    return;
+// The library at `kind`, at entry `id` (its name being renamed, with `rename`).
+function openLibrary(kind = shelf.kind, id = null, rename = false) {
+  shelf.kind = kind;
+  shelf.found = id;
+  shelf.editing = id && rename ? { id } : null;
+  const entry = library.find(e => e.id === id);
+  if (entry) shelf.closed.delete(entry.folder);
+  $('library-filter').value = '';
+  tellLibrary();
+  drawLibrary();
+  if (!$('library').open) $('library').showModal();
+  const row = id && $('library-list').querySelector(`[data-entry="${id}"]`);
+  if (!row) return $('library-filter').focus();
+  row.scrollIntoView({ block: 'nearest' });
+  const field = row.querySelector('input');
+  if (field) field.select();
+  else row.querySelector('.kept-actions button')?.focus();
+}
+
+function drawLibrary() {
+  closeShelfMenu();
+  for (const tab of $('library-tabs').children) {
+    const n = library.filter(e => e.kind === tab.dataset.kind).length;
+    tab.setAttribute('aria-selected', String(tab.dataset.kind === shelf.kind));
+    tab.querySelector('.badge').textContent = n ? String(n) : '';
   }
-  const named = groups.some(g => g.folder);
-  $('library').replaceChildren(...groups.map(({ folder, entries }) => {
-    const list = el('ul', { className: 'kept' }, ...entries.map(keptRow));
-    if (!named) return list;
-    let head;
-    if (folder) {
-      const name = el('input', { type: 'text', value: folder, ariaLabel: 'Folder name', title: 'Rename the folder (a folder\'s name already in use merges the two)' });
-      name.addEventListener('change', () => keep(renameFolder(library, folder, name.value)));
-      head = el('div', { className: 'folder-head' }, name);
-    } else head = el('div', { className: 'folder-head' }, el('span', { textContent: 'No folder', style: 'flex:1;padding:2px 7px' }));
-    head.append(el('span', { className: 'count', textContent: String(entries.length) }));
-    return el('div', { className: 'folder' }, head, list);
+  const mine = library.filter(e => e.kind === shelf.kind);
+  const query = $('library-filter').value;
+  const groups = grouped(mine, query);
+  if (!groups.length) return $('library-list').replaceChildren(emptyShelf(mine.length > 0));
+  const foldered = groups.some(g => g.folder);
+  $('library-list').replaceChildren(...groups.flatMap(({ folder, entries }) => {
+    const list = el('ul', { className: 'kept' }, ...entries.map(shelfRow));
+    if (!foldered) return [list];
+    // (A search shows every folder open.)
+    list.hidden = !query && shelf.closed.has(folder);
+    return [folderHead(folder, entries.length, list), list];
   }));
 }
 
-function keptRow(entry) {
-  const name = el('input', { type: 'text', value: entry.name, ariaLabel: 'Name' });
-  name.addEventListener('change', () => keep(editEntry(library, entry.id, { name: name.value })));
-  const folder = el('input', { type: 'text', value: entry.folder, placeholder: 'Folder', ariaLabel: 'Folder', title: 'Pick a folder, or type a new one' });
-  folder.setAttribute('list', 'library-folders');
-  folder.addEventListener('change', () => keep(editEntry(library, entry.id, { folder: folder.value })));
-  const actions = [];
-  if (entry.kind === 'city') {
-    const use = el('button', { type: 'button', textContent: 'Use', title: 'Build inside this city block' });
-    use.addEventListener('click', () => {
-      state.city.on = $('city-on').checked = true;
-      state.city.blueprint = $('city-bp').value = entry.string;
-      save();
-      readCity();
-      flash(use, 'In use');
-    });
-    actions.push(use);
+function emptyShelf(searched) {
+  const cities = shelf.kind === 'city';
+  return el('div', { className: 'lib-empty' }, el('div', { className: 'thumb' }),
+    el('strong', { textContent: searched ? 'Nothing matches' : cities ? 'No city blocks saved yet' : 'No factory blocks saved yet' }),
+    el('p', { className: 'hint', textContent: searched ? 'Try another name or folder.' : cities ? 'Paste a city block’s blueprint under City block and press Save beside it.' : 'Build a factory block and press Save beside its blueprint.' }));
+}
+
+function folderHead(folder, n, list) {
+  const head = el('div', { className: 'folder-head' });
+  if (folder && shelf.editing?.folder === folder) {
+    const field = el('input', { type: 'text', value: folder, ariaLabel: 'Folder name', title: 'A name another folder has puts the two together' });
+    inlineEdit(field, value => keep(renameFolder(library, folder, value.trim() || folder)));
+    head.append(field);
+    return head;
   }
-  const copyButton = el('button', { type: 'button', textContent: 'Copy', title: 'Copy the blueprint string' });
-  copyButton.addEventListener('click', () => copy(entry.string, copyButton));
-  // (Deleted on a second click.)
-  const remove = el('button', { type: 'button', className: 'danger', textContent: 'Delete' });
-  let armed = null;
-  remove.addEventListener('click', () => {
-    if (armed) return keep(removeEntry(library, entry.id));
-    remove.classList.add('sure');
-    remove.textContent = 'Sure?';
-    armed = setTimeout(() => { armed = null; remove.classList.remove('sure'); remove.textContent = 'Delete'; }, 3000);
+  const toggle = el('button', { type: 'button', className: 'folder-toggle' },
+    el('span', { className: 'chev', textContent: '▸', ariaHidden: 'true' }), el('span', { className: 'folder-name', textContent: folder || 'No folder' }), el('span', { className: 'badge', textContent: String(n) }));
+  toggle.setAttribute('aria-expanded', String(!list.hidden));
+  toggle.addEventListener('click', () => {
+    list.hidden = !list.hidden;
+    toggle.setAttribute('aria-expanded', String(!list.hidden));
+    if (list.hidden) shelf.closed.add(folder);
+    else shelf.closed.delete(folder);
   });
-  const when = entry.saved ? new Date(entry.saved).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
-  const note = [entry.kind === 'city' ? 'City block' : 'Factory block', entry.note, when].filter(Boolean).join(' · ');
-  const row = el('li', {},
-    el('div', { className: 'kept-head' }, iconOf(entry.kind === 'city' ? 'roboport' : 'blueprint'), name),
-    el('div', { className: 'kept-note', textContent: note, title: note }),
-    el('div', { className: 'row' }, ...actions, copyButton, folder, remove));
+  head.append(toggle);
+  if (folder) {
+    const rename = el('button', { type: 'button', className: 'icon', textContent: '✎', ariaLabel: `Rename folder ${folder}`, title: 'Rename the folder' });
+    rename.addEventListener('click', () => {
+      shelf.editing = { folder };
+      drawLibrary();
+      $('library-list').querySelector('.folder-head input')?.select();
+    });
+    head.append(rename);
+  }
+  return head;
+}
+
+// An inline field: Enter or leaving it keeps what it holds, Escape leaves things as they were.
+function inlineEdit(field, done) {
+  let over = false;
+  const end = kept => {
+    if (over) return;
+    over = true;
+    const was = shelf.editing;
+    shelf.editing = null;
+    if (!kept || !done(field.value)) drawLibrary();
+    // (The focus goes back where the rename started.)
+    const back = was?.id ? `[data-entry="${was.id}"] .more` : '.folder-toggle';
+    /** @type {HTMLElement | null} */ ($('library-list').querySelector(back))?.focus();
+  };
+  field.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      end(true);
+    } else if (e.key === 'Escape') {
+      // (Escape leaves the field, not the dialog.)
+      e.preventDefault();
+      end(false);
+    }
+  });
+  field.addEventListener('blur', () => end(true));
+}
+
+function shelfRow(entry) {
+  const row = el('li', {});
   row.dataset.entry = entry.id;
+  if (entry.id === shelf.found) row.classList.add('found');
+  const thumb = el('canvas', { className: 'thumb', width: 128, height: 128 });
+  thumb.setAttribute('aria-hidden', 'true');
+  drawThumb(thumb, entry);
+  let name;
+  if (shelf.editing?.id === entry.id) {
+    name = el('input', { type: 'text', value: entry.name, ariaLabel: 'Name' });
+    inlineEdit(name, value => keep(editEntry(library, entry.id, { name: value })));
+  } else {
+    name = el('span', { className: 'kept-name', textContent: entry.name, title: `${entry.name} (double-click to rename)` });
+    name.addEventListener('dblclick', () => renameEntry(entry));
+  }
+  const when = entry.saved ? new Date(entry.saved).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const meta = [entry.note, when].filter(Boolean).join(' · ');
+  let main;
+  if (entry.kind === 'city') {
+    const using = state.city.on && state.city.blueprint === entry.string;
+    main = el('button', { type: 'button', textContent: using ? 'In use' : 'Use', disabled: using, title: using ? 'The factory is built in this city block' : 'Build in this city block' });
+    main.addEventListener('click', () => useCity(entry));
+  } else {
+    main = el('button', { type: 'button', textContent: 'Copy', title: 'Copy the blueprint string, to import it in the game' });
+    main.addEventListener('click', () => copy(entry.string, main));
+  }
+  const more = el('button', { type: 'button', className: 'icon more', textContent: '⋯', ariaLabel: `More for ${entry.name}`, title: 'Rename, move to a folder, delete' });
+  more.setAttribute('aria-haspopup', 'menu');
+  more.addEventListener('click', () => {
+    if (shelf.reopen) openShelfMenu(entry, more);
+    shelf.reopen = true;
+  });
+  row.append(thumb, el('div', { className: 'kept-text' }, name, el('span', { className: 'kept-meta', textContent: meta, title: meta })), el('div', { className: 'kept-actions' }, main, more));
   return row;
+}
+
+function renameEntry(entry) {
+  shelf.editing = { id: entry.id };
+  drawLibrary();
+  $('library-list').querySelector(`[data-entry="${entry.id}"] input`)?.select();
+}
+
+function useCity(entry) {
+  $('library').close();
+  state.city.on = $('city-on').checked = true;
+  state.city.blueprint = $('city-bp').value = entry.string;
+  save();
+  readCity();
+  $('city-title').scrollIntoView({ block: 'start', behavior: 'smooth' });
+}
+
+// An entry's menu, under its ⋯ button: rename, copy, move to a folder (`naming`: a new one), delete.
+function openShelfMenu(entry, anchor, naming = false) {
+  const menu = $('library-menu');
+  const item = (text, act, className = '') => el('button', { type: 'button', role: 'menuitem', className: `menu-item ${className}`, onclick: act }, el('span', { className: 'menu-text' }, el('strong', { textContent: text })));
+  const move = folder => {
+    shelf.found = entry.id;
+    shelf.closed.delete(folder);
+    keep(editEntry(library, entry.id, { folder }));
+    $('library-list').querySelector(`[data-entry="${entry.id}"]`)?.scrollIntoView({ block: 'nearest' });
+  };
+  let items;
+  if (naming) {
+    const field = el('input', { type: 'text', placeholder: 'Folder name', ariaLabel: 'New folder name' });
+    const go = el('button', { type: 'button', className: 'menu-go', textContent: 'Move' });
+    const submit = () => { if (field.value.trim()) move(field.value.trim()); };
+    go.addEventListener('click', submit);
+    field.addEventListener('keydown', e => { if (e.key === 'Enter') submit(); });
+    items = [el('p', { className: 'menu-label', textContent: `Move “${entry.name}” to a new folder` }), el('div', { className: 'menu-form' }, field, go)];
+  } else {
+    const remove = item('Delete', () => {
+      if (!remove.classList.contains('sure')) {
+        remove.classList.add('sure');
+        /** @type {HTMLElement} */ (remove.querySelector('strong')).textContent = 'Delete — click again';
+        return;
+      }
+      closeShelfMenu();
+      keep(removeEntry(library, entry.id));
+      $('library-filter').focus();
+    }, 'danger');
+    items = [
+      item('Rename', () => renameEntry(entry)),
+      ...(entry.kind === 'city' ? [item('Copy blueprint string', () => { closeShelfMenu(true); copy(entry.string, anchor); })] : []),
+      el('div', { className: 'menu-sep' }),
+      el('p', { className: 'menu-label', textContent: entry.folder ? `In ${entry.folder} · move to` : 'Move to folder' }),
+      ...foldersOf(library).filter(f => f !== entry.folder).map(f => item(f, () => move(f))),
+      ...(entry.folder ? [item('No folder', () => move(''))] : []),
+      item('New folder…', () => openShelfMenu(entry, anchor, true)),
+      el('div', { className: 'menu-sep' }),
+      remove,
+    ];
+  }
+  menu.replaceChildren(...items);
+  menu.hidden = false;
+  shelf.menuFor = anchor;
+  // (Under the button, its right edge on the button's; above it where there is no room below.)
+  const room = /** @type {HTMLElement} */ (menu.parentElement).getBoundingClientRect();
+  const at = anchor.getBoundingClientRect();
+  const { width, height } = menu.getBoundingClientRect();
+  const below = at.bottom - room.top + 4;
+  menu.style.left = `${Math.max(8, at.right - room.left - width)}px`;
+  menu.style.top = `${below + height > room.height - 8 ? Math.max(8, at.top - room.top - height - 4) : below}px`;
+  /** @type {HTMLElement | null} */ (menu.querySelector('input, .menu-item'))?.focus();
+}
+
+// (`back`: the focus goes back to the ⋯ button.)
+function closeShelfMenu(back = false) {
+  if ($('library-menu').hidden) return;
+  $('library-menu').hidden = true;
+  if (back && shelf.menuFor?.isConnected) shelf.menuFor.focus();
+}
+
+// A blueprint's picture: what stands in it, coloured as on the map, fitted in the square.
+const THUMB = { belt: '#a88b3c', pipe: '#4f7fa8', inserter: '#6f87a8', pole: '#c9a227' };
+function drawThumb(canvas, entry) {
+  if (!thumbs.has(entry.id)) thumbs.set(entry.id, decodeBlueprint(entry.string).then(bp => readCityBlock(bp, catalog)).catch(() => null));
+  thumbs.get(entry.id).then(read => {
+    if (!read) return;
+    const ctx = canvas.getContext('2d');
+    const css = getComputedStyle(document.documentElement);
+    const color = name => css.getPropertyValue(name).trim();
+    const size = canvas.width, pad = 8;
+    const { area, fixtures } = read;
+    const s = (size - pad * 2) / Math.max(area.w, area.h, 1);
+    const ox = (size - area.w * s) / 2 - area.x * s, oy = (size - area.h * s) / 2 - area.y * s;
+    ctx.fillStyle = color('--map-bg');
+    ctx.fillRect(0, 0, size, size);
+    ctx.strokeStyle = color('--border');
+    ctx.strokeRect(ox + area.x * s + 0.5, oy + area.y * s + 0.5, area.w * s - 1, area.h * s - 1);
+    for (const f of fixtures) {
+      const x = ox + f.x * s, y = oy + f.y * s, w = f.w * s, h = f.h * s;
+      const kind = /belt|splitter|loader/.test(f.name) ? 'belt' : /pipe/.test(f.name) ? 'pipe' : /inserter/.test(f.name) ? 'inserter'
+        : catalog.poles?.[f.name] || /pole|substation/.test(f.name) ? 'pole' : null;
+      // (Two pixels at least: a city block's poles show.)
+      if (kind) {
+        ctx.fillStyle = THUMB[kind];
+        ctx.fillRect(x + w * 0.15, y + h * 0.15, Math.max(2, w * 0.7), Math.max(2, h * 0.7));
+        continue;
+      }
+      ctx.fillStyle = color(Math.min(w, h) < 4 ? '--map-machine-edge' : '--map-machine');
+      ctx.fillRect(x, y, Math.max(2, w), Math.max(2, h));
+      if (Math.min(w, h) < 4) continue;
+      ctx.strokeStyle = color('--map-machine-edge');
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+    }
+  });
 }
 
 function flash(button, text) {
