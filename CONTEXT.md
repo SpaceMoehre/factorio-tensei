@@ -54,7 +54,7 @@ _Avoid_: fuel for inserters (burner inserters are never used)
 The fluid a machine burning one burns (Py's glassworks and smelters): one more fluid input of its Sub-Block, at the rate its power draw requires, by train on a pipe of its own into its energy source's box. The user's choice, unless the machine burns one fluid only; chosen only where a machine of the chain burns a fluid.
 
 **Joined Through**:
-Machines of a row standing against each other whose box for a fluid has connections on their west and east sides that let it through both ways: their boxes join without a pipe, and the row takes the fluid by one connection, east of its last machine.
+Machines of a row standing against each other whose box for a fluid has connections on their west and east sides that let it through both ways: their boxes join without a pipe, and the row takes the fluid by one connection, east of its last machine. Machines whose west and east connections carry other fluids (Py's agitators) keep a column between them instead: two pipes side by side would join (ADR 0053).
 
 **Mirrored**:
 A machine standing mirrored (Factorio 2.0): its fluid connections and drop point flipped east to west before it turns. Tried where that puts them where no rotation does, and every second row of Fluids Between.

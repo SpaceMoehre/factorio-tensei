@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { assignFluidBoxes } from '../js/fluidboxes.js';
 import { solve } from '../js/solve.js';
-import { recipeOptions } from '../js/chain.js';
+import { recipeOptions, expandChain } from '../js/chain.js';
+import { context, designStep, designOf, random } from '../js/design.js';
 import { pyCatalog, logistics } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 
@@ -84,4 +85,20 @@ test('Py science pack 2: arqad honey reaches the research centres at their honey
     for (const c of [honey, left]) assert.notEqual(pipeAt.get(connectionTile(m, c)), 'flavonoids');
   }
   assertValid(block, pyCatalog, logistics);
+});
+
+// Py's agitators have a connection on every side. In a row, one machine's east pipe and the next
+// one's west pipe, of other fluids, would stand side by side and join: a column is kept between
+// them (ADR 0053). Structured variants and Copies then route, where none did.
+test('agitators in a row keep a column between their side pipes: vpulp1 Copies route', () => {
+  const { entries } = expandChain([{ item: 'vpulp1', rate: 21000 }], shipped, { made: [], selections: { vpulp1: { recipe: 'vpulp1', building: 'agitator-mk01' } } });
+  const ctx = context(entries, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe' });
+  const i = ctx.plan.findIndex(sb => sb.recipe === 'vpulp1');
+  assert.equal(ctx.plan[i].count, 18);
+  const list = designStep(ctx, i, random(1), { draws: 0 });
+  const copies = list.find(c => c.spec?.copies && designOf(c));
+  assert.ok(copies, 'a design of Copies routes');
+  const module = designOf(copies).kinds[0].module;
+  const xs = [...new Set(module.entities.filter(e => e.kind === 'building').map(e => e.x))].sort((a, b) => a - b);
+  assert.ok(xs.length > 1 && xs.every((x, k) => k === 0 || x - xs[k - 1] >= 8), `machines at ${xs}`);
 });

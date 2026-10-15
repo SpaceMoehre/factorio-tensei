@@ -17,7 +17,7 @@
 //   --total S         maximize: stop after S seconds of wall clock, keeping the best so far
 //                     (checked between events: a try running finishes first, up to --budget)
 //   --upTo            maximize no higher than the Goals' own rates
-//   --giving --unsorted --sorting        attempt: search options as Maximize passes them
+//   --giving --unsorted --sorting --precheck   attempt: search options as Maximize passes them
 //   --no-annexes --no-bands --no-giving   maximize: leave that phase out
 //   --seed N          default 1
 //   --root DIR        the repo to run (another worktree for an A/B), default this one
@@ -134,7 +134,7 @@ if (mode === 'attempt') {
   const n = Number(opt('n'));
   const p = plan();
   log(`${secs()} try machines=${n}`);
-  const outcome = attempt(p, n, { site, budgetMs, seed, unsorted: flag('unsorted'), sorting: flag('sorting'), giving: flag('giving') });
+  const outcome = attempt(p, n, { site, budgetMs, seed, unsorted: flag('unsorted'), sorting: flag('sorting'), giving: flag('giving'), precheck: flag('precheck') });
   result = { n, tried: outcome.tried, failure: outcome.failure?.message ?? null, timedOut: outcome.timedOut ?? null, starves: outcome.starves ?? null };
   if (outcome.block) keep(outcome.block, { machines: n, rate: p.goalsFor(n)[0].rate });
   log(`${secs()} attempt n=${n} ${outcome.block ? 'FIT' : 'no'} tried=${outcome.tried} ${outcome.failure?.message ?? ''}`);

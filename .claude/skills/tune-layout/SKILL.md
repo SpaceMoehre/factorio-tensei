@@ -176,7 +176,7 @@ Tell the user, tersely:
   - Keep the full run for the A/B.
   - Never start an identical run twice. Check `pgrep -f run.mjs` first.
 - **One fit or miss at a Count proves little.** Starvation and routing come and go with the Count (0023). Look at neighbours (N−1, N+1) before concluding.
-- **`attempt` passes `unsorted` only when you ask for it.** Maximize's tries run unsorted and sort once at the end, so diagnose with `--unsorted` to match.
+- **`attempt` passes `unsorted` only when you ask for it.** Maximize's tries run unsorted and sort once at the end, so diagnose with `--unsorted` to match. Above the highest count designed so far they also run the Precheck: add `--precheck` where Maximize fails fast and the attempt fits (ADR 0053).
 - **Seeds are deterministic; wall clock is not.** A result that changes between identical runs points to load, not code.
 - **Do not change rates or rules the user set** (selections, modules, belts) to get a better number. Improve the algorithm.
 - **The page must still work.** Worker messages and `edit` fields carry new state (for example `edit.giving`). Check that moves, reshapes and turns keep it, and run the browser check for UI-visible changes (memory: ui-browser-testing).

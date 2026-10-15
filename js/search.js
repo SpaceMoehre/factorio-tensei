@@ -62,11 +62,19 @@ export function* search(entries, catalog, logistics, options = {}) {
   // `precheck`: first the Sub-Blocks that make the Side Output (the busiest, the likeliest to
   // starve), from structured variants only and with a random source of their own (designs as the
   // search's own are left as they were); one that starves ends the search before the rest are
-  // designed.
+  // designed. (One no structured variant routes is left to its own designing, random draws and
+  // all, ADR 0053: Py anthraquinone's vanadium-pulp-3-void.)
   if (perfect && options.precheck) {
     const checkRng = random(seed + 2);
     for (const i of order.filter(i => ctx.routes.some(r => r.source === i && r.sink === 'side-output')).reverse()) {
-      const least = designOf(designStep(ctx, i, checkRng, { now, deadline: designing, draws: 0 })[0])?.trouble ?? 0;
+      let checked;
+      try {
+        checked = designStep(ctx, i, checkRng, { now, deadline: designing, draws: 0 });
+      } catch (e) {
+        if (!(e instanceof LayoutError)) throw e;
+        continue;
+      }
+      const least = designOf(checked[0])?.trouble ?? 0;
       if (least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) };
     }
   }

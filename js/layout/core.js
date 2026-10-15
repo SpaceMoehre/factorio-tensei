@@ -207,11 +207,17 @@ export function buildCore(sb, building, links, variant, env) {
   const leadW = gapWidth('W'), trailW = gapWidth('E');
   // The machine's offset in its period.
   const mxOff = leadW + leftPad;
-  const pitch = mxOff + Wm + rightPad + (trailW || variant.gap);
+  // Neighbours' pads stand side by side: a pipe on one machine's east side and another fluid's on
+  // the next one's west would join (Py's agitators, a connection on every side). A column is kept
+  // between them (ADR 0053).
+  const sideRoutes = (r, side) => connections[r].filter(c => c.routeId !== undefined && c.side === side && !c.through).map(c => c.routeId);
+  const touching = counts.some((n, r) => n > 1 && sideRoutes(r, 'left').some(id => sideRoutes(r, 'right').some(other => other !== id)));
+  const gap = variant.gap || (touching && !trailW ? 1 : 0);
+  const pitch = mxOff + Wm + rightPad + (trailW || gap);
   // Every second row may sit a column or two to the side (within the gap), so the connections
   // of facing rows do not interleave.
   const shift = variant.shift ?? 0;
-  if (shift && (widest < 2 || variant.gap < Math.abs(shift))) throw new LayoutError('rows shift only within the gap');
+  if (shift && (widest < 2 || gap < Math.abs(shift))) throw new LayoutError('rows shift only within the gap');
   const off = r => (r % 2 ? shift : 0) - Math.min(0, shift);
 
   const top = outerHeight(0);
