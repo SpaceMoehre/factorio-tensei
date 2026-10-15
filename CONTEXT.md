@@ -29,7 +29,7 @@ The number of assembler buildings a Sub-Block needs to meet its Goal's target ra
 _Avoid_: assembler count as a user input (it's derived, not entered)
 
 **Byproduct**:
-An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow, leaving by train unless a Byproduct Use takes it. Where it shares a belt with an item consumers take, a filter splitter right after its producers sorts it out on to the east edge (Splitter).
+An output of a Recipe Selection's recipe other than the Goal's target item, produced incidentally by multi-output recipes (e.g. oil-processing). Not tracked as fulfilling other Goals in v1 — unconsumed overflow, leaving by train unless a Byproduct Use takes it. Where it shares a belt with an item consumers take, a filter splitter right after its producers sorts it out on to the east edge (Splitter). It is always sorted out where any layout does, even with fewer machines; sorted-out belts of one byproduct merge through a splitter while each lane carries half a belt at most (ADR 0052).
 _Avoid_: treating byproducts as satisfying other Goals automatically
 
 **Recycled Byproduct**:

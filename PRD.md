@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v40: Byproducts sorted out every time, their belts merged (implemented)
+Where v40 differs from v39, v40 wins.
+- **Sorted out every time:** where no layout at the highest count that fits sorts its byproducts out, Maximize tries up to 2 fewer machines sorted out and keeps the first that does, in Annexes too. An Extension that would let byproducts ride where they did not is not taken. A layout falling short as routed tries again with spare machines (ADR 0052).
+- **Byproduct belts merged:** once routed, a sorted-out byproduct's belt goes on with another carrying it, through a splitter beside it, where each lane then carries half a belt at most and the way is shorter.
+
 ## v39: Belts take the short way (implemented)
 Where v39 differs from v38, v39 wins.
 - **Belts straightened:** once pipes are buried, each belt's stretches between its splitters and the tiles inserters reach are routed again, and kept where they are shorter (tiles, turns, tunnels). A belt no longer loops round pipes that went underground (ADR 0051).

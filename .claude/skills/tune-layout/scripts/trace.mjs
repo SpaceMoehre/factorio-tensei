@@ -1,6 +1,6 @@
 // One Maximize try's layout search at n machines, every candidate's failure counted (with its
 // design choice and columns), and each layout found with its Starvation — which cause sinks a try.
-//   node trace.mjs <setup.json> <n> [seconds=120] [spare JSON]      PERFECT=0: starving layouts count too
+//   node trace.mjs <setup.json> <n> [seconds=120] [spare JSON]      PERFECT=0: starving layouts count too; UNSORTED=0: byproducts sorted out (ADR 0052)
 // Candidates the search passes over silently (a design or the prepared layout starving) do not
 // show: put a temporary `if (process.env.DBG) console.log(...)` at search.js `if (!ready)` and at
 // `ready.least`, and take it out again.
@@ -12,7 +12,7 @@ const { site, logistics, entriesFor } = await load(file);
 const errs = new Map();
 const t = Date.now();
 const run = search(entriesFor(+n, JSON.parse(spare)), catalog, logistics, {
-  seed: 1, site, deadline: Date.now() + +secs * 1000, unsorted: true, perfect: process.env.PERFECT !== '0',
+  seed: 1, site, deadline: Date.now() + +secs * 1000, unsorted: process.env.UNSORTED !== '0', perfect: process.env.PERFECT !== '0',
   designed: d => console.log('designed in', (Date.now() - t) / 1000, 's:', d.map(x => `${x.item}×${x.count}`).join(' ')),
   trace: (c, e) => {
     const m = `${(e?.message ?? String(e)).replace(/-?\d+(\.\d+)?/g, '#')}  choice=${c.choice?.join()} columns=${c.columns?.map(v => v ?? '-').join()}`;

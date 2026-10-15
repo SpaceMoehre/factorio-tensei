@@ -435,6 +435,8 @@ export function compose(ctx, prepared, positions, layout) {
     balanced = new Set();
     fanned = new Map();
     sortedOut = new Map();
+    // (A byproduct's belt joins another only where it did this round.)
+    for (const r of routes) if (r.filter) delete r.joins;
     tapped = new Set();
     gathered = new Set();
     spilled = new Map();

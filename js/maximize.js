@@ -6,6 +6,7 @@ import { bands } from './bands.js';
 import { annexSite, annexed } from './annex.js';
 import { validateBlock } from './layout/validity.js';
 import { simulate } from './sim.js';
+import { rankOf } from './layout/score.js';
 
 // Maximize (CONTEXT.md): the highest rate of the Goals whose Compound Block fits the City Block
 // without Starvation, its Recipe Selections, modules and the items made here as chosen. The
@@ -171,6 +172,21 @@ export function* maximize(goals, catalog, logistics, options) {
     if (sorted.block && sorted.score[2] < bestScore[2] && (!giving || lead(sorted.block) >= best.machines)) {
       [bestScore, bestBlock] = [sorted.score, sorted.block];
       yield { type: 'best', block: sorted.block, score: sorted.score, tried, ...best };
+    } else if (!giving) {
+      // A byproduct riding on clogs the belts into its consumers (ADR 0052): where none sorts it
+      // out at the most that fit, fewer machines that do (SORT_BELOW whole numbers below it, at
+      // least the least asked for).
+      const least = Math.max(1, options.least ?? 1);
+      for (let n = Math.ceil(bestN) - 1; n >= least && n > Math.ceil(bestN) - 1 - SORT_BELOW; n--) {
+        const fewer = attempt(plan, n, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true });
+        tried += fewer.tried;
+        if (!fewer.block || fewer.score[2] > 0) continue;
+        const list = plan.goalsFor(n);
+        best = { rate: list[0].rate, machines: n, count: n, goals: list };
+        [bestN, bestScore, bestBlock] = [n, fewer.score, fewer.block];
+        yield { type: 'best', block: fewer.block, score: fewer.score, tried, ...best };
+        break;
+      }
     }
   }
   // Annexes: the chain again in the room left, while one fits (and the cap leaves any). Each
@@ -248,12 +264,13 @@ export function* maximize(goals, catalog, logistics, options) {
     for (let i = j; i < stages.length; i++) {
       const stage = { n: stages[i].n, giving: stages[i].giving, extra: i === j ? extra : stages[i].extra, base: built };
       const out = relay(stage.n, stage.extra, built, stage.giving);
-      if (!out) return null;
+      // (Laid out again, its byproducts riding on where they were sorted out: not worth it, ADR 0052.)
+      if (!out || rankOf(out.alone)[2] > rankOf(stages[i].alone)[2]) return null;
       redone.push({ ...stage, alone: out.alone, block: out.block });
       built = out.block;
     }
     const out = relay(found.stage.n, {}, built);
-    if (!out || out.alone.subBlocks.length >= found.stage.alone.subBlocks.length) return null;
+    if (!out || out.alone.subBlocks.length >= found.stage.alone.subBlocks.length || rankOf(out.alone)[2] > rankOf(found.stage.alone)[2]) return null;
     const stage = { n: found.stage.n, giving: false, extra: {}, alone: out.alone, base: built, block: out.block };
     return { found: { ...found, block: out.block, score: out.score, stage }, stages: [...stages.slice(0, j), ...redone, stage] };
   }
@@ -647,6 +664,9 @@ const BAND_TRIES = 2;
 // How long the candidates of the last try (the highest that fit, its byproducts sorted out) get
 // at least once designed.
 const SORTING_MS = 120000;
+// How many whole numbers of the first Goal's machines below the most that fit are tried with
+// every byproduct sorted out, where none sorts them out there (ADR 0052).
+const SORT_BELOW = 2;
 
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;

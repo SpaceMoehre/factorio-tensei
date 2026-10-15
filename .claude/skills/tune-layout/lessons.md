@@ -48,6 +48,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Placement in crowded rooms: integral image turns crowded spots away, spot checks memoized, deadline inside backtracking, retries capped | An Annex try 274 s → 47 s | 0049 |
 | Copies' lanes counted as built (every second copy reversed); belts into copies checked; runs may end at a reversed copy; consumers cut to what producer belts bring; spare producer machines; turning lanes shared; one-column stack retried in two | Silicon first layout 3.6 → 4.9 furnaces; 675 → 712.5–795/min (same host: 712.5 vs 675, 894 s vs 2620 s) | 0048 |
 | Belts straightened after burying (stretches between anchors routed again on the finished block); Fan-out splitter spots ranked by their belt sent off | Aramid 24: 3 loops → 0, 2710 → 2663 entities, 49 → 26 s | 0051 |
+| Byproducts sorted out every time (spare machines from routed starvation, fewer machines rather than riding, Extensions keep sorting); sorted-out byproduct belts merged through a splitter after routing | Rayon: riding 1 → 0, biomass belts 6 → 3 (696.87 → 646.87/min) | 0052 |
 
 ## What failed, was reverted, or must not be done
 
@@ -81,6 +82,9 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A Foretelling from the box round the Sub-Blocks** (0024). In Layers that spans nearly the whole block, so Maximize climbs one machine a try: vrauks 31 → 50 at about 30 s each; kicalk took more than 50 min to reach 89.
 
 - **A post-pass anchored only on belt pieces** (0051). An inserter picks from a tunnel's end too: anchoring only plain belts let straightening move a copy's internal path and broke "no inserter moves route …". Use validity.js `inserterTiles` for what an inserter reaches.
+
+- **Merging byproduct belts while routing** (0052). A merge took tiles that a trunk routed later needed, so that trunk found no way and the whole layout failed. Merge after routing, on the finished block, where every belt's way is already known.
+- **Phases that lay a layout out again with `unsorted`** (0052). An Extension's re-lay brought byproducts riding back. Any re-lay must keep the riding count it replaces.
 
 ## Rules every change keeps
 

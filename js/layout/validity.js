@@ -488,10 +488,15 @@ export function endsAtEastEdge(block, route) {
 }
 
 // A belt joining another (side-loading onto it: a byproduct's, a gatherer's, a Supplied Item's):
-// its last belt heads into the side of one of that one's.
+// its last belt heads into the side of one of that one's. Or a byproduct's merged with it: it
+// ends in a splitter that one goes through (ADR 0052).
 function joinsFromSide(block, route) {
   const last = route.pieces[route.pieces.length - 1];
   const other = block.routes[route.joins];
+  if (last.kind === 'splitter') {
+    const k = other?.pieces.findIndex(p => p.kind === 'splitter' && p.x === last.x && p.y === last.y) ?? -1;
+    return k > 0 && k < other.pieces.length - 1 ? [] : [`route ${route.id} does not merge into route ${route.joins}`];
+  }
   const [dx, dy] = DIR[last.travel];
   const into = other?.pieces.find(p => p.x === last.x + dx && p.y === last.y + dy);
   if (!into || into.kind === 'splitter' || into.travel === last.travel || into.travel === (last.travel + 8) % 16) return [`route ${route.id} does not join route ${route.joins} from the side`];

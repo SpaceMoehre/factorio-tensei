@@ -5,6 +5,7 @@ import { placeBlocks, roomFor } from './layout/place.js';
 import { finishBlock, given } from './layout/compact.js';
 import { validateBlock } from './layout/validity.js';
 import { rankOf } from './layout/score.js';
+import { simulate } from './sim.js';
 import { editOf } from './layout/edit.js';
 
 // Anytime layout search, bottom-up (ADR 0005). First every Sub-Block is designed on its own,
@@ -380,6 +381,15 @@ export function* search(entries, catalog, logistics, options = {}) {
     // inserters: the fewest inserters at them; then Compactness.
     const score = rankOf(block);
     if (perfect && score[0] > 0) {
+      // (Its belts as routed starving one producer's consumers alone, by the least yet: Maximize
+      // may try again with a few spare machines of it, as for a prepared layout's.)
+      const by = new Map();
+      for (const s of simulate(block).starvation) {
+        const source = block.routes[s.route]?.source, key = typeof source === 'number' ? source : null;
+        by.set(key, (by.get(key) ?? 0) + s.demand - s.available);
+      }
+      const [producer] = by.size === 1 ? [...by.keys()] : [null];
+      if (producer !== null && !(nearest && nearest.rate <= score[0])) nearest = shortOf(producer, score[0]);
       solidly();
       failure = new Error(`the layout starves ${score[0]}/min`);
       trace(candidate, failure);

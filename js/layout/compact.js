@@ -33,12 +33,12 @@ export function given(block, step) {
 }
 
 export function finishBlock(block, catalog, logistics, { squeeze = true } = {}) {
-  // Pipes buried, belts straightened and poles placed; where a straightened belt took the room a
-  // pole needed, powered as buried (ADR 0051).
+  // Pipes buried, byproduct belts merged, belts straightened and poles placed; where a merged or
+  // straightened belt took the room a pole needed, powered as buried (ADR 0051, ADR 0052).
   const finish = b => {
     const buried = buryPipes(b, catalog, logistics);
     try {
-      return power(straightenBelts(clone(buried), catalog, logistics), catalog, logistics);
+      return power(straightenBelts(mergeByproducts(clone(buried), catalog, logistics), catalog, logistics), catalog, logistics);
     } catch (e) {
       if (!(e instanceof PowerError)) throw e;
       return power(buried, catalog, logistics);
@@ -202,17 +202,12 @@ export function buryPipes(block, catalog, logistics) {
   return block;
 }
 
-// Belts routed round what is no longer there take the short way (ADR 0051). Links were routed
-// round plain pipes that then went underground, so a belt could turn three times and dive under
-// a pipe that is gone: after a splitter, a lane looping round into a tunnel where one turn the
-// other way would have done. Each belt's stretches between anchors (its ends, splitters, tiles
-// an inserter or machine reaches, where another belt feeds it) are routed again on the finished
-// block, from the same tile and heading to the same tile and heading, and kept where they cost
-// less (tiles, turns, tunnels as the router counts them). Belts and tunnels keep both lanes as
-// they are, and nothing new is fed or reached. Changes the block in place.
-export function straightenBelts(block, catalog, logistics) {
+// The finished block on a grid for routing belts again: every entity and Fixture placed, the belts'
+// tunnels (`partner`: an underground's input to its output), the tiles an inserter or machine
+// reaches; null where the belt has no underground.
+function beltGrid(block, catalog, logistics) {
   const spec = catalog.belts?.[logistics.belt];
-  if (!spec?.underground || !block.routes.some(r => r.kind === 'belt')) return block;
+  if (!spec?.underground || !block.routes.some(r => r.kind === 'belt')) return null;
   const names = { belt: spec.name, underground: spec.underground.name, reach: spec.underground.maxDistance };
   const fixtures = block.site?.fixtures ?? [];
   const grid = new Grid(block.site ? block.site.inner : extent(block.entities));
@@ -236,18 +231,8 @@ export function straightenBelts(block, catalog, logistics) {
       reached.add(pickup).add(drop);
     } else if (e.kind === 'building' && e.drop) reached.add(key(Math.floor(e.x + e.drop.x), Math.floor(e.y + e.drop.y)));
   }
-  const feeders = new Map();
-  for (const e of block.entities) if (e.out) feeders.set(e.out, [...(feeders.get(e.out) ?? []), e]);
-  const tiles = p => Array.from({ length: p.w * p.h }, (_, k) => key(p.x + (k % p.w), p.y + Math.floor(k / p.w)));
-  const at = p => key(p.x, p.y);
-  // Whether q carries on from p.
-  const chained = (p, q) => (p.kind === 'splitter' ? tiles(p).some(t => { const [x, y] = t.split(',').map(Number); return key(x + VEC[p.travel][0], y + VEC[p.travel][1]) === at(q); })
-    : p.underground === 'input' ? partner.get(p) === q
-      : (q.kind === 'splitter' ? tiles(q).includes(p.out) : p.out === at(q)));
-  const anchor = (p, before) => p.kind === 'splitter' || reached.has(at(p))
-    || (feeders.get(at(p)) ?? []).some(f => f !== before);
   const unplace = p => {
-    grid.occupied.delete(at(p));
+    grid.occupied.delete(key(p.x, p.y));
     const i = grid.index(p.x, p.y);
     if (i >= 0) grid.cells[i] = undefined;
   };
@@ -259,6 +244,124 @@ export function straightenBelts(block, catalog, logistics) {
     line.splice(line.indexOf(t), 1);
     grid.tunnels.splice(grid.tunnels.indexOf(t), 1);
   };
+  return { names, grid, partner, reached, unplace, dropTunnel };
+}
+
+// Byproduct belts merged (ADR 0052). Each run of producers sorting a byproduct out sends it on its
+// own belt to the east edge (ADR 0030); side-loading joins another only where one lane has room
+// for all of it, which a byproduct on both lanes seldom finds (Py's ball mills' biomass, 358 a
+// minute a belt, 179 a lane). Once the block is routed, a byproduct's belt is routed again from
+// its splitter to beside another's, heading the same way, and the two go through a splitter
+// there, on only on that one's side: each lane keeps its share, so two of them go on as one while
+// each lane carries half a belt at most. Kept where its way is shorter than to the east edge;
+// the longest ways are freed first. Changes the block in place.
+export function mergeByproducts(block, catalog, logistics) {
+  const filtered = r => r.pieces.findIndex(p => p.kind === 'splitter' && p.filter);
+  const lines = block.routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.joins === undefined && filtered(r) >= 0
+    && !block.routes.some(o => o.joins === r.id));
+  if (lines.length < 2) return block;
+  const belted = beltGrid(block, catalog, logistics);
+  if (!belted) return block;
+  const { names, grid, partner, reached, unplace, dropTunnel } = belted;
+  const spec = catalog.belts[logistics.belt];
+  const laneCapacity = spec.itemsPerSecond * 30;
+  const splitterName = spec.splitter ?? spec.name.replace(/transport-belt$/, 'splitter');
+  const itemOf = r => r.pieces[filtered(r)].filter;
+  const rateOf = r => r.items.find(i => i.item === itemOf(r))?.rate ?? 0;
+  const lanes = new Map(lines.map(r => [r, rateOf(r) / 2]));
+  const awayOf = r => r.pieces.slice(filtered(r) + 1);
+  const feeders = new Set(block.entities.filter(e => e.out).map(e => e.out));
+  const free = (x, y) => grid.inBounds(x, y) && !grid.at(x, y) && grid.holder(x, y) === undefined && !feeders.has(key(x, y)) && !reached.has(key(x, y));
+  const into = new Set(), gone = new Set();
+  const removed = new Set(), added = [];
+  for (const b of [...lines].sort((p, q) => awayOf(q).length - awayOf(p).length)) {
+    if (into.has(b)) continue;
+    const away = awayOf(b), splitter = b.pieces[filtered(b)];
+    if (!away.length || away.some(p => p.kind !== 'belt' && p.kind !== 'underground-belt')) continue;
+    for (const p of away) unplace(p);
+    const tunnels = away.filter(p => partner.has(p)).map(p => [p, partner.get(p)]);
+    for (const [p, q] of tunnels) dropTunnel(p, q);
+    // (Beside a straight belt of another's way, the one before it straight too, nothing ahead.)
+    const joins = new Set(), offered = new Map();
+    for (const a of lines) {
+      if (a === b || gone.has(a) || itemOf(a) !== itemOf(b) || lanes.get(a) + rateOf(b) / 2 > laneCapacity + 1e-6) continue;
+      const way = awayOf(a);
+      way.forEach((p, k) => {
+        if (k === 0 || p.kind !== 'belt' || way[k - 1].kind !== 'belt' || way[k - 1].travel !== p.travel || way[k + 1]?.kind === 'splitter') return;
+        const [fx, fy] = VEC[p.travel];
+        for (const side of [(p.travel + 4) % 16, (p.travel + 12) % 16]) {
+          const [sx, sy] = VEC[side];
+          const t = { x: p.x + sx, y: p.y + sy };
+          if (!free(t.x, t.y) || !free(t.x + fx, t.y + fy)) continue;
+          const k2 = `${t.x},${t.y},${p.travel}`;
+          joins.add(k2);
+          offered.set(k2, { a, piece: p, beside: t });
+        }
+      });
+    }
+    const before = grid.snapshot();
+    let leg = null;
+    if (joins.size) {
+      try {
+        leg = routeLink(grid, { id: b.id, starts: [{ x: away[0].x, y: away[0].y, a: splitter.travel }], goal: 'join', joins, keepOff: reached, most: 4000 }, names);
+      } catch (err) {
+        if (!(err instanceof RoutingError)) throw err;
+      }
+    }
+    const joined = /** @type {any} */ (leg)?.joined;
+    const chosen = joined && offered.get(joined);
+    if (!chosen || legCost(leg, splitter.travel) >= legCost(away, splitter.travel)) {
+      grid.restore(before);
+      for (const p of away) grid.place(p);
+      for (const [p, q] of tunnels) grid.addTunnel(names.underground, p, q);
+      continue;
+    }
+    const { a, piece, beside } = chosen;
+    const [fx] = VEC[piece.travel];
+    Object.assign(piece, {
+      name: splitterName, kind: 'splitter', x: Math.min(piece.x, beside.x), y: Math.min(piece.y, beside.y), w: fx ? 1 : 2, h: fx ? 2 : 1,
+      direction: piece.travel, travel: piece.travel,
+    });
+    delete piece.out;
+    grid.place(piece);
+    // (Ahead of its side, nothing for the splitter to feed.)
+    grid.reserve(beside.x + VEC[piece.travel][0], beside.y + VEC[piece.travel][1], b.id);
+    leg.forEach((p, i) => { if (p.underground === 'input') partner.set(p, leg[i + 1]); });
+    b.pieces = [...b.pieces.slice(0, filtered(b) + 1), ...leg, piece];
+    b.joins = a.id;
+    for (const p of away) removed.add(p);
+    added.push(...leg);
+    lanes.set(a, lanes.get(a) + rateOf(b) / 2);
+    into.add(a);
+    gone.add(b);
+  }
+  if (!removed.size) return block;
+  block.entities = [...block.entities.filter(e => !removed.has(e)), ...added];
+  return block;
+}
+
+// Belts routed round what is no longer there take the short way (ADR 0051). Links were routed
+// round plain pipes that then went underground, so a belt could turn three times and dive under
+// a pipe that is gone: after a splitter, a lane looping round into a tunnel where one turn the
+// other way would have done. Each belt's stretches between anchors (its ends, splitters, tiles
+// an inserter or machine reaches, where another belt feeds it) are routed again on the finished
+// block, from the same tile and heading to the same tile and heading, and kept where they cost
+// less (tiles, turns, tunnels as the router counts them). Belts and tunnels keep both lanes as
+// they are, and nothing new is fed or reached. Changes the block in place.
+export function straightenBelts(block, catalog, logistics) {
+  const belted = beltGrid(block, catalog, logistics);
+  if (!belted) return block;
+  const { names, grid, partner, reached, unplace, dropTunnel } = belted;
+  const feeders = new Map();
+  for (const e of block.entities) if (e.out) feeders.set(e.out, [...(feeders.get(e.out) ?? []), e]);
+  const tiles = p => Array.from({ length: p.w * p.h }, (_, k) => key(p.x + (k % p.w), p.y + Math.floor(k / p.w)));
+  const at = p => key(p.x, p.y);
+  // Whether q carries on from p.
+  const chained = (p, q) => (p.kind === 'splitter' ? tiles(p).some(t => { const [x, y] = t.split(',').map(Number); return key(x + VEC[p.travel][0], y + VEC[p.travel][1]) === at(q); })
+    : p.underground === 'input' ? partner.get(p) === q
+      : (q.kind === 'splitter' ? tiles(q).includes(p.out) : p.out === at(q)));
+  const anchor = (p, before) => p.kind === 'splitter' || reached.has(at(p))
+    || (feeders.get(at(p)) ?? []).some(f => f !== before);
   const removed = new Set(), added = [];
   for (const route of block.routes.filter(r => r.kind === 'belt')) {
     const pieces = route.pieces;
