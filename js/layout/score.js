@@ -45,7 +45,8 @@ export function compactness(block) {
 export function rankOf(block) {
   const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
   const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
-  const sentOff = new Set(block.routes.filter(g => g.fedBy !== undefined && g.joins !== undefined).map(g => `${g.fedBy}:${g.items[0].item}`));
+  // (A byproduct tapped off to the Sub-Block taking it, as a feedback is, is not either.)
+  const sentOff = new Set(block.routes.filter(g => g.fedBy !== undefined && (g.joins !== undefined || g.loop)).map(g => `${g.fedBy}:${g.items[0].item}`));
   const unsorted = block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length
     && r.items.some(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item)))).length;
   return [Math.round(starving * 1000) / 1000, loopsByTrain, unsorted, supporting(block), compactness(block).value, block.entities.length];

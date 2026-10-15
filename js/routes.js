@@ -85,7 +85,7 @@ export function buildRoutes(plan, flows, laneCapacity) {
   for (const f of flows.feedback ?? []) {
     const made = plan[f.from].outputs.find(o => o.name === f.item).rate;
     const perBelt = made / Math.max(1, Math.ceil(made / (2 * laneCapacity) - 1e-9));
-    add({ kind: 'belt', source: 'side-input', loop: { from: f.from }, sink: null, consumers: [f.to], items: [saturated(f.item, f.rate, Math.min(2 * laneCapacity, perBelt))] });
+    add({ kind: 'belt', source: 'side-input', loop: { from: f.from, ...(f.tapped ? { tapped: true } : {}) }, sink: null, consumers: [f.to], items: [saturated(f.item, f.rate, Math.min(2 * laneCapacity, perBelt))] });
   }
   return routes;
 }

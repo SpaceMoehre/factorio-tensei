@@ -403,6 +403,16 @@ export function* search(entries, catalog, logistics, options = {}) {
       trace(candidate, failure);
       continue;
     }
+    // A byproduct tapped off to the Sub-Block taking it whose splitter found no room: it would
+    // come by train, and its producers' would stop the belt where it ends (ADR 0054). Room round
+    // them next.
+    const untapped = perfect ? block.routes.find(r => r.loop?.tapped && r.fedBy === undefined) : null;
+    if (untapped) {
+      makeRoom([untapped.loop.from, ...untapped.consumers]);
+      failure = new Error(`${untapped.items[0].item}: no room for its splitter after its producers`);
+      trace(candidate, failure);
+      continue;
+    }
     if (!best || better(score, best.score)) {
       best = { candidate, score, placed };
       // A Breakout trial after every two slides (a lone Sub-Block has no gaps to fill). Spread

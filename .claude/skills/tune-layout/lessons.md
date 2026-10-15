@@ -50,6 +50,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Belts straightened after burying (stretches between anchors routed again on the finished block); Fan-out splitter spots ranked by their belt sent off | Aramid 24: 3 loops → 0, 2710 → 2663 entities, 49 → 26 s | 0051 |
 | Byproducts sorted out every time (spare machines from routed starvation, fewer machines rather than riding, Extensions keep sorting); sorted-out byproduct belts merged through a splitter after routing | Rayon: riding 1 → 0, biomass belts 6 → 3 (696.87 → 646.87/min) | 0052 |
 | A column between neighbours' side pipes of two fluids (agitators); the Precheck skipping a Sub-Block no structured variant routes | Anthraquinone 3937.5 → 10875/min (34 → 85 machines) | 0053 |
+| A byproduct a Use takes alone tapped off its producers' belt by a filter splitter (a Recipe Loop's tap); untapped in Maximize no fit | Perylene: pyrite riding to the belt's end 1 → 0; 2700 → 3300/min | 0054 |
 
 ## What failed, was reverted, or must not be done
 
@@ -89,6 +90,9 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A check that throws ended the try as if it starved** (0053). The Precheck's structured-only design threw for a Sub-Block that random draws route, and Maximize's tries above 2 failed in 3 s. When Maximize fails fast where `attempt` fits, diff the options Maximize passes (`--precheck`).
 
 - **Structured variants with a fixed gap 0** (0053). A machine with connections on both sides (Py agitators) never routed in a plain row or a Copy: neighbours' pipes touch. When only random draws route a Sub-Block, look for what the plain variants fix that the draws vary.
+
+- **A rank criterion blind to the user's complaint** (0054). `rankOf` called a belt sorted because one consumer on it took the byproduct, though it rode on past to a dead end. When the user reports a clog the summary says is not there, check what the counter counts before trusting it.
+- **A fallback that keeps a layout the user's rule forbids** (0054). A tap with no room fell back to by train, and its byproduct rode on; Maximize kept it in an Annex. Make such a layout no fit in `perfect` tries.
 
 ## Rules every change keeps
 

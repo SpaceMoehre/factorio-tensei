@@ -31,8 +31,20 @@ export function buildFlows(plan) {
     state[c] = 2;
   };
   plan.forEach((_, i) => state[i] || walk(i));
-  const internal = edges.filter(e => !closing.has(e));
-  const feedback = edges.filter(e => closing.has(e) && e.type !== 'fluid');
+  // A byproduct taken by a Sub-Block that takes nothing else off its producer's belt, while that
+  // belt goes on to others with what they take: tapped off it right after the producers (a
+  // filter splitter, as a Recipe Loop's feedback is), not riding on through them. Its surplus
+  // would stop the belt where it ends (Py's p2s5 with pyrite, ADR 0054). (Not where another
+  // Sub-Block's of it joins that belt, a Supplied Item: it rides on, as before.)
+  const solidsOf = i => new Set(plan[i].outputs.filter(o => o.type === 'item').map(o => o.name));
+  const tapped = edges.filter(e => {
+    if (closing.has(e) || e.type === 'fluid' || e.item === plan[e.from].item || plan.some(sb => sb.joins?.[e.item] === e.from)) return false;
+    const solids = solidsOf(e.from);
+    return !plan[e.to].inputs.some(x => x.name !== e.item && solids.has(x.name))
+      && edges.some(o => o.from === e.from && o.to !== e.to && o.type !== 'fluid' && o.item !== e.item);
+  });
+  const internal = edges.filter(e => !closing.has(e) && !tapped.includes(e));
+  const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...tapped.map(e => ({ ...e, tapped: true }))];
   // (Only into an Internal Path: one of the item's consumers' takes it from there.)
   const joined = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
     const o = sb.outputs.find(o => o.name === item);
