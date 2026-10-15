@@ -8,6 +8,7 @@ import { createMap, turnsSideways } from './render.js';
 import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
 import { planner } from './maximize.js';
 import { compactness, rankOf, SQUARE, BEND } from './layout/score.js';
+import { readLibrary, writeLibrary, addEntry, editEntry, removeEntry, renameFolder, foldersOf, grouped } from './library.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
 const SELECTS = ['belt', 'pipe', 'pole', 'inserter', 'longInserter', 'fuel', 'liquidFuel'];
@@ -96,6 +97,8 @@ let encoding = 0;
 let reading = 0;
 let cityRead = Promise.resolve();
 let built = null;
+// Saved blueprints (library.js).
+let library = [];
 // The user's moves (ADR 0043): the layouts shown before each, the last one last (Undo), and the
 // move being laid out ({ worker, step, inst, dx, dy }).
 let undo = [];
@@ -178,6 +181,11 @@ $('calculate').addEventListener('click', () => build());
 $('stop').addEventListener('click', () => finish('Stopped'));
 $('copy-string').addEventListener('click', () => copy($('bp-string').value, $('copy-string')));
 $('copy-json').addEventListener('click', () => copy($('bp-json').value, $('copy-json')));
+$('city-save').addEventListener('click', saveCity);
+$('bp-save').addEventListener('click', saveBlock);
+$('library-filter').addEventListener('input', renderLibrary);
+library = readLibrary(storageOf());
+renderLibrary();
 $('copy-setup').addEventListener('click', () => {
   $('setup').open = true;
   copy($('setup-json').value = setupText(), $('copy-setup'));
@@ -1626,6 +1634,116 @@ function copySelected(text) {
   area.remove();
   selection?.removeAllRanges();
   return copied;
+}
+
+// Saved blueprints (library.js): kept in this browser, apart from the setup.
+function storageOf() {
+  try { return localStorage; } catch { return null; }
+}
+
+
+// Keeps `entries` as the library; where storage refuses, the library stays as it was.
+function keep(entries) {
+  if (!writeLibrary(storageOf(), entries)) {
+    $('library-note').textContent = 'Not saved: this browser\'s storage is full or unavailable. Delete saved blueprints to make room.';
+    return false;
+  }
+  library = entries;
+  $('library-note').textContent = '';
+  renderLibrary();
+  return true;
+}
+
+function saveEntry(button, fields) {
+  if (!fields.string) return flash(button, 'Nothing to save');
+  const { entries, entry, added } = addEntry(library, fields);
+  if (added && !keep(entries)) return flash(button, 'Storage full');
+  flash(button, added ? 'Saved' : 'Saved already');
+  // (Named at once: its name field takes the focus.)
+  const name = /** @type {any} */ (document.querySelector(`[data-entry="${entry.id}"] .kept-head input`));
+  name?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  if (added) name?.select();
+}
+
+function saveCity() {
+  const read = city && !city.error ? city : null;
+  const size = read ? `${read.area.w} × ${read.area.h}` : '';
+  saveEntry($('city-save'), {
+    kind: 'city', string: state.city.blueprint,
+    name: read?.blueprint?.label || `City block${size ? ` ${size}` : ''}`,
+    note: read ? `${size} tiles · ${`${read.fixtures.length} ${read.fixtures.length === 1 ? 'entity' : 'entities'}`}` : '',
+  });
+}
+
+function saveBlock() {
+  const goals = state.goals.filter(g => g.item && g.rate > 0);
+  const rates = best?.found?.goals ?? goals;
+  const made = rates.map(g => `${label(g.item)} ${fmt(g.rate)}/min`).join(', ');
+  const { bounds, site } = best?.block ?? {};
+  const size = site ? `city block ${site.area.w} × ${site.area.h}` : bounds ? `${bounds.w} × ${bounds.h}` : '';
+  saveEntry($('bp-save'), { kind: 'block', string: $('bp-string').value, name: made || 'Factory block', note: [made, size].filter(Boolean).join(' · ') });
+}
+
+function renderLibrary() {
+  $('library-filter').hidden = library.length < 6;
+  $('library-folders').replaceChildren(...foldersOf(library).map(f => new Option(f)));
+  const groups = grouped(library, $('library-filter').value);
+  if (!groups.length) {
+    $('library').replaceChildren(el('p', { className: 'hint', textContent: library.length ? 'Nothing saved matches.' : 'Nothing saved yet: Save beside a city block\'s blueprint or a built factory block\'s.' }));
+    return;
+  }
+  const named = groups.some(g => g.folder);
+  $('library').replaceChildren(...groups.map(({ folder, entries }) => {
+    const list = el('ul', { className: 'kept' }, ...entries.map(keptRow));
+    if (!named) return list;
+    let head;
+    if (folder) {
+      const name = el('input', { type: 'text', value: folder, ariaLabel: 'Folder name', title: 'Rename the folder (a folder\'s name already in use merges the two)' });
+      name.addEventListener('change', () => keep(renameFolder(library, folder, name.value)));
+      head = el('div', { className: 'folder-head' }, name);
+    } else head = el('div', { className: 'folder-head' }, el('span', { textContent: 'No folder', style: 'flex:1;padding:2px 7px' }));
+    head.append(el('span', { className: 'count', textContent: String(entries.length) }));
+    return el('div', { className: 'folder' }, head, list);
+  }));
+}
+
+function keptRow(entry) {
+  const name = el('input', { type: 'text', value: entry.name, ariaLabel: 'Name' });
+  name.addEventListener('change', () => keep(editEntry(library, entry.id, { name: name.value })));
+  const folder = el('input', { type: 'text', value: entry.folder, placeholder: 'Folder', ariaLabel: 'Folder', title: 'Pick a folder, or type a new one' });
+  folder.setAttribute('list', 'library-folders');
+  folder.addEventListener('change', () => keep(editEntry(library, entry.id, { folder: folder.value })));
+  const actions = [];
+  if (entry.kind === 'city') {
+    const use = el('button', { type: 'button', textContent: 'Use', title: 'Build inside this city block' });
+    use.addEventListener('click', () => {
+      state.city.on = $('city-on').checked = true;
+      state.city.blueprint = $('city-bp').value = entry.string;
+      save();
+      readCity();
+      flash(use, 'In use');
+    });
+    actions.push(use);
+  }
+  const copyButton = el('button', { type: 'button', textContent: 'Copy', title: 'Copy the blueprint string' });
+  copyButton.addEventListener('click', () => copy(entry.string, copyButton));
+  // (Deleted on a second click.)
+  const remove = el('button', { type: 'button', className: 'danger', textContent: 'Delete' });
+  let armed = null;
+  remove.addEventListener('click', () => {
+    if (armed) return keep(removeEntry(library, entry.id));
+    remove.classList.add('sure');
+    remove.textContent = 'Sure?';
+    armed = setTimeout(() => { armed = null; remove.classList.remove('sure'); remove.textContent = 'Delete'; }, 3000);
+  });
+  const when = entry.saved ? new Date(entry.saved).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const note = [entry.kind === 'city' ? 'City block' : 'Factory block', entry.note, when].filter(Boolean).join(' · ');
+  const row = el('li', {},
+    el('div', { className: 'kept-head' }, iconOf(entry.kind === 'city' ? 'roboport' : 'blueprint'), name),
+    el('div', { className: 'kept-note', textContent: note, title: note }),
+    el('div', { className: 'row' }, ...actions, copyButton, folder, remove));
+  row.dataset.entry = entry.id;
+  return row;
 }
 
 function flash(button, text) {

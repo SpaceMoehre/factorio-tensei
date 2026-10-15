@@ -315,6 +315,24 @@
     .selection { margin-left: 0; }
   }
   @media (prefers-reduced-motion: reduce) { *, ::before, ::after { animation: none !important; transition: none !important; } }
+
+  /* Saved blueprints */
+  #library-filter { width: 100%; margin-bottom: 6px; }
+  .folder { margin-top: 10px; }
+  .folder-head { display: flex; gap: 6px; align-items: center; font-size: 13px; color: var(--muted); }
+  .folder-head input { flex: 1; min-width: 0; font-weight: 600; background: transparent; border-color: transparent; box-shadow: none; padding: 2px 6px; }
+  .folder-head input:hover, .folder-head input:focus { border-color: var(--border); background: var(--inset); }
+  .folder-head .count { color: var(--faint); white-space: nowrap; }
+  ul.kept { list-style: none; padding: 0; margin: 4px 0 0; }
+  ul.kept li { padding: 6px 0; border-top: 1px solid var(--border-soft); min-width: 0; }
+  .kept-head { display: flex; gap: 8px; align-items: center; min-width: 0; }
+  .kept-head .sprite { width: 26px; height: 26px; }
+  .kept-head input { flex: 1; min-width: 0; padding: 3px 6px; }
+  .kept-note { margin: 2px 0 0 34px; color: var(--faint); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .kept .row { margin: 4px 0 0 34px; flex-wrap: wrap; align-items: center; }
+  .kept .row button { padding: 2px 8px; font-size: 13px; }
+  .kept .row input { width: 120px; min-width: 0; flex: 1; padding: 2px 6px; font-size: 13px; }
+  .kept .row button.danger:hover:not(:disabled), .kept .row button.danger.sure { border-color: var(--danger); color: var(--danger); }
 </style>
 </head>
 <body>
@@ -394,6 +412,7 @@
           <button id="city-load" type="button">Load file…</button>
           <input type="file" id="city-file" accept=".txt,.json,text/plain,application/json" hidden>
           <button id="city-clear" type="button">Clear</button>
+          <button id="city-save" type="button" title="Keep this city block in Saved blueprints">Save</button>
         </div>
         <p class="hint" id="city-info"></p>
         <div class="settings">
@@ -439,7 +458,7 @@
           </div>
         </div>
         <textarea id="bp-string" readonly aria-label="Blueprint string"></textarea>
-        <div class="row"><button id="copy-string" type="button" class="primary">Copy blueprint string</button></div>
+        <div class="row"><button id="copy-string" type="button" class="primary">Copy blueprint string</button><button id="bp-save" type="button" title="Keep this factory block in Saved blueprints">Save</button></div>
         <details>
           <summary>Blueprint JSON</summary>
           <textarea id="bp-json" readonly aria-label="Blueprint JSON" style="height:160px"></textarea>
@@ -464,6 +483,19 @@
         <p class="hint" id="clocks-wires" hidden>Circuit wires are None (Logistics): the inserters need wires to the network carrying the signals.</p>
       </section>
     </div>
+    <section class="card" aria-labelledby="library-title">
+      <div class="section-head">
+        <img class="art" data-icon="blueprint" alt="">
+        <div>
+          <h2 id="library-title">Saved blueprints</h2>
+          <p class="hint">City blocks and factory blocks you saved, kept in this browser. Rename them, give them a folder, use or copy them again.</p>
+        </div>
+      </div>
+      <input type="search" id="library-filter" placeholder="Search saved…" aria-label="Search saved blueprints" autocomplete="off" hidden>
+      <div id="library"></div>
+      <datalist id="library-folders"></datalist>
+      <p class="hint" id="library-note" aria-live="polite"></p>
+    </section>
   </aside>
   <main>
     <canvas id="map" aria-label="Factory block map"></canvas>
