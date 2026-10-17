@@ -42,6 +42,8 @@ export class RoutingError extends Error {
   task;
   /** @type {number | undefined} the Sub-Block Placement found no room for */
   unplaced;
+  /** @type {boolean | undefined} a pair of belts found no room for the splitter evening them, and starves without */
+  unbalanced;
   /** @type {boolean | undefined} Layers found no columns the Sub-Blocks fit */
   noColumns;
 }
@@ -513,7 +515,12 @@ function step(x, y, d, n = 1) {
 }
 
 // A tunnel surfaces `hop` tiles ahead, anywhere up to the underground's reach (ADR 0003).
-const HOPS = reach => [...Array(reach - 1).keys()].map(i => i + 2);
+// (Kept by reach: every step of every search asks.)
+const hops = new Map();
+const HOPS = reach => {
+  if (!hops.has(reach)) hops.set(reach, [...Array(reach - 1).keys()].map(i => i + 2));
+  return hops.get(reach);
+};
 
 function tunnelMove(node, hop, pieces) {
   const [nx, ny] = step(node.x, node.y, node.a, hop + 1);

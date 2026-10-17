@@ -128,8 +128,10 @@ export function* search(entries, catalog, logistics, options = {}) {
   const { copies } = outcome;
   const designs = again ? outcome.designs.map((list, i) => list.map((c, k) => (c.copies ? revive(ctx, i, [{ ...c, ...copies[i][k] }], rng)[0] : c))) : outcome.designs;
   designed?.(ctx.plan.map((sb, i) => ({ item: sb.item, count: sb.count, area: designOf(designs[i][0])?.area ?? null })));
-  // (Laying out takes about as long as designing did: never less than that.)
-  const until = options.routing === undefined ? deadline : Math.max(deadline, now() + Math.max(options.routing, outcome.ms));
+  // (Laying out takes about twice as long as designing did: never less than that. Designing once
+  // took about as long, before each core was built once, ADR 0058: Py molybdenum oxide's tries of
+  // 10 s, their candidates cut short, found 1 furnace and an Annex of 1, not 3.)
+  const until = options.routing === undefined ? deadline : Math.max(deadline, now() + Math.max(options.routing, LAYING * outcome.ms));
 
   // Breakout designs, built the first time the search tries them (with a random source of their
   // own, so the rest of the search draws as it would without them): a Sub-Block's designs for
@@ -364,7 +366,9 @@ export function* search(entries, catalog, logistics, options = {}) {
       if (trial && placed > best.placed) continue;
       if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
       // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
-      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: bounded ? () => (timedOut ||= now() > until) : null };
+      // (Looking for a layout without Starvation, `strict`: a pair of belts whose splitter finds
+      // no room fails the layout where they starve unbalanced, ADR 0059.)
+      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: bounded ? () => (timedOut ||= now() > until) : null, ...(perfect && ctx.giving === undefined ? { strict: true } : {}) };
       // A byproduct's splitter after its producers that finds no way: their belt chained through
       // the consumers instead (or that run of them, a line past its consumers riding on), route by
       // route — however the links are routed. (`used`: how the links were routed, for the user's
@@ -372,7 +376,9 @@ export function* search(entries, catalog, logistics, options = {}) {
       const chaining = lay => {
         try {
           const out = compose(ctx, work, positions, lay);
-          used = lay;
+          // (The user's moves lay it out again as routed, unbalanced where a splitter finds no room.)
+          const { strict: _, ...as } = lay;
+          used = as;
           return out;
         } catch (first) {
           let e = first;
@@ -384,7 +390,8 @@ export function* search(entries, catalog, logistics, options = {}) {
             if (moved.holes?.size) break;
             try {
               const out = compose(ctx, again, moved, lay);
-              [work, positions, used] = [again, moved, lay];
+              const { strict: _, ...as } = lay;
+              [work, positions, used] = [again, moved, as];
               placed = positions.bounds.w * positions.bounds.h;
               boxes = positions.boxes;
               return out;
@@ -414,6 +421,9 @@ export function* search(entries, catalog, logistics, options = {}) {
         // not starve, nor delivers it in one that may, ADR 0054, ADR 0057. Candidates routed again
         // so took half of Py titanium plate's search, none fitting, ADR 0058.)
         if (bounded && work.routes.some(r => r.loop?.tapped)) throw e;
+        // (Nor where a pair of belts found no room for its splitter: without splitters they starve
+        // unbalanced all the same.)
+        if (e.unbalanced) throw e;
         return chaining({ ...layout, plain: true });
       };
       try {
@@ -502,6 +512,9 @@ export function* search(entries, catalog, logistics, options = {}) {
     return list.map(t => t.candidate);
   }
 }
+
+// How many times as long as designing a try's candidates get at least.
+const LAYING = 2;
 
 // Designs kept from searches before, the latest KEPT_DESIGNS (Maximize tries the same Goals
 // again: an Annex's first try in each Annex's room, those that may starve after those that may

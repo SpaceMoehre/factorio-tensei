@@ -82,7 +82,8 @@ export function starvedBy(ctx, prepared) {
 //          belts each from the west edge), fansLast (Fan-outs routed after the other Side
 //          Inputs), alone (no Fan-out across Sub-Blocks: each one's belts of a Side Input from
 //          the west edge), short (Fan-outs across Sub-Blocks in runs of FAN_SHORT at most),
-//          until (true once the search is out of time) }
+//          until (true once the search is out of time), strict (a pair of belts whose splitter
+//          finds no room fails the layout where they starve unbalanced) }
 // In a City Block (ctx.site) links are routed inside its Buffer and round its Fixtures (or under
 // them): the train's belts enter on its inner west edge and leave on its inner east edge.
 // Throws RoutingError or PowerError when the layout cannot be built.
@@ -1305,6 +1306,12 @@ export function compose(ctx, prepared, positions, layout) {
           else grid.reserve(x, y, before[i]);
         });
       }
+    }
+    // Looking for a layout without Starvation (`strict`), where the two starve unbalanced the
+    // layout fails here, not once routed and finished: routed again with them first, else room
+    // round them (ADR 0059: Py titanium plate's grade 1 screeners' belts above 11 casting units).
+    if (layout.strict && simulate({ routes: [a, b].map((r, id) => ({ ...r, id, taps: undefined })), subBlocks: plan }).starvation.length) {
+      throw Object.assign(new RoutingError(`belts ${a.id} and ${b.id}: no room for the splitter evening them`), { unbalanced: true });
     }
     return plain();
   }

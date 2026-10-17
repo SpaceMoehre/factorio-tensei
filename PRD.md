@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v47: A splitter with no room fails the layout at once (implemented)
+Where v47 differs from v46, v47 wins.
+- **Fail fast:** in a Maximize try, two belts that a splitter evens out and that starve without it fail the layout as soon as the splitter finds no room: routed again with them first, else room round them. Such layouts are no longer routed in full only to starve (ADR 0059).
+- **Candidates keep their time:** a try's candidates get its budget and never less than twice as long as designing took, now that designing is faster (Py molybdenum oxide's 10 s tries find 3 furnaces again).
+
 ## v46: Work no layout used (implemented)
 Where v46 differs from v45, v46 wins.
 - **The same layouts, sooner:** the layout search no longer works out what no layout uses: design variants alike are built once and rows shifted sideways only where unshifted ones starve; a try like one before it takes its designs; ways of columns, Fixture checks and spots are not weighed again; layouts that starve as routed are not finished; fallbacks that cannot fit are not tried. Maximize lays out as before in less time (ADR 0058).
