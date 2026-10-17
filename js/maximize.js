@@ -5,7 +5,7 @@ import { LayoutError } from './layout/core.js';
 import { bands } from './bands.js';
 import { annexSite, annexed } from './annex.js';
 import { validateBlock } from './layout/validity.js';
-import { simulate } from './sim.js';
+import { simulate, throughput } from './sim.js';
 import { rankOf, riding } from './layout/score.js';
 
 // Maximize (CONTEXT.md): the highest rate of the Goals whose Compound Block fits the City Block
@@ -28,13 +28,17 @@ import { rankOf, riding } from './layout/score.js';
 // did not).
 // Then Annexes (annex.js): in the room the highest that fit leaves, the chain again, maximized
 // there with what was built as Fixtures, while one fits (yielded as the layouts together: `rate`,
-// `machines` and `goals` theirs summed).
+// `machines` and `goals` theirs summed). Then, once nothing more fits without Starvation, layouts
+// that starve, kept where they deliver more of the first Goal (ADR 0057): one more Annex, or with
+// no Annexes (or none that fits without), more machines than the best. A fit that starves carries
+// what it delivers (`delivered`, sim.js throughput); its 'try' says `starving`.
 // options: { made, selections, uses, index, site, budgetMs (each try's), maxCandidates (each try's),
 //            seed, now, upTo (no higher than the Goals' own rates: a City Block they do not fit
 //            filled up to them), annexes (false: none), bands (false: no Bands), most (no more of
 //            the first Goal's machines), probe (one of them first: none fitting, nothing more),
 //            least (Filling's fewest machines more, a quarter by default), giving (false: no
-//            Giving Way) }
+//            Giving Way), starving (false: no layout that starves; 'only': none without looked
+//            for, the last Annex's) }
 export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
   const most = options.most ?? (options.upTo ? plan.wanted : Infinity);
@@ -97,7 +101,10 @@ export function* maximize(goals, catalog, logistics, options) {
     }
   }
   let probing = options.probe ? Math.min(1, most) : null;
-  if (top >= plan.foretold().machines + FILL) {
+  // (`starving: 'only'`: no layout without Starvation is looked for, only those that may starve:
+  // the last Annex, ADR 0057.)
+  const only = options.starving === 'only';
+  if (!only && top >= plan.foretold().machines + FILL) {
     told = plan.foretold().machines;
     yield { type: 'foretell', ...plan.foretold() };
     yield* inBands(plan.foretold().machines);
@@ -110,7 +117,7 @@ export function* maximize(goals, catalog, logistics, options) {
     }
     // (An Annex's first try: its least, one of the first Goal's machines. None fitting for want of
     // room, no more is tried.)
-    const n = probing ?? plan.next();
+    const n = only ? null : probing ?? plan.next();
     if (n === null) break;
     const list = plan.goalsFor(n);
     yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n), ...(plan.filling ? { more: n - plan.lo } : {}) };
@@ -123,12 +130,12 @@ export function* maximize(goals, catalog, logistics, options) {
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
     } else {
       failure = outcome.failure;
-      misses.push({ rate: list[0].rate, machines: Math.ceil(n), reason: outcome.failure?.message ?? null });
+      misses.push({ rate: list[0].rate, machines: Math.ceil(n), count: n, starves: Boolean(outcome.starves), reason: outcome.failure?.message ?? null });
       if (probing !== null && !outcome.starves) break;
     }
     probing = null;
   }
-  if (!banded && top > (best?.machines ?? 0)) yield* inBands(best?.machines ?? 0);
+  if (!only && !banded && top > (best?.machines ?? 0)) yield* inBands(best?.machines ?? 0);
   // Giving Way (ADR 0047): in a City Block with Fixtures in its room, the first Goal's Sub-Block
   // gives up the machines Fixtures stand on (a quarter of them at most), none built elsewhere: its
   // copies stand closer, a Fixture on a machine rather than between them, and more may stand in
@@ -191,6 +198,40 @@ export function* maximize(goals, catalog, logistics, options) {
       }
     }
   }
+  // Starving (ADR 0057): above the highest that fit without Starvation, layouts that starve, each
+  // kept where it delivers more of the first Goal than the best so far (a Sub-Block short of an
+  // input runs as much slower, and those it feeds too: sim.js throughput). First the numbers above
+  // it that did not fit for Starvation (or time), lowest first; then a machine more at a time.
+  // It ends after STARVING_MISSES tries in a row that deliver no more or find no layout, at the
+  // cap, or at a number that found no room. Here only where no Annex follows, or nothing fit
+  // without: a layout that takes more room leaves Annexes less, and they may have made more (Py
+  // molybdenum oxide: 3 furnaces starving, or 2 and an Annex of 2). Else in the last Annex, in the
+  // room the others leave (below). (None in Bands.)
+  const deliveredBy = b => b?.delivered ?? b?.rate ?? 0;
+  if (options.starving !== false && (only || !best || options.annexes === false) && (bestN !== null || !best)) {
+    const from = bestN ?? 0;
+    const starved = [...new Set(misses.filter(m => m.starves && m.count > from && m.count < plan.ceiling && m.count <= most).map(m => m.count))].sort((a, b) => a - b);
+    const counts = function* () {
+      yield* starved;
+      for (let n = Math.max(Math.floor(from), ...starved.map(Math.floor)) + 1; ; n++) yield n;
+    };
+    let missed = 0;
+    for (const n of counts()) {
+      if (missed >= STARVING_MISSES || n > most || n >= plan.ceiling) break;
+      const list = plan.goalsFor(n);
+      yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n), starving: true };
+      const out = attempt(plan, n, { ...options, unsorted: true, starving: true });
+      tried += out.tried;
+      if (!out.block || out.delivered <= deliveredBy(best) + 1e-6) {
+        missed++;
+        continue;
+      }
+      missed = 0;
+      best = { rate: list[0].rate, machines: Math.ceil(n), count: n, goals: list, delivered: Math.floor(out.delivered * 100) / 100 };
+      [bestN, bestScore, bestBlock, giving] = [n, out.score, out.block, false];
+      yield { type: 'best', block: out.block, score: out.score, tried, ...best };
+    }
+  }
   // Annexes: the chain again in the room left, while one fits (and the cap leaves any). Each
   // layout found with the one before it (checked together too: a tunnel of one may pair with the
   // other's). Where one drawing a fluid made here from a built pipe finds none (no way to that
@@ -208,28 +249,33 @@ export function* maximize(goals, catalog, logistics, options) {
   let stages = bestN !== null ? [{ n: bestN, giving, extra: {}, alone: bestBlock, base: null, block: bestBlock }] : null;
   // An Annex beside `built`, no more than `cap` of the first Goal's machines: { block (the
   // two together), score, best, stage }, else null.
-  function* annexOf(built, before, cap) {
+  function* annexOf(built, before, cap, starving = false) {
     const site = annexSite(options.site, built, catalog, options.made);
     const alone = { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) };
     let found = null;
     for (const room of Object.values(site.draws).some(d => d.only) ? [site, alone] : [site]) {
-      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false });
+      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false, starving: starving ? 'only' : false });
       let step;
       for (step = run.next(); !step.done; step = run.next()) {
         const v = step.value;
         if (v.type === 'try') yield { ...v, rate: plus(v.rate, before.rate), machines: v.machines + before.machines };
         if (v.type !== 'best') continue;
         const block = annexed(built, v.block, options.site, catalog, logistics);
-        if (validateBlock(block, catalog, logistics).length || simulate(block).starvation.length) continue;
+        // (Beside a layout that starves, together they deliver what each does alone, ADR 0057;
+        // else together they starve nothing.)
+        const delivered = deliveredBy(before) + deliveredBy(v);
+        const starved = before.delivered !== undefined || v.delivered !== undefined;
+        if (validateBlock(block, catalog, logistics).length || (starved ? throughput(block).delivered(goals[0].item) < delivered - 1e-6 * Math.max(1, delivered) : simulate(block).starvation.length)) continue;
         const list = before.goals.map((g, k) => ({ ...g, rate: plus(g.rate, v.goals[k].rate) }));
         found = {
-          block, score: v.score, best: { rate: list[0].rate, machines: before.machines + v.machines, count: before.count + v.count, goals: list },
+          block, score: v.score, best: { rate: list[0].rate, machines: before.machines + v.machines, count: before.count + v.count, goals: list, ...(starved ? { delivered: Math.floor(delivered * 100) / 100 } : {}) },
           stage: { n: v.count, giving: false, extra: {}, alone: v.block, base: built, block },
         };
         yield { type: 'best', block, score: v.score, tried: tried + v.tried, ...found.best };
       }
       tried += step.value.tried;
-      annexAbove = step.value.above && { ...step.value.above, rate: plus(step.value.above.rate, before.rate), machines: step.value.above.machines + before.machines };
+      // (The last Annex, starving, leaves what did not fit without as it was.)
+      if (!starving) annexAbove = step.value.above && { ...step.value.above, rate: plus(step.value.above.rate, before.rate), machines: step.value.above.machines + before.machines };
       if (found) break;
     }
     return found;
@@ -276,6 +322,7 @@ export function* maximize(goals, catalog, logistics, options) {
     const stage = { n: found.stage.n, giving: false, extra: {}, alone: out.alone, base: built, block: out.block };
     return { found: { ...found, block: out.block, score: out.score, stage }, stages: [...stages.slice(0, j), ...redone, stage] };
   }
+  let last = bestBlock;
   for (let built = bestBlock; built && options.annexes !== false && options.site && most - best.count >= LEAST;) {
     const before = best;
     let found = yield* annexOf(built, before, most - before.count);
@@ -286,6 +333,13 @@ export function* maximize(goals, catalog, logistics, options) {
       yield { type: 'best', block: found.block, score: found.score, tried, ...found.best };
     } else if (stages) stages.push(found.stage);
     [best, built] = [found.best, found.block];
+    last = built;
+  }
+  // Starving, once nothing more fits without (ADR 0057): one more Annex in the room left, its
+  // layout one that may starve, kept where the two together deliver more.
+  if (options.starving !== false && !only && options.annexes !== false && last && most - best.count >= LEAST) {
+    const found = yield* annexOf(last, best, most - best.count, true);
+    if (found) best = found.best;
   }
   // (A number that starved may lie below the highest that fit.)
   const above = annexAbove ?? misses.filter(m => m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
@@ -329,7 +383,7 @@ export function attempt(plan, n, options) {
   // (Not after a try that ran out of time: the same again with more machines seldom routes in
   // it, and would take as long, ADR 0056.)
   const short = first.short;
-  if (!short || short.item === list[0].item || first.timedOut) return first;
+  if (!short || short.item === list[0].item || first.timedOut || options.starving) return first;
   const machines = Math.ceil(short.rate / short.each - 1e-9);
   if (machines > Math.max(SPARE, Math.ceil(short.count / 10))) return first;
   const again = once(plan, list, { [short.item]: machines * short.each }, options);
@@ -340,7 +394,7 @@ export function attempt(plan, n, options) {
 const SPARE = 2;
 
 // One try at the Goals `list` (attempt), with `spare` more of some steps' items.
-function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false }) {
+function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false, starving = false }) {
   let designed = null, entries;
   try {
     ({ entries } = plan.chainOf(list, spare));
@@ -355,10 +409,22 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
   const clock = () => (now() > until ? Infinity : now());
   try {
     const run = search(entries, plan.catalog, plan.logistics, {
-      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: true, precheck, designed: d => { designed = d; },
+      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: !starving, settled: starving, precheck: precheck && !starving, designed: d => { designed = d; },
       ...(giving ? { giving: list[0].item } : {}),
     });
+    // (Starving: of the layouts found, the one that delivers most of the first Goal, ADR 0057.)
+    /** @type {any} */
+    let top = null;
     for (let step = run.next(); ; step = run.next()) {
+      if (starving) {
+        if (step.done) {
+          if (top) return { block: top.block, score: top.score, placed: top.placed, tried: step.value.tried, designed, starves: false, failure: null, delivered: top.delivered };
+          return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), timedOut: Boolean(step.value.timedOut), failure: step.value.failure ?? new Error(`no layout fits ${list[0].rate}/min`) };
+        }
+        const delivered = throughput(step.value.block).delivered(list[0].item);
+        if (!top || delivered > top.delivered + 1e-9) top = { ...step.value, delivered };
+        continue;
+      }
       if (step.done) {
         if (kept) return { block: kept.block, score: kept.score, placed: kept.placed, tried: step.value.tried, designed, starves: false, failure: null };
         const failure = step.value.failure ?? new Error(`no layout without starvation fits ${list[0].rate}/min`);
@@ -553,6 +619,8 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     },
     span: n => Math.round(loose * modules(n)),
     get lo() { return lo; },
+    // The lowest n that found no room.
+    get ceiling() { return ceiling; },
     get hi() { return hiOf(); },
     // The highest n whose Sub-Blocks were all designed without Starvation.
     get designable() { return designable; },
@@ -675,6 +743,9 @@ const SORTING_MS = 120000;
 // How many whole numbers of the first Goal's machines below the most that fit are tried with
 // every byproduct sorted out, where none sorts them out there (ADR 0052).
 const SORT_BELOW = 2;
+
+// How many tries in a row may deliver no more before the climb through starving layouts ends.
+const STARVING_MISSES = 2;
 
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;

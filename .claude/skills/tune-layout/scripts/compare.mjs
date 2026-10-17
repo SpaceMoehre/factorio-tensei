@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 
 const rows = [
   ['rate', s => s.rate],
+  ['delivered', s => s.delivered],
   ['goal machines', s => s.goalMachines],
   ['goal counts', s => s.goalCounts?.join('+')],
   ['valid', s => s.valid],

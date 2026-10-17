@@ -8,7 +8,8 @@
 // highest rate that fits instead (upTo: no higher than the Goals' own): { type: 'foretell', rate, machines } whenever the Foretelling changes,
 // { type: 'try', rate, machines } before each try, { type: 'best', …, rate, machines, goals } for
 // each that fits, and { type: 'done', tried, failure, rate, machines, goals, above } at the end
-// (`above`: the lowest rate tried that did not fit, and why).
+// (`above`: the lowest rate tried that did not fit, and why). A layout that starves comes with
+// what it delivers of the first Goal (`delivered`, ADR 0057); a 'try' of one says `starving`.
 // A move (`move`: { edit (the shown block's), step, inst, dx, dy, score }) lays the shown block out
 // again with that Sub-Block moved (edit.js): { type: 'trying', tried, at, pushed } before each
 // layout it tries, then { type: 'moved', block, at, pushed, back, score, tried }, or { type:
@@ -55,8 +56,8 @@ self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = nul
       const run = maximize(goals.goals, await catalog, logistics, { made: goals.made, selections: goals.selections, uses: goals.uses, upTo: goals.upTo, site, budgetMs, seed });
       let step = run.next();
       for (; !step.done; step = run.next()) self.postMessage(step.value);
-      const { tried, failure, rate, machines, goals: list, above } = step.value;
-      self.postMessage({ type: 'done', tried, failure: failure?.message ?? null, rate, machines, goals: list, above });
+      const { tried, failure, rate, machines, goals: list, above, delivered } = step.value;
+      self.postMessage({ type: 'done', tried, failure: failure?.message ?? null, rate, machines, goals: list, above, delivered });
       return;
     }
     const run = search(entries, await catalog, logistics, { seed, deadline: Date.now() + budgetMs, site, strategy, designs });

@@ -8,7 +8,7 @@ import { maximize, planner, attempt } from '../js/maximize.js';
 import { gapsOf, bands } from '../js/bands.js';
 import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
-import { simulate } from '../js/sim.js';
+import { simulate, throughput } from '../js/sim.js';
 import { context, designStep, designOf, random } from '../js/design.js';
 import { prepare, compose, RoutingError } from '../js/layout/compose.js';
 import { placeBlocks } from '../js/layout/place.js';
@@ -531,6 +531,28 @@ test('a search for a layout without Starvation ends as soon as a Sub-Block canno
   assert.equal(designed, false);
   // Without `perfect`, the search builds what it can.
   assert.equal(search(entries, slow, logistics, { site, maxCandidates: 1 }).next().done, false);
+});
+
+// The same slow inserters: no small-parts factory without Starvation, so Maximize lays out ones
+// that starve and keeps the one that delivers most (each Sub-Block short of an input running as
+// much slower), saying how much (ADR 0057).
+test('Maximize where nothing fits without Starvation: the layout that starves and delivers most', () => {
+  const slow = { ...pyCatalog, inserters: Object.fromEntries(Object.entries(pyCatalog.inserters).map(([k, v]) => [k, { ...v, rotationSpeed: v.rotationSpeed / 8 }])) };
+  const site = siteOf({ area: { x: 0, y: 0, w: 80, h: 80 }, fixtures: [] }, 2);
+  const run = maximize([{ item: 'small-parts-01', rate: 600 }], slow, logistics, { made: pyItems.slice(1), selections: pySelections, site, maxCandidates: 4, annexes: false });
+  let step, found = null;
+  for (step = run.next(); !step.done; step = run.next()) if (step.value.type === 'best') found = step.value;
+  assert.ok(found, 'nothing laid out');
+  const result = /** @type {any} */ (step.value);
+  assert.ok(result.delivered > 0 && result.delivered < result.rate, `${result.delivered} of ${result.rate}`);
+  assert.equal(found.delivered, result.delivered);
+  assert.ok(simulate(found.block).starvation.length > 0);
+  assert.ok(Math.abs(throughput(found.block).delivered('small-parts-01') - result.delivered) < 0.01);
+  // Without: nothing.
+  const strict = maximize([{ item: 'small-parts-01', rate: 600 }], slow, logistics, { made: pyItems.slice(1), selections: pySelections, site, maxCandidates: 4, annexes: false, starving: false });
+  let last;
+  for (last = strict.next(); !last.done; last = strict.next()) assert.notEqual(last.value.type, 'best');
+  assert.equal(/** @type {any} */ (last.value).machines, 0);
 });
 
 test('the recipe index is built once per catalog', () => {

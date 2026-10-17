@@ -17,8 +17,8 @@
 //   --total S         maximize: stop after S seconds of wall clock, keeping the best so far
 //                     (checked between events: a try running finishes first, up to --budget)
 //   --upTo            maximize no higher than the Goals' own rates
-//   --giving --unsorted --sorting --precheck   attempt: search options as Maximize passes them
-//   --no-annexes --no-bands --no-giving   maximize: leave that phase out
+//   --giving --unsorted --sorting --precheck --starving   attempt: search options as Maximize passes them
+//   --no-annexes --no-bands --no-giving --no-starving   maximize: leave that phase out
 //   --seed N          default 1
 //   --root DIR        the repo to run (another worktree for an A/B), default this one
 //   --out DIR         where log.txt, best.json and summary.json go (default ./out-<setup name>)
@@ -61,7 +61,7 @@ const { maximize, planner, attempt } = await import(`${root}/js/maximize.js`);
 const { search } = await import(`${root}/js/search.js`);
 const { expandChain, recipeOptions } = await import(`${root}/js/chain.js`);
 const { validateBlock } = await import(`${root}/js/layout/validity.js`);
-const { simulate } = await import(`${root}/js/sim.js`);
+const { simulate, throughput } = await import(`${root}/js/sim.js`);
 const { compactness, rankOf } = await import(`${root}/js/layout/score.js`);
 const catalog = JSON.parse(readFileSync(`${root}/data/catalog.json`, 'utf8'));
 
@@ -134,7 +134,7 @@ if (mode === 'attempt') {
   const n = Number(opt('n'));
   const p = plan();
   log(`${secs()} try machines=${n}`);
-  const outcome = attempt(p, n, { site, budgetMs, seed, unsorted: flag('unsorted'), sorting: flag('sorting'), giving: flag('giving'), precheck: flag('precheck') });
+  const outcome = attempt(p, n, { site, budgetMs, seed, unsorted: flag('unsorted'), sorting: flag('sorting'), giving: flag('giving'), precheck: flag('precheck'), starving: flag('starving') });
   result = { n, tried: outcome.tried, failure: outcome.failure?.message ?? null, timedOut: outcome.timedOut ?? null, starves: outcome.starves ?? null };
   if (outcome.block) keep(outcome.block, { machines: n, rate: p.goalsFor(n)[0].rate });
   log(`${secs()} attempt n=${n} ${outcome.block ? 'FIT' : 'no'} tried=${outcome.tried} ${outcome.failure?.message ?? ''}`);
@@ -142,7 +142,7 @@ if (mode === 'attempt') {
   const total = opt('total') ? Number(opt('total')) * 1000 : Infinity;
   const run = maximize(goals, catalog, logistics, {
     made, selections, uses, index, upTo, site, budgetMs, seed,
-    ...(flag('no-annexes') ? { annexes: false } : {}), ...(flag('no-bands') ? { bands: false } : {}), ...(flag('no-giving') ? { giving: false } : {}),
+    ...(flag('no-annexes') ? { annexes: false } : {}), ...(flag('no-bands') ? { bands: false } : {}), ...(flag('no-giving') ? { giving: false } : {}), ...(flag('no-starving') ? { starving: false } : {}),
   });
   const tries = [];
   let step, open = null;
@@ -151,10 +151,10 @@ if (mode === 'attempt') {
     if (v.type === 'best') {
       keep(v.block, { rate: v.rate, machines: v.machines });
       if (open) open.fit = true;
-      log(`${secs()} BEST rate=${v.rate} machines=${v.machines} goalCounts=${goalCounts(v.block).join('+')}`);
+      log(`${secs()} BEST rate=${v.rate}${v.delivered !== undefined ? ` delivered=${v.delivered}` : ''} machines=${v.machines} goalCounts=${goalCounts(v.block).join('+')}`);
     } else {
-      if (v.type === 'try') tries.push(open = { t: secs(), rate: v.rate, machines: v.machines, more: v.more ?? null, giving: v.giving ?? false, fit: false });
-      log(`${secs()} ${v.type} rate=${v.rate} machines=${v.machines}${v.more ? ` more=${v.more}` : ''}${v.giving ? ' giving' : ''}`);
+      if (v.type === 'try') tries.push(open = { t: secs(), rate: v.rate, machines: v.machines, more: v.more ?? null, giving: v.giving ?? false, starving: v.starving ?? false, fit: false });
+      log(`${secs()} ${v.type} rate=${v.rate} machines=${v.machines}${v.more ? ` more=${v.more}` : ''}${v.giving ? ' giving' : ''}${v.starving ? ' starving' : ''}`);
     }
     if (Date.now() - t0 > total) {
       log(`${secs()} STOPPED (--total)`);
@@ -210,6 +210,7 @@ if (best) {
     valid: errors.length === 0, errors: errors.slice(0, 5),
     starving: +starvation.reduce((s, x) => s + x.demand - x.available, 0).toFixed(3), starvation: starvation.slice(0, 5),
     loopsByTrain: rankOf(b)[1], byproductsRiding: rankOf(b)[2],
+    delivered: goals[0] ? +throughput(b).delivered(goals[0].item).toFixed(2) : null,
     entities: b.entities.length, routes: b.routes.length,
   });
   if (site) {

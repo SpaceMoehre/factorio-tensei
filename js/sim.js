@@ -63,3 +63,82 @@ function laneShares(items) {
     return it.supply * Math.min(1, lane.capacity / lane.supply);
   });
 }
+
+// Throughput (ADR 0057): what a layout that starves makes. A Sub-Block short of an input runs as
+// much slower as it is short (`factor`, 0 to 1, by Sub-Block), so it takes that much less of its
+// other inputs and makes that much less for those it feeds, and so on down the chain, until no
+// Sub-Block is shorter than it runs, nor makes more of an item than can leave it. `delivered(item)`: what leaves of an item, made less what its
+// Sub-Blocks take back, less what its belts to the train cannot carry.
+export function throughput(block) {
+  const factor = block.subBlocks.map(() => 1);
+  // The Sub-Block whose machines a route's items come from (a feedback's or gatherer's: the
+  // belt it is tapped off), else null (the train).
+  const from = route => {
+    if (typeof route.source === 'number') return route.source;
+    const fed = route.fedBy ?? route.fedFrom;
+    return fed !== undefined ? from(block.routes[fed]) : null;
+  };
+  const joining = new Map();
+  for (const g of block.routes) {
+    if (g.joins === undefined || from(g) === null) continue;
+    const k = `${g.joins}:${g.items[0].item}`;
+    joining.set(k, [...joining.get(k) ?? [], g]);
+  }
+  let starvation = [];
+  for (let round = 0; round < 4 * block.subBlocks.length + 4; round++) {
+    const scaled = {
+      subBlocks: block.subBlocks.map((sb, i) => ({
+        ...sb, inputs: sb.inputs.map(x => ({ ...x, rate: x.rate * factor[i] })), outputs: sb.outputs.map(x => ({ ...x, rate: x.rate * factor[i] })),
+      })),
+      routes: block.routes.map(r => {
+        const s = from(r);
+        // (A byproduct tapped off to its Use whose splitter found no room: the train brings none.)
+        const f = r.loop?.tapped && r.fedBy === undefined ? 0 : s === null ? 1 : factor[s];
+        return {
+          ...r,
+          items: r.items.map(i => {
+            const joined = joining.get(`${r.id}:${i.item}`);
+            const share = joined ? joined.reduce((sum, g) => sum + g.items[0].rate * factor[from(g)], 0) / Math.max(1e-9, joined.reduce((sum, g) => sum + g.items[0].rate, 0)) : 1;
+            // (From the train: as much as the belt carries, however fast its consumers run.)
+            return s === null && f > 0 ? { ...i, ...(i.joined ? { joined: i.joined * share } : {}) }
+              : { ...i, rate: i.rate * f, supply: i.supply * f, ...(i.joined ? { joined: i.joined * share } : {}) };
+          }),
+        };
+      }),
+    };
+    starvation = simulate(scaled).starvation;
+    let changed = false;
+    const slow = (i, ratio) => {
+      const next = factor[i] * Math.max(0, Math.min(1, ratio));
+      if (next < factor[i] - 1e-9) {
+        factor[i] = next;
+        changed = true;
+      }
+    };
+    for (const s of starvation) if (s.subBlock !== null && s.demand > EPSILON) slow(s.subBlock, s.available / s.demand);
+    // (Backed up: a Sub-Block makes no more of an item than those it feeds take, where none of it
+    // goes on to the train or joins another's belt — a byproduct whose Use runs slower stops its
+    // producer, and with it all the producer makes.)
+    block.subBlocks.forEach((sb, i) => {
+      for (const out of sb.outputs) {
+        const made = out.rate * factor[i];
+        // (A pipe takes what every pipe of its network's consumers take.)
+        const own = block.routes.filter(r => from(r) === i && r.items.some(x => x.item === out.name));
+        const networks = new Set(own.map(r => r.network).filter(k => k !== undefined));
+        const carrying = [...own, ...block.routes.filter(r => !own.includes(r) && r.network !== undefined && networks.has(r.network))];
+        if (made <= EPSILON || !own.length || carrying.some(r => r.sink === 'side-output' || r.joins !== undefined || r.into !== undefined)) continue;
+        const takers = new Set(carrying.flatMap(r => r.consumers));
+        const taken = [...takers].reduce((sum, c) => sum + (block.subBlocks[c].inputs.find(x => x.name === out.name)?.rate ?? 0) * factor[c], 0);
+        if (taken < made - 1e-6 * Math.max(1, made)) slow(i, taken / made);
+      }
+    });
+    if (!changed) break;
+  }
+  const delivered = item => {
+    const made = block.subBlocks.reduce((sum, sb, i) => sum + (sb.outputs.find(o => o.name === item)?.rate ?? 0) * factor[i], 0);
+    const taken = block.subBlocks.reduce((sum, sb, i) => sum + (sb.inputs.find(x => x.name === item)?.rate ?? 0) * factor[i], 0);
+    const lost = starvation.filter(s => s.subBlock === null && s.item === item).reduce((sum, s) => sum + s.demand - s.available, 0);
+    return Math.max(0, made - taken - lost);
+  };
+  return { factor, delivered };
+}

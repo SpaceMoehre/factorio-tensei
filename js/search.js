@@ -32,7 +32,10 @@ import { editOf } from './layout/edit.js';
 //            Sub-Blocks are designed, and no less than designing took), unsorted (no byproduct
 //            sorted out by a splitter after its producers: it rides on through their consumers),
 //            giving (an item: its Sub-Block gives up the machines Fixtures stand on, none built
-//            elsewhere, and the layout runs at the rate of those left: Giving Way) }
+//            elsewhere, and the layout runs at the rate of those left: Giving Way), settled (not
+//            perfect, but bounded as a perfect search is: it gives up `patience` candidates after
+//            the structured ones, and its Placement and routing end with its time: Maximize's
+//            tries that may starve, ADR 0057) }
 // Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }; returns { tried,
 // failure, timedOut (it stopped for want of time, not of candidates), short (where a Sub-Block's
 // every design starves: { item, rate (what its least starving design starves), each (what one of
@@ -40,6 +43,7 @@ import { editOf } from './layout/edit.js';
 // alone starved the layout passed over that starved least) }.
 export function* search(entries, catalog, logistics, options = {}) {
   const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null, strategy = 'search' } = options;
+  const bounded = perfect || Boolean(options.settled);
   const spread = strategy === 'spread';
   const rng = random(seed);
   const started = now();
@@ -234,7 +238,7 @@ export function* search(entries, catalog, logistics, options = {}) {
   while (tried < maxCandidates && (tried === 0 || !(timedOut = now() >= until))) {
     // In a City Block, a search whose structured candidates found no room for a layout (or,
     // looking for one without Starvation, none of those) seldom finds one later.
-    if ((perfect || (site && !best)) && tried >= structured + patience) break;
+    if ((bounded || (site && !best)) && tried >= structured + patience) break;
     const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng, site);
     tried++;
     const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}`;
@@ -300,7 +304,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     };
     let work = ready, used = null, positions = null;
     try {
-      positions = placeBlocks(ctx, ready, perfect ? { ...candidate, until: () => now() > until } : candidate);
+      positions = placeBlocks(ctx, ready, bounded ? { ...candidate, until: () => now() > until } : candidate);
       if (positions.holes?.size) {
         way = true;
         const made = makeWay(candidate, k, ready, positions);
@@ -316,7 +320,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       if (trial && placed > best.placed) continue;
       if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
       // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
-      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: perfect ? () => (timedOut ||= now() > until) : null };
+      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: bounded ? () => (timedOut ||= now() > until) : null };
       // A byproduct's splitter after its producers that finds no way: their belt chained through
       // the consumers instead (or that run of them, a line past its consumers riding on), route by
       // route — however the links are routed. (`used`: how the links were routed, for the user's
@@ -410,9 +414,9 @@ export function* search(entries, catalog, logistics, options = {}) {
       continue;
     }
     // A byproduct tapped off to the Sub-Block taking it whose splitter found no room: it would
-    // come by train, and its producers' would stop the belt where it ends (ADR 0054). Room round
-    // them next.
-    const untapped = perfect ? block.routes.find(r => r.loop?.tapped && r.fedBy === undefined) : null;
+    // come by train, and its producers' would stop the belt where it ends (ADR 0054; in a try that
+    // may starve, it delivers nothing, ADR 0057). Room round them next.
+    const untapped = bounded ? block.routes.find(r => r.loop?.tapped && r.fedBy === undefined) : null;
     if (untapped) {
       makeRoom([untapped.loop.from, ...untapped.consumers]);
       failure = new Error(`${untapped.items[0].item}: no room for its splitter after its producers`);

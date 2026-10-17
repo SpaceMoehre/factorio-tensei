@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { simulate } from '../js/sim.js';
+import { simulate, throughput } from '../js/sim.js';
 
 const needs = (item, rate) => ({ inputs: [{ name: item, type: 'item', rate }] });
 
@@ -29,6 +29,49 @@ test('the Side Output is the last consumer on its route: what the lane cannot ca
     routes: [{ id: 0, sink: 'side-output', consumers: [], items: [{ item: 'copper-cable', rate: 1000, supply: 1000, capacity: 450, lane: 'far' }] }],
   };
   assert.deepEqual(simulate(block).starvation, [{ route: 0, subBlock: null, item: 'copper-cable', demand: 1000, available: 450 }]);
+});
+
+// Ore by train to plates, plates to gears, gears on to the train: the plates' belt carries 60 of
+// the 100 the gear machines take. They run at 60% and make 60% of their gears (ADR 0057), and the
+// plate machines, their belt backed up, as fast. Short of ore, the plate machines run at half
+// speed, and so do the gears.
+test('throughput: a Sub-Block short of an input runs that much slower, and so do those it feeds', () => {
+  const sb = (item, input, rateIn, rateOut) => ({ item, inputs: [{ name: input, type: 'item', rate: rateIn }], outputs: [{ name: item, type: 'item', rate: rateOut }] });
+  const belt = (id, source, consumers, item, rate, capacity, sink = null) => ({ id, kind: 'belt', source, sink, consumers, items: [{ item, rate, supply: rate, capacity }] });
+  const block = {
+    subBlocks: [sb('gear', 'plate', 100, 50), sb('plate', 'ore', 100, 100)],
+    routes: [belt(0, 'side-input', [1], 'ore', 100, 900), belt(1, 1, [0], 'plate', 100, 60), belt(2, 0, [], 'gear', 50, 450, 'side-output')],
+  };
+  const { factor, delivered } = throughput(block);
+  assert.deepEqual(factor.map(f => Math.round(f * 1000) / 1000), [0.6, 0.6]);
+  assert.ok(Math.abs(delivered('gear') - 30) < 1e-6);
+  const short = { ...block, routes: [belt(0, 'side-input', [1], 'ore', 100, 50), ...block.routes.slice(1)] };
+  const less = throughput(short);
+  assert.deepEqual(less.factor.map(f => Math.round(f * 1000) / 1000), [0.5, 0.5]);
+  assert.ok(Math.abs(less.delivered('gear') - 25) < 1e-6);
+  // Nothing short: all of it.
+  const full = { ...block, routes: [block.routes[0], belt(1, 1, [0], 'plate', 100, 450), block.routes[2]] };
+  assert.equal(throughput(full).delivered('gear'), 50);
+});
+
+// Crushers make crushed ore for the train and stone for a Use, short of water by half: the Use
+// runs at half speed, the stone backs up and the crushers make half their ore (ADR 0057).
+test('throughput: a byproduct its Use takes less of stops its producer', () => {
+  const block = {
+    subBlocks: [
+      { item: 'crushed', inputs: [], outputs: [{ name: 'crushed', type: 'item', rate: 60 }, { name: 'stone', type: 'item', rate: 30 }] },
+      { item: 'gravel', use: true, inputs: [{ name: 'stone', type: 'item', rate: 30 }, { name: 'water', type: 'fluid', rate: 100 }], outputs: [{ name: 'gravel', type: 'item', rate: 30 }] },
+    ],
+    routes: [
+      { id: 0, kind: 'belt', source: 0, sink: 'side-output', consumers: [], items: [{ item: 'crushed', rate: 60, supply: 60, capacity: 450 }] },
+      { id: 1, kind: 'belt', source: 'side-input', loop: { from: 0, tapped: true }, fedBy: 0, sink: null, consumers: [1], items: [{ item: 'stone', rate: 30, supply: 30, capacity: 450 }] },
+      { id: 2, kind: 'pipe', source: 'side-input', sink: null, consumers: [1], items: [{ item: 'water', rate: 100, supply: 50, capacity: 50 }] },
+      { id: 3, kind: 'belt', source: 1, sink: 'side-output', consumers: [], items: [{ item: 'gravel', rate: 30, supply: 30, capacity: 450 }] },
+    ],
+  };
+  const { factor, delivered } = throughput(block);
+  assert.deepEqual(factor.map(f => Math.round(f * 1000) / 1000), [0.5, 0.5]);
+  assert.ok(Math.abs(delivered('crushed') - 30) < 1e-6);
 });
 
 test('items sharing a lane split its capacity in proportion to their supply', () => {

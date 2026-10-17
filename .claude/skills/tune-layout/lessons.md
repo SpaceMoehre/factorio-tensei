@@ -53,6 +53,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | A byproduct a Use takes alone tapped off its producers' belt by a filter splitter (a Recipe Loop's tap); untapped in Maximize no fit | Perylene: pyrite riding to the belt's end 1 → 0; 2700 → 3300/min | 0054 |
 | Supplied Items counted in their belt's flow; a belt of two Supplied Items sends one off and joins with the other; Layers bounded (steps, pruning); one by one first where columns fit none | Titanium plate (21 Sub-Blocks): nothing → 3750/min at 10 casting units; molybdenum 62.49 → 599.99 | 0055 |
 | A try out of time: no spare-machines retry, the next halfway down; no sorting phase where no belt rides a byproduct alone | Titanium plate: first fit at 1190 s (none in 3000 s before), 8226.56/min with an Annex at 3625 s | 0056 |
+| Starving for more output: Throughput down the chain (backpressure, untapped feeds bring nothing); starving tries only once nothing more fits without (last Annex, or above the best without Annexes) | Titanium plate's last Annex: +3 casting units, 8226.56 → 9351.56/min, none starving; molybdenum and small parts unchanged | 0057 |
 
 ## What failed, was reverted, or must not be done
 
@@ -105,9 +106,13 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Banded Layers** (0056). Two bands of columns where one is too wide gave the same layout as one-by-one placement and cost time: what kept Layers from fitting were single-module stacks taller than half the block. Look at the stack sizes (`place.mjs`) before building a placement mode.
 - **Routing tapped byproducts and Supplied Items earlier** (0056). Among the links between Sub-Blocks rather than after all of them: no Count fitted that did not before.
 
+- **Starving first, Annexes after** (0057). A starving main layout of 3.3 molybdenum furnaces beat 2 that starve nothing (462 vs 400/min) and left no room for the Annex of 2 the other way found (800). A phase that grows an early layout must be weighed against what the later phases lose; put it last where it can only add.
+- **A perfect try passes over designs whose estimate starves** (0057). Titanium's Annex of 1 failed after 2017 s perfect; a non-perfect, bounded try found 3 starving nothing in 900 s. When perfect tries fail at small counts, try the same count with `--starving` before blaming room or routing.
+- **Throughput without backpressure** (0057). A layout whose tapped byproduct fell back to the train showed no Starvation and delivered its full rate; in the game the byproduct fills its belt and stops the producer. Model what cannot leave as well as what cannot arrive.
+
 ## Rules every change keeps
 
-- **Rank order:** Starvation, then Recipe Loops by train, then byproducts riding, then output inserters at drops, then Compactness, then entities (`rankOf`). A Maximize fit is a layout without Starvation.
+- **Rank order:** Starvation, then Recipe Loops by train, then byproducts riding, then output inserters at drops, then Compactness, then entities (`rankOf`). A Maximize fit is a layout without Starvation; once nothing more fits without, a layout that starves counts by what it delivers (Throughput, ADR 0057).
 - **A try is one layout search at one Count** (0007). Do not search the rate inside one layout search: designs change with the Count.
 - **Every aggressive mode has a fallback to the old behaviour,** tried next on failure:
   - Making Way → solid;

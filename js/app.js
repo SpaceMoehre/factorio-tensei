@@ -877,7 +877,7 @@ async function build(upTo = false) {
       else if (data.type === 'best') {
         run.tried = data.tried;
         // A Maximize's every fit is a higher rate than the last: shown whatever its score.
-        if (data.goals || !best || better(data.score, best.score)) show(data.block, tried(), data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals } : null, data.score);
+        if (data.goals || !best || better(data.score, best.score)) show(data.block, tried(), data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals, delivered: data.delivered } : null, data.score);
       } else if (data.type === 'done') {
         run.tried = data.tried;
         over(data.failure, data.above);
@@ -933,11 +933,12 @@ function better(a, b) {
 
 // Maximize: the rate being tried, after the highest that fits so far (Filling: how many machines
 // more than that; Giving Way: how many machines before the Fixtures take some).
-function trying({ rate, machines, more, giving }) {
+function trying({ rate, machines, more, giving, starving }) {
   const item = state.goals.find(g => g.item && g.rate > 0)?.item;
   const filling = more ? `, ${fmt(more)} more than fit` : '';
   built.trying = giving ? `Giving way: trying ${count(machines, 'machine')} of ${item} closer together, those the Fixtures stand on given up…`
-    : `${more ? 'Filling up: trying' : 'Trying'} ${fmt(rate)}/min of ${item} (${count(machines, 'machine')}${filling})…`;
+    : starving ? `Trying ${fmt(rate)}/min of ${item} (${count(machines, 'machine')}), some starving, for more out…`
+      : `${more ? 'Filling up: trying' : 'Trying'} ${fmt(rate)}/min of ${item} (${count(machines, 'machine')}${filling})…`;
   if (best) report(best.block, simulate(best.block).starvation, progress());
   else showStatus('', progress());
 }
@@ -946,7 +947,7 @@ function trying({ rate, machines, more, giving }) {
 function progress() {
   if (!built?.maximize) return 'Searching…';
   const told = built.foretold ? ` Foretold: about ${fmt(built.foretold.rate)}/min.` : '';
-  const fits = best?.found ? ` Fits so far: ${fmt(best.found.rate)}/min.` : '';
+  const fits = best?.found ? ` Fits so far: ${outOf(best.found)}.` : '';
   return `${built.trying ?? 'Searching…'}${told}${fits}`;
 }
 
@@ -976,7 +977,7 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
   const score = compactness(block);
   const parts = `${site ? '' : `${score.square.toLocaleString('en')} off square · `}${score.empty.toLocaleString('en')} empty · ${count(score.bends, 'bend')} · score ${score.value.toLocaleString('en')}`;
   $('area').textContent = site
-    ? `City block ${site.area.w} × ${site.area.h} · buffer ${site.buffer} · factory ${bounds.w} × ${bounds.h}${found ? ` · ${fmt(found.rate)}/min` : ''} · ${parts}`
+    ? `City block ${site.area.w} × ${site.area.h} · buffer ${site.buffer} · factory ${bounds.w} × ${bounds.h}${found ? ` · ${outOf(found)}` : ''} · ${parts}`
     : `${bounds.w} × ${bounds.h} = ${(bounds.w * bounds.h).toLocaleString('en')} tiles · ${parts}`;
   $('area').title = `Compactness, lower is better: ${SQUARE === 1 ? '' : `${SQUARE} × `}the strip beyond a square, plus the tiles no machine, inserter or pole stands on, plus ${BEND} for every bend of a belt or pipe`;
   $('area').hidden = false;
@@ -1317,7 +1318,7 @@ function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (be
     if (!best?.found) {
       $('results').hidden = true;
       showEmpty('Nothing fits yet.');
-      return showStatus('error', `Nothing fits the city block without starvation${error ? `: ${error}` : ''}. Give each try more time, or a bigger block.`);
+      return showStatus('error', `Nothing fits the city block${error ? `: ${error}` : ''}. Give each try more time, or a bigger block.`);
     }
     const { rate, machines } = best.found;
     // Why the next rate up does not fit: the lowest that did not.
@@ -1330,6 +1331,7 @@ function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (be
       const rest = short ? ` of the ${fmt(asked)}/min asked.${next}` : '.';
       return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Filled up to ${fmt(rate)}/min (${count(machines, 'machine')})${rest}`);
     }
+    if (best.found.delivered !== undefined) return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest output: ${outOf(best.found)} (${count(machines, 'machine')}; some starve, each as much slower).${next}`);
     return report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts. Highest rate that fits: ${fmt(rate)}/min (${count(machines, 'machine')}).${next}`);
   }
   if (!best) {
@@ -1344,6 +1346,12 @@ function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (be
     return showStatus('error', error ?? 'No layout found. Give the search more time.');
   }
   report(best.block, simulate(best.block).starvation, `${how} after ${tried} layouts.`);
+}
+
+// What a Maximize's layout makes of the first Goal: where it starves, what it delivers of what it
+// was laid out for (ADR 0057).
+function outOf({ rate, delivered }) {
+  return delivered === undefined ? `${fmt(rate)}/min` : `${fmt(delivered)}/min (laid out for ${fmt(rate)}/min)`;
 }
 
 // Maximize: the Goals take the rates of the highest that fit.
