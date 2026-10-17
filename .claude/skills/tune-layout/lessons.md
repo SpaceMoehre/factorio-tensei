@@ -51,7 +51,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Byproducts sorted out every time (spare machines from routed starvation, fewer machines rather than riding, Extensions keep sorting); sorted-out byproduct belts merged through a splitter after routing | Rayon: riding 1 → 0, biomass belts 6 → 3 (696.87 → 646.87/min) | 0052 |
 | A column between neighbours' side pipes of two fluids (agitators); the Precheck skipping a Sub-Block no structured variant routes | Anthraquinone 3937.5 → 10875/min (34 → 85 machines) | 0053 |
 | A byproduct a Use takes alone tapped off its producers' belt by a filter splitter (a Recipe Loop's tap); untapped in Maximize no fit | Perylene: pyrite riding to the belt's end 1 → 0; 2700 → 3300/min | 0054 |
-| Supplied Items counted in their belt's flow; a belt of two Supplied Items sends one off and joins with the other; Layers bounded (steps, pruning); one by one first where columns fit none | Titanium plate (21 Sub-Blocks): nothing → 3750/min at 10 furnaces; molybdenum 62.49 → 599.99 | 0055 |
+| Supplied Items counted in their belt's flow; a belt of two Supplied Items sends one off and joins with the other; Layers bounded (steps, pruning); one by one first where columns fit none | Titanium plate (21 Sub-Blocks): nothing → 3750/min at 10 casting units; molybdenum 62.49 → 599.99 | 0055 |
+| A try out of time: no spare-machines retry, the next halfway down; no sorting phase where no belt rides a byproduct alone | Titanium plate: first fit at 1190 s (none in 3000 s before), 8226.56/min with an Annex at 3625 s | 0056 |
 
 ## What failed, was reverted, or must not be done
 
@@ -99,6 +100,10 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A starvation constant across every candidate** (0055). Every prepared layout starving the same amount, whatever the designs, points to the flow plan (compose.js `groupRoutes`, `supplyJoins`), not to the designs. Print `simulate` on `ready.routes` for the first one.
 - **`--profile-slow` showed no JavaScript frames** (0055): only libc and libnode, the spawning parent's ticks. Timestamped phase logs (placement start and end, each routing task, Layers) found the hang in minutes instead.
 - **`pkill -f`, again** (0055). A pattern that matched the shell's own command line killed the runs started in the same command. Kill by PID only.
+
+- **A phase that cannot succeed, run at full budget** (0056). Maximize's sorting phase retried three counts for a belt riding two byproducts, which no filter splitter sorts out: 3087 s for nothing, and no time left for Annexes. Before a phase retries, check that what it fixes can be fixed.
+- **Banded Layers** (0056). Two bands of columns where one is too wide gave the same layout as one-by-one placement and cost time: what kept Layers from fitting were single-module stacks taller than half the block. Look at the stack sizes (`place.mjs`) before building a placement mode.
+- **Routing tapped byproducts and Supplied Items earlier** (0056). Among the links between Sub-Blocks rather than after all of them: no Count fitted that did not before.
 
 ## Rules every change keeps
 

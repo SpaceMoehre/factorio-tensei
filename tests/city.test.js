@@ -13,6 +13,7 @@ import { context, designStep, designOf, random } from '../js/design.js';
 import { prepare, compose, RoutingError } from '../js/layout/compose.js';
 import { placeBlocks } from '../js/layout/place.js';
 import { finishBlock } from '../js/layout/compact.js';
+import { riding } from '../js/layout/score.js';
 import { catalog as vanilla, logistics, pyCatalog } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 
@@ -360,6 +361,33 @@ test('Maximize passes a number whose designs starve: Starvation comes and goes w
   assert.equal(b, a - 1);
   again.record(b, { block: null, starves: true, designed: null, tried: 0 });
   assert.ok(again.next() <= Math.ceil(b / 2));
+
+  // A try that ran out of time: halfway down at once, as after one that found no room — the
+  // number just below it seldom routes in time either (ADR 0056). It bounds the tries no more
+  // than one that starved.
+  const late = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, options);
+  const c = late.next();
+  late.record(c, { block: null, starves: true, timedOut: true, designed: null, tried: 40 });
+  assert.equal(late.hi, c);
+  assert.ok(late.next() <= Math.ceil(c / 2));
+});
+
+// Py's solid separators make concentrated titanium for the foundries with nexelit ore and iron
+// oxide, which no Sub-Block takes: two byproducts on one belt, which no filter splitter sorts out
+// (one a belt). Maximize's sorting phase is for belts riding one alone (ADR 0056).
+test('byproducts riding on, by belt: two on one belt are told from one alone', () => {
+  const belt = (id, items) => ({ id, kind: 'belt', source: 1, consumers: [0], items: items.map(item => ({ item })) });
+  const block = {
+    subBlocks: [{ inputs: [{ name: 'concentrated-ti' }] }, { inputs: [] }],
+    routes: [
+      belt(0, ['concentrated-ti', 'nexelit-ore', 'iron-oxide']),
+      belt(1, ['concentrated-ti', 'stone']),
+      belt(2, ['concentrated-ti', 'gravel']),
+      // (The gravel filtered off belt 2 to the Sub-Block taking it: not riding.)
+      { id: 3, kind: 'belt', source: 'side-input', consumers: [], loop: { from: 1, tapped: true }, fedBy: 2, items: [{ item: 'gravel' }] },
+    ],
+  };
+  assert.deepEqual(riding(block), [{ route: 0, items: ['nexelit-ore', 'iron-oxide'] }, { route: 1, items: ['stone'] }]);
 });
 
 test('Maximize fills a 116 × 116 City Block with Py small parts: 3000/min and more, its Sub-Blocks in columns', () => {

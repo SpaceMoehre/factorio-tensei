@@ -6,7 +6,7 @@ import { bands } from './bands.js';
 import { annexSite, annexed } from './annex.js';
 import { validateBlock } from './layout/validity.js';
 import { simulate } from './sim.js';
-import { rankOf } from './layout/score.js';
+import { rankOf, riding } from './layout/score.js';
 
 // Maximize (CONTEXT.md): the highest rate of the Goals whose Compound Block fits the City Block
 // without Starvation, its Recipe Selections, modules and the items made here as chosen. The
@@ -165,8 +165,10 @@ export function* maximize(goals, catalog, logistics, options) {
   }
   // The highest that fit found with every byproduct riding on through its producers' consumers
   // (a layout sorting them out by splitters takes far longer to find): once more with them
-  // sorted out, given longer, kept where it fits (as many machines, where they gave way).
-  if (best && bestN !== null && bestScore[2] > 0) {
+  // sorted out, given longer, kept where it fits (as many machines, where they gave way). Not
+  // where no belt rides one alone: a filter splitter sorts one byproduct out of a belt, so two on
+  // one (Py's solid separators' nexelit ore and iron oxide) ride on whatever the layout, ADR 0056.
+  if (best && bestN !== null && bestScore[2] > 0 && riding(bestBlock).some(r => r.items.length === 1)) {
     const sorted = attempt(plan, bestN, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true, giving });
     tried += sorted.tried;
     if (sorted.block && sorted.score[2] < bestScore[2] && (!giving || lead(sorted.block) >= best.machines)) {
@@ -302,14 +304,14 @@ export function extensionOf(annex, goals, made = []) {
 }
 
 // One try: the layout search for n of the first Goal's machines, to its first layout without
-// Starvation. Returns { block, score, placed, tried, designed, starves, failure }: block null
-// when none fits, `starves` when that is for want of a design without Starvation (or of one that
-// fits the City Block: a Count's designs come and go like its Starvation), not of room, or the
-// try ran out of time (not for want of room either); `budgetMs` is the time its candidates get once
-// its Sub-Blocks are designed;
+// Starvation. Returns { block, score, placed, tried, designed, starves, timedOut, failure }:
+// block null when none fits, `starves` when that is for want of a design without Starvation (or
+// of one that fits the City Block: a Count's designs come and go like its Starvation), not of
+// room, or the try ran out of time (`timedOut`: not for want of room either); `budgetMs` is the
+// time its candidates get once its Sub-Blocks are designed;
 // `designed` lists each Sub-Block's item, Count and best design's area. Where a Sub-Block other
 // than the first Goal's starves by a few of its machines' worth, the try is made again with that
-// many spare machines of it (ADR 0048).
+// many spare machines of it (ADR 0048), unless it ran out of time.
 // precheck: the Side Output's Sub-Blocks are checked for Starvation first (worth it above the
 // highest n whose Sub-Blocks were all designed without). unsorted: no byproduct sorted out after
 // its producers (search.js); routing: how long its candidates get once designed (budgetMs);
@@ -324,8 +326,10 @@ export function attempt(plan, n, options) {
   // than the runs of consumers they feed take: 30 soil extractors on 5 belts of 720 a minute for
   // washers taking 450 each), the try again with that many more of them, their belts bringing
   // more than they are wanted for.
+  // (Not after a try that ran out of time: the same again with more machines seldom routes in
+  // it, and would take as long, ADR 0056.)
   const short = first.short;
-  if (!short || short.item === list[0].item) return first;
+  if (!short || short.item === list[0].item || first.timedOut) return first;
   const machines = Math.ceil(short.rate / short.each - 1e-9);
   if (machines > Math.max(SPARE, Math.ceil(short.count / 10))) return first;
   const again = once(plan, list, { [short.item]: machines * short.each }, options);
@@ -358,7 +362,7 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
       if (step.done) {
         if (kept) return { block: kept.block, score: kept.score, placed: kept.placed, tried: step.value.tried, designed, starves: false, failure: null };
         const failure = step.value.failure ?? new Error(`no layout without starvation fits ${list[0].rate}/min`);
-        return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), failure, short: step.value.short ?? null };
+        return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), timedOut: Boolean(step.value.timedOut), failure, short: step.value.short ?? null };
       }
       if (sorting && step.value.score[0] === 0 && step.value.score[2] > 0) kept = step.value;
       else if (!sorting && step.value.score[0] === 0 && step.value.score[1] > 0) {
@@ -386,8 +390,9 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
 // goalsFor(n): the Goals with n of the first Goal's machines at full speed (rates rounded down to
 // 1/100 a minute, so its Count stays n; n need not be whole: the last of them runs slower).
 // next(): the n to try next, strictly between the highest that fit and the lowest that did not:
-// the highest whole number foretold to fit (after a try that found no room, or two in a row whose
-// designs starved, no more than halfway; right after one that starved, the number below it);
+// the highest whole number foretold to fit (after a try that found no room or ran out of time,
+// or two in a row whose designs starved, no more than halfway; right after one that starved, the
+// number below it);
 // with none left below a number that starved, the one above it, once; then Filling: FILL
 // machines more than the highest that fit, again while they fit, half as many after each that
 // does not; null after. None above the cap (cap(n)): that one instead, null once it fit.
@@ -562,7 +567,10 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
       for (const d of outcome.designed ?? []) if (d.area) tiles.set(d.item, d.area / d.count);
       if (outcome.designed) designable = Math.max(designable, n);
       failed = !outcome.block;
-      streak = !outcome.block && outcome.starves ? streak + 1 : 0;
+      // (A try that ran out of time counts as the second in a row that starved: the next no more
+      // than halfway down, not the number just below it, which seldom routes in time either,
+      // ADR 0056.)
+      streak = !outcome.block && outcome.starves ? (outcome.timedOut ? Math.max(2, streak + 1) : streak + 1) : 0;
       if (outcome.block) {
         lo = Math.max(lo, n);
         if (outcome.placed) loose = Math.max(spread = outcome.placed / modules(n), tightest);

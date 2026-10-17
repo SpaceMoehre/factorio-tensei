@@ -45,9 +45,16 @@ export function compactness(block) {
 export function rankOf(block) {
   const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
   const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
-  // (A byproduct tapped off to the Sub-Block taking it, as a feedback is, is not either.)
+  return [Math.round(starving * 1000) / 1000, loopsByTrain, riding(block).length, supporting(block), compactness(block).value, block.entities.length];
+}
+
+// The belts from producers through their consumers carrying items none of those consumers take
+// (byproducts riding on), each with those items. (A Supplied Item a filter splitter sends off
+// after its producers is not one, nor a byproduct tapped off to the Sub-Block taking it, as a
+// feedback is.)
+export function riding(block) {
   const sentOff = new Set(block.routes.filter(g => g.fedBy !== undefined && (g.joins !== undefined || g.loop)).map(g => `${g.fedBy}:${g.items[0].item}`));
-  const unsorted = block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length
-    && r.items.some(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item)))).length;
-  return [Math.round(starving * 1000) / 1000, loopsByTrain, unsorted, supporting(block), compactness(block).value, block.entities.length];
+  return block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length).map(r => ({
+    route: r.id, items: r.items.filter(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item))).map(i => i.item),
+  })).filter(r => r.items.length);
 }

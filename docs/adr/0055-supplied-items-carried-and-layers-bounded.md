@@ -11,7 +11,7 @@ Causes:
 - **A belt carrying a Supplied Item was planned short.** The ti-enriched dust's belt carries the dust to the foundries and its rejects, which join the grade 3 screeners' belt. A filter splitter right after the dust's producers sends them off. The belt's flow was planned for what its consumers take, leaving out the Supplied Item (ADR 0041). Each item then got its share of that flow, so the dust arrived a third short (8.6 of 13/min). The same happened on the grade 3 screeners' belt and, through it, on the grade 3 joining the grade 4 ball mills. Every prepared layout starved 40.1/min, whatever the designs.
 - **A belt of two Supplied Items sent only one off.** The recrushers' belt carries gravel and grade 3 and nothing else; each joins another belt. One gatherer was made per belt, so the gravel never joined the stone crushers' belt into the sand, which starved 17/min.
 - **Layers never returned.** Once layouts no longer starved, the first candidate's Placement ran for over 15 minutes. Layers weighs every way to put the Sub-Blocks in columns, each up to two columns further west than it must: about 3^21 ways for 21 Sub-Blocks.
-- **The candidates in columns all came first.** In a Maximize try in a City Block, every candidate in columns goes before those placed one by one (ADR 0009). Here the Sub-Blocks span more than the block's width in columns, and some 150 candidates in columns took about 1.5 s each to fit none. At 4 furnaces the first one placed one by one came only after 3 minutes; it fitted.
+- **The candidates in columns all came first.** In a Maximize try in a City Block, every candidate in columns goes before those placed one by one (ADR 0009). Here the Sub-Blocks span more than the block's width in columns, and some 150 candidates in columns took about 1.5 s each to fit none. At 4 casting units the first one placed one by one came only after 3 minutes; it fitted.
 
 What changed:
 
@@ -22,9 +22,9 @@ What changed:
 
 | Py titanium plate, 236 × 236, Maximize | Before | After |
 |---|---|---|
-| A layout at 1 furnace | none (starves 40.1/min) | 375/min in 9 s, valid, 228 × 44 |
-| At 4 furnaces (one try, 120 s) | none | 1500/min in 56 s |
-| At 10 furnaces (one try) | none | 3750/min in 92 s, 228 × 122 |
+| A layout at 1 casting unit | none (starves 40.1/min) | 375/min in 9 s, valid, 228 × 44 |
+| At 4 casting units (one try, 120 s) | none | 1500/min in 56 s |
+| At 10 casting units (one try) | none | 3750/min in 92 s, 228 × 122 |
 | Maximize (budget 1000 s a try) | nothing fits (69 s) | 26 ✗ in 173 s, 13 ✗ in 2050 s, 12 still trying at 3000 s (stopped) |
 
 Py molybdenum oxide among roboports (`--total 2400`, side by side): 62.49 → 599.99/min (1 → 3 furnaces, 228 × 186). Its candidates in columns fit none there either. 14 belts ride byproducts on to the east edge, as before at 600/min (ADR 0030); no lower count sorts them out. Py small parts in 100²: the same layout. Py titanium plate at 1800/min on its own: no layout either way (1000 s).
@@ -32,5 +32,5 @@ Py molybdenum oxide among roboports (`--total 2400`, side by side): 62.49 → 59
 Tests: the dust's belt brings the foundries all they take, its rejects sent off; the recrushers' grade 3 sent off and their gravel joining the stone crushers' belt; Py titanium plate's 21 Sub-Blocks in a 236 × 236 City Block, one try in 8 s.
 
 Still:
-- A failing try takes its whole budget, and its retry with spare machines as long again (ADR 0048). Each try at 13 furnaces and above failed only after the whole budget (1000 s here): Maximize spent half an hour or more before its first fit. At 12 furnaces the links ran out of time.
+- A failing try takes its whole budget, and its retry with spare machines as long again (ADR 0048). Each try at 13 casting units and above failed only after the whole budget (1000 s here): Maximize spent half an hour or more before its first fit. At 12 casting units the links ran out of time.
 - Layers puts a deep chain in a column per level, which here spans the block's width while two thirds of its height stays empty. Columns that wrap into a second band would use it.
