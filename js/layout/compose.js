@@ -276,7 +276,7 @@ export function compose(ctx, prepared, positions, layout) {
   // a Supplied Item's, even plain: nothing else brings it. A belt of only a Supplied Item: its
   // last link joins the belt it is supplied to.)
   const flags = (route, k) => {
-    if (route.supplyEnd && k === route.slots.length) return { supply: true };
+    if (route.supplyEnd && k === route.slots.length && !(route.gather !== undefined && route.gatherAt === k)) return { supply: true };
     if (route.gather !== undefined && k === route.gatherAt && (!layout.plain || routes[route.gather].into !== undefined)) return { gather: true };
     return layout.plain ? {} : route.taps && k === route.tapAt ? { taps: true } : {};
   };
@@ -538,6 +538,8 @@ export function compose(ctx, prepared, positions, layout) {
           const tapping = order.find(t => t.taps && t.route.id === routes[gatherer.feed].tapOf);
           if (tapping) run(tapping);
         }
+        // (The rest a Supplied Item too: the belt it joins, up to where, first.)
+        if (task.route.supplyEnd && task.slot === task.route.slots.length) for (const t of upTo(routes[task.route.into], task.route.at)) run(t);
         const legs = routeGather(grid, task, links);
         // (A Supplied Item's on a belt to the train: on with it, that consumer short of it.)
         if (legs === null && (gatherer.into !== undefined ? task.route.sink !== 'side-output' : tapped.has(gatherer.feed))) {
@@ -660,7 +662,24 @@ export function compose(ctx, prepared, positions, layout) {
               grid.place(splitter);
               const into = routeLink(grid, { id: route.id, starts: [from], goal: { x, y: y + lane, a: E } }, belts);
               const away = routeLink(grid, { id: gatherer.id, starts: [branch], goal: 'join', joins, most: 5 * JOIN_STATES }, belts);
-              const onward = routeLink(grid, { id: route.id, starts: [on], goal: ends.goal }, belts);
+              // (The rest a Supplied Item too: on to join the belt it is supplied to, else on to
+              // the train, that consumer short of it.)
+              const rest = route.supplyEnd && task.slot === route.slots.length ? joinsOf(routes[route.into], route.at, links) : null;
+              let onward = null, lost = false;
+              if (rest?.size) {
+                const before = grid.snapshot({ holds: true });
+                try {
+                  onward = routeLink(grid, { id: route.id, starts: [on], goal: 'join', joins: rest, most: 5 * JOIN_STATES }, belts);
+                } catch (e) {
+                  if (!(e instanceof RoutingError)) throw e;
+                  grid.restore(before);
+                }
+              }
+              if (!onward) {
+                onward = routeLink(grid, { id: route.id, starts: [on], goal: ends.goal }, belts);
+                lost = !!rest;
+              }
+              if (lost) unjoined.add(route.id);
               gathered.add(gatherer.id);
               return [[route.id, task.slot, [...into, splitter, ...onward]], [gatherer.id, 0, [splitter, ...away]]];
             } catch (e) {
@@ -1512,9 +1531,11 @@ function groupRoutes(ctx, instances, laneCapacity) {
     // (null); a belt merging into another, nothing of its own.
     // (With what its consumers take, the belt brings what rides along with it in step: a Recycled
     // Byproduct on its way to its feedback's splitter, Py sodium hydroxide's limestone.)
-    // (What a Byproduct Use supplies leaves its belt right after its producers: none of it along.)
+    // (What a Byproduct Use supplies leaves its belt right after its producers, but shares its
+    // lanes up to there: along too. Left out, each belt was planned short of what its consumers
+    // take by its share, ADR 0055.)
     const supplying = new Set((base.supplies ?? []).map(s => s.item));
-    const along = base.sorted ? 1 : base.items.filter(i => !supplying.has(i.item)).reduce((sum, i) => sum + i.rate, 0)
+    const along = base.sorted ? 1 : base.items.reduce((sum, i) => sum + i.rate, 0)
       / Math.max(1e-9, base.items.filter(i => base.consumers.some(step => plan[step].inputs.some(x => x.name === i.item))).reduce((sum, i) => sum + i.rate, 0));
     const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) ? wants(g.consumers) * along : null);
     // What each belt of an option delivers: its producers' machines through its lanes, joined by
@@ -1906,8 +1927,12 @@ function supplyJoins(ctx, routes, suppliedAt, laneCapacity) {
       let brought = 0;
       for (const r of routes.filter(r => r.kind === 'belt' && r.base === base.id && r.source === base.source)) {
         const rate = r.items.find(i => i.item === item)?.rate ?? 0;
-        if (rate < 1e-9 || r.splitter || r.fanOut || r.taps || r.gather !== undefined) continue;
-        if (!r.consumers.length && r.sink !== 'side-output' && r.items.every(i => i.item === item || i.rate < 1e-9)) {
+        // (A belt of two Supplied Items and nothing else: the first gathered off, the rest of it
+        // ends side-loading the second, ADR 0055.)
+        const gathering = r.gather !== undefined ? routes[r.gather].items[0].item : null;
+        const ends = !r.consumers.length && r.sink !== 'side-output' && !r.supplyEnd && r.items.every(i => i.item === item || i.item === gathering || i.rate < 1e-9);
+        if (rate < 1e-9 || r.splitter || r.fanOut || r.taps || (gathering !== null && !ends)) continue;
+        if (ends) {
           Object.assign(r, { supplyEnd: true, into: target.id, at });
         } else {
           const branch = {

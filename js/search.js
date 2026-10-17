@@ -227,6 +227,10 @@ export function* search(entries, catalog, logistics, options = {}) {
   // columns): each tried first and, up to RETRIES of them, not counted against `patience` (in
   // an Annex's crowded room every candidate fails and queues more, ADR 0049).
   let retries = 0;
+  // Candidates in columns (Layers) that fit none, none of them having fit yet: those placed one
+  // by one go first from then on (Py titanium plate's 21 Sub-Blocks span more than the City
+  // Block's width in columns; some 150 candidates in columns came first, ADR 0055).
+  let unfit = 0, columned = false;
   while (tried < maxCandidates && (tried === 0 || !(timedOut = now() >= until))) {
     // In a City Block, a search whose structured candidates found no room for a layout (or,
     // looking for one without Starvation, none of those) seldom finds one later.
@@ -303,6 +307,7 @@ export function* search(entries, catalog, logistics, options = {}) {
         if (!made) throw new RoutingError('no machine to build apart where a Fixture stands on one');
         ({ ready: work, positions } = made);
       }
+      if (candidate.layers) columned = true;
       placed = positions.bounds.w * positions.bounds.h;
       boxes = positions.boxes;
       // A Breakout trial packs no looser than the best, or it is not worth routing. Where one
@@ -368,6 +373,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       block = given(finishBlock(composed, catalog, logistics), ctx.giving);
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+      if (candidate.layers && e instanceof RoutingError && e.noColumns && !columned && ++unfit === LAYERS_UNFIT) queue.splice(0, queue.length, ...queue.filter(c => !c.layers), ...queue.filter(c => c.layers));
       // No pole for a machine there: room round the Sub-Blocks about it.
       if (e instanceof PowerError && e.at && composed) makeRoom(near(composed.subBlocks, e.at));
       else if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
@@ -577,6 +583,9 @@ const PAIRINGS = 80;
 
 // How many columns further west than its consumers let it a Sub-Block may stand in Layers.
 const LAYER_SPREAD = 2;
+// How many candidates in columns may fit none, none having fit, before those placed one by one
+// go first.
+const LAYERS_UNFIT = 8;
 
 // Breakout trials on a layout, as { candidate, step, spec }: one machine of each Sub-Block broken
 // out of it in turn (of a repeated module, its leftover module or a copy), so what is left packs

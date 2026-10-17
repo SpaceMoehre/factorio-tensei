@@ -128,7 +128,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
   };
   // In a City Block, the search's `layers` candidates stand the Sub-Blocks in columns instead.
   const columns = site && params.layers ? inLayers(blocks, links, depth, routes, site, { corridor, gap, spread: params.layers }, lands, part) : null;
-  if (site && params.layers && !columns) throw new RoutingError('the Sub-Blocks fit no columns in the city block');
+  if (site && params.layers && !columns) throw Object.assign(new RoutingError('the Sub-Blocks fit no columns in the city block'), { noColumns: true });
   for (const [i, p] of columns ?? []) {
     // A parted stack stands with its copies where they part.
     if (p.parted) {
@@ -459,6 +459,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
   }
 }
 
+// The most steps Layers takes putting Sub-Blocks in columns: all it takes to weigh every way of
+// 10 Sub-Blocks (Py molybdenum oxide's), each up to two columns further west.
+const LAYER_STEPS = (3 ** 11 - 1) / 2;
+
 // Layers, in a City Block: the Sub-Blocks in columns, the Goals easternmost and every producer in
 // a column west of all it feeds; each column's Sub-Blocks stacked top to bottom a gap apart, each
 // as near level with the rows its links meet as the others let it, aligned to the column's east
@@ -535,13 +539,23 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
     return stacks.get(key);
   };
   const fitting = [];
+  // (At most LAYER_STEPS taken, each Sub-Block as far east as it may first: with many
+  // Sub-Blocks, every way of them is far too many to weigh, ADR 0055.)
+  let taken = 0;
   const assign = n => {
+    if (taken++ >= LAYER_STEPS) return;
     if (n === order.length) {
       const s = shape(col);
       if (s.span > inner.w || s.height.some((h, k) => h + s.crossing[k] > inner.h)) return;
       const tall = Math.max(...s.height.map((h, k) => h + s.crossing[k]));
       fitting.push({ cost: s.span * tall + 40 * s.crossing.reduce((sum, c) => sum + c, 0), cols: new Map(col) });
       return;
+    }
+    // (A way too wide or too tall for the room with the Sub-Blocks put in so far stays so as the
+    // rest go in: none of its ways are weighed, ADR 0055.)
+    if (n > 0) {
+      const s = shape(col);
+      if (s.span > inner.w || s.height.some((h, k) => h + s.crossing[k] > inner.h)) return;
     }
     const i = order[n];
     const lo = Math.max(0, ...feeds.get(i).map(q => (col.has(q) ? col.get(q) + 1 : 0)));

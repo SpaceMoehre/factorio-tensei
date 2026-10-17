@@ -108,3 +108,30 @@ test('a General Use laid out: the other steps’ byproduct joins the belt into i
   assert.ok(target, 'the rejects join the grade 3 belt into the recrusher');
   assert.ok(block.routes.some(r => r.joins === target.id && r.items[0].item === 'ti-rejects' && block.routes[r.fedBy].source === step('ti-enriched-dust')));
 });
+
+// Py molten titanium from ti-enriched dust, rejects recrushed everywhere: the dust's belt into
+// the foundries carries its rejects too, up to the filter splitter sending them off to the grade 3
+// screeners' (ADR 0055). Planned for the dust alone, each belt brought a third less dust.
+const molten = { made: ['molten-titanium', 'ti-enriched-dust', 'powdered-ti', 'grade-4-ti', 'grade-3-ti', 'grade-1-ti', 'grade-2-ti'], selections: { 'molten-titanium': { recipe: 'molten-titanium-01', building: '' }, 'grade-1-ti': { recipe: 'grade-2-ti-crush', building: '' } } };
+test('a belt with a Supplied Item on it brings its consumers all they take', () => {
+  const chain = expandChain([{ item: 'molten-titanium', rate: 60 }], shipped, { ...molten, uses: [recrush] });
+  const { block, score } = best(chain.entries);
+  assert.equal(score[0], 0, 'starves');
+  assertValid(block, shipped, logistics);
+  const dust = block.routes.find(r => r.kind === 'belt' && r.source === block.subBlocks.findIndex(sb => sb.item === 'ti-enriched-dust'));
+  assert.ok(block.routes.some(r => r.fedBy === dust.id && r.joins !== undefined && r.items[0].item === 'ti-rejects'), 'the rejects sent off');
+});
+
+// The recrushers' belt carries two Supplied Items and nothing else: the grade 3 goes off through a
+// filter splitter to the grade 3 screeners' belt, the rest of it (gravel) side-loads onto the
+// stone crushers' belt into the sand (ADR 0055). Before, only the grade 3 went: the sand starved.
+test('a belt of two Supplied Items: one sent off, the rest joins the other belt', () => {
+  const uses = [recrush, { item: 'stone', recipe: 'stone-to-gravel' }, { item: 'gravel', recipe: 'gravel-to-sand' }];
+  const chain = expandChain([{ item: 'molten-titanium', rate: 60 }], shipped, { ...molten, uses });
+  const { block, score } = best(chain.entries);
+  assert.equal(score[0], 0, 'starves');
+  assertValid(block, shipped, logistics);
+  const gravel = block.routes.find(r => r.kind === 'belt' && block.subBlocks[r.source]?.recipe === 'ti-rejects-recrush');
+  assert.deepEqual([gravel.sink, block.subBlocks[block.routes[gravel.joins].source].recipe], [null, 'stone-to-gravel']);
+  assert.ok(block.routes.some(r => r.fedBy === gravel.id && r.items[0].item === 'grade-3-ti' && r.joins !== undefined), 'the grade 3 sent off');
+});

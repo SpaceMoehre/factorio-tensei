@@ -51,6 +51,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Byproducts sorted out every time (spare machines from routed starvation, fewer machines rather than riding, Extensions keep sorting); sorted-out byproduct belts merged through a splitter after routing | Rayon: riding 1 → 0, biomass belts 6 → 3 (696.87 → 646.87/min) | 0052 |
 | A column between neighbours' side pipes of two fluids (agitators); the Precheck skipping a Sub-Block no structured variant routes | Anthraquinone 3937.5 → 10875/min (34 → 85 machines) | 0053 |
 | A byproduct a Use takes alone tapped off its producers' belt by a filter splitter (a Recipe Loop's tap); untapped in Maximize no fit | Perylene: pyrite riding to the belt's end 1 → 0; 2700 → 3300/min | 0054 |
+| Supplied Items counted in their belt's flow; a belt of two Supplied Items sends one off and joins with the other; Layers bounded (steps, pruning); one by one first where columns fit none | Titanium plate (21 Sub-Blocks): nothing → 3750/min at 10 furnaces; molybdenum 62.49 → 599.99 | 0055 |
 
 ## What failed, was reverted, or must not be done
 
@@ -93,6 +94,11 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **A rank criterion blind to the user's complaint** (0054). `rankOf` called a belt sorted because one consumer on it took the byproduct, though it rode on past to a dead end. When the user reports a clog the summary says is not there, check what the counter counts before trusting it.
 - **A fallback that keeps a layout the user's rule forbids** (0054). A tap with no room fell back to by train, and its byproduct rode on; Maximize kept it in an Annex. Make such a layout no fit in `perfect` tries.
+
+- **An exhaustive enumeration with no bound** (0055). Layers weighed every way of the Sub-Blocks in columns: fine at 10, never returned at 21. When a try hangs on the first candidate with no event, look for a product over Sub-Blocks first. Pruning alone is not a bound: a pruned tree can still be walked forever; count steps.
+- **A starvation constant across every candidate** (0055). Every prepared layout starving the same amount, whatever the designs, points to the flow plan (compose.js `groupRoutes`, `supplyJoins`), not to the designs. Print `simulate` on `ready.routes` for the first one.
+- **`--profile-slow` showed no JavaScript frames** (0055): only libc and libnode, the spawning parent's ticks. Timestamped phase logs (placement start and end, each routing task, Layers) found the hang in minutes instead.
+- **`pkill -f`, again** (0055). A pattern that matched the shell's own command line killed the runs started in the same command. Kill by PID only.
 
 ## Rules every change keeps
 

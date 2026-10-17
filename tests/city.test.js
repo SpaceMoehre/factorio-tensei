@@ -558,3 +558,21 @@ test('Spare machines: a producer whose every design starves a little gets a few 
   assertValid(block, shipped, logistics);
   assert.deepEqual(simulate(block).starvation, []);
 });
+
+// Py titanium plate with its byproducts processed: 21 Sub-Blocks. Every way of them in columns,
+// each up to two further west, is some 10^10: Layers weighed them all and never returned. It
+// weighs at most 3^10 (ADR 0055).
+test('Layers weighs a bounded number of ways: Py titanium plate\'s 21 Sub-Blocks in a 236 × 236 City Block', () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const { made, selections, uses } = JSON.parse(readFileSync(new URL('./fixtures/titanium-plate-uses.json', import.meta.url), 'utf8'));
+  const site = siteOf({ area: { x: 0, y: 0, w: 236, h: 236 }, fixtures: [] }, 4);
+  const py = { belt: 'transport-belt', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', pole: 'medium-electric-pole', inserter: 'fast-inserter', longInserter: 'long-handed-inserter', fuel: 'coal', liquidFuel: 'natural-gas', rightAngle: true, handSize: 1 };
+  const plan = planner([{ item: 'titanium-plate', rate: 60 }], shipped, py, { made, selections, uses, site });
+  const started = Date.now();
+  const { block, failure } = attempt(plan, 1, { site, budgetMs: 60000, unsorted: true });
+  assert.ok(block, failure?.message);
+  assert.ok(block.subBlocks.length >= 21);
+  assert.ok(Date.now() - started < 120000);
+  assertValid(block, shipped, py);
+  assert.deepEqual(simulate(block).starvation, []);
+});

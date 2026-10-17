@@ -42,6 +42,8 @@ export class RoutingError extends Error {
   task;
   /** @type {number | undefined} the Sub-Block Placement found no room for */
   unplaced;
+  /** @type {boolean | undefined} Layers found no columns the Sub-Blocks fit */
+  noColumns;
 }
 
 // Routes a belt through its waypoints (a chain), committing each leg to the grid as it goes.
