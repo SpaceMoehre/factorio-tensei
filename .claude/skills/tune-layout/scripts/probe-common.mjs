@@ -8,7 +8,7 @@ const { decodeBlueprint, readCityBlock, siteOf } = await import(`${root}/js/city
 const { planner } = await import(`${root}/js/maximize.js`);
 export const catalog = JSON.parse(readFileSync(`${root}/data/catalog.json`, 'utf8'));
 
-// { site, logistics, plan, entriesFor(n, spare) } for a setup file.
+// { site, logistics, plan, goals, state (the setup itself), entriesFor(n, spare) } for a setup file.
 export async function load(file) {
   const st = JSON.parse(readFileSync(file, 'utf8'));
   const city = { on: false, buffer: 2, w: 100, h: 100, ...st.city };
@@ -17,5 +17,5 @@ export async function load(file) {
   const { budget, ...logistics } = st.logistics;
   const goals = st.goals.filter(g => g.item && g.rate > 0);
   const plan = planner(goals, catalog, logistics, { made: st.made ?? [], selections: st.selections ?? {}, uses: st.uses ?? [], site });
-  return { site, logistics, plan, goals, entriesFor: (n, spare = {}) => plan.chainOf(plan.goalsFor(n), spare).entries };
+  return { site, logistics, plan, goals, state: st, entriesFor: (n, spare = {}) => plan.chainOf(plan.goalsFor(n), spare).entries };
 }

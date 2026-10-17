@@ -427,21 +427,29 @@ function twoRowsFit(entries, plan, catalog, logistics, site, seed, i, slot, perR
   if (!twoRows.has(key)) {
     // The Sub-Block as a Part of that many machines, the rest whole.
     const probe = entries.map(e => (e.goal.item !== sb.item ? e : { ...e, goal: { ...e.goal, rate: e.goal.rate * machines / sb.count, part: true, machines } }));
-    const sizes = [];
+    let left = [];
     try {
       const ctx = context(probe, catalog, logistics, site);
       const lengths = [perRow, perRow - 1].filter(k => k > 0);
-      for (const c of designStep(ctx, i, random(seed), { draws: DRAWS, lengths, only: true })) {
-        if (!c.spec?.variant || c.spec.copies || !lengths.includes(c.spec.variant.rowLength)) continue;
-        const d = designOf(c);
-        if (d && d.trouble <= 1e-6) sizes.push(d.kinds.map(k => k.module.area));
-      }
+      left = designStep(ctx, i, random(seed), { draws: DRAWS, lengths, only: true })
+        .filter(c => c.spec?.variant && !c.spec.copies && lengths.includes(c.spec.variant.rowLength));
     } catch (e) {
       if (!(e instanceof LayoutError || e instanceof RoutingError)) throw e;
     }
-    twoRows.set(key, sizes);
+    twoRows.set(key, { left, sizes: [] });
   }
-  return twoRows.get(key).some(areas => areas.every(a => a.w <= slot.w + slot.spill && a.h <= slot.h));
+  // (Routed one by one until one fits: Bands' top asks of many Slots alike, and routing every
+  // design took Py molybdenum oxide's Maximize a minute or more before its first try.)
+  const known = twoRows.get(key);
+  const fits = areas => areas.every(a => a.w <= slot.w + slot.spill && a.h <= slot.h);
+  if (known.sizes.some(fits)) return true;
+  while (known.left.length) {
+    const d = designOf(known.left.shift());
+    if (!d || d.trouble > 1e-6) continue;
+    known.sizes.push(d.kinds.map(k => k.module.area));
+    if (fits(known.sizes.at(-1))) return true;
+  }
+  return false;
 }
 
 // The ways each consumer part may take each item made in parts from one producer part with room

@@ -113,23 +113,36 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
   const errors = new Map();
   if (sb.count <= ONLY_COPIES || !candidates.length) {
     const cores = new Map();
+    // (A variant like one built before, field for field, builds the same core, or fails the same
+    // way: built once. Structured variants often coincide: two row caps alike, middle rows in a
+    // core of one row, pipe shifts with no pipe row to shift; most of them in Py molybdenum oxide.)
+    const built = new Map();
+    // Whether the variant builds a core that starves nothing (variants() asks, ADR 0058).
     const attempt = variant => {
-      if (!variant) return;
-      try {
-        const core = buildCore(sb, building, links, variant, ctx.env);
-        core.pathShort = corePathShort(ctx, sb, core, whole);
-        const signature = JSON.stringify([core.w, core.h, core.entities.map(e => [e.x, e.y, e.name, e.direction]), core.rows.map(r => [r.routeIds, r.part, r.y, r.x]), core.pipeRows.map(r => r.y), core.poleSlots]);
-        if (!cores.has(signature)) cores.set(signature, { variant, core });
-      } catch (e) {
-        if (!(e instanceof LayoutError)) throw e;
-        errors.set(e.message, (errors.get(e.message) ?? 0) + 1);
+      if (!variant) return false;
+      const key = JSON.stringify(variant);
+      if (!built.has(key)) {
+        try {
+          const core = buildCore(sb, building, links, variant, ctx.env);
+          core.pathShort = corePathShort(ctx, sb, core, whole);
+          const signature = JSON.stringify([core.w, core.h, core.entities.map(e => [e.x, e.y, e.name, e.direction]), core.rows.map(r => [r.routeIds, r.part, r.y, r.x]), core.pipeRows.map(r => r.y), core.poleSlots]);
+          if (!cores.has(signature)) cores.set(signature, { variant, core });
+          built.set(key, { clean: trouble(core) <= 1e-6 });
+        } catch (e) {
+          if (!(e instanceof LayoutError)) throw e;
+          built.set(key, { reason: e.message, clean: false });
+        }
       }
+      const { reason, clean } = built.get(key);
+      if (reason) errors.set(reason, (errors.get(reason) ?? 0) + 1);
+      return clean;
     };
     // In a City Block, past 40 machines copies go first and a whole module seldom routes: its
     // structured variants only, fewer of them (each core of so many machines takes long to build,
     // and Maximize designs every Count it tries).
     const lean = !!ctx.site && candidates.length > 0 && sb.count > 40;
-    for (const variant of variants(shape, links, sb, rng, lean ? 0 : draws, ctx.site?.inner.w, lengths, lean, only)) attempt(variant);
+    const made = variants(shape, links, sb, rng, lean ? 0 : draws, ctx.site?.inner.w, lengths, lean, only);
+    for (let next = made.next(); !next.done; next = made.next(attempt(next.value)));
     // Machines whose belts above and below cannot feed them take belts on their sides too; in a
     // City Block with Fixtures in its room, columns that narrow are candidates anyway (they fit
     // between Fixtures where rows of machines do not).
@@ -841,9 +854,14 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
       if (cap >= sb.count || (merge && cap === shape.rowCap)) continue;
       for (const middle of [4, 5, 6]) {
         for (const pipes of links.fluids.length ? [false, true] : [false]) {
+          // (Every second row shifted sideways only where the rows unshifted do not build without
+          // Starvation, either way round: shifted, they stand wider and seldom rank above them.
+          // Building every shift took most of a design's time in Py molybdenum oxide and titanium
+          // plate, its cores almost never kept, ADR 0058.)
           for (const shift of pipes ? [0, -1, 1, -2, 2, -3, 3, -4, 4].slice(0, lean ? 3 : 9) : [0]) {
-            yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng);
-            yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true }, rng);
+            const clean = yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng);
+            const first = yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true }, rng);
+            if (shift === 0 && clean && first) break;
           }
         }
       }

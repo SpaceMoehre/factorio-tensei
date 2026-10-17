@@ -22,6 +22,8 @@ The setup decides the target. The user's complaint (for example "not maxed, put 
 | `node $SKILL/scripts/compare.mjs a/summary.json b/summary.json …` | A table of those summaries side by side. |
 | `node $SKILL/scripts/ascii.mjs <best.json> x0 y0 x1 y1` | A region as text, tile by tile: quicker than a PNG for one belt's shape. |
 | `node $SKILL/scripts/loops.mjs <best.json> [pieces]` | Belts turning 180° or more just after a splitter (ADR 0051). |
+| `node $SKILL/scripts/maxdet.mjs <setup.json> [K] [most]` | Maximize with no time limit, K candidates a try (20): the same run on any host under any load. Prints each event with a hash of its layout, then one hash of them all, and the seconds. Two runs of code meant to lay out the same (a speed-up) must match (ADR 0058). `ROOT=` for another worktree, `STOPAT=<machines>` to stop at a fit. |
+| `node $SKILL/scripts/profsum.mjs <file.cpuprofile> [top]` | A CPU profile summed by function: inclusive and self seconds, largest first. Make one with `node --cpu-prof --cpu-prof-dir=<dir> $SKILL/scripts/run.mjs …`; it is written when the run ends (`--total` ends it). |
 
 The probes below go one level under a failed try. Each takes the same setup file, `ROOT=` for another repo, and `[spare JSON]` (for example `'{"soil":240}'`) to give a step spare output.
 

@@ -111,6 +111,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const placed = new Map();
   const tileSets = new Map();
   const partings = new Map();
+  const copyLanded = new Map();
   // Where each Sub-Block may stand (lands), by spot: Backtracking asks again for the same spots.
   const landed = new Map();
   // Sub-Blocks placed parted round the Fixtures (Parting), while placing one by one: their shape.
@@ -191,10 +192,11 @@ export function placeBlocks(ctx, prepared, params = {}) {
       }
     }
     // The spot that grows the block least, keeps its links short and keeps off the rows other
-    // Sub-Blocks' Side Inputs arrive on (west of their consumers unless `anywhere`).
+    // Sub-Blocks' Side Inputs arrive on (west of its consumers, where any is).
     // (What stands placed is taken once, not for each of the many spots a City Block offers: each
     // box with the rows its Side Inputs arrive on, their bounds, where the links' consumers are.)
-    const scored = (spots, anywhere = false) => {
+    // (`back`: the spots not west of the consumers, else only those that are.)
+    const scored = (spots, back = false) => {
       const out = [];
       const boxes = [...placed.keys()].map(j => ({ ...box(j), step: j, entries: blocks[j].entries.map(e => placed.get(j).y + e) }));
       const targets = mine.map(l => ({ x: placed.get(l.to).x, y: placed.get(l.to).y + l.toY - l.fromY }));
@@ -203,10 +205,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
       for (const c of spots) {
         let me = { x: c.x, y: c.y, w: b.w, h: b.h };
         if (fedBy && c.x < site.inner.x + gap + fedBy) continue;
+        let behind = 0;
+        for (const t of targets) behind += Math.max(0, c.x + b.w + 1 - t.x);
+        if (!behind === back) continue;
         if (boxes.some(o => clashes(i, me, o.step))) continue;
-        let back = 0;
-        for (const t of targets) back += Math.max(0, c.x + b.w + 1 - t.x);
-        if (back && !anywhere) continue;
         // In a City Block, Fixtures on none of its tiles but some of its machines: those left out;
         // else its stack parted round them (Parting), taller.
         let holes = site ? lands(i, me) : null, parted = null;
@@ -227,20 +229,27 @@ export function placeBlocks(ctx, prepared, params = {}) {
         let blocking = 0;
         for (const o of boxes) if (o.x >= c.x + b.w) for (const y of o.entries) if (y >= c.y - 1 && y <= c.y + me.h) blocking++;
         // A link running back west goes round both boxes. A parted stack wastes the rows it parts by.
-        const cost = grown + weight * (length + 2 * back + (back ? 8 : 0)) + 40 * blocking + (holes?.size ?? 0) * b.holeCost + (parted ? (parted.h - b.h) * b.w : 0);
+        const cost = grown + weight * (length + 2 * behind + (behind ? 8 : 0)) + 40 * blocking + (holes?.size ?? 0) * b.holeCost + (parted ? (parted.h - b.h) * b.w : 0);
         out.push({ x: c.x, y: c.y, cost, ...(parted ? { parted } : {}) });
       }
       return out;
     };
-    const pick = (spots, anywhere = false) => scored(spots, anywhere).reduce((best, c) => (!best || c.cost < best.cost ? c : best), null);
+    // (Each list scored once: Backtracking looks at the same spots again, with the same placed.)
+    const lists = new Map();
+    const scoredOf = (name, back = false) => {
+      const k = `${name}${back}`;
+      if (!lists.has(k)) lists.set(k, scored(name === 'spots' ? site.spots(b) : candidates, back));
+      return lists.get(k);
+    };
+    const pick = list => list.reduce((best, c) => (!best || c.cost < best.cost ? c : best), null);
     // In a City Block, where none of those fits: every spot inside it, west of the consumers
     // first.
-    const best = pick(candidates) ?? (site && (pick(site.spots(b)) ?? pick(site.spots(b), true)));
+    const best = pick(scoredOf('candidates')) ?? (site && (pick(scoredOf('spots')) ?? pick(scoredOf('spots', true))));
     const first = best && { x: best.x, y: best.y, ...(best.parted ? { parted: best.parted } : {}) };
     // Other spots, for Backtracking: every one it fits, the cheapest first, none overlapping the
     // first or another taken by more than half its box.
     const others = () => {
-      const all = [...scored(candidates), ...scored(site.spots(b)), ...scored(site.spots(b), true)].sort((p, q) => p.cost - q.cost);
+      const all = [...scoredOf('candidates'), ...scoredOf('spots'), ...scoredOf('spots', true)].sort((p, q) => p.cost - q.cost);
       const taken = first ? [first] : [];
       const far = c => taken.every(t => Math.max(0, b.w - Math.abs(c.x - t.x)) * Math.max(0, b.h - Math.abs(c.y - t.y)) <= b.w * b.h / 2);
       for (const c of all) {
@@ -406,10 +415,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
       const o = b.at.get(inst.index), { w, h } = inst.module.area;
       // The plain stack's gap above it kept.
       let top = k ? bottom + o.y - (b.at.get(copies[k - 1].index).y + copies[k - 1].module.area.h) : o.y;
-      const tiles = copyTiles(inst);
       let landed = null;
       for (let d = 0; d <= h + PART && !landed; d++) {
-        landed = site.landing(tiles, { x: x + o.x, y: y + top + d, w, h }, budget(i) - hit.size);
+        landed = copyLands(inst, { x: x + o.x, y: y + top + d, w, h }, budget(i) - hit.size);
         if (landed) top += d;
       }
       if (!landed) return null;
@@ -432,13 +440,14 @@ export function placeBlocks(ctx, prepared, params = {}) {
     return Math.max(1, Math.round(plan[i].count / (ctx.giving === i ? GIVE : 10)));
   }
 
-  // A copy's tiles no Fixture may stand on, as blockTiles has them, by where they lie in it.
-  function copyTiles(inst) {
-    const hard = new Set(), soft = new Map();
-    const { tiles, machines } = tilesByMachine(inst.module);
-    for (const [x, y] of tiles) hard.add(tileKey(x, y));
-    for (const [x, y, m] of machines) soft.set(tileKey(x, y), `${inst.index}:${m}`);
-    return { hard, soft };
+  // Whether a copy may stand at `box` (as lands has it, its machines Fixtures stand on no more
+  // than `most`), by spot: Parting asks of the same spots again for every spot its stack is tried
+  // at (Py kicalk among roboports: two thirds of a Maximize).
+  function copyLands(inst, box, most) {
+    const key = (inst.index * 4096 + box.x + 1024) * 4096 + box.y + 1024;
+    let all = copyLanded.get(key);
+    if (all === undefined) copyLanded.set(key, (all = site.landing(copyTiles(inst), box, Infinity)));
+    return all && all.size <= most ? all : null;
   }
 
   // Tiles of a Sub-Block's stack that no Fixture may stand on, by where they lie in its box: its
@@ -538,6 +547,14 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
     }
     return stacks.get(key);
   };
+  // (No way fits where a Sub-Block is taller than the room, or a chain of them, each in a column
+  // west of the one it feeds, is wider: its columns at least as wide as its Sub-Blocks, a corridor
+  // between. Py titanium plate's chain of 21 Sub-Blocks spans more than its City Block's width:
+  // each try's candidates in columns weighed every way of them for nothing.)
+  if (blocks.some(b => b.h > inner.h)) return null;
+  const chain = new Map();
+  for (const i of order) chain.set(i, blocks[i].w + Math.max(0, ...feeds.get(i).filter(q => chain.has(q)).map(q => chain.get(q) + corridor)));
+  if (Math.max(...chain.values()) > inner.w) return null;
   const fitting = [];
   // (At most LAYER_STEPS taken, each Sub-Block as far east as it may first: with many
   // Sub-Blocks, every way of them is far too many to weigh, ADR 0055.)
@@ -872,14 +889,7 @@ export function roomFor(site, design) {
   const rules = siteRules(site);
   if (!rules.fixtures.length) return 1;
   let least = 1;
-  for (const { module } of design.kinds) {
-    const tiles = new Set(coveredBy(module).map(([x, y]) => tileKey(x, y)));
-    const { w, h } = module.area;
-    const spots = rules.spots({ w, h }, 2);
-    let n = 0;
-    for (const spot of spots) if (rules.fits(tiles, { ...spot, w, h })) n++;
-    least = Math.min(least, spots.length ? n / spots.length : 0);
-  }
+  for (const { module } of design.kinds) least = Math.min(least, rules.room(coveredBy(module), module.area));
   return least;
 }
 
@@ -994,7 +1004,51 @@ function makeRules(site) {
     for (let y = inner.y; y <= inner.y + inner.h - h; y += step) for (let x = inner.x; x <= inner.x + inner.w - w; x += step) out.push({ x, y });
     return out;
   };
-  return { inner, fixtures, fits, landing, spots };
+  // roomFor: the share of its spots (every other tile) where a box of these tiles (coveredBy) fits,
+  // as `fits` tells. Kept by the tiles: a module alike in another design or try takes the same (in
+  // Py molybdenum oxide among roboports, a tenth of a Maximize went on these).
+  const rooms = new Map();
+  const seen = new Int32Array(fixtures.length);
+  let stamp = 0;
+  const room = (tiles, { w, h }) => {
+    const id = `${w},${h}:${[...new Set(tiles.map(([x, y]) => tileKey(x, y)))].sort((a, b) => a - b).join()}`;
+    if (rooms.has(id)) return rooms.get(id);
+    // (The tiles as a mask over the box and the tiles round it they reach.)
+    let x0 = 0, y0 = 0, x1 = w - 1, y1 = h - 1;
+    for (const [x, y] of tiles) [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
+    const mw = x1 - x0 + 1;
+    const mask = new Uint8Array(mw * (y1 - y0 + 1));
+    for (const [x, y] of tiles) mask[(y - y0) * mw + x - x0] = 1;
+    const clear = (bx, by) => {
+      stamp++;
+      for (let cx = Math.floor((bx - 1) / CELL); cx <= Math.floor((bx + w) / CELL); cx++) {
+        for (let cy = Math.floor((by - 1) / CELL); cy <= Math.floor((by + h) / CELL); cy++) {
+          for (const n of cells.get(cx * 65536 + cy) ?? []) {
+            if (seen[n] === stamp) continue;
+            seen[n] = stamp;
+            const f = fixtures[n];
+            if (f.x > bx + w || f.x + f.w < bx || f.y > by + h || f.y + f.h < by) continue;
+            const fx1 = Math.min(f.x + f.w, bx + x1 + 1), fy1 = Math.min(f.y + f.h, by + y1 + 1);
+            for (let x = Math.max(f.x, bx + x0); x < fx1; x++) {
+              for (let y = Math.max(f.y, by + y0); y < fy1; y++) if (mask[(y - by - y0) * mw + x - bx - x0]) return false;
+            }
+          }
+        }
+      }
+      return true;
+    };
+    let n = 0, all = 0;
+    for (let y = inner.y; y <= inner.y + inner.h - h; y += 2) {
+      for (let x = inner.x; x <= inner.x + inner.w - w; x += 2) {
+        all++;
+        if (clear(x, y)) n++;
+      }
+    }
+    const share = all ? n / all : 0;
+    rooms.set(id, share);
+    return share;
+  };
+  return { inner, fixtures, fits, landing, spots, room };
 }
 
 // The tiles of a module that no Fixture may stand on, relative to its area's corner: its
@@ -1044,6 +1098,20 @@ function tilesByMachine(module) {
     byMachine.set(module, { tiles: coveredBy(module).filter(([x, y]) => !theirs.has(tileKey(x, y))), machines });
   }
   return byMachine.get(module);
+}
+
+// A copy's tiles no Fixture may stand on, as blockTiles has them, by where they lie in it (kept
+// by copy).
+const copied = new WeakMap();
+function copyTiles(inst) {
+  if (!copied.has(inst)) {
+    const hard = new Set(), soft = new Map();
+    const { tiles, machines } = tilesByMachine(inst.module);
+    for (const [x, y] of tiles) hard.add(tileKey(x, y));
+    for (const [x, y, m] of machines) soft.set(tileKey(x, y), `${inst.index}:${m}`);
+    copied.set(inst, { hard, soft });
+  }
+  return copied.get(inst);
 }
 
 // A tile of a box as one number (tiles from one left of or above the box on).

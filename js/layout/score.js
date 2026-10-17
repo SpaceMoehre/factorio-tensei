@@ -43,9 +43,13 @@ export function compactness(block) {
 // after them; a Supplied Item a filter splitter sends off after them is not), output inserters at
 // machines with an Output Drop, Compactness, entities.
 export function rankOf(block) {
-  const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
   const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
-  return [Math.round(starving * 1000) / 1000, loopsByTrain, riding(block).length, supporting(block), compactness(block).value, block.entities.length];
+  return [starvationOf(block), loopsByTrain, riding(block).length, supporting(block), compactness(block).value, block.entities.length];
+}
+
+// What a layout starves in all, a minute (to 1/1000), as rankOf ranks it first.
+export function starvationOf(block) {
+  return Math.round(simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0) * 1000) / 1000;
 }
 
 // The belts from producers through their consumers carrying items none of those consumers take

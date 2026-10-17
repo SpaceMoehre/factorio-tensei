@@ -375,6 +375,39 @@ test('Maximize passes a number whose designs starve: Starvation comes and goes w
 // Py's solid separators make concentrated titanium for the foundries with nexelit ore and iron
 // oxide, which no Sub-Block takes: two byproducts on one belt, which no filter splitter sorts out
 // (one a belt). Maximize's sorting phase is for belts riding one alone (ADR 0056).
+// Maximize tries the same Goals again (an Annex's first try in each Annex's room, those that may
+// starve after those that may not): a search like one before it designs nothing again, and lays
+// out the same, drawing on its random numbers from where the first one's designing left off.
+test('a search like one before it takes its designs: the same layouts', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 120, h: 120 }, fixtures: [], unknown: [] }, 2);
+  const entries = [asm2('electronic-circuit', 600), asm2('copper-cable', 1800)];
+  const layouts = () => {
+    const out = [];
+    const run = search(entries, catalog, logistics, { seed: 1, maxCandidates: 40, site, perfect: true, unsorted: true });
+    for (let step = run.next(); !step.done; step = run.next()) out.push([step.value.score, step.value.block.entities.map(e => [e.name, e.x, e.y, e.direction])]);
+    return out;
+  };
+  const first = layouts();
+  assert.ok(first.length);
+  assert.deepEqual(layouts(), first);
+});
+
+// Layers stands every producer in a column west of all it feeds: a chain of Sub-Blocks as wide as
+// the room together, with no corridor between them, fits no way of them, told before any is
+// weighed (ADR 0058). One by one they still stand, one below the other.
+test('Layers: Sub-Blocks wider in columns than the City Block fit none; one by one they stand', () => {
+  const entries = [asm2('electronic-circuit', 600), asm2('copper-cable', 1800)];
+  const ctx = context(entries, catalog, logistics, siteOf({ area: { x: 0, y: 0, w: 120, h: 120 }, fixtures: [], unknown: [] }, 2));
+  const rng = random(1);
+  const designs = [];
+  for (const i of ctx.flows.order) designs[i] = designOf(designStep(ctx, i, rng)[0]);
+  const { boxes } = placeBlocks(ctx, prepare(ctx, designs), { layers: 2 });
+  const w = boxes[0].w + boxes[1].w;
+  const narrow = { ...ctx, site: siteOf({ area: { x: 0, y: 0, w: w + 4, h: 120 }, fixtures: [], unknown: [] }, 2) };
+  assert.throws(() => placeBlocks(narrow, prepare(narrow, designs), { layers: 2 }), (/** @type {any} */ e) => e.noColumns);
+  assert.ok(placeBlocks(narrow, prepare(narrow, designs), {}).bounds.w <= w);
+});
+
 test('byproducts riding on, by belt: two on one belt are told from one alone', () => {
   const belt = (id, items) => ({ id, kind: 'belt', source: 1, consumers: [0], items: items.map(item => ({ item })) });
   const block = {

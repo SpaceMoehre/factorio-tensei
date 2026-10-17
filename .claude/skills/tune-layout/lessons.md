@@ -14,6 +14,10 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Look at the picture.**
   - 0019 ran a loop: judge the screenshot, find why usable room stays empty, fix it, go again. That took Py nexelit from 1260 to 1458/min.
   - Empty strips are the symptom. The reason is usually one step: placement, design shape, routing or the Maximize schedule.
+- **For speed, profile, then follow every candidate** (0058).
+  - `node --cpu-prof` on whole Maximize runs (`profsum.mjs`) showed each setup's own sink: molybdenum oxide the design that fits most spots between Fixtures (a quarter), kicalk Parting (two thirds), titanium plate fallbacks, Layers and finishing.
+  - Then a scratch copy of the search logging every candidate (its kind, how far it got, how long) and every design variant (its family, new or alike, kept, used in a fit). That told work never used from work that made the fits: rows capped by belt load built 105,000 cores in molybdenum oxide for 2 of 20 designs used.
+  - Check a speed-up lays out the same with `maxdet.mjs` (no time limit, K candidates a try) before the wall-clock A/B: identical hashes make the A/B about time alone.
 - **Number everything.**
   - Every ADR has a before/after table: rate, machines, size and time on a named setup.
   - The reference setups show where a change pays and where it regresses: small parts (busy belts), vrauks/kicalk among roboports (Fixture rows), moss (fluids), molybdenum (byproducts) and sodium hydroxide (loops).
@@ -54,6 +58,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Supplied Items counted in their belt's flow; a belt of two Supplied Items sends one off and joins with the other; Layers bounded (steps, pruning); one by one first where columns fit none | Titanium plate (21 Sub-Blocks): nothing → 3750/min at 10 casting units; molybdenum 62.49 → 599.99 | 0055 |
 | A try out of time: no spare-machines retry, the next halfway down; no sorting phase where no belt rides a byproduct alone | Titanium plate: first fit at 1190 s (none in 3000 s before), 8226.56/min with an Annex at 3625 s | 0056 |
 | Starving for more output: Throughput down the chain (backpressure, untapped feeds bring nothing); starving tries only once nothing more fits without (last Annex, or above the best without Annexes) | Titanium plate's last Annex: +3 casting units, 8226.56 → 9351.56/min, none starving; molybdenum and small parts unchanged | 0057 |
+| Work no layout used, cut: variants alike built once; pipe-row shifts only where unshifted rows starve; designs kept for tries alike; Layers' chain-width bound; Parting, spots and room counts memoized; layouts starving as routed not finished; no fallback without splitters where a byproduct is tapped; each Sub-Block's first design that fits first | Same layouts: small parts (deterministic) 72 → 55 s, molybdenum 3248 → 2660 s; kicalk 40 min 412.8 → 460.8/min; titanium every fit sooner (7101.56/min at 3602 → 3229 s) | 0058 |
 
 ## What failed, was reverted, or must not be done
 
@@ -108,6 +113,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **Starving first, Annexes after** (0057). A starving main layout of 3.3 molybdenum furnaces beat 2 that starve nothing (462 vs 400/min) and left no room for the Annex of 2 the other way found (800). A phase that grows an early layout must be weighed against what the later phases lose; put it last where it can only add.
 - **A perfect try passes over designs whose estimate starves** (0057). Titanium's Annex of 1 failed after 2017 s perfect; a non-perfect, bounded try found 3 starving nothing in 900 s. When perfect tries fail at small counts, try the same count with `--starving` before blaming room or routing.
+- **A cache of designs between tries by rate** (0032) still holds: tries at other Counts differ. Tries at the *same* chain do repeat (an Annex's first try in each Annex's room, starving tries after perfect ones): those are kept now (0058), keyed by everything designing reads, the random numbers drawn on from where the first left off.
+- **Fallbacks tried on every failing candidate** (0058). Across every instrumented run, no fallback made a fit; titanium plate spent half its search on candidates going through them. Where a fallback provably cannot fit (without splitters a tapped byproduct comes by train), skip it.
 - **Throughput without backpressure** (0057). A layout whose tapped byproduct fell back to the train showed no Starvation and delivered its full rate; in the game the byproduct fills its belt and stops the producer. Model what cannot leave as well as what cannot arrive.
 
 ## Rules every change keeps

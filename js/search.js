@@ -4,7 +4,7 @@ import { prepare, compose, starvedBy, RoutingError, PowerError } from './layout/
 import { placeBlocks, roomFor } from './layout/place.js';
 import { finishBlock, given } from './layout/compact.js';
 import { validateBlock } from './layout/validity.js';
-import { rankOf } from './layout/score.js';
+import { rankOf, starvationOf } from './layout/score.js';
 import { simulate } from './sim.js';
 import { editOf } from './layout/edit.js';
 
@@ -45,7 +45,11 @@ export function* search(entries, catalog, logistics, options = {}) {
   const { seed = 1, maxCandidates = Infinity, deadline = Infinity, now = () => Date.now(), trace = () => {}, site = null, perfect = false, patience = 12, designed = null, strategy = 'search' } = options;
   const bounded = perfect || Boolean(options.settled);
   const spread = strategy === 'spread';
-  const rng = random(seed);
+  // (Every number drawn counted: a search whose Sub-Blocks a search alike designed before it
+  // draws on from where that one's designing left off.)
+  const source = random(seed);
+  let draws = 0;
+  const rng = () => (draws++, source());
   const started = now();
   const ctx = context(entries, catalog, logistics, site);
   // (No byproduct sorted out: each producers' belt chained through its consumers.)
@@ -68,37 +72,64 @@ export function* search(entries, catalog, logistics, options = {}) {
   // search's own are left as they were); one that starves ends the search before the rest are
   // designed. (One no structured variant routes is left to its own designing, random draws and
   // all, ADR 0053: Py anthraquinone's vanadium-pulp-3-void.)
-  if (perfect && options.precheck) {
-    const checkRng = random(seed + 2);
-    for (const i of order.filter(i => ctx.routes.some(r => r.source === i && r.sink === 'side-output')).reverse()) {
-      let checked;
-      try {
-        checked = designStep(ctx, i, checkRng, { now, deadline: designing, draws: 0 });
-      } catch (e) {
-        if (!(e instanceof LayoutError)) throw e;
-        continue;
+  // In a City Block, a design without Starvation that fits inside it (routed if it must be: not one
+  // whose core alone is too big, or that starves before it is routed).
+  const fitting = c => !(c.estimate.trouble > 1e-6 || (c.estimate.w !== undefined && !within(site, c.estimate)))
+    && (designOf(c)?.trouble ?? Infinity) <= 1e-6 && c.design.kinds.every(k => within(site, k.module.area));
+  // Every Sub-Block designed, or the search's end where one cannot be without Starvation:
+  // { designs } or { early } (what the search returns).
+  const designAll = () => {
+    if (perfect && options.precheck) {
+      const checkRng = random(seed + 2);
+      for (const i of order.filter(i => ctx.routes.some(r => r.source === i && r.sink === 'side-output')).reverse()) {
+        let checked;
+        try {
+          checked = designStep(ctx, i, checkRng, { now, deadline: designing, draws: 0 });
+        } catch (e) {
+          if (!(e instanceof LayoutError)) throw e;
+          continue;
+        }
+        const least = designOf(checked[0])?.trouble ?? 0;
+        if (least > 1e-6) return { early: { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) } };
       }
-      const least = designOf(checked[0])?.trouble ?? 0;
-      if (least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) };
     }
+    const designs = [];
+    for (const i of order) {
+      // Designed already, each Sub-Block on its own (`designs`: the candidates of each, built
+      // elsewhere and handed over): built again only where the search tries one not built yet.
+      designs[i] = options.designs?.[i] ? revive(ctx, i, options.designs[i], rng) : designStep(ctx, i, rng, { now, deadline: designing });
+      const least = designOf(designs[i][0])?.trouble ?? 0;
+      if (perfect && least > 1e-6) return { early: { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) } };
+      // In a City Block, a Sub-Block none of whose designs without Starvation fits inside it at all
+      // leaves no layout either: its designs in turn until one does.
+      if (perfect && site && !designs[i].some(fitting)) return { early: { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: no design without starvation fits the city block`), starves: true } };
+    }
+    return { designs };
+  };
+  // Designed by a search alike before (keptDesigns; looking for a layout without Starvation, its
+  // designing takes no time limit): those designs, as this one's would be. Its designs of one
+  // machine row and more are shared, routed once for both (routing them draws no random
+  // numbers); its repeated modules as they were when it finished designing, routed again here.
+  const key = perfect && !options.designs ? designsKey(entries, catalog, logistics, site, seed, options.precheck) : null;
+  let outcome = key ? keptDesigns.get(key) : null;
+  const again = Boolean(outcome);
+  if (again) {
+    keptDesigns.delete(key);
+    for (; draws < outcome.draws; draws++) source();
+  } else {
+    outcome = { ...designAll(), draws, ms: now() - started };
+    if (outcome.designs) outcome.copies = outcome.designs.map(list => list.map(c => (c.copies ? { design: c.design, failed: c.failed } : null)));
   }
-  const designs = [];
-  for (const i of order) {
-    // Designed already, each Sub-Block on its own (`designs`: the candidates of each, built
-    // elsewhere and handed over): built again only where the search tries one not built yet.
-    designs[i] = options.designs?.[i] ? revive(ctx, i, options.designs[i], rng) : designStep(ctx, i, rng, { now, deadline: designing });
-    const least = designOf(designs[i][0])?.trouble ?? 0;
-    if (perfect && least > 1e-6) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) };
-    // In a City Block, a Sub-Block none of whose designs without Starvation fits inside it at all
-    // leaves no layout either: its designs in turn (routed if they must be: not one whose core
-    // alone is too big, or that starves before it is routed) until one does.
-    const fitting = c => !(c.estimate.trouble > 1e-6 || (c.estimate.w !== undefined && !within(site, c.estimate)))
-      && (designOf(c)?.trouble ?? Infinity) <= 1e-6 && c.design.kinds.every(k => within(site, k.module.area));
-    if (perfect && site && !designs[i].some(fitting)) return { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: no design without starvation fits the city block`), starves: true };
+  if (key) {
+    keptDesigns.set(key, outcome);
+    if (keptDesigns.size > KEPT_DESIGNS) keptDesigns.delete(keptDesigns.keys().next().value);
   }
+  if (outcome.early) return outcome.early;
+  const { copies } = outcome;
+  const designs = again ? outcome.designs.map((list, i) => list.map((c, k) => (c.copies ? revive(ctx, i, [{ ...c, ...copies[i][k] }], rng)[0] : c))) : outcome.designs;
   designed?.(ctx.plan.map((sb, i) => ({ item: sb.item, count: sb.count, area: designOf(designs[i][0])?.area ?? null })));
   // (Laying out takes about as long as designing did: never less than that.)
-  const until = options.routing === undefined ? deadline : Math.max(deadline, now() + Math.max(options.routing, now() - started));
+  const until = options.routing === undefined ? deadline : Math.max(deadline, now() + Math.max(options.routing, outcome.ms));
 
   // Breakout designs, built the first time the search tries them (with a random source of their
   // own, so the rest of the search draws as it would without them): a Sub-Block's designs for
@@ -195,12 +226,18 @@ export function* search(entries, catalog, logistics, options = {}) {
   // In a City Block with Fixtures in its room, a Sub-Block whose best design fits few of its
   // spots between them (a grid of substations leaves gaps a module must fit) starts from the
   // design, starving no more, that fits the most.
-  const choice = ctx.plan.map(() => 0);
+  // Looking for a layout without Starvation, each Sub-Block starts from its first design that
+  // fits (one that does not is passed over unbuilt: with two Sub-Blocks' first designs too big,
+  // as in Py titanium plate at 26 casting units, every candidate changing one design at a time
+  // was).
+  const choice = ctx.plan.map((_, i) => (perfect && site ? Math.max(0, designs[i].findIndex(fitting)) : 0));
   if (site) {
     designs.forEach((list, i) => {
       const best = designOf(list[0]);
       if (!best || roomFor(site, best) >= 0.25) return;
       const room = list.map(c => {
+        // (Routing only adds to what a design's estimate starves: one starving more is not routed.)
+        if (c !== list[0] && c.estimate.trouble > best.trouble + 1e-6) return -1;
         const d = designOf(c);
         return d && d.trouble <= best.trouble + 1e-6 ? roomFor(site, d) : -1;
       });
@@ -235,12 +272,19 @@ export function* search(entries, catalog, logistics, options = {}) {
   // by one go first from then on (Py titanium plate's 21 Sub-Blocks span more than the City
   // Block's width in columns; some 150 candidates in columns came first, ADR 0055).
   let unfit = 0, columned = false;
+  // Candidates tried, by all their placing takes of them (in columns, not how a Sub-Block placed
+  // one by one weighs its spots: weight, lift, order, at): one like them places and lays out the
+  // same again, and is passed over (sweep's weights in columns, mutations that change nothing).
+  const seen = new Set();
   while (tried < maxCandidates && (tried === 0 || !(timedOut = now() >= until))) {
     // In a City Block, a search whose structured candidates found no room for a layout (or,
     // looking for one without Starvation, none of those) seldom finds one later.
     if ((bounded || (site && !best)) && tried >= structured + patience) break;
     const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng, site);
     tried++;
+    const as = JSON.stringify(candidate.layers ? { ...candidate, weight: 0, lift: 0, order: 0, at: 0 } : candidate);
+    if (seen.has(as)) continue;
+    seen.add(as);
     const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}`;
     if (!prepared.has(k)) {
       // Each Sub-Block's chosen design, routed now if this is the first time it is tried.
@@ -273,7 +317,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       if (perfect && ready.least > 0 && starved.producer !== null && !(nearest && nearest.rate <= ready.least)) nearest = shortOf(starved.producer, ready.least);
     }
     if ((best && ready.least > best.score[0]) || (perfect && ready.least > 0)) continue;
-    let block, placed, boxes, composed = null;
+    let block, placed, boxes, composed = null, unfinished = false;
     // A link that found no room makes room (spacedOut): the same candidate is tried next with
     // its Sub-Blocks spaced out round the link (the user's rule: a belt that cannot be connected
     // spaces the blocks out).
@@ -366,6 +410,10 @@ export function* search(entries, catalog, logistics, options = {}) {
             if (!(again instanceof RoutingError)) throw again;
           }
         }
+        // (Not where it would bring a tapped byproduct by train: that is no fit in a try that may
+        // not starve, nor delivers it in one that may, ADR 0054, ADR 0057. Candidates routed again
+        // so took half of Py titanium plate's search, none fitting, ADR 0058.)
+        if (bounded && work.routes.some(r => r.loop?.tapped)) throw e;
         return chaining({ ...layout, plain: true });
       };
       try {
@@ -374,7 +422,14 @@ export function* search(entries, catalog, logistics, options = {}) {
         if (!(first instanceof RoutingError)) throw first;
         composed = fallBack(first);
       }
-      block = given(finishBlock(composed, catalog, logistics), ctx.giving);
+      // Looking for a layout without Starvation, one that starves as routed starves once finished
+      // too; nor does finishing give a tapped byproduct the splitter it found no room for. Neither
+      // is finished (pipes buried, belts straightened, poles placed): passed over below as routed.
+      // (Py titanium plate's tries at 12 and 13 casting units finished 25 to 40 such layouts each,
+      // 5 to 7 s each, ADR 0058.)
+      const routed = bounded ? given(composed, ctx.giving) : null;
+      unfinished = Boolean(routed && ((perfect && starvationOf(routed) > 0) || untappedOf(routed)));
+      block = unfinished ? routed : given(finishBlock(composed, catalog, logistics), ctx.giving);
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
       if (candidate.layers && e instanceof RoutingError && e.noColumns && !columned && ++unfit === LAYERS_UNFIT) queue.splice(0, queue.length, ...queue.filter(c => !c.layers), ...queue.filter(c => c.layers));
@@ -387,7 +442,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       trace(candidate, e);
       continue;
     }
-    const problems = validateBlock(block, catalog, logistics);
+    const problems = unfinished ? [] : validateBlock(block, catalog, logistics);
     if (problems.length) {
       solidly();
       failure = new Error(`invalid layout: ${problems[0]}`);
@@ -416,7 +471,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     // A byproduct tapped off to the Sub-Block taking it whose splitter found no room: it would
     // come by train, and its producers' would stop the belt where it ends (ADR 0054; in a try that
     // may starve, it delivers nothing, ADR 0057). Room round them next.
-    const untapped = bounded ? block.routes.find(r => r.loop?.tapped && r.fedBy === undefined) : null;
+    const untapped = bounded ? untappedOf(block) : null;
     if (untapped) {
       makeRoom([untapped.loop.from, ...untapped.consumers]);
       failure = new Error(`${untapped.items[0].item}: no room for its splitter after its producers`);
@@ -446,6 +501,19 @@ export function* search(entries, catalog, logistics, options = {}) {
     for (const t of list) trials.set(t.candidate, t);
     return list.map(t => t.candidate);
   }
+}
+
+// Designs kept from searches before, the latest KEPT_DESIGNS (Maximize tries the same Goals
+// again: an Annex's first try in each Annex's room, those that may starve after those that may
+// not), by all designing takes: the chain's entries, the logistics, the City Block's room (its
+// size, and whether Fixtures stand in it), the seed and the Precheck.
+const keptDesigns = new Map();
+const KEPT_DESIGNS = 6;
+const catalogs = new WeakMap();
+let catalogsSeen = 0;
+function designsKey(entries, catalog, logistics, site, seed, precheck) {
+  if (!catalogs.has(catalog)) catalogs.set(catalog, ++catalogsSeen);
+  return JSON.stringify([catalogs.get(catalog), entries, logistics, site && [site.inner.w, site.inner.h, site.fixtures.length > 0], seed, Boolean(precheck)]);
 }
 
 // Room for a link that found none: the Sub-Blocks it runs between (`steps`; every one when none
@@ -651,6 +719,10 @@ function mutate(base, designs, rng, site = null) {
   }
   return c;
 }
+
+// A tapped byproduct's route whose splitter after its producers found no room (ADR 0054), else
+// undefined.
+const untappedOf = block => block.routes.find(r => r.loop?.tapped && r.fedBy === undefined);
 
 // Whether a box (w × h) fits inside a City Block's Buffer.
 const within = (site, { w, h }) => w <= site.inner.w && h <= site.inner.h;
