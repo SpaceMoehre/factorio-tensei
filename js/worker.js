@@ -10,6 +10,9 @@
 // each that fits, and { type: 'done', tried, failure, rate, machines, goals, above } at the end
 // (`above`: the lowest rate tried that did not fit, and why). A layout that starves comes with
 // what it delivers of the first Goal (`delivered`, ADR 0057); a 'try' of one says `starving`.
+// Its tries run several at once, each in a worker of its own made here (ADR 0060: `attempt`, a
+// try's job, answered by { type: 'attempted', outcome }); a 'try' names the others under way
+// (`others`: their machines).
 // A move (`move`: { edit (the shown block's), step, inst, dx, dy, score }) lays the shown block out
 // again with that Sub-Block moved (edit.js): { type: 'trying', tried, at, pushed } before each
 // layout it tries, then { type: 'moved', block, at, pushed, back, score, tried }, or { type:
@@ -21,13 +24,23 @@
 // none was kept), score, slid, back, tried }.
 import { search } from './search.js';
 import { maximize } from './maximize.js';
+import { runTry, tryPool, drive } from './parallel.js';
 import { context, designStep, random, revive } from './design.js';
 import { moveCopies, reshapeCopies, turnCopies, compactCopies } from './layout/edit.js';
 
 const catalog = fetch(new URL('../data/catalog.json', import.meta.url)).then(r => r.json());
 
-self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = null, maximize: goals = null, strategy = 'search', design = null, designs = null, move = null, reshape = null, turn = null, compact = null } }) => {
+// The most tries a Maximize runs at once (each worker holds its own catalog and search).
+const TRIES_AT_ONCE = 8;
+
+self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = null, maximize: goals = null, strategy = 'search', design = null, designs = null, move = null, reshape = null, turn = null, compact = null, attempt = null } }) => {
   try {
+    // One of a Maximize's tries, run for the worker running it (ADR 0060): { type: 'attempted',
+    // outcome }.
+    if (attempt) {
+      self.postMessage({ type: 'attempted', outcome: runTry(attempt, await catalog, logistics) });
+      return;
+    }
     if (move || reshape || turn || compact) {
       // (The Production Chain the block was laid out for: a Maximize's at the rate that fit.)
       const { edit, score, list = null, ...what } = move ?? reshape ?? turn ?? compact;
@@ -53,9 +66,25 @@ self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = nul
       return;
     }
     if (goals) {
-      const run = maximize(goals.goals, await catalog, logistics, { made: goals.made, selections: goals.selections, uses: goals.uses, upTo: goals.upTo, site, budgetMs, seed });
-      let step = run.next();
-      for (; !step.done; step = run.next()) self.postMessage(step.value);
+      // Its tries several at once, a worker of its own each (ADR 0060): as many as the machine
+      // has cores, but this one's (mostly waiting), and no more than a gigabyte of its memory
+      // each (a try of Py titanium plate's 21 Sub-Blocks holds about 0.6).
+      const memory = /** @type {any} */ (self.navigator)?.deviceMemory ?? 4;
+      const parallel = Math.max(1, Math.min(TRIES_AT_ONCE, (self.navigator?.hardwareConcurrency ?? 1) - 1, Math.floor(memory)));
+      const run = maximize(goals.goals, await catalog, logistics, { made: goals.made, selections: goals.selections, uses: goals.uses, upTo: goals.upTo, site, budgetMs, seed, parallel });
+      const events = drive(run, tryPool(() => {
+        const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
+        return {
+          run: job => new Promise((done, failed) => {
+            worker.onmessage = ({ data }) => (data.type === 'attempted' ? done(data.outcome) : data.type === 'error' ? failed(new Error(data.message)) : null);
+            worker.onerror = e => failed(new Error(e.message));
+            worker.postMessage({ attempt: job, logistics });
+          }),
+          stop: () => worker.terminate(),
+        };
+      }));
+      let step = await events.next();
+      for (; !step.done; step = await events.next()) self.postMessage(step.value);
       const { tried, failure, rate, machines, goals: list, above, delivered } = step.value;
       self.postMessage({ type: 'done', tried, failure: failure?.message ?? null, rate, machines, goals: list, above, delivered });
       return;

@@ -19,6 +19,8 @@
 //   --upTo            maximize no higher than the Goals' own rates
 //   --giving --unsorted --sorting --precheck --starving   attempt: search options as Maximize passes them
 //   --no-annexes --no-bands --no-giving --no-starving   maximize: leave that phase out
+//   --parallel N      maximize: tries at once, each in a worker thread (ADR 0060); default 1,
+//                     one after another (the page runs as many as its machine has cores, less 1)
 //   --seed N          default 1
 //   --root DIR        the repo to run (another worktree for an A/B), default this one
 //   --out DIR         where log.txt, best.json and summary.json go (default ./out-<setup name>)
@@ -39,7 +41,7 @@ const opt = (name, fallback) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : fallback;
 };
-const file = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.match(/^--(mode|n|budget|total|seed|root|out|strategy|profile-slow|profile-for)$/));
+const file = args.find(a => !a.startsWith('--') && !args[args.indexOf(a) - 1]?.match(/^--(mode|n|budget|total|seed|root|out|strategy|profile-slow|profile-for|parallel)$/));
 if (!file) {
   console.error('usage: node run.mjs <setup.json> [--mode auto|maximize|build|attempt] [--n N] [--budget S] [--total S] [--root DIR] [--out DIR]');
   process.exit(2);
@@ -140,17 +142,37 @@ if (mode === 'attempt') {
   log(`${secs()} attempt n=${n} ${outcome.block ? 'FIT' : 'no'} tried=${outcome.tried} ${outcome.failure?.message ?? ''}`);
 } else if (mode === 'maximize') {
   const total = opt('total') ? Number(opt('total')) * 1000 : Infinity;
-  const run = maximize(goals, catalog, logistics, {
-    made, selections, uses, index, upTo, site, budgetMs, seed,
+  const parallel = Number(opt('parallel', 1));
+  const generator = maximize(goals, catalog, logistics, {
+    made, selections, uses, index, upTo, site, budgetMs, seed, parallel,
     ...(flag('no-annexes') ? { annexes: false } : {}), ...(flag('no-bands') ? { bands: false } : {}), ...(flag('no-giving') ? { giving: false } : {}), ...(flag('no-starving') ? { starving: false } : {}),
   });
+  // (Tries at once: each in a worker thread, ADR 0060.)
+  let run = generator;
+  if (parallel > 1) {
+    const { Worker } = await import('node:worker_threads');
+    const { tryPool, drive } = await import(`${root}/js/parallel.js`);
+    run = drive(generator, tryPool(() => {
+      const worker = new Worker(new URL('./try-worker.mjs', import.meta.url), { workerData: { root, logistics } });
+      return {
+        run: job => new Promise((done, failed) => {
+          worker.removeAllListeners('message');
+          worker.on('message', m => (m.error ? failed(new Error(m.error)) : done(m.outcome)));
+          worker.postMessage(job);
+        }),
+        stop: () => worker.terminate(),
+      };
+    }));
+  }
   const tries = [];
   let step, open = null;
-  for (step = run.next(); !step.done; step = run.next()) {
+  for (step = await run.next(); !step.done; step = await run.next()) {
     const v = step.value;
     if (v.type === 'best') {
       keep(v.block, { rate: v.rate, machines: v.machines });
-      if (open) open.fit = true;
+      // (Tries at once: the fit is the try of its rate, not the last begun.)
+      const fit = parallel > 1 ? tries.findLast(t => t.rate === v.rate && t.machines === v.machines) : open;
+      if (fit) fit.fit = true;
       log(`${secs()} BEST rate=${v.rate}${v.delivered !== undefined ? ` delivered=${v.delivered}` : ''} machines=${v.machines} goalCounts=${goalCounts(v.block).join('+')}`);
     } else {
       if (v.type === 'try') tries.push(open = { t: secs(), rate: v.rate, machines: v.machines, more: v.more ?? null, giving: v.giving ?? false, starving: v.starving ?? false, fit: false });
@@ -158,10 +180,12 @@ if (mode === 'attempt') {
     }
     if (Date.now() - t0 > total) {
       log(`${secs()} STOPPED (--total)`);
+      await run.return?.();
       break;
     }
   }
-  tries.forEach((t, i) => t.secs = +((tries[i + 1]?.t ?? secs()) - t.t).toFixed(1));
+  // (Tries at once: no try's own time, only when it began.)
+  tries.forEach((t, i) => t.secs = parallel > 1 ? null : +((tries[i + 1]?.t ?? secs()) - t.t).toFixed(1));
   result = step.done ? { ...step.value, failure: step.value.failure?.message ?? null } : { stopped: true };
   result.tries = tries;
 } else {
@@ -233,6 +257,6 @@ writeFileSync(`${out}/summary.json`, JSON.stringify({ ...summary, tries: result.
 const { subBlocks, tries, compactness: c, ...head } = summary;
 console.log('\n== summary', JSON.stringify(head));
 if (subBlocks) for (const sb of subBlocks) console.log('  ', JSON.stringify(sb));
-if (result.tries) console.log('  tries:', result.tries.map(t => `${t.machines}${t.fit ? '✓' : '✗'}${t.giving ? 'g' : ''}(${t.secs}s)`).join(' '));
+if (result.tries) console.log('  tries:', result.tries.map(t => `${t.machines}${t.fit ? '✓' : '✗'}${t.giving ? 'g' : ''}${t.secs === null ? '' : `(${t.secs}s)`}`).join(' '));
 console.log(`files: ${out}/{log.txt,best.json,summary.json}`);
 process.exit(0);

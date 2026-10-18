@@ -17,7 +17,7 @@ The setup decides the target. The user's complaint (for example "not maxed, put 
 
 | Script | What it does |
 |---|---|
-| `node $SKILL/scripts/run.mjs <setup.json> [--mode auto\|maximize\|build\|attempt] [--n N] [--budget S] [--total S] [--root DIR] [--out DIR]` | Runs the setup as the page does (auto). Logs each event and writes `log.txt`, `best.json` and `summary.json`: rate, goal machines, Sub-Blocks, valid, starving, byproducts riding, room empty, machine share, tries with ✓/✗ and seconds. |
+| `node $SKILL/scripts/run.mjs <setup.json> [--mode auto\|maximize\|build\|attempt] [--n N] [--budget S] [--total S] [--parallel N] [--root DIR] [--out DIR]` | Runs the setup as the page does (auto); `--parallel N`: Maximize's tries N at once in worker threads, as the page runs them on a machine of N + 1 cores (ADR 0060; default 1, one at a time). Logs each event and writes `log.txt`, `best.json` and `summary.json`: rate, goal machines, Sub-Blocks, valid, starving, byproducts riding, room empty, machine share, tries with ✓/✗ and seconds. |
 | `node $SKILL/scripts/draw.mjs <best.json> <out.png> [scale]` | Draws the layout as a PNG: Fixtures grey, each Sub-Block's machines a colour labelled `index item ×count`, belts yellow, pipes blue, splitters red, the Buffer outlined red. Then Read the PNG to look at it. |
 | `node $SKILL/scripts/compare.mjs a/summary.json b/summary.json …` | A table of those summaries side by side. |
 | `node $SKILL/scripts/ascii.mjs <best.json> x0 y0 x1 y1` | A region as text, tile by tile: quicker than a PNG for one belt's shape. |
@@ -120,6 +120,8 @@ Write down the cause in one sentence before changing code.
    ```
 
    (`HEAD` is the code before your change; commit nothing yet.) Then `compare.mjs`. Remove the worktree after (`git worktree remove`).
+
+   Compare one try at a time (`--parallel 1`, the default) unless the change is about tries at once: then give each side the same number of cores (two runs of `--parallel 3` on 8 cores), and say so. A run's tries at once take a core each and some 0.6 GB on large chains.
 3. Regressions:
    - Run `small-parts-100.json` (fast) plus the reference setup that shares the mechanism you touched, A/B the same way.
    - A change that wins here but loses there needs a gate, not a shrug.

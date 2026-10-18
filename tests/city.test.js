@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 import { decodeBlueprint, readCityBlock, siteOf } from '../js/city.js';
 import { search } from '../js/search.js';
 import { maximize, planner, attempt } from '../js/maximize.js';
+import { runTry, tryPool, drive } from '../js/parallel.js';
 import { gapsOf, bands } from '../js/bands.js';
 import { expandChain, recipeOptions } from '../js/chain.js';
 import { encodeBlueprint } from '../js/blueprint.js';
@@ -267,6 +268,79 @@ test('Maximize finds a higher rate that fits, each layout found valid, inside an
   assert.equal(events[0].type, 'foretell');
   assert.equal(events[1].type, 'try');
   assert.equal(events[1].machines, Math.max(1, events[0].machines));
+});
+
+// Tries at once (ADR 0060): maximize hands its tries out ('start', 'wait', 'cancel'), here to a
+// pool run in turn on this thread, finishing in the order they started. The same block fits as
+// many machines as one try at a time finds, every fit valid and higher than the last.
+test('Maximize with tries at once: as high a rate as one at a time, every fit valid and higher; with Annexes too', async () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 40, h: 30 }, fixtures: [{ name: 'roboport', kind: 'fixture', number: 1, x: 18, y: 13, w: 4, h: 4 }] }, 1);
+  const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
+  const options = { made: ['copper-cable'], selections, site, maxCandidates: 12, budgetMs: 120000, annexes: false };
+  const goals = [{ item: 'electronic-circuit', rate: 60 }];
+  const alone = maximize(goals, catalog, logistics, options);
+  let step = alone.next();
+  while (!step.done) step = alone.next();
+  const started = [];
+  const pool = tryPool(() => ({ run: job => { started.push(job.n); return Promise.resolve(runTry(job, catalog, logistics)); }, stop() {} }));
+  const events = drive(maximize(goals, catalog, logistics, { ...options, parallel: 3 }), pool);
+  const found = [];
+  let next = await events.next();
+  for (; !next.done; next = await events.next()) {
+    const value = /** @type {any} */ (next.value);
+    assert.ok(!['start', 'wait', 'cancel'].includes(value.type));
+    if (value.type !== 'best') continue;
+    assertValid(value.block, catalog, logistics);
+    assert.equal(simulate(value.block).starvation.length, 0);
+    found.push(value.rate);
+  }
+  assert.ok(new Set(started).size > 1);
+  assert.ok(found.every((r, i) => i === 0 || r > found[i - 1]));
+  assert.equal(next.value.rate, step.value.rate);
+  // With Annexes, 4 at once (Annexes beside the roomiest fit too, where it is another): every
+  // layout shown valid and delivering more than the last, and no less than one at a time makes.
+  const annexing = { ...options, annexes: true };
+  const one = maximize(goals, catalog, logistics, annexing);
+  let last = one.next();
+  while (!last.done) last = one.next();
+  const shown = [];
+  const run = drive(maximize(goals, catalog, logistics, { ...annexing, parallel: 4 }), tryPool(() => ({ run: job => Promise.resolve(runTry(job, catalog, logistics)), stop() {} })));
+  let got = await run.next();
+  for (; !got.done; got = await run.next()) {
+    const value = /** @type {any} */ (got.value);
+    if (value.type !== 'best') continue;
+    assertValid(value.block, catalog, logistics);
+    shown.push(value.rate);
+  }
+  assert.ok(shown.every((r, i) => i === 0 || r > shown[i - 1]));
+  assert.equal(got.value.rate, shown.at(-1));
+  assert.ok(got.value.rate >= last.value.rate * 0.75, `${got.value.rate} vs ${last.value.rate}`);
+});
+
+// With no Fixtures in the room, workers idle while the last tries for more machines run begin the
+// Annexes beside the best; their layouts come once those tries are done (ADR 0060). Here a pool
+// finishes each try the later the more machines it asks for: the same rate as one at a time,
+// every layout shown valid and making more than the last.
+test('Maximize with tries at once begins the Annexes early, while the last tries run: as high a rate', async () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 60, h: 40 }, fixtures: [] }, 1);
+  const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
+  const options = { made: ['copper-cable'], selections, site, maxCandidates: 12, budgetMs: 120000 };
+  const goals = [{ item: 'electronic-circuit', rate: 60 }];
+  const alone = maximize(goals, catalog, logistics, options);
+  let step = alone.next();
+  while (!step.done) step = alone.next();
+  const pool = tryPool(() => ({ run: job => new Promise(done => setTimeout(() => done(runTry(job, catalog, logistics)), job.n * 30)), stop() {} }));
+  const events = drive(maximize(goals, catalog, logistics, { ...options, parallel: 4 }), pool);
+  const seen = [];
+  let next = await events.next();
+  for (; !next.done; next = await events.next()) {
+    const value = /** @type {any} */ (next.value);
+    seen.push(value);
+    if (value.type === 'best') assertValid(value.block, catalog, logistics);
+  }
+  const bests = seen.filter(v => v.type === 'best');
+  assert.ok(bests.every((v, i) => i === 0 || v.rate > bests[i - 1].rate));
+  assert.equal(next.value.rate, step.value.rate);
 });
 
 const pyItems = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];

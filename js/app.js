@@ -933,12 +933,14 @@ function better(a, b) {
 
 // Maximize: the rate being tried, after the highest that fits so far (Filling: how many machines
 // more than that; Giving Way: how many machines before the Fixtures take some).
-function trying({ rate, machines, more, giving, starving }) {
+function trying({ rate, machines, more, giving, starving, others = [] }) {
   const item = state.goals.find(g => g.item && g.rate > 0)?.item;
   const filling = more ? `, ${fmt(more)} more than fit` : '';
+  // (Tries at once, ADR 0060: the machines of the others under way.)
+  const also = others.length ? `; also ${others.join(', ')} at once` : '';
   built.trying = giving ? `Giving way: trying ${count(machines, 'machine')} of ${item} closer together, those the Fixtures stand on given up…`
     : starving ? `Trying ${fmt(rate)}/min of ${item} (${count(machines, 'machine')}), some starving, for more out…`
-      : `${more ? 'Filling up: trying' : 'Trying'} ${fmt(rate)}/min of ${item} (${count(machines, 'machine')}${filling})…`;
+      : `${more ? 'Filling up: trying' : 'Trying'} ${fmt(rate)}/min of ${item} (${count(machines, 'machine')}${filling}${also})…`;
   if (best) report(best.block, simulate(best.block).starvation, progress());
   else showStatus('', progress());
 }

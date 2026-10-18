@@ -43,15 +43,32 @@ export function* maximize(goals, catalog, logistics, options) {
   const plan = planner(goals, catalog, logistics, options);
   const most = options.most ?? (options.upTo ? plan.wanted : Infinity);
   plan.cap(most);
-  let tried = 0, failure = null, best = null, told = null, bestBlock = null;
+  let tried = 0, failure = null, told = null, bestBlock = null;
+  /** @type {any} */
+  let best = null;
   // The n the best was found for (null: in Bands).
-  let bestN = null, bestScore = null;
+  let bestN = null;
+  /** @type {any} */
+  let bestScore = null;
   const misses = [];
+  // (What a layout delivers: its rate where it starves nothing, ADR 0057. Annexes: the lowest
+  // rate an Annex tried above what fit, and rates added up.)
+  const deliveredBy = b => b?.delivered ?? b?.rate ?? 0;
+  let annexAbove = null;
+  const plus = (a, b) => Math.round((a + b) * 100) / 100;
   // Bands, in a City Block whose Fixtures stand in rows: the most machines its parts hold, then
   // fewer, until a layout fits (whether one routes comes and goes with the Count). First, where
   // they hold many more than the Foretelling foretells (the search then tries above them); else
   // after the search, where they hold more than it found.
-  const top = options.bands === false ? 0 : bandsTop(plan, options.site);
+  // (Tries at once: its top worked out in a worker of its own beside the tries, Bands then after
+  // them, ADR 0060.)
+  let top = 0, topId = null;
+  const plannerOf = () => ({ made: options.made, selections: options.selections, uses: options.uses, site: options.site, least: options.least, extra: options.extra });
+  const width = Math.max(1, Math.floor(options.parallel ?? 1));
+  if (options.bands !== false && width > 1 && crowded(options.site) && options.starving !== 'only') {
+    topId = ++trySeq;
+    yield { type: 'start', id: topId, job: { top: true, goals, planner: plannerOf() } };
+  } else if (options.bands !== false) top = bandsTop(plan, options.site);
   let banded = false;
   // One try in Bands: the layout, else null.
   function* inBand(n) {
@@ -101,6 +118,11 @@ export function* maximize(goals, catalog, logistics, options) {
     }
   }
   let probing = options.probe ? Math.min(1, most) : null;
+  // (A try as a worker makes it: what the planner and attempt take, as plain data.)
+  const jobOf = (n, extra) => ({
+    goals, n, planner: plannerOf(),
+    options: { site: options.site, seed: options.seed, budgetMs: options.budgetMs, maxCandidates: options.maxCandidates, ...extra },
+  });
   // (`starving: 'only'`: no layout without Starvation is looked for, only those that may starve:
   // the last Annex, ADR 0057.)
   const only = options.starving === 'only';
@@ -109,31 +131,195 @@ export function* maximize(goals, catalog, logistics, options) {
     yield { type: 'foretell', ...plan.foretold() };
     yield* inBands(plan.foretold().machines);
   }
-  for (;;) {
-    const foretold = plan.foretold();
-    if (foretold.machines !== told) {
-      told = foretold.machines;
-      yield { type: 'foretell', ...foretold };
+  // Tries made in turn (`next()`: { n, extra (attempt's options), say (an event first) }, or null
+  // at the end), up to `width` under way at once: each outcome taken in their order (`take`, a
+  // generator: false to end them, those still under way stopped, ADR 0060). One at a time, made
+  // here, where width is 1.
+  function* inTurn(next, take) {
+    const going = [];
+    let ended = false;
+    for (;;) {
+      while (!ended && going.length < width) {
+        const t = next();
+        if (!t) {
+          ended = true;
+          break;
+        }
+        if (t.say) yield t.say;
+        if (width === 1) {
+          going.push({ ...t, outcome: attempt(plan, t.n, { ...options, ...t.extra }) });
+          break;
+        }
+        const id = ++trySeq;
+        going.push({ ...t, id });
+        yield { type: 'start', id, job: jobOf(t.n, t.extra) };
+      }
+      if (!going.length) return;
+      while (going[0].outcome === undefined) {
+        const { id, outcome } = yield { type: 'wait' };
+        going.find(g => g.id === id).outcome = outcome;
+      }
+      const { n, outcome } = going.shift();
+      if (!(yield* take(n, outcome))) {
+        for (const g of going) if (g.outcome === undefined) yield { type: 'cancel', id: g.id };
+        return;
+      }
     }
-    // (An Annex's first try: its least, one of the first Goal's machines. None fitting for want of
-    // room, no more is tried.)
-    const n = only ? null : probing ?? plan.next();
-    if (n === null) break;
-    const list = plan.goalsFor(n);
-    yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n), ...(plan.filling ? { more: n - plan.lo } : {}) };
-    const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true });
+  }
+  // The layouts that fit, the most machines first (FITS_KEPT of them), for Annexes beside another
+  // than the best (ADR 0060).
+  const fits = [];
+  const fitted = (n, machines, outcome, gives) => {
+    if (width < 4) return;
+    fits.push({ n, machines, block: outcome.block, score: outcome.score, giving: gives });
+    fits.sort((a, b) => b.machines - a.machines);
+    fits.length = Math.min(fits.length, FITS_KEPT);
+  };
+  // A try's outcome taken in: the planner told, the best kept where it fits more machines.
+  function* took(n, outcome) {
     plan.record(n, outcome);
     tried += outcome.tried;
+    const list = plan.goalsFor(n);
     if (outcome.block) {
+      fitted(n, Math.ceil(n), outcome, false);
+      if (n <= (best?.count ?? -Infinity)) return;
       best = { rate: list[0].rate, machines: Math.ceil(n), count: n, goals: list };
       [bestN, bestScore, bestBlock] = [n, outcome.score, outcome.block];
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
     } else {
       failure = outcome.failure;
       misses.push({ rate: list[0].rate, machines: Math.ceil(n), count: n, starves: Boolean(outcome.starves), reason: outcome.failure?.message ?? null });
-      if (probing !== null && !outcome.starves) break;
     }
-    probing = null;
+  }
+  const foretelling = function* () {
+    const foretold = plan.foretold();
+    if (foretold.machines === told) return;
+    told = foretold.machines;
+    yield { type: 'foretell', ...foretold };
+  };
+  const trying = n => {
+    const list = plan.goalsFor(n);
+    return { type: 'try', rate: list[0].rate, machines: Math.ceil(n), ...(plan.filling ? { more: n - plan.lo } : {}) };
+  };
+  // (The Annexes begun early, beside the best while its last tries run: what they returned.)
+  let early = null;
+  if (width > 1 && !only) {
+    // Several tries at once (ADR 0060): first the one the planner would make next; then, in turn,
+    // those it would make were the tries under way not to fit, and were the one of the fewest
+    // machines to fit (between it and the next: a bisection). A try is stopped once it can no
+    // longer tell anything: at no more machines than fit, or more than found no room, or made on
+    // the hope that one which then did not fit would.
+    const going = new Map();
+    // Workers idle with no try left to begin, the Annexes beside the best begin (`spec`: { run,
+    // ids (its tries under way), held (its layouts, held back until the tries are done), base
+    // (the best's n), end (what it returned) }); one fitting more machines stops them. Only where
+    // nothing after the tries may change the best: no Fixtures in the room (Bands, Giving Way), no
+    // byproduct riding alone (sorting out).
+    let spec = null;
+    const ahead = () => best && bestN !== null && probing === null && options.annexes !== false && options.site && !crowded(options.site)
+      && most - best.count >= LEAST && !(bestScore[2] > 0 && riding(bestBlock).some(r => r.items.length === 1));
+    // (Its events on to where it waits for a try or ends: tries under way kept, layouts held back.)
+    function* onward(step) {
+      for (;;) {
+        if (step.done) {
+          spec.end = step.value;
+          return;
+        }
+        const v = step.value;
+        if (v.type === 'wait') return;
+        if (v.type === 'start') spec.ids.add(v.id);
+        if (v.type === 'cancel') spec.ids.delete(v.id);
+        if (v.type === 'best' && !spec.live) spec.held.push(v);
+        else yield v;
+        step = spec.run.next();
+      }
+    }
+    for (;;) {
+      yield* foretelling();
+      // (An Annex's first try alone: none fitting for want of room, no more is tried.)
+      while (going.size + (spec?.ids.size ?? 0) < width && !(probing !== null && going.size)) {
+        const ns = [...going.values()].map(g => g.n);
+        const hope = going.size % 2 === 0 && going.size > 0;
+        const least = Math.min(...ns);
+        let n = probing ?? plan.beside(ns, hope);
+        let on = hope ? least : null;
+        if (n === null || ns.includes(n)) {
+          // (The other way.)
+          n = going.size ? plan.beside(ns, !hope) : null;
+          on = hope ? null : least;
+          if (n === null || ns.includes(n)) break;
+        }
+        // (With the others under way: their machines.)
+        yield { ...trying(n), others: [...going.values()].map(g => Math.ceil(g.n)) };
+        const id = ++trySeq;
+        going.set(id, { n, on });
+        yield { type: 'start', id, job: jobOf(n, { precheck: n > plan.designable, unsorted: true }) };
+        if (probing !== null) break;
+      }
+      if (!spec && going.size && going.size < width && ahead()) {
+        spec = { run: annexPhase(() => Math.max(1, width - going.size), [{ n: bestN, giving: false, extra: {}, alone: bestBlock, base: null, block: bestBlock }]), ids: new Set(), held: [], base: bestN, end: null, live: false };
+        yield* onward(spec.run.next());
+      }
+      if (!going.size) break;
+      const got = yield { type: 'wait' };
+      const { id, outcome } = got;
+      if (spec?.ids.has(id)) {
+        spec.ids.delete(id);
+        yield* onward(spec.run.next(got));
+        continue;
+      }
+      if (id === topId) {
+        [top, topId] = [outcome.top, null];
+        continue;
+      }
+      const { n } = going.get(id);
+      going.delete(id);
+      yield* took(n, outcome);
+      if (spec && bestN !== spec.base) {
+        for (const k of spec.ids) yield { type: 'cancel', id: k };
+        spec.run.return(undefined);
+        [spec, annexAbove] = [null, null];
+      }
+      if (probing !== null) {
+        probing = null;
+        if (!outcome.block && !outcome.starves) break;
+      }
+      for (const [k, g] of going) {
+        if (g.n > plan.lo && g.n < plan.ceiling && !(g.on === n && !outcome.block)) continue;
+        going.delete(k);
+        yield { type: 'cancel', id: k };
+      }
+    }
+    for (const k of going.keys()) yield { type: 'cancel', id: k };
+    while (topId !== null) {
+      const { id, outcome } = yield { type: 'wait' };
+      if (id === topId) [top, topId] = [outcome.top, null];
+    }
+    // (The Annexes begun early: their layouts held back shown now, and on to their end.)
+    if (spec) {
+      spec.live = true;
+      yield* spec.held;
+    }
+    while (spec && !spec.end) {
+      const got = yield { type: 'wait' };
+      if (!spec.ids.has(got.id)) continue;
+      spec.ids.delete(got.id);
+      yield* onward(spec.run.next(got));
+    }
+    if (spec) early = spec.end;
+  } else {
+    for (;;) {
+      yield* foretelling();
+      // (An Annex's first try: its least, one of the first Goal's machines. None fitting for want
+      // of room, no more is tried.)
+      const n = only ? null : probing ?? plan.next();
+      if (n === null) break;
+      yield trying(n);
+      const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true });
+      yield* took(n, outcome);
+      if (!outcome.block && probing !== null && !outcome.starves) break;
+      probing = null;
+    }
   }
   if (!only && !banded && top > (best?.machines ?? 0)) yield* inBands(best?.machines ?? 0);
   // Giving Way (ADR 0047): in a City Block with Fixtures in its room, the first Goal's Sub-Block
@@ -150,23 +336,57 @@ export function* maximize(goals, catalog, logistics, options) {
     let n = Math.ceil(bestN), more = FILL, high = Math.floor(most + most / 4);
     const missed = misses.map(m => m.machines).filter(m => m > bestN);
     if (missed.length) high = Math.min(high, Math.floor(Math.min(...missed) * 4 / 3));
-    for (; more >= 1; more = Math.floor(more / 2)) {
-      while (n + more < high) {
-        const list = plan.goalsFor(n + more);
-        yield { type: 'try', rate: list[0].rate, machines: n + more, giving: true };
-        const outcome = attempt(plan, n + more, { ...options, unsorted: true, giving: true });
-        tried += outcome.tried;
-        if (!outcome.block) {
-          high = n + more;
-          break;
+    // (A layout giving way, kept where it has more machines than stood before.)
+    const gave = function* (k, outcome) {
+      const m = lead(outcome.block);
+      if (m <= most) fitted(k, m, outcome, true);
+      if (m <= best.machines || m > most) return;
+      const goalsOf = plan.goalsFor(m);
+      best = { rate: goalsOf[0].rate, machines: m, count: m, goals: goalsOf };
+      [bestN, bestScore, bestBlock, giving] = [k, outcome.score, outcome.block, true];
+      yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
+    };
+    if (width > 1) {
+      // Tries at once (ADR 0060): every step at once, FILL machines more and each half as many,
+      // the most that fit going on from there, the fewest above it that did not bounding the next.
+      for (const asked = new Set(); ;) {
+        const steps = [...new Set([FILL, 5, 2, 1].map(k => n + k))].filter(k => k < high && !asked.has(k)).slice(0, width);
+        if (!steps.length) break;
+        const going = new Map();
+        for (const k of steps) {
+          asked.add(k);
+          const list = plan.goalsFor(k);
+          yield { type: 'try', rate: list[0].rate, machines: k, giving: true };
+          const id = ++trySeq;
+          going.set(id, k);
+          yield { type: 'start', id, job: jobOf(k, { unsorted: true, giving: true }) };
         }
-        n += more;
-        const m = lead(outcome.block);
-        if (m <= best.machines || m > most) continue;
-        const goalsOf = plan.goalsFor(m);
-        best = { rate: goalsOf[0].rate, machines: m, count: m, goals: goalsOf };
-        [bestN, bestScore, bestBlock, giving] = [n, outcome.score, outcome.block, true];
-        yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
+        const done = new Map();
+        while (done.size < going.size) {
+          const { id, outcome } = yield { type: 'wait' };
+          done.set(going.get(id), outcome);
+          tried += outcome.tried;
+        }
+        const fit = steps.filter(k => done.get(k).block).sort((a, b) => a - b);
+        for (const k of fit) yield* gave(k, done.get(k));
+        const reached = fit.at(-1) ?? n;
+        high = Math.min(high, ...steps.filter(k => !done.get(k).block && k > reached));
+        n = reached;
+      }
+    } else {
+      for (; more >= 1; more = Math.floor(more / 2)) {
+        while (n + more < high) {
+          const list = plan.goalsFor(n + more);
+          yield { type: 'try', rate: list[0].rate, machines: n + more, giving: true };
+          const outcome = attempt(plan, n + more, { ...options, unsorted: true, giving: true });
+          tried += outcome.tried;
+          if (!outcome.block) {
+            high = n + more;
+            break;
+          }
+          n += more;
+          yield* gave(n, outcome);
+        }
       }
     }
   }
@@ -175,28 +395,29 @@ export function* maximize(goals, catalog, logistics, options) {
   // sorted out, given longer, kept where it fits (as many machines, where they gave way). Not
   // where no belt rides one alone: a filter splitter sorts one byproduct out of a belt, so two on
   // one (Py's solid separators' nexelit ore and iron oxide) ride on whatever the layout, ADR 0056.
+  // (A byproduct riding on clogs the belts into its consumers, ADR 0052: where none sorts it out
+  // at the most that fit, fewer machines that do, SORT_BELOW whole numbers below it, at least the
+  // least asked for; with tries at once, all of them together, ADR 0060.)
   if (best && bestN !== null && bestScore[2] > 0 && riding(bestBlock).some(r => r.items.length === 1)) {
-    const sorted = attempt(plan, bestN, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true, giving });
-    tried += sorted.tried;
-    if (sorted.block && sorted.score[2] < bestScore[2] && (!giving || lead(sorted.block) >= best.machines)) {
-      [bestScore, bestBlock] = [sorted.score, sorted.block];
-      yield { type: 'best', block: sorted.block, score: sorted.score, tried, ...best };
-    } else if (!giving) {
-      // A byproduct riding on clogs the belts into its consumers (ADR 0052): where none sorts it
-      // out at the most that fit, fewer machines that do (SORT_BELOW whole numbers below it, at
-      // least the least asked for).
-      const least = Math.max(1, options.least ?? 1);
-      for (let n = Math.ceil(bestN) - 1; n >= least && n > Math.ceil(bestN) - 1 - SORT_BELOW; n--) {
-        const fewer = attempt(plan, n, { ...options, routing: Math.max(options.budgetMs ?? 0, SORTING_MS), sorting: true });
-        tried += fewer.tried;
-        if (!fewer.block || fewer.score[2] > 0) continue;
-        const list = plan.goalsFor(n);
-        best = { rate: list[0].rate, machines: n, count: n, goals: list };
-        [bestN, bestScore, bestBlock] = [n, fewer.score, fewer.block];
-        yield { type: 'best', block: fewer.block, score: fewer.score, tried, ...best };
-        break;
+    const routing = Math.max(options.budgetMs ?? 0, SORTING_MS), least = Math.max(1, options.least ?? 1);
+    const fewer = giving ? [] : [...Array(SORT_BELOW).keys()].map(k => Math.ceil(bestN) - 1 - k).filter(n => n >= least);
+    const sorting = [{ n: bestN, extra: { routing, sorting: true, giving } }, ...fewer.map(n => ({ n, extra: { routing, sorting: true } }))];
+    const was = bestN;
+    yield* inTurn(() => sorting.shift() ?? null, function* (n, out) {
+      tried += out.tried;
+      if (n === was) {
+        if (!out.block || out.score[2] >= bestScore[2] || (giving && lead(out.block) < best.machines)) return true;
+        [bestScore, bestBlock] = [out.score, out.block];
+        yield { type: 'best', block: out.block, score: out.score, tried, ...best };
+        return false;
       }
-    }
+      if (!out.block || out.score[2] > 0) return true;
+      const list = plan.goalsFor(n);
+      best = { rate: list[0].rate, machines: n, count: n, goals: list };
+      [bestN, bestScore, bestBlock] = [n, out.score, out.block];
+      yield { type: 'best', block: out.block, score: out.score, tried, ...best };
+      return false;
+    });
   }
   // Starving (ADR 0057): above the highest that fit without Starvation, layouts that starve, each
   // kept where it delivers more of the first Goal than the best so far (a Sub-Block short of an
@@ -207,7 +428,6 @@ export function* maximize(goals, catalog, logistics, options) {
   // without: a layout that takes more room leaves Annexes less, and they may have made more (Py
   // molybdenum oxide: 3 furnaces starving, or 2 and an Annex of 2). Else in the last Annex, in the
   // room the others leave (below). (None in Bands.)
-  const deliveredBy = b => b?.delivered ?? b?.rate ?? 0;
   if (options.starving !== false && (only || !best || options.annexes === false) && (bestN !== null || !best)) {
     const from = bestN ?? 0;
     const starved = [...new Set(misses.filter(m => m.starves && m.count > from && m.count < plan.ceiling && m.count <= most).map(m => m.count))].sort((a, b) => a - b);
@@ -216,21 +436,22 @@ export function* maximize(goals, catalog, logistics, options) {
       for (let n = Math.max(Math.floor(from), ...starved.map(Math.floor)) + 1; ; n++) yield n;
     };
     let missed = 0;
-    for (const n of counts()) {
-      if (missed >= STARVING_MISSES || n > most || n >= plan.ceiling) break;
+    const all = counts();
+    yield* inTurn(() => {
+      const n = all.next().value;
+      if (n > most || n >= plan.ceiling) return null;
       const list = plan.goalsFor(n);
-      yield { type: 'try', rate: list[0].rate, machines: Math.ceil(n), starving: true };
-      const out = attempt(plan, n, { ...options, unsorted: true, starving: true });
+      return { n, extra: { unsorted: true, starving: true }, say: { type: 'try', rate: list[0].rate, machines: Math.ceil(n), starving: true } };
+    }, function* (n, out) {
       tried += out.tried;
-      if (!out.block || out.delivered <= deliveredBy(best) + 1e-6) {
-        missed++;
-        continue;
-      }
+      if (!out.block || out.delivered <= deliveredBy(best) + 1e-6) return ++missed < STARVING_MISSES;
       missed = 0;
+      const list = plan.goalsFor(n);
       best = { rate: list[0].rate, machines: Math.ceil(n), count: n, goals: list, delivered: Math.floor(out.delivered * 100) / 100 };
       [bestN, bestScore, bestBlock, giving] = [n, out.score, out.block, false];
       yield { type: 'best', block: out.block, score: out.score, tried, ...best };
-    }
+      return true;
+    });
   }
   // Annexes: the chain again in the room left, while one fits (and the cap leaves any). Each
   // layout found with the one before it (checked together too: a tunnel of one may pair with the
@@ -241,23 +462,27 @@ export function* maximize(goals, catalog, logistics, options) {
   // making as much more as the Annex's (those feeding it as much more for it), the layouts after
   // it again as before, and the Annex again, as many of the first Goal's machines, drawing the
   // fluid from there; kept where the Annex then needs fewer Sub-Blocks.
-  let annexAbove = null;
-  const plus = (a, b) => Math.round((a + b) * 100) / 100;
   // The layouts laid out, in turn: { n, extra (what it makes beyond what it takes, for Annexes
   // to draw), alone (the layout itself), base (those before it together; null: none), block (it
   // with them) }. None after Bands.
   let stages = bestN !== null ? [{ n: bestN, giving, extra: {}, alone: bestBlock, base: null, block: bestBlock }] : null;
   // An Annex beside `built`, no more than `cap` of the first Goal's machines: { block (the
   // two together), score, best, stage }, else null.
-  function* annexOf(built, before, cap, starving = false) {
+  function* annexOf(built, before, cap, starving = false, parallel = width) {
     const site = annexSite(options.site, built, catalog, options.made);
     const alone = { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) };
     let found = null;
     for (const room of Object.values(site.draws).some(d => d.only) ? [site, alone] : [site]) {
-      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false, starving: starving ? 'only' : false });
-      let step;
-      for (step = run.next(); !step.done; step = run.next()) {
+      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false, starving: starving ? 'only' : false, parallel });
+      let step, reply;
+      for (step = run.next(); !step.done; step = run.next(reply)) {
         const v = step.value;
+        reply = undefined;
+        // (Its tries at once go to the caller's workers.)
+        if (v.type === 'start' || v.type === 'wait' || v.type === 'cancel') {
+          reply = yield v;
+          continue;
+        }
         if (v.type === 'try') yield { ...v, rate: plus(v.rate, before.rate), machines: v.machines + before.machines };
         if (v.type !== 'best') continue;
         const block = annexed(built, v.block, options.site, catalog, logistics);
@@ -300,7 +525,7 @@ export function* maximize(goals, catalog, logistics, options) {
     return null;
   }
   // The Annex `found` with an Extension: { found, stages }, else null.
-  function extend(found) {
+  function extend(found, stages) {
     const wants = extensionOf(found.stage.alone, goals, options.made);
     const last = item => stages.map(s => s.alone.subBlocks.some(sb => sb.item === item)).lastIndexOf(true);
     const j = Math.max(-1, ...Object.keys(wants).map(last));
@@ -322,18 +547,59 @@ export function* maximize(goals, catalog, logistics, options) {
     const stage = { n: found.stage.n, giving: false, extra: {}, alone: out.alone, base: built, block: out.block };
     return { found: { ...found, block: out.block, score: out.score, stage }, stages: [...stages.slice(0, j), ...redone, stage] };
   }
+  // The Annexes beside a layout (`from`: { best, block, stages }), one after another while one
+  // fits, `parallel` tries at once in each: { best, last (all of them together) }.
+  function* annexing(from, parallel) {
+    let { best: got, stages: staged } = from, last = from.block;
+    for (let built = from.block; built && options.annexes !== false && options.site && most - got.count >= LEAST;) {
+      const before = got;
+      let found = yield* annexOf(built, before, most - before.count, false, typeof parallel === 'function' ? parallel() : parallel);
+      if (!found) break;
+      const better = staged && extend(found, staged);
+      if (better) {
+        ({ found, stages: staged } = better);
+        yield { type: 'best', block: found.block, score: found.score, tried, ...found.best };
+      } else if (staged) staged.push(found.stage);
+      [got, built] = [found.best, found.block];
+      last = built;
+    }
+    return { best: got, last };
+  }
   let last = bestBlock;
-  for (let built = bestBlock; built && options.annexes !== false && options.site && most - best.count >= LEAST;) {
-    const before = best;
-    let found = yield* annexOf(built, before, most - before.count);
-    if (!found) break;
-    const better = stages && extend(found);
-    if (better) {
-      ({ found, stages } = better);
-      yield { type: 'best', block: found.block, score: found.score, tried, ...found.best };
-    } else if (stages) stages.push(found.stage);
-    [best, built] = [found.best, found.block];
-    last = built;
+  if (early) ({ best, last } = early);
+  else if (best) ({ best, last } = yield* annexPhase(() => width, stages));
+  // The Annexes beside the best (its `staged` layouts, for Extensions), `widthNow()` tries at
+  // once: { best, last }. The layout with most machines may leave its Annexes little room
+  // (machines the same in number stand many ways: Py kicalk's 66 left room foretold to hold 4
+  // more, another of 66 61, one of 63 43). With 4 tries at once or more, the Annexes beside the
+  // layout found with most machines and the room the Foretelling says an Annex beside it holds
+  // too, where that is another, side by side, half the tries each; the more that makes the more
+  // kept (ADR 0060).
+  function* annexPhase(widthNow, staged) {
+    const other = widthNow() >= 4 && bestN !== null && options.annexes !== false && options.site && !options.extra ? roomiest() : null;
+    const ends = other
+      ? yield* together([
+        annexing({ best, block: bestBlock, stages: staged }, () => Math.ceil(widthNow() / 2)),
+        annexing({ best: other.best, block: other.block, stages: [{ n: other.n, giving: other.giving, extra: {}, alone: other.block, base: null, block: other.block }] }, () => Math.floor(widthNow() / 2)),
+      ], deliveredBy(best))
+      : [yield* annexing({ best, block: bestBlock, stages: staged }, widthNow)];
+    return ends.reduce((a, b) => (deliveredBy(b.best) > deliveredBy(a.best) ? b : a));
+  }
+  // The fit, other than the best, with the most machines and Annex room together (each Annex's
+  // room foretold as Annexes' are), else null.
+  function roomiest() {
+    const room = f => {
+      const site = annexSite(options.site, f.block, catalog, options.made);
+      return planner(goals, catalog, logistics, { ...options, site, least: 1 }).foretold().machines;
+    };
+    let top = null;
+    for (const f of fits) {
+      const worth = f.machines + room(f);
+      if (!top || worth > top.worth) top = { ...f, worth };
+    }
+    if (!top || top.block === bestBlock || top.machines === best.machines) return null;
+    const list = plan.goalsFor(top.machines);
+    return { ...top, best: { rate: list[0].rate, machines: top.machines, count: top.giving ? top.machines : top.n, goals: list } };
   }
   // Starving, once nothing more fits without (ADR 0057): one more Annex in the room left, its
   // layout one that may starve, kept where the two together deliver more.
@@ -631,6 +897,22 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
       const n = uncapped();
       return n === null ? null : Math.min(n, most);
     },
+    // The n next() would try were the tries under way (`pending`) not to fit (as tries out of
+    // time: halfway down), but the fewest machines of them (`fits`), the planner left as it was
+    // but for the number above one that starved, tried once (ADR 0060).
+    beside(pending, fits = false) {
+      const was = { lo, ceiling, fill, failed, streak, tightest, loose, spread };
+      const starvedWas = [...starved];
+      // (The fit first: the others after it not fitting, the next is no more than halfway up.)
+      const least = Math.min(...pending);
+      if (fits) this.record(least, { block: true, placed: null });
+      for (const m of pending) if (!(fits && m === least)) this.record(m, { block: null, starves: true, timedOut: true });
+      const n = this.next();
+      ({ lo, ceiling, fill, failed, streak, tightest, loose, spread } = was);
+      starved.clear();
+      for (const m of starvedWas) starved.add(m);
+      return n;
+    },
     record(n, outcome) {
       for (const d of outcome.designed ?? []) if (d.area) tiles.set(d.item, d.area / d.count);
       if (outcome.designed) designable = Math.max(designable, n);
@@ -711,7 +993,7 @@ function usable(site, side) {
 
 // The most machines Bands' parts hold in the City Block (a binary search: more machines never fit
 // fewer parts), or 0 where Bands does not apply.
-function bandsTop(plan, site) {
+export function bandsTop(plan, site) {
   if (!site?.fixtures.some(f => overlap(f, site.inner) > 0)) return 0;
   const packs = n => {
     try {
@@ -743,6 +1025,61 @@ const SORTING_MS = 120000;
 // How many whole numbers of the first Goal's machines below the most that fit are tried with
 // every byproduct sorted out, where none sorts them out there (ADR 0052).
 const SORT_BELOW = 2;
+
+// Generators run side by side, each handing its tries out (maximize's 'start', 'wait',
+// 'cancel'): their events as they come, a 'best' only where it delivers more than every one shown
+// before (`shown` at first), and each outcome to the generator whose try it was. Returns what
+// each returns.
+function* together(runs, shown = -Infinity) {
+  const owner = new Map(), waiting = new Set(), inbox = runs.map(() => []), ends = [];
+  // (A generator on from its step `first` until it waits for a try's outcome, or ends.)
+  function* advanceFrom(k, first) {
+    let step = first;
+    for (;;) {
+      if (step.done) {
+        ends[k] = step.value;
+        return;
+      }
+      const v = step.value;
+      if (v.type === 'wait') {
+        if (!inbox[k].length) {
+          waiting.add(k);
+          return;
+        }
+        step = runs[k].next(inbox[k].shift());
+        continue;
+      }
+      if (v.type === 'start') owner.set(v.id, k);
+      if (v.type === 'best' && (v.delivered ?? v.rate) <= shown) {
+        step = runs[k].next();
+        continue;
+      }
+      if (v.type === 'best') shown = v.delivered ?? v.rate;
+      yield v;
+      step = runs[k].next();
+    }
+  }
+  for (let k = 0; k < runs.length; k++) yield* advanceFrom(k, runs[k].next());
+  while (waiting.size) {
+    const got = yield { type: 'wait' };
+    const k = owner.get(got.id);
+    owner.delete(got.id);
+    if (k === undefined) continue;
+    if (!waiting.has(k)) {
+      inbox[k].push(got);
+      continue;
+    }
+    waiting.delete(k);
+    yield* advanceFrom(k, runs[k].next(got));
+  }
+  return ends;
+}
+
+// How many of the layouts that fit Maximize keeps, to annex beside another than the best.
+const FITS_KEPT = 4;
+
+// Tries yielded to start, each its own number.
+let trySeq = 0;
 
 // How many tries in a row may deliver no more before the climb through starving layouts ends.
 const STARVING_MISSES = 2;

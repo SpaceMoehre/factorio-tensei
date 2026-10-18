@@ -18,6 +18,7 @@ What changed:
 | Py titanium plate at 12 casting units, 25 candidates (no time limit) | 51.0 s, no layout | 44.7 s, no layout |
 | Py titanium plate, Maximize (1000 s a try, an hour) | 4476.56/min at 2438 s | the same fits at the same times: the tries at 12 and 13 still fail after 1000 s |
 | Py small parts at 4 factories, molybdenum oxide at 3 furnaces (25 candidates, no time limit) | | the same layouts |
+| Py small parts in 100², Maximize with no time limit (`maxdet.mjs`, 20 candidates a try) | 2775/min | 3000/min |
 
 Against the code before ADR 0058, side by side, both changes with it:
 
