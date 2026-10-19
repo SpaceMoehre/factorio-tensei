@@ -57,6 +57,10 @@ delete state.inputs;
 state.selections ??= {};
 // Byproduct Uses: { from (a step's key), item, recipe, building?, modules? } (chain.js).
 state.uses ??= [];
+// Items made here the user wants leaving by train too, their consumers first; fluids that would
+// leave by train destroyed instead (a sinkhole, a gas vent) (ADR 0062).
+state.exports ??= [];
+state.voids ??= [];
 // Inserter Clocks: the signal chosen for each clock (by its key, "items/seconds"), kept from one
 // build to the next.
 state.clocks ??= {};
@@ -371,7 +375,7 @@ function showFuels() {
 function drawChain() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
-    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, index, belt: state.logistics.belt }) : null;
+    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, belt: state.logistics.belt }) : null;
   } catch (e) {
     chain = { error: e.message };
   }
@@ -395,7 +399,7 @@ function drawChain() {
     const key = use?.key ?? goal.item;
     const recipes = use ? index.consumers.get(use.item).filter(r => index.buildingsFor.has(r)) : index.producers.get(goal.item);
     const buildings = index.buildingsFor.get(selection.recipe);
-    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, use?.sources ?? use?.from ?? null]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection)));
+    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, use?.sources ?? use?.from ?? null, state.exports.includes(goal.item), goal.overflow ?? [], state.voids]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection, goal.overflow)));
     const building = catalog.buildings[selection.building];
     const recipe = catalog.recipes[selection.recipe];
     const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
@@ -417,27 +421,29 @@ function drawChain() {
     const loop = shown.querySelector('.loop');
     loop.textContent = [
       ...back.map(l => `↺ ${fmt(l.rate)}/min back into ${l.into === goal.item ? 'itself' : l.into} (a recipe loop)`),
-      ...takes.map(r => `↺ takes ${label(r.item).toLowerCase()} from the ${nameOf(r.from)}'s ${entryOf(r.from)?.use ? 'products' : 'byproduct'}${r.spare > 1e-9 ? ` (${fmt(r.spare)}/min more leaves by train)` : ''}`),
-      ...joined.map(s => `+ ${fmt(s.rate)}/min more from the ${nameOf(s.from)}, so this step makes that much less`),
-      ...supplies.map(s => `→ its ${fmt(s.rate)}/min of ${label(s.item).toLowerCase()} joins what the ${label(s.item).toLowerCase()} step makes`),
+      ...takes.map(r => `↺ takes ${r.valve ? `${fmt(r.rate)}/min of ` : ''}${label(r.item).toLowerCase()} from the ${nameOf(r.from)}'s ${entryOf(r.from)?.use ? 'products' : 'byproduct'}${r.valve ? ', through valves' : ''}${r.spare > 1e-9 ? ` (${fmt(r.spare)}/min more leaves by train)` : ''}`),
+      ...joined.map(s => (s.valve ? `+ ${fmt(s.rate)}/min given back by the ${nameOf(s.from)}, so this step makes only the rest, through a top-up valve`
+        : `+ ${fmt(s.rate)}/min more from the ${nameOf(s.from)}, so this step makes that much less`)),
+      ...supplies.map(s => (s.valve ? `↺ its ${fmt(s.rate)}/min of ${label(s.item).toLowerCase()} goes back to the steps taking it first, its spare off through an overflow valve`
+        : `→ its ${fmt(s.rate)}/min of ${label(s.item).toLowerCase()} joins what the ${label(s.item).toLowerCase()} step makes`)),
     ].join(' · ');
     loop.hidden = !back.length && !takes.length && !joined.length && !supplies.length;
   };
   for (const entry of chain.entries) step(entry);
   if (chain.trainInputs.length) row('train-head', 'train-head', () => el('div', { className: 'train-head', textContent: 'By train' }));
   for (const input of chain.trainInputs) {
-    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
+    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason, input.topUp ?? null]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
   }
   // (Each byproduct once, whichever steps make it.)
   const byproducts = new Map();
   for (const b of chain.byproducts) {
     const seen = byproducts.get(b.item);
     if (seen) Object.assign(seen, { rate: seen.rate + b.rate, from: [...seen.from, b.from] });
-    else byproducts.set(b.item, { item: b.item, rate: b.rate, from: [b.from], recipes: b.recipes });
+    else byproducts.set(b.item, { item: b.item, type: b.type, rate: b.rate, from: [b.from], recipes: b.recipes });
   }
   if (byproducts.size) row('byproduct-head', 'byproduct-head', () => el('div', { className: 'train-head', textContent: 'Leaves by train' }));
   for (const b of byproducts.values()) {
-    const shown = row(`byproduct:${b.item}`, JSON.stringify(['byproduct', b.item, b.recipes]), () => byproductRow(b));
+    const shown = row(`byproduct:${b.item}`, JSON.stringify(['byproduct', b.item, b.recipes, state.voids.includes(b.item)]), () => byproductRow(b));
     shown.querySelector('.rate').textContent = `${fmt(b.rate)}/min`;
     shown.querySelector('.hint').textContent = `from ${stepsNamed(b.from)}`;
   }
@@ -453,12 +459,36 @@ function reuse(id, key, make) {
   return row;
 }
 
-function stepRow(item, recipes, buildings, selection) {
+function stepRow(item, recipes, buildings, selection, overflow = []) {
   const choose = changes => { state.selections[item] = { ...selection, ...changes }; renderChain(); save(); };
   const train = el('button', { type: 'button', className: 'swap', textContent: 'By train', title: `Bring ${item} by train instead` });
   train.addEventListener('click', () => { state.made = state.made.filter(i => i !== item); renderChain(); save(); });
   train.hidden = state.goals.some(g => g.item === item);
-  return stepBody(item, recipes, buildings, selection, choose, train);
+  const row = stepBody(item, recipes, buildings, selection, choose, train);
+  // Leaving by train too (ADR 0062): what its consumers leave, through a splitter or overflow
+  // valve that gives them priority. (A Goal leaves anyway.)
+  if (!state.goals.some(g => g.item === item)) row.querySelector('.selection').append(el('span', { textContent: 'Train' }), toggle(state.exports, item, 'Also leaves by train', `What the steps taking ${label(item).toLowerCase()} leave goes on to the train: through a splitter (an overflow valve for a fluid) that gives them priority`));
+  // (Its fluids fed back: their spare off the overflow valve destroyed rather than by train.)
+  for (const fluid of overflow.filter(f => catalog.voids?.[f])) {
+    row.querySelector('.selection').append(el('span', { textContent: 'Spare' }), toggle(state.voids, fluid, `Destroy its spare ${label(fluid).toLowerCase()} in a ${voidName(fluid)}`, `What the overflow valve lets off goes to a ${voidName(fluid)} rather than the train`));
+  }
+  return row;
+}
+
+// The building destroying a fluid, in words: "sinkhole", "gas vent" (Py's, its prefix dropped).
+const voidName = fluid => label(catalog.voids[fluid]).toLowerCase().replace(/^py /, '');
+
+// A checkbox putting `item` in the state's `list` or taking it out.
+function toggle(list, item, text, title) {
+  const box = el('input', { type: 'checkbox', checked: list.includes(item) });
+  box.addEventListener('change', () => {
+    const at = list.indexOf(item);
+    if (box.checked && at < 0) list.push(item);
+    if (!box.checked && at >= 0) list.splice(at, 1);
+    renderChain();
+    save();
+  });
+  return el('label', { className: 'hint', title }, box, ` ${text}`);
 }
 
 // A Byproduct Use: a step taking all of a byproduct, of a recipe that takes it — every step's
@@ -493,7 +523,7 @@ function stepsNamed(keys) {
 
 // A byproduct leaving by train, whichever steps make it, with the recipes that could process it
 // instead: a step of one takes all of it (a General Use).
-function byproductRow({ item, recipes }) {
+function byproductRow({ item, type, recipes }) {
   const add = el('select', { ariaLabel: `Process ${item}` });
   // (Filling barrels and voiding last.)
   const aside = r => /barrel|void/.test(r);
@@ -508,7 +538,11 @@ function byproductRow({ item, recipes }) {
     el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: label(item), title: item }), el('span', { className: 'rate' })),
     el('div', { className: 'hint' }),
     el('div', { className: 'selection' }, el('span', { textContent: 'Process' }),
-      pictured(add, { kind: 'recipes', title: `Process ${label(item)} in a recipe`, placeholder: recipes.length ? 'Add a step processing it…' : 'No recipe takes it' })));
+      pictured(add, { kind: 'recipes', title: `Process ${label(item)} in a recipe`, placeholder: recipes.length ? 'Add a step processing it…' : 'No recipe takes it' }),
+      // (A fluid destroyed rather than leaving by train, ADR 0062: in the building the game has
+      // for it.)
+      ...(type === 'fluid' && catalog.voids?.[item] ? [el('span', { textContent: 'Destroy' }),
+        toggle(state.voids, item, `In a ${voidName(item)}`, `Destroy ${label(item).toLowerCase()} in a ${voidName(item)} rather than sending it away by train`)] : [])));
 }
 
 function stepBody(item, recipes, buildings, selection, choose, button, hint = '') {
@@ -563,7 +597,7 @@ function trainRow(input) {
   make.hidden = input.reason !== 'import';
   return el('div', { className: 'step train' },
     el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: label(input.item), title: input.item }), el('span', { className: 'rate' }), make),
-    el('div', { className: 'hint', textContent: TRAIN_REASON[input.reason] }));
+    el('div', { className: 'hint', textContent: input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve` : TRAIN_REASON[input.reason] }));
 }
 
 // An item's icon from sprites/ (only its first mipmap is shown), or an empty square.
@@ -766,7 +800,7 @@ function renderForetell() {
 function foretoldShort() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
-    const plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, index, site: citySite() });
+    const plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, site: citySite() });
     return plan.foretold().machines < plan.wanted;
   } catch {
     return false;
@@ -779,7 +813,7 @@ function foretellLine() {
   if (!site || site.error) return null;
   let plan;
   try {
-    plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, index, site });
+    plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, site });
   } catch {
     return null;
   }
@@ -889,7 +923,7 @@ async function build(upTo = false) {
       // The search time counts from the start, designing included (each strategy tries a layout
       // however little is left).
       budgetMs: Math.max(1, state.logistics.budget * 1000 - (Date.now() - started)),
-      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections, uses: state.uses, upTo } } : {}),
+      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, upTo } } : {}),
     });
   }
 }

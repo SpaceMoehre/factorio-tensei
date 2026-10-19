@@ -75,6 +75,8 @@ export function throughput(block) {
   // belt it is tapped off), else null (the train).
   const from = route => {
     if (typeof route.source === 'number') return route.source;
+    // (A spare let off through an overflow valve: the pipe's it comes off, ADR 0062.)
+    if (route.source === 'valve') return from(block.routes[route.valve.on]);
     const fed = route.fedBy ?? route.fedFrom;
     return fed !== undefined ? from(block.routes[fed]) : null;
   };
@@ -126,7 +128,7 @@ export function throughput(block) {
         const own = block.routes.filter(r => from(r) === i && r.items.some(x => x.item === out.name));
         const networks = new Set(own.map(r => r.network).filter(k => k !== undefined));
         const carrying = [...own, ...block.routes.filter(r => !own.includes(r) && r.network !== undefined && networks.has(r.network))];
-        if (made <= EPSILON || !own.length || carrying.some(r => r.sink === 'side-output' || r.joins !== undefined || r.into !== undefined)) continue;
+        if (made <= EPSILON || !own.length || carrying.some(r => r.sink === 'side-output' || r.sink === 'void' || r.joins !== undefined || r.into !== undefined)) continue;
         const takers = new Set(carrying.flatMap(r => r.consumers));
         const taken = [...takers].reduce((sum, c) => sum + (block.subBlocks[c].inputs.find(x => x.name === out.name)?.rate ?? 0) * factor[c], 0);
         if (taken < made - 1e-6 * Math.max(1, made)) slow(i, taken / made);

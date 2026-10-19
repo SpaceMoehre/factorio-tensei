@@ -32,7 +32,7 @@ import { rankOf, riding } from './layout/score.js';
 // that starve, kept where they deliver more of the first Goal (ADR 0057): one more Annex, or with
 // no Annexes (or none that fits without), more machines than the best. A fit that starves carries
 // what it delivers (`delivered`, sim.js throughput); its 'try' says `starving`.
-// options: { made, selections, uses, index, site, budgetMs (each try's), maxCandidates (each try's),
+// options: { made, selections, uses, exports, voids, index, site, budgetMs (each try's), maxCandidates (each try's),
 //            seed, now, upTo (no higher than the Goals' own rates: a City Block they do not fit
 //            filled up to them), annexes (false: none), bands (false: no Bands), most (no more of
 //            the first Goal's machines), probe (one of them first: none fitting, nothing more),
@@ -63,7 +63,7 @@ export function* maximize(goals, catalog, logistics, options) {
   // (Tries at once: its top worked out in a worker of its own beside the tries, Bands then after
   // them, ADR 0060.)
   let top = 0, topId = null;
-  const plannerOf = () => ({ made: options.made, selections: options.selections, uses: options.uses, site: options.site, least: options.least, extra: options.extra });
+  const plannerOf = () => ({ made: options.made, selections: options.selections, uses: options.uses, exports: options.exports, voids: options.voids, site: options.site, least: options.least, extra: options.extra });
   const width = Math.max(1, Math.floor(options.parallel ?? 1));
   if (options.bands !== false && width > 1 && crowded(options.site) && options.starving !== 'only') {
     topId = ++trySeq;
@@ -74,7 +74,7 @@ export function* maximize(goals, catalog, logistics, options) {
   function* inBand(n) {
     const list = plan.goalsFor(n);
     yield { type: 'try', rate: list[0].rate, machines: n };
-    const { entries } = plan.chainOf(list);
+    const { entries } = plan.chainOf(list, {}, true);
     // (As long as a try of the search may take.)
     const deadline = (options.now ?? Date.now)() + (options.budgetMs ?? Infinity);
     const outcome = bands(entries, plan.catalog, plan.logistics, options.site, { seed: options.seed ?? 1, until: () => (options.now ?? Date.now)() > deadline });
@@ -733,17 +733,18 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates, `wanted` as many running as fast as those take.
 /** @param {any[]} goals @param {any} catalog @param {any} logistics @param {any} options */
-export function planner(goals, catalog, logistics, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), site, least = LEAST, extra = {} }) {
+export function planner(goals, catalog, logistics, { made = [], selections = {}, uses = [], exports = [], voids = [], index = recipeOptions(catalog), site, least = LEAST, extra = {} }) {
   // In an Annex's City Block, a fluid made here that a pipe built before it has to spare comes
   // from there instead, while that has enough (ADR 0032).
   const draws = Object.entries(site?.draws ?? {}).filter(([fluid]) => made.includes(fluid));
   // (`spare`: more of some steps' items than they take, beside `extra`: spare machines.)
-  const chainOf = (list, spare = {}) => {
+  // (`plain`: no fluids fed back through valves, for Bands, ADR 0062.)
+  const chainOf = (list, spare = {}, plain = false) => {
     const drawn = new Set(draws.map(([fluid]) => fluid));
     const more = { ...extra };
     for (const [item, rate] of Object.entries(spare)) more[item] = (more[item] ?? 0) + rate;
     for (;;) {
-      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, index, extra: more, belt: logistics.belt });
+      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, exports, voids, index, extra: more, belt: logistics.belt, valves: !plain });
       const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare + 1e-6);
       if (!short.length) return chain;
       for (const [fluid] of short) drawn.delete(fluid);
@@ -997,7 +998,7 @@ export function bandsTop(plan, site) {
   if (!site?.fixtures.some(f => overlap(f, site.inner) > 0)) return 0;
   const packs = n => {
     try {
-      return Boolean(bands(plan.chainOf(plan.goalsFor(n)).entries, plan.catalog, plan.logistics, site, { pack: true })?.packed);
+      return Boolean(bands(plan.chainOf(plan.goalsFor(n), {}, true).entries, plan.catalog, plan.logistics, site, { pack: true })?.packed);
     } catch {
       return false;
     }

@@ -16,7 +16,7 @@ export function buildRoutes(plan, flows, laneCapacity) {
   const byOrder = (a, b) => rank.get(a) - rank.get(b);
   const consumersOf = item => plan.map((_, i) => i).filter(i => plan[i].inputs.some(x => x.name === item)).sort(byOrder);
   const routes = [];
-  const add = r => routes.push({ id: routes.length, ...r });
+  const add = r => routes[routes.push({ id: routes.length, ...r }) - 1];
   const saturated = (item, rate, capacity) => ({ item, rate, supply: capacity, capacity });
 
   // A Side Input one belt cannot carry to all its consumers comes as its own route to each, so
@@ -62,6 +62,9 @@ export function buildRoutes(plan, flows, laneCapacity) {
         kind: 'belt', source: i, sink: left.length ? 'side-output' : null,
         items: solidOut.map(o => ({ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' })),
         consumers, ...(sorted ? { sorted: left[0].name } : {}),
+        // (Its item the user wants leaving by train too, where its consumers take it all: what
+        // they leave off a splitter giving them priority, compact.js exportBelts, ADR 0062.)
+        ...(sb.exports?.includes(sb.item) && consumers.length && !left.length && solidOut.some(o => o.name === sb.item) ? { exported: sb.item } : {}),
         ...(joins('item').length ? { supplies: joins('item').map(j => ({ item: j.item, into: j.into, rate: j.rate })) } : {}),
         ...(solidOut.some(o => joinedInto(flows, i, o.name) > 0) ? { supplied: solidOut.filter(o => joinedInto(flows, i, o.name) > 0).map(o => ({ item: o.name, rate: joinedInto(flows, i, o.name) })) } : {}),
       });
@@ -69,14 +72,34 @@ export function buildRoutes(plan, flows, laneCapacity) {
     for (const o of sb.outputs.filter(o => o.type === 'fluid')) {
       const more = joinedInto(flows, i, o.name);
       const into = joins('fluid').find(j => j.item === o.name);
-      add({
-        kind: 'pipe', fluid: o.name, source: i, sink: leavesBlock(o) ? 'side-output' : null,
+      const target = into && routes.find(r => r.kind === 'pipe' && r.source === into.into && r.fluid === o.name);
+      // A fluid fed back, or one its consumers take first and the train the rest (ADR 0062): its
+      // spare off through an overflow valve on a pipe of its own, to the east edge or destroyed.
+      const valved = sb.overflow?.includes(o.name) || sb.exports?.includes(o.name);
+      const left = o.rate + more - taken(plan, flows, i, o.name);
+      const sink = leavesBlock(o) ? (sb.voids?.includes(o.name) ? 'void' : 'side-output') : null;
+      const r = add({
+        kind: 'pipe', fluid: o.name, source: i, sink: valved ? null : sink,
         items: [{ item: o.name, rate: o.rate + more, supply: o.rate + more, capacity: PIPE_CAPACITY }],
         consumers: internalConsumers(o.name),
-        ...(into ? { into: routes.find(r => r.kind === 'pipe' && r.source === into.into && r.fluid === o.name).id } : {}),
+        ...(target ? into.valve ? { valve: { mode: 'top-up', on: target.id } } : { into: target.id } : {}),
+        // (Back into a step feeding it: no link for placement, ADR 0062.)
+        ...((flows.fedBack ?? []).some(e => e.from === i && e.item === o.name) ? { fedBack: true } : {}),
       });
+      if (valved) {
+        add({
+          kind: 'pipe', fluid: o.name, source: 'valve', sink: sb.voids?.includes(o.name) ? 'void' : 'side-output', consumers: [],
+          items: [{ item: o.name, rate: Math.max(0, left), supply: Math.max(0, left), capacity: PIPE_CAPACITY }], valve: { mode: 'overflow', on: r.id },
+        });
+      }
     }
   });
+  // (What the train brings to make up a fluid fed back: through a top-up valve into its
+  // producer's pipe, ADR 0062.)
+  for (const j of (flows.joined ?? []).filter(j => j.valve && j.from === 'side-input')) {
+    const on = routes.find(r => r.kind === 'pipe' && r.source === j.into && r.fluid === j.item);
+    if (on) add({ kind: 'pipe', fluid: j.item, source: 'side-input', sink: null, consumers: [], items: [saturated(j.item, j.rate, PIPE_CAPACITY)], valve: { mode: 'top-up', on: on.id } });
+  }
   // A Recipe Loop's feedback: the producer's item back into the Sub-Block taking it, a belt of its
   // own like a Side Input's (never merged with another), fed from the producer's output through
   // a splitter that gives it priority (compose.js); by train where that finds no room.

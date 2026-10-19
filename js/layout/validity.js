@@ -368,13 +368,39 @@ function portTiles(machine, catalog, fluid, role, block) {
 
 const tileMap = pieces => new Map(pieces.map(p => [key(p.x, p.y), p]));
 
+// The tiles a valve's or void's connections meet (ADR 0062): { tile, toward (the side of that
+// tile it faces), side ('input' or 'output': a valve's) }.
+export function fluidEnds(e, catalog) {
+  const at = (dx, dy, dir, side) => ({ tile: key(e.x + dx, e.y + dy), toward: OPPOSITE[dir], side });
+  if (e.kind === 'valve') {
+    const spec = catalog.valves?.[e.name];
+    if (!spec) return [];
+    return [['input', spec.input], ['output', spec.output]].map(([side, d]) => {
+      const dir = (d + e.direction) % 16;
+      return at(DIR[dir][0], DIR[dir][1], dir, side);
+    });
+  }
+  if (e.kind === 'void') {
+    const [c] = catalog.buildings[e.name]?.fluidBoxes?.[0]?.connections ?? [];
+    if (!c) return [];
+    let [rx, ry] = [c.x, c.y];
+    for (let k = 0; k < (e.direction ?? 0) / 4; k++) [rx, ry] = [-ry, rx];
+    const dir = (c.direction + (e.direction ?? 0)) % 16;
+    return [{ tile: key(Math.floor(e.x + e.w / 2 + rx + DIR[dir][0]), Math.floor(e.y + e.h / 2 + ry + DIR[dir][1])), toward: OPPOSITE[dir], side: 'input' }];
+  }
+  return [];
+}
+
 export function pipeNetwork(block, route, catalog, logistics, machines) {
   const reach = catalog.pipes[logistics.pipe].maxDistance;
-  const pieces = route.pieces;
+  // (A valve or void on it: checked on their own.)
+  const pieces = route.pieces.filter(p => p.kind === 'pipe' || p.kind === 'pipe-to-ground');
   const problems = [];
   const own = tileMap(pieces);
-  const seen = new Set([pieces[0]]);
-  const stack = [pieces[0]];
+  // (A top-up valve standing on its machine's connection: no pipe of its own, ADR 0062.)
+  const valve = route.pieces.find(p => p.kind === 'valve');
+  const seen = new Set(pieces.slice(0, 1));
+  const stack = pieces.slice(0, 1);
   while (stack.length) for (const n of pipeNeighbors(own, stack.pop(), reach)) if (!seen.has(n)) { seen.add(n); stack.push(n); }
   if (seen.size !== pieces.length) problems.push(`fluid route ${route.id} (${route.fluid}) is not one connected network`);
   // Partners are searched among every pipe-to-ground, so interleaved tunnels are caught.
@@ -387,7 +413,9 @@ export function pipeNetwork(block, route, catalog, logistics, machines) {
   // A machine is reached by a pipe at one of its connections, or through a neighbour's: two
   // connections letting fluid both ways (through) facing each other join their machines' boxes.
   const ports = new Map(machines.map(m => [m, portTiles(m, catalog, route.fluid, m.recipe === producer ? 'output' : 'input', block)]));
-  const reached = new Set(machines.filter(m => ports.get(m).some(({ tile, towardBuilding }) => own.has(tile) && connectsToward(own.get(tile), towardBuilding))));
+  const valveIn = valve && catalog.valves?.[valve.name] ? (catalog.valves[valve.name].input + valve.direction) % 16 : null;
+  const reached = new Set(machines.filter(m => ports.get(m).some(({ tile, towardBuilding }) => (own.has(tile) && connectsToward(own.get(tile), towardBuilding))
+    || (valve && route.valve?.mode === 'top-up' && tile === key(valve.x, valve.y) && valveIn === towardBuilding))));
   const joined = (a, b) => ports.get(a).some(p => p.through && ports.get(b).some(q => q.through && q.tile === p.from && p.tile === q.from));
   for (let grew = true; grew;) {
     grew = false;
@@ -403,6 +431,26 @@ export function pipeNetwork(block, route, catalog, logistics, machines) {
   // before it will do: that was checked with its own.)
   const built = p => route.network !== undefined && p.network === route.network;
   if (route.sink === 'side-output' && !joinedTo(block, route, reach).some(p => p.x === block.bounds.x + block.bounds.w - 1 || built(p))) problems.push(`${route.fluid} does not reach the east edge`);
+  // A valve between its pipe and the one it tops up or lets the spare off; a void at the end of
+  // its pipe (ADR 0062).
+  const all = tileMap(block.entities.filter(e => e.kind === 'pipe' || e.kind === 'pipe-to-ground'));
+  const meets = (end, routeId) => {
+    const p = all.get(end.tile);
+    return !!p && p.route === routeId && connectsToward(p, end.toward);
+  };
+  if (route.valve) {
+    const ends = valve ? fluidEnds(valve, catalog) : [];
+    const [mine, theirs] = route.valve.mode === 'top-up' ? ['input', 'output'] : ['output', 'input'];
+    // (Its own side: its pipe, or its machine where it stands on that one's connection.)
+    const onMachine = !pieces.length && reached.size > 0;
+    if (!valve || !(onMachine || ends.some(e => e.side === mine && meets(e, route.id))) || !ends.some(e => e.side === theirs && meets(e, route.valve.on))) {
+      problems.push(`${route.fluid} route ${route.id}: its ${route.valve.mode} valve does not join route ${route.valve.on}`);
+    }
+  }
+  if (route.sink === 'void') {
+    const end = route.pieces.find(p => p.kind === 'void');
+    if (!end || !fluidEnds(end, catalog).every(e => meets(e, route.id))) problems.push(`${route.fluid} route ${route.id} does not reach its ${catalog.voids?.[route.fluid] ?? 'void'}`);
+  }
   return problems;
 }
 

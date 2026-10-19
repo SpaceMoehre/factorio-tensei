@@ -1,7 +1,7 @@
 import { Grid, N, E, S, W, VEC, key, opposite, span } from './grid.js';
 import { routeLink, RoutingError, legCost } from './router.js';
 import { placePoles, PowerError } from './poles.js';
-import { inserterTiles } from './validity.js';
+import { inserterTiles, fluidEnds } from './validity.js';
 import { wirePairs } from './wires.js';
 
 // Squeezes a routed Compound Block: every column (and row) that holds nothing but belts and
@@ -38,7 +38,7 @@ export function finishBlock(block, catalog, logistics, { squeeze = true } = {}) 
   const finish = b => {
     const buried = buryPipes(b, catalog, logistics);
     try {
-      return power(straightenBelts(mergeByproducts(clone(buried), catalog, logistics), catalog, logistics), catalog, logistics);
+      return power(straightenBelts(exportBelts(mergeByproducts(clone(buried), catalog, logistics), catalog, logistics), catalog, logistics), catalog, logistics);
     } catch (e) {
       if (!(e instanceof PowerError)) throw e;
       return power(buried, catalog, logistics);
@@ -79,6 +79,13 @@ export function buryPipes(block, catalog, logistics) {
         if (!ports.has(tile)) ports.set(tile, new Set());
         ports.get(tile).add(opposite(dir));
       }
+    }
+  }
+  // (And a valve's or void's, ADR 0062.)
+  for (const e of block.entities.filter(e => e.kind === 'valve' || e.kind === 'void')) {
+    for (const { tile, toward } of fluidEnds(e, catalog)) {
+      if (!ports.has(tile)) ports.set(tile, new Set());
+      ports.get(tile).add(toward);
     }
   }
   // (In an Annex's City Block, the pipes the layout before it built carrying the same fluid too:
@@ -450,6 +457,77 @@ export function shareSideBelts(block, catalog, logistics, from) {
   return block;
 }
 const SHARE_CUTS = 12;
+
+// Items leaving by train besides (ADR 0062): a belt of an item the user wants on the output side
+// too, which its consumers take all of (`exported`), gets a splitter cut into a straight belt of
+// it past its producers' last drop, not one an inserter takes from, giving the side going on to
+// its consumers priority: the other side's belt goes on to the east edge with what they leave
+// (its producers' spare). A Fan-out branch of it (fedBy), its own route. Where none finds room,
+// none: the item does not leave. Changes the block in place.
+export function exportBelts(block, catalog, logistics) {
+  const trunks = block.routes.filter(r => r.kind === 'belt' && r.exported && typeof r.source === 'number' && r.pieces.length > 2);
+  if (!trunks.length) return block;
+  const belted = beltGrid(block, catalog, logistics);
+  if (!belted) return block;
+  const { names, grid, partner, reached } = belted;
+  const spec = catalog.belts[logistics.belt];
+  const splitterName = spec.splitter ?? spec.name.replace(/transport-belt$/, 'splitter');
+  const feeders = new Set(block.entities.filter(e => e.out).map(e => e.out));
+  const free = (x, y) => grid.inBounds(x, y) && !grid.at(x, y) && grid.holder(x, y) === undefined && !feeders.has(key(x, y)) && !reached.has(key(x, y));
+  // Where its producers drop: their inserters' drop tiles, a machine's own drop.
+  const drops = new Set();
+  for (const e of block.entities) {
+    if (e.kind === 'inserter' && e.role === 'output') drops.add(inserterTiles(e, catalog).drop);
+    else if (e.kind === 'building' && e.drop) drops.add(key(Math.floor(e.x + e.drop.x), Math.floor(e.y + e.drop.y)));
+  }
+  const added = [];
+  for (const t of trunks) {
+    const last = t.pieces.reduce((at, p, k) => (drops.has(key(p.x, p.y)) ? k : at), 0);
+    const rate = t.items.reduce((sum, i) => sum + i.rate, 0) * Math.max(0, (block.subBlocks[t.source].headroom ?? 1) - 1);
+    let done = false;
+    for (let k = last + 1; k < t.pieces.length - 1 && !done; k++) {
+      const p = t.pieces[k], before = t.pieces[k - 1], next = t.pieces[k + 1];
+      if (p.kind !== 'belt' || before.kind !== 'belt' || before.travel !== p.travel || next.kind === 'splitter' || reached.has(key(p.x, p.y))) continue;
+      const [fx, fy] = VEC[p.travel];
+      for (const side of [(p.travel + 4) % 16, (p.travel + 12) % 16]) {
+        const [sx, sy] = VEC[side];
+        const beside = { x: p.x + sx, y: p.y + sy };
+        if (!free(beside.x, beside.y) || !free(beside.x + fx, beside.y + fy)) continue;
+        const id = block.routes.length;
+        const before = grid.snapshot();
+        let leg = null;
+        try {
+          leg = routeLink(grid, { id, starts: [{ x: beside.x + fx, y: beside.y + fy, a: p.travel }], goal: 'east', keepOff: reached, most: 4000 }, names);
+        } catch (err) {
+          if (!(err instanceof RoutingError)) throw err;
+        }
+        if (!leg?.length) {
+          grid.restore(before);
+          continue;
+        }
+        Object.assign(p, {
+          name: splitterName, kind: 'splitter', x: Math.min(p.x, beside.x), y: Math.min(p.y, beside.y), w: fx ? 1 : 2, h: fx ? 2 : 1,
+          direction: p.travel, travel: p.travel,
+          // (The side going on to its consumers: the other side from the belt off it.)
+          priority: side === (p.travel + 4) % 16 ? 'left' : 'right',
+        });
+        delete p.out;
+        grid.place(p);
+        leg.forEach((q, i) => { if (q.underground === 'input') partner.set(q, leg[i + 1]); });
+        block.routes.push({
+          id, kind: 'belt', source: 'export', sink: 'side-output', fedBy: t.id, consumers: [],
+          items: t.items.map(i => ({ ...i, rate: rate * i.rate / Math.max(1e-9, t.items.reduce((sum, x) => sum + x.rate, 0)), supply: rate, capacity: i.capacity })),
+          pieces: [p, ...leg],
+        });
+        added.push(...leg);
+        done = true;
+        break;
+      }
+    }
+  }
+  block.entities.push(...added);
+  return block;
+}
 
 // Belts routed round what is no longer there take the short way (ADR 0051). Links were routed
 // round plain pipes that then went underground, so a belt could turn three times and dive under

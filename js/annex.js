@@ -163,6 +163,7 @@ export function annexed(block, annex, site, catalog, logistics) {
       ...(r.share ? { share: keyed(r.share, sb) } : {}),
       ...(r.taps ? { taps: r.taps.map(route) } : {}),
       ...Object.fromEntries(['joins', 'fedBy', 'fedFrom', 'balancedWith'].filter(k => r[k] !== undefined).map(k => [k, route(r[k])])),
+      ...(r.valve ? { valve: { ...r.valve, on: route(r.valve.on) } } : {}),
       ...(r.loop?.from !== undefined ? { loop: { ...r.loop, from: sb(r.loop.from) } } : {}),
     })),
   ];

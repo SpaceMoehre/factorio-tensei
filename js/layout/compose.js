@@ -5,6 +5,7 @@ import { PowerError } from './poles.js';
 import { trim, maxFlow } from './module.js';
 import { pathFlow } from './flow.js';
 import { simulate } from '../sim.js';
+import { valvesOf } from '../chain.js';
 
 export { RoutingError, PowerError, maxFlow };
 
@@ -347,11 +348,42 @@ export function compose(ctx, prepared, positions, layout) {
 
   // A fluid's links: every copy's stub (where its pipes reach its west or east edge) joined, and
   // the train's edges.
+  const terminalsOf = (grid, route) => route.stubs.map(({ inst, x, y, side }) => {
+    const { x: ox, y: oy } = placed[inst.index];
+    return [x + ox + OUT[side][0], y + oy + OUT[side][1], OUT[side][2]];
+  }).filter(([x, y]) => grid.inBounds(x, y));
   const routeFluid = (grid, route, pieces) => {
-    const terminals = route.stubs.map(({ inst, x, y, side }) => {
-      const { x: ox, y: oy } = placed[inst.index];
-      return [x + ox + OUT[side][0], y + oy + OUT[side][1], OUT[side][2]];
-    }).filter(([x, y]) => grid.inBounds(x, y));
+    const terminals = terminalsOf(grid, route);
+    // A Sub-Block topping up a fluid fed back (ADR 0062): its valve planned right at its first
+    // connection, the pipe it tops up reaching the tile beyond (one more of its terminals), where
+    // both are free; else the valve beside that pipe, wherever it runs (routed first, it may
+    // have run past the connection and shut it in: one offshore pump's in Py coalbed gas).
+    // (A Sub-Block of one connection: the valve on its connection's tile itself, taking from the
+    // machine, where the tile beyond is free or the pipe's own connection: Py's offshore pump
+    // against its vacuum pumps.)
+    for (const r of routes.filter(r => r.valve?.mode === 'top-up' && r.valve.on === route.id && typeof r.source === 'number')) {
+      const own = terminalsOf(grid, r);
+      if (!own.length) continue;
+      const [bx, by, d] = own[0];
+      const [dx, dy] = VEC[d];
+      const mine = new Set(terminals.map(([x, y]) => key(x, y)));
+      for (const k of own.length === 1 ? [0, 1] : [1]) {
+        const v = { x: bx + k * dx, y: by + k * dy }, a = { x: v.x + dx, y: v.y + dy };
+        if (!grid.inBounds(a.x, a.y) || !(mine.has(key(a.x, a.y)) || grid.freeFor(a.x, a.y, route.id))) continue;
+        if (k && (!grid.freeFor(v.x, v.y, r.id) || grid.holder(v.x, v.y) !== undefined)) continue;
+        grid.reserve(v.x, v.y, r.id);
+        const name = valvesOf(catalog).topUp;
+        const piece = { name, kind: 'valve', route: r.id, fluid: r.fluid, x: v.x, y: v.y, w: 1, h: 1, direction: (d - catalog.valves[name].output + 16) % 16, mode: 'top-up', flow: d };
+        // (On the connection's tile: there now, no pipe's port any more.)
+        if (k === 0) {
+          grid.place(piece);
+          grid.fluidPorts.delete(key(v.x, v.y));
+        }
+        valveAt.set(r.id, { piece, alone: k === 0 });
+        if (!mine.has(key(a.x, a.y))) terminals.push([a.x, a.y, d]);
+        break;
+      }
+    }
     const reachesWest = route.stubs.some(s => s.side === 'W' && placed[s.inst.index].x + s.x === area.x);
     const reachesEast = route.stubs.some(s => s.side === 'E' && placed[s.inst.index].x + s.x === area.x + area.w - 1);
     // (In an Annex's City Block, a Side Input drawn from a pipe the layout before it built: only
@@ -359,7 +391,27 @@ export function compose(ctx, prepared, positions, layout) {
     const drawn = route.source === 'side-input' ? site?.draws?.[route.fluid] : undefined;
     const draws = drawn && { routes: new Set([drawn.route]), starts: drawn.starts, only: drawn.only };
     const source = route.source === 'side-input' && (!reachesWest || Boolean(draws?.only));
-    const sink = route.sink === 'side-output' && !reachesEast;
+    const sink = (route.sink === 'side-output' && !reachesEast) || route.sink === 'void';
+    // (Destroyed rather than leaving by train, ADR 0062: at a void it takes the fluid to.)
+    const voided = route.sink === 'void' ? { void: catalog.buildings[catalog.voids[route.fluid]] } : {};
+    // A valve's route (ADR 0062): what makes up the rest of a fluid fed back, through a top-up
+    // valve into the pipe of the Sub-Block whose byproduct it is; the spare off that pipe through
+    // an overflow valve. Neither joins a network.
+    if (route.valve) {
+      const { overflow, topUp } = valvesOf(catalog);
+      const name = route.valve.mode === 'top-up' ? topUp : overflow;
+      const planned = valveAt.get(route.id);
+      if (planned) {
+        // (Its valve where it was planned: its pipes to it from its machines, the valve facing
+        // so that its output meets the tile beyond.)
+        if (planned.alone) return [planned.piece];
+        const out = routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source: false, sink: false }, pipes);
+        grid.place(planned.piece);
+        return [...out, planned.piece];
+      }
+      const valve = { name, mode: route.valve.mode, input: catalog.valves[name].input, output: catalog.valves[name].output, pipes: pieces[route.valve.on] ?? [] };
+      return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source: route.source === 'side-input', sink, valve, ...voided }, pipes);
+    }
     // (Its network's pipes routed before it: it joins them, from a free tile beside one. Not a
     // Supplied Item's that found no way to it: those go on to the train.)
     const peers = [...networks.keys()].filter(id => id !== route.id && !unjoined.has(id) && networks.get(id) === networks.get(route.id) && (piped.has(id) || builtPipes.has(id)));
@@ -387,7 +439,7 @@ export function compose(ctx, prepared, positions, layout) {
     }
     if (terminals.length < 2 && !source && !sink && !joins) return [];
     if (!terminals.length) throw new RoutingError(`${route.fluid}: no stub to join`);
-    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...(draws ? { draws } : {}), ...(joins ? { joins } : {}) }, pipes);
+    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...voided, ...(draws ? { draws } : {}), ...(joins ? { joins } : {}) }, pipes);
   };
 
   // Pipes first (no fluid may touch another), then the belt links in their order. When one
@@ -413,6 +465,8 @@ export function compose(ctx, prepared, positions, layout) {
   let sortedOut = new Map();
   // Pipe routes of one fluid joined into one network (pipeNetworks), and those routed so far.
   const networks = pipeNetworks(routes, site?.pipes);
+  // (Top-up valves planned at their Sub-Block's connection, by route, ADR 0062.)
+  let valveAt = new Map();
   let piped = new Set();
   // Supplied Items' pipes and belts that found no way to the pipe or belt they are supplied to:
   // on to the train instead.
@@ -443,6 +497,7 @@ export function compose(ctx, prepared, positions, layout) {
     spilled = new Map();
     piped = new Set();
     unjoined = new Set();
+    valveAt = new Map();
     let failed = null;
     // (Tasks routed ahead of their turn: a feedback's splitters, before a gatherer joining it; a
     // belt's links up to where a Supplied Item joins it, and a pipe's a Supplied Item's joins.)
@@ -473,7 +528,8 @@ export function compose(ctx, prepared, positions, layout) {
     };
     const runTask = task => {
       if (task.pipe !== undefined) {
-        const into = routes[task.pipe].into;
+        // (A Supplied Item's pipe, or a valve's, after the one it joins.)
+        const into = routes[task.pipe].into ?? routes[task.pipe].valve?.on;
         if (into !== undefined) run(order.find(t => t.pipe === into));
         pieces[task.pipe].push(...routeFluid(grid, routes[task.pipe], pieces));
         piped.add(task.pipe);
@@ -1923,6 +1979,7 @@ function supplyJoins(ctx, routes, suppliedAt, laneCapacity) {
     delete r.supplied;
     delete r.supplies;
     if (r.kind === 'pipe' && r.into !== undefined) r.into = routes.find(o => o.kind === 'pipe' && o.base === r.into).id;
+    if (r.kind === 'pipe' && r.valve) r.valve = { ...r.valve, on: routes.find(o => o.kind === 'pipe' && o.base === r.valve.on).id };
   }
   for (const base of ctx.routes.filter(r => r.kind === 'belt' && r.supplies)) {
     for (const { item, into } of base.supplies) {
@@ -2014,11 +2071,16 @@ function tapLoop(routes, feeds, base) {
 export function pipeNetworks(routes, built = []) {
   const groups = [];
   for (const r of [...built, ...routes.filter(r => r.kind === 'pipe')]) {
+    // (A valve's route: a network of its own, ADR 0062.)
+    if (r.valve) {
+      groups.push({ key: r.id, fluid: r.fluid, closed: true, ids: [r.id], makes: new Set(), takes: new Set() });
+      continue;
+    }
     const makes = r.source === 'side-input' || r.source === undefined ? [] : [r.source];
     const sink = r.sink === 'side-output';
     let g = r.network !== undefined ? groups.find(g => g.key === r.network)
       : r.into !== undefined ? groups.find(g => g.ids.includes(r.into))
-      : groups.find(g => g.fluid === r.fluid && g.sink === sink && !makes.some(i => g.takes.has(i)) && !r.consumers.some(i => g.makes.has(i)));
+      : groups.find(g => !g.closed && g.fluid === r.fluid && g.sink === sink && !makes.some(i => g.takes.has(i)) && !r.consumers.some(i => g.makes.has(i)));
     if (!g) groups.push(g = { key: r.network ?? r.id, fluid: r.fluid, sink, ids: [], makes: new Set(), takes: new Set() });
     g.ids.push(r.id);
     for (const i of makes) g.makes.add(i);

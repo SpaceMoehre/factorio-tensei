@@ -66,7 +66,9 @@ export function recipeOptions(catalog) {
 //            extra: { [item]: rate } an Extension's: so much more of a step's item made, not taken
 //              (its entry's goal.extra),
 //            belt: the belt the block is built with (a Recycled Byproduct's step must make no more
-//              solids than a lane of it carries) }
+//              solids than a lane of it carries),
+//            exports: items made here leaving by train too, voids: fluids leaving destroyed,
+//            valves: false for no Fed-back Fluids (Bands) }
 // A step's modules are the chosen ones its building takes, or else its building's default.
 // Returns the chain's steps as solve() entries — each item's rate is its Goal rate plus what its
 // consumers take, Recipe Loops included (each step makes what its consumers take, a machine's
@@ -84,6 +86,21 @@ export function expandChain(goals, catalog, options = {}) {
   return expand(goals, catalog, options, false) ?? expand(goals, catalog, options, true);
 }
 
+// Where a fluid fed back covers all its takers take (or more), what makes up the rest still
+// makes this share of it: so a loop starts (Py's coalbed gas gives back all the water its vacuum
+// pumps take) and keeps up (ADR 0062).
+const TOP_UP = 0.01;
+
+// The valves fluid fed back goes through (ADR 0062): the overflow valve letting a byproduct's
+// spare off, the top-up valve letting what makes up the rest in; null where the catalog has
+// none one can build (base 2.0's are hidden).
+export function valvesOf(catalog) {
+  const all = Object.values(catalog.valves ?? {});
+  const overflow = all.find(v => v.mode === 'overflow');
+  const topUp = all.find(v => v.mode === 'top-up');
+  return overflow && topUp ? { overflow: overflow.name, topUp: topUp.name } : null;
+}
+
 // A General Use's `from` in its key: every step.
 export const EVERY = '*';
 
@@ -94,7 +111,8 @@ export function useKey(from, item) {
 
 // The chain, its Recipe Loops fed in the block (or with `loopsByTrain`, by train); null when they
 // cannot be (a loop takes more than it makes).
-function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {}, belt = null }, loopsByTrain) {
+function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {}, belt = null, exports = [], voids = [], valves = true }, loopsByTrain) {
+  const valved = valves && valvesOf(catalog) !== null;
   const makeHere = new Set([...made, ...goals.map(g => g.item)]);
   const steps = new Map();
   const trainInputs = new Map();
@@ -247,12 +265,37 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       supplies.push({ from: key, item: p.name, type: p.type, per: makes(key, p.name) / perCraft[at.get(key)] });
     }
   }
+  // Fed-back fluids (ADR 0062): a fluid a step makes besides its item, that a step of the chain
+  // makes for the steps taking it (no Goal's, none a Use takes), goes to those steps first, the
+  // step making it making only the rest: through a top-up valve into the byproduct's pipe, its
+  // spare off through an overflow valve. (Not a step's taking it itself.)
+  if (valved) {
+    for (const key of order) {
+      for (const p of recipeOf(key).products) {
+        if (p.type !== 'fluid' || p.name === key || !steps.has(p.name) || goals.some(g => g.item === p.name) || takenBy(key, p.name)
+          || recipeOf(key).ingredients.some(i => i.name === p.name) || supplies.some(s => s.from === key && s.item === p.name)) continue;
+        supplies.push({ from: key, item: p.name, type: 'fluid', per: makes(key, p.name) / perCraft[at.get(key)], valve: true });
+      }
+    }
+  }
   const supply = (s, sign) => { a[at.get(s.item)][at.get(s.from)] -= sign * s.per; };
   supplies.forEach(s => supply(s, 1));
   let rates;
   for (;;) {
-    rates = loops.length || used.size ? solve(a, goal)?.map(r => Math.round(r * 1e9) / 1e9) : consumersFirst(a, goal);
+    rates = loops.length || used.size || supplies.length ? solve(a, goal)?.map(r => Math.round(r * 1e9) / 1e9) : consumersFirst(a, goal);
     const off = supplies.filter(s => !rates || !(rates[at.get(s.item)] > 1e-6) || (s.type === 'item' && s.per * rates[at.get(s.from)] > lane * (1 + 1e-9)));
+    // (A fluid fed back covering all: so much less of it fed back that its step makes TOP_UP of
+    // what is taken.)
+    const over = rates ? off.filter(s => s.valve && !(s.cut > 4)) : [];
+    for (const s of over) {
+      const supplied = s.per * rates[at.get(s.from)];
+      const need = rates[at.get(s.item)] + supplied;
+      supply(s, -1);
+      s.per *= need > 0 && supplied > 0 ? (1 - TOP_UP) * need / supplied : 0;
+      s.cut = (s.cut ?? 0) + 1;
+      supply(s, 1);
+    }
+    if (over.length) continue;
     if (!off.length) break;
     off.forEach(s => supply(s, -1));
     supplies = supplies.filter(s => !off.includes(s));
@@ -266,7 +309,10 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // Recycled Byproducts: an ingredient that would come by train though a step makes at least as
   // much of it besides its item is taken from that step instead (the one making most), what it
   // makes beyond leaving by train. A fluid only where the steps taking it do not feed that step
-  // (a fluid fed back comes by train, as a Recipe Loop's does).
+  // (a fluid fed back comes by train, as a Recipe Loop's does) — but where there are valves: then
+  // a fluid fed back too, and one the step makes less of than they take, the train bringing the
+  // rest (`topUp`) through a top-up valve into its pipe, its spare off through an overflow valve
+  // (ADR 0062).
   const ratesOf = key => rates[at.get(key)] / perCraft[at.get(key)];
   // (Through what a step takes of another's item, a Use of its byproduct, what a Use supplies.)
   const gives = a => new Set([itemOf(a), ...supplies.filter(s => s.from === a).map(s => s.item)]);
@@ -281,23 +327,37 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const fluid = recipeOf(takers[0]).ingredients.find(i => i.name === item).type === 'fluid';
     // (A Byproduct Use's product too.)
     const makers = keys.filter(k => !takers.includes(k) && !takenBy(k, item) && recipeOf(k).products.some(p => p.name === item))
-      .filter(k => !fluid || !takers.some(t => feeds(t, k)))
+      .filter(k => !fluid || valved || !takers.some(t => feeds(t, k)))
       .map(k => ({ key: k, rate: makes(k, item) * ratesOf(k) }))
       .sort((a, b) => b.rate - a.rate);
     const from = makers[0];
-    if (!from || from.rate < input.rate * (1 - 1e-9)) continue;
+    let part = !!from && from.rate < input.rate * (1 - 1e-9);
+    if (!from || (part && !(fluid && valved))) continue;
+    // (A loop's fluid the byproduct covers: the train still brings TOP_UP of it, so it starts.)
+    if (fluid && valved && !part && takers.some(t => feeds(t, from.key))) {
+      from.rate = input.rate * (1 - TOP_UP);
+      part = true;
+    }
     // (Fed back, a solid only where one lane carries all its step makes, the item with the rest,
     // or from a Goal's step: an Internal Path's belts, joined by splitters, take no tap, so the
     // feedback is tapped off one of them; a Goal's belts on to the train each feed a belt of it.)
     const solid = new Set(recipeOf(from.key).products.filter(p => p.type === 'item').map(p => p.name));
     if (!fluid && takers.some(t => feeds(t, from.key)) && !goals.some(g => g.item === from.key)
       && [...solid].reduce((sum, name) => sum + makes(from.key, name) * ratesOf(from.key), 0) > lane * (1 + 1e-9)) continue;
-    trainInputs.delete(item);
+    const rate = part ? from.rate : input.rate;
+    if (part) Object.assign(input, { rate: input.rate - from.rate, topUp: from.key });
+    else trainInputs.delete(item);
     for (const k of takers) {
       stepOf(k).byTrain.delete(item);
       takesFrom.set(k, { ...takesFrom.get(k), [item]: from.key });
     }
-    recycled.push({ item, from: from.key, into: takers, rate: input.rate, spare: Math.max(0, from.rate - input.rate) });
+    recycled.push({ item, from: from.key, into: takers, rate, spare: Math.max(0, from.rate - input.rate), ...(fluid && valved ? { valve: true } : {}) });
+  }
+  // (A fluid fed back: the steps taking it take it from the step whose byproduct it is.)
+  for (const s of supplies.filter(s => s.valve)) {
+    for (const k of keys) {
+      if (k !== s.item && recipeOf(k).ingredients.some(i => i.name === s.item) && !stepOf(k).byTrain.has(s.item)) takesFrom.set(k, { ...takesFrom.get(k), [s.item]: s.from });
+    }
   }
   // A step's ingredient that a step makes but comes by train (a loop's fluid, or a loop taking
   // more than it makes): the layout brings it by train too.
@@ -316,23 +376,44 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   }
   const joinsOf = key => {
     const list = [
-      ...supplies.filter(s => s.from === key).map(s => [s.item, entryOf.get(s.item)]),
+      ...supplies.filter(s => s.from === key && !s.valve).map(s => [s.item, entryOf.get(s.item)]),
       ...[...used.values()].filter(u => u.sources?.includes(key) && u.from !== key).map(u => [u.item, entryOf.get(u.from)]),
     ];
     return list.length ? { joins: Object.fromEntries(list) } : {};
   };
+  // A step's fluids fed back (ADR 0062): their spare off through an overflow valve (`overflow`),
+  // what makes up the rest through a top-up valve into their pipe (`topUp`: fluid → { from: the
+  // entry making it, or 'side-input', rate }). What it makes that the user wants leaving by train
+  // too (`exports`, its spare through a splitter or valve giving its consumers priority) and the
+  // fluids it makes leaving by train that are destroyed instead (`voids`).
+  const valvesOfStep = key => {
+    const fed = [...supplies.filter(s => s.valve && s.from === key), ...recycled.filter(r => r.valve && r.from === key)];
+    const topUp = [
+      ...supplies.filter(s => s.valve && s.from === key).map(s => [s.item, { from: entryOf.get(s.item), rate: rates[at.get(s.item)] }]),
+      ...[...trainInputs.values()].filter(t => t.topUp === key).map(t => [t.item, { from: 'side-input', rate: t.rate }]),
+    ];
+    const products = new Set(recipeOf(key).products.map(p => p.name));
+    const out = exports.filter(i => i === itemOf(key));
+    const gone = voids.filter(f => products.has(f) && recipeOf(key).products.find(p => p.name === f).type === 'fluid' && !out.includes(f));
+    return {
+      ...(fed.length ? { overflow: [...new Set(fed.map(f => f.item))] } : {}),
+      ...(topUp.length ? { topUp: Object.fromEntries(topUp) } : {}),
+      ...(out.length ? { exports: out } : {}),
+      ...(gone.length ? { voids: gone } : {}),
+    };
+  };
   return {
     entries: [
       ...[...order].reverse().map(item => ({
-        goal: { item, rate: rates[at.get(item)], ...fromOf(item), ...joinsOf(item), ...(extra[item] > 0 ? { extra: extra[item] } : {}) }, selection: steps.get(item).selection,
+        goal: { item, rate: rates[at.get(item)], ...fromOf(item), ...joinsOf(item), ...valvesOfStep(item), ...(extra[item] > 0 ? { extra: extra[item] } : {}) }, selection: steps.get(item).selection,
         ...(looping(item).length ? { byTrain: looping(item) } : {}),
       })),
       ...[...used].map(([key, u]) => ({
-        goal: { item: u.product, rate: rates[at.get(key)], ...fromOf(key, { [u.item]: entryOf.get(u.from) }), ...joinsOf(key) }, selection: u.selection,
+        goal: { item: u.product, rate: rates[at.get(key)], ...fromOf(key, { [u.item]: entryOf.get(u.from) }), ...joinsOf(key), ...valvesOfStep(key) }, selection: u.selection,
         use: { key, from: u.from, item: u.item, ...(u.sources ? { sources: u.sources } : {}) },
       })),
     ],
-    supplies: supplies.map(s => ({ from: s.from, item: s.item, into: s.item, rate: s.per * rates[at.get(s.from)] })),
+    supplies: supplies.map(s => ({ from: s.from, item: s.item, into: s.item, rate: s.per * rates[at.get(s.from)], ...(s.valve ? { valve: true } : {}) })),
     trainInputs: [...trainInputs.values()],
     loops: loops.map(({ item, into }) => ({
       item, into, rate: recipeOf(into).ingredients.filter(i => i.name === item).reduce((sum, i) => sum + i.amount, 0) * rates[at.get(into)] / perCraft[at.get(into)],

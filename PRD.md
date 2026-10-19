@@ -84,6 +84,13 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v50: Fluids fed back through valves; leaving by train too; destroyed (implemented)
+Where v50 differs from v49, v50 wins.
+- **Fed-back Fluids:** a fluid a step makes besides its item that the chain also takes goes to the steps taking it first; what makes it makes only the rest, through a top-up valve, and its spare leaves through an overflow valve (ADR 0062). Py coalbed gas's water: one offshore pump, not two.
+- **Leaving by train too:** a step made here may also leave by train: what its consumers leave, through a splitter giving them priority (an overflow valve for a fluid).
+- **Destroyed:** a fluid leaving by train may be destroyed instead, in the building the game has for it (sinkhole, gas vent).
+- **The catalog** records the valves one can build and each fluid's void.
+
 ## v49: An Annex's belts from the train come off the block's (implemented)
 Where v49 differs from v48, v49 wins.
 - **One belt from the train for both:** an Annex's belt of an item the train brings, where the first layout's belt of it carries it alone with room for both, comes off that belt through a splitter rather than from the west edge (ADR 0061). The room its own belt took is left for more Annexes.

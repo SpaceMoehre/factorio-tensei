@@ -4,7 +4,7 @@
 // that beats its best so far ({ type: 'best', block, score, tried }), then { type: 'done',
 // tried, failure } when the budget is spent, or { type: 'error', message }. The page stops a
 // search by terminating the worker; it keeps the best layout any worker sent.
-// In a City Block (site) with `maximize` ({ goals, made, selections, uses, upTo }), it looks for the
+// In a City Block (site) with `maximize` ({ goals, made, selections, uses, exports, voids, upTo }), it looks for the
 // highest rate that fits instead (upTo: no higher than the Goals' own): { type: 'foretell', rate, machines } whenever the Foretelling changes,
 // { type: 'try', rate, machines } before each try, { type: 'best', …, rate, machines, goals } for
 // each that fits, and { type: 'done', tried, failure, rate, machines, goals, above } at the end
@@ -71,7 +71,7 @@ self.onmessage = async ({ data: { entries, logistics, budgetMs, seed, site = nul
       // each (a try of Py titanium plate's 21 Sub-Blocks holds about 0.6).
       const memory = /** @type {any} */ (self.navigator)?.deviceMemory ?? 4;
       const parallel = Math.max(1, Math.min(TRIES_AT_ONCE, (self.navigator?.hardwareConcurrency ?? 1) - 1, Math.floor(memory)));
-      const run = maximize(goals.goals, await catalog, logistics, { made: goals.made, selections: goals.selections, uses: goals.uses, upTo: goals.upTo, site, budgetMs, seed, parallel });
+      const run = maximize(goals.goals, await catalog, logistics, { made: goals.made, selections: goals.selections, uses: goals.uses, exports: goals.exports, voids: goals.voids, upTo: goals.upTo, site, budgetMs, seed, parallel });
       const events = drive(run, tryPool(() => {
         const worker = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' });
         return {

@@ -108,7 +108,41 @@ export function buildCatalog(raw) {
   for (const p of Object.values(raw.fluid ?? {})) {
     if (!p.hidden && p.fuel_value && energy(p.fuel_value) > 0) fluidFuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value) };
   }
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
+}
+
+// Valves one can build (Py's overflow and underflow valves; base 2.0's are hidden): { [name]:
+// { mode ('overflow', 'top-up', 'one-way'), threshold, flowRate (a minute), input, output (the
+// sides fluid comes in and goes out, as directions of the valve facing north) } } (ADR 0062).
+function valves(raw) {
+  const out = {};
+  for (const v of Object.values(raw.valve ?? {})) {
+    if (v.hidden) continue;
+    const conns = v.fluid_box?.pipe_connections ?? [];
+    const output = conns.find(c => c.flow_direction === 'output');
+    const input = conns.find(c => c !== output);
+    if (!output || !input) continue;
+    out[v.name] = { name: v.name, mode: v.mode, threshold: v.threshold ?? 0, flowRate: (v.flow_rate ?? 0) * 3600, input: input.direction ?? 0, output: output.direction ?? 0 };
+  }
+  return out;
+}
+
+// Per fluid, the building destroying it (Py's sinkhole for liquids, gas vent for gases): one
+// running on no energy with a single input box, whose recipe (hidden) takes the fluid and makes
+// nothing (ADR 0062). { [fluid]: building }
+function voids(raw, buildings) {
+  const byCategory = new Map();
+  for (const b of Object.values(buildings)) {
+    if (b.energy !== 'void' || b.fluidBoxes.length !== 1 || b.fluidBoxes[0].production !== 'input' || b.categories.length !== 1) continue;
+    byCategory.set(b.categories[0], b.name);
+  }
+  const out = {};
+  for (const r of Object.values(raw.recipe)) {
+    const ingredients = list(r.ingredients);
+    if (!byCategory.has(r.category) || list(r.results).length || ingredients.length !== 1 || ingredients[0].type !== 'fluid') continue;
+    out[ingredients[0].name] ??= byCategory.get(r.category);
+  }
+  return out;
 }
 
 // Offshore pumps as buildings of recipe 'offshore-water' (no ingredients, 60 of the tile's fluid

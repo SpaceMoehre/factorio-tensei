@@ -63,6 +63,7 @@ Reference setups in `$SKILL/setups/` are for regressions:
 
 - The user pastes the page's state, or gives a file. "Copy setup" on the page gives the saved state plus `chain`, `foretold` and `result` (what their build said). The raw localStorage `factory-tensei:v1` works too.
 - Save it as `$S/<name>/setup.json`.
+- Keep `exports` (items also leaving by train) and `voids` (fluids destroyed) as the page saved them (ADR 0062).
 - The City Block blueprint goes in `city.blueprint` (or a top-level `blueprint`). Keep `city.buffer` and `city.maximize`.
 - `run.mjs` warns if a logistics key is missing. The page fills in defaults for missing keys, so set them explicitly to match what the user saw.
 - Note the user's numbers: what they got (`result.status`, `result.subBlocks`), and what they believe fits.

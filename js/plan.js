@@ -66,6 +66,13 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(goal.joins ? { joins: goal.joins } : {}),
       // (An Extension: so much of its item made beyond what is taken, for an Annex to draw.)
       ...(goal.extra ? { extra: goal.extra } : {}),
+      // (Fluids fed back, ADR 0062: their spare off through an overflow valve, what makes up the
+      // rest in through a top-up valve, topUp: fluid → { from: the Sub-Block or 'side-input',
+      // rate }; items leaving by train besides, their consumers first; fluids leaving destroyed.)
+      ...(goal.overflow ? { overflow: goal.overflow } : {}),
+      ...(goal.topUp ? { topUp: goal.topUp } : {}),
+      ...(goal.exports ? { exports: goal.exports } : {}),
+      ...(goal.voids ? { voids: goal.voids } : {}),
       ...(use ? { use: true } : {}),
     };
   });

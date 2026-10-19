@@ -39,7 +39,7 @@ await page.evaluate(([b, S]) => {
   for (const r of b.routes) for (const p of r.pieces) R(p.x, p.y, 1, 1, r.kind === 'belt' ? (p.underground ? '#8a7a20' : '#d8c830') : (p.underground ? '#1c4c80' : '#3a8cf0'));
   const labelled = new Set();
   for (const e of b.entities) {
-    const col = { building: pal[(e.subBlock ?? 0) % pal.length], pole: '#eee', inserter: '#f08020', belt: '#d8c830', 'underground-belt': '#8a7a20', splitter: '#ff4040', pipe: '#3a8cf0', 'pipe-to-ground': '#1c4c80' }[e.kind] ?? '#aaa';
+    const col = { building: pal[(e.subBlock ?? 0) % pal.length], pole: '#eee', inserter: '#f08020', belt: '#d8c830', 'underground-belt': '#8a7a20', splitter: '#ff4040', pipe: '#3a8cf0', 'pipe-to-ground': '#1c4c80', valve: '#40f080', void: '#505050' }[e.kind] ?? '#aaa';
     R(e.x, e.y, e.w ?? 1, e.h ?? 1, col);
     if (e.kind === 'building') {
       g.strokeStyle = '#000';

@@ -392,6 +392,21 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
         pipeLinks(e, x, y, s);
         if (s >= 14 && pieceIndex.get(e) % 4 === 0) drawIcon(e.fluid, x + s / 2, y + s / 2, s * 0.5);
         break;
+      // A valve (ADR 0062): its fluid's colour, ringed, an arrow the way the fluid goes through it.
+      case 'valve':
+        ctx.fillStyle = colors.fluid(e.fluid);
+        ctx.fillRect(x + s * 0.15, y + s * 0.15, s * 0.7, s * 0.7);
+        ctx.strokeStyle = e.mode === 'overflow' ? '#e05a4f' : '#4fbf6a';
+        ctx.lineWidth = Math.max(1, s * 0.1);
+        ctx.strokeRect(x + s * 0.15, y + s * 0.15, s * 0.7, s * 0.7);
+        arrow(x, y, s, e.flow, t.bg);
+        break;
+      // A void destroying its fluid (a sinkhole, a gas vent): dark, its icon on it.
+      case 'void':
+        ctx.fillStyle = t.machineEdge;
+        ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+        if (!drawIcon(e.name, x + w / 2, y + h / 2, Math.min(w, h) * 0.8)) drawIcon(e.fluid, x + w / 2, y + h / 2, Math.min(w, h) * 0.6);
+        break;
       case 'inserter':
         if (s >= 20 && drawIcon(e.name, x + s / 2, y + s / 2, s * 0.8)) {
           arrow(x, y, s, e.vectors ? directionOf(e.vectors.drop) : (e.direction + 8) % 16, t.text);

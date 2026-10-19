@@ -3,7 +3,7 @@
 //   node run.mjs <setup.json> [options]
 //
 // <setup.json>: the page's saved state (localStorage 'factory-tensei:v1': goals, logistics, made,
-// selections, uses, city { on, blueprint, w, h, buffer, maximize }), or the same with the City
+// selections, uses, exports, voids, city { on, blueprint, w, h, buffer, maximize }), or the same with the City
 // Block's blueprint string at the top level (`blueprint`).
 //
 // options:
@@ -73,7 +73,7 @@ if (state.blueprint && !city.blueprint) Object.assign(city, { on: true, blueprin
 const { budget: setupBudget, ...logistics } = state.logistics ?? {};
 for (const key of ['belt', 'pipe', 'pole', 'inserter', 'longInserter']) if (!logistics[key]) console.error(`warning: logistics.${key} is not set (the page fills in its default; set it in the setup)`);
 const goals = (state.goals ?? []).filter(g => g.item && g.rate > 0);
-const made = state.made ?? [], selections = state.selections ?? {}, uses = state.uses ?? [];
+const made = state.made ?? [], selections = state.selections ?? {}, uses = state.uses ?? [], exports = state.exports ?? [], voids = state.voids ?? [];
 const index = recipeOptions(catalog);
 const budgetMs = 1000 * Number(opt('budget', setupBudget ?? 10));
 const seed = Number(opt('seed', 1));
@@ -87,7 +87,7 @@ if (city.on) {
 
 // ---- A child running one build strategy (forked below) ----
 if (flag('child')) {
-  const chain = expandChain(goals, catalog, { made, selections, uses, index, belt: logistics.belt });
+  const chain = expandChain(goals, catalog, { made, selections, uses, exports, voids, index, belt: logistics.belt });
   const run = search(chain.entries, catalog, logistics, { seed, deadline: Date.now() + budgetMs, site, strategy: opt('strategy') });
   let step;
   for (step = run.next(); !step.done; step = run.next()) process.send({ type: 'best', block: step.value.block, score: step.value.score, tried: step.value.tried });
@@ -109,7 +109,7 @@ if (opt('profile-slow')) {
   }).on('error', e => console.error('profiler:', e.message)).unref();
 }
 
-const plan = () => planner(goals, catalog, logistics, { made, selections, uses, index, site });
+const plan = () => planner(goals, catalog, logistics, { made, selections, uses, exports, voids, index, site });
 let mode = opt('mode', 'auto');
 let upTo = flag('upTo');
 if (mode === 'auto') {
@@ -144,7 +144,7 @@ if (mode === 'attempt') {
   const total = opt('total') ? Number(opt('total')) * 1000 : Infinity;
   const parallel = Number(opt('parallel', 1));
   const generator = maximize(goals, catalog, logistics, {
-    made, selections, uses, index, upTo, site, budgetMs, seed, parallel,
+    made, selections, uses, exports, voids, index, upTo, site, budgetMs, seed, parallel,
     ...(flag('no-annexes') ? { annexes: false } : {}), ...(flag('no-bands') ? { bands: false } : {}), ...(flag('no-giving') ? { giving: false } : {}), ...(flag('no-starving') ? { starving: false } : {}),
   });
   // (Tries at once: each in a worker thread, ADR 0060.)

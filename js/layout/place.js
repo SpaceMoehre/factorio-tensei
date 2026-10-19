@@ -80,9 +80,11 @@ export function placeBlocks(ctx, prepared, params = {}) {
       toY: blocks[to.inst.step].at.get(to.inst.index).y + entryY(to),
     });
   }
-  for (const route of routes.filter(r => r.kind === 'pipe')) {
+  // (A fluid fed back into a step feeding it: no link; what tops it up, as one to its consumers,
+  // ADR 0062.)
+  for (const route of routes.filter(r => r.kind === 'pipe' && !r.fedBack)) {
     // (A Supplied Item's pipe: as one to the consumers of the pipe it joins.)
-    const into = route.into !== undefined ? routes[route.into] : null;
+    const into = route.into !== undefined ? routes[route.into] : route.valve?.mode === 'top-up' ? routes[route.valve.on] : null;
     for (const stub of route.stubs.filter(st => !st.inst.detached)) {
       const at = blocks[stub.inst.step].at.get(stub.inst.index).y + stub.y - stub.inst.module.area.y;
       if (route.source === 'side-input' && stub.side === 'W') blocks[stub.inst.step].entries.push(at);

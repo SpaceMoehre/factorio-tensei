@@ -191,7 +191,14 @@ export function routeLink(grid, spec, names) {
 // it finds a way within a short search; a sink's, joined, does not go on to the east edge (theirs
 // reaches it).
 // names: { pipe, underground, reach }
+// valve (ADR 0062): a pipe through a valve onto pipes routed before it, { name, mode ('top-up':
+// into them, 'overflow': out of them), input, output (the valve's sides facing north, catalog
+// valves), pipes (theirs) }: its tree reaches a valve standing beside one of them, from the west
+// edge (source), towards the east edge (sink) or a void, or from its machines.
+// void (ADR 0062): the building destroying the fluid the tree takes to it instead of the east
+// edge (a catalog building: Py's sinkhole, gas vent).
 export function routePipe(grid, spec, names) {
+  if (!spec.terminals.length) return routeLoose(grid, spec, names);
   const [[x0, y0, out0]] = spec.terminals;
   let failure = new RoutingError(`${spec.fluid}: connection at ${x0},${y0} is blocked`);
   for (const seed of seeds(grid, spec, names, x0, y0, out0)) {
@@ -246,12 +253,128 @@ function growTree(grid, spec, names, seedPieces) {
     if (!leg) throw new RoutingError(`${spec.fluid}: cannot connect ${x},${y}`);
     commit(leg);
   }
+  if (spec.valve) {
+    const spots = valveSpots(grid, spec);
+    const leg = legOff(grid, spots.map(sp => ({ x: sp.b.x, y: sp.b.y, a: sp.d, sp })), toTree.isGoal, toTree.heuristic, moves, sp => [sp.piece]);
+    if (!leg) throw new RoutingError(`${spec.fluid}: no room for its valve`);
+    commit(leg);
+  }
   if (spec.sink && !joined) {
-    const leg = search(grid, edgeStarts(grid, grid.area.x + grid.area.w - 1, W), toTree.isGoal, toTree.heuristic, moves);
-    if (!leg) throw new RoutingError(`${spec.fluid}: no path to the east edge`);
+    const voids = spec.void ? voidStarts(grid, spec) : null;
+    const leg = voids ? legOff(grid, voids, toTree.isGoal, toTree.heuristic, moves, sp => [sp.piece])
+      : search(grid, edgeStarts(grid, grid.area.x + grid.area.w - 1, W), toTree.isGoal, toTree.heuristic, moves);
+    if (!leg) throw new RoutingError(`${spec.fluid}: no path to ${voids ? `a ${spec.void.name}` : 'the east edge'}`);
     commit(leg);
   }
   return pieces;
+}
+
+// A leg from one of `starts` (each with what stands at it, `sp`: a valve or void beside it) to
+// the goal, `extra(sp)` the entities its start brings: none of them where the leg runs (else that
+// start is left out, a few times).
+function legOff(grid, starts, isGoal, heuristic, moves, extra) {
+  let left = starts;
+  for (let tries = 0; tries < 6 && left.length; tries++) {
+    const leg = search(grid, left, isGoal, heuristic, moves);
+    if (!leg) return null;
+    const tiles = new Set(leg.pieces.map(p => key(p.x, p.y)));
+    const first = leg.pieces[0];
+    const from = left.filter(st => st.x === first.x && st.y === first.y);
+    const fits = from.find(st => extra(st.sp).every(e => !coversAny(e, tiles)));
+    if (fits) return { ...leg, pieces: [...leg.pieces, ...extra(fits.sp)] };
+    left = left.filter(st => !from.includes(st));
+  }
+  return null;
+}
+
+const coversAny = (e, tiles) => {
+  for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) if (tiles.has(key(e.x + dx, e.y + dy))) return true;
+  return false;
+};
+
+// A valve route with no machines of its own (ADR 0062): from the west edge through its valve into
+// the pipes it tops up, or from the pipes it lets the spare off of through its valve, to the east
+// edge or a void.
+function routeLoose(grid, spec, names) {
+  if (!spec.valve) throw new RoutingError(`${spec.fluid}: no stub to join`);
+  const pieces = [];
+  const moves = pipeMoves(grid, spec, names, new Set());
+  const spots = valveSpots(grid, spec);
+  if (!spots.length) throw new RoutingError(`${spec.fluid}: no room for its valve`);
+  const at = new Map(spots.map(sp => [`${sp.v.x},${sp.v.y},${opposite(sp.d)}`, sp]));
+  const field = distanceField(grid.area, new Set(spots.map(sp => key(sp.v.x, sp.v.y))));
+  const isGoal = st => at.has(`${st.x},${st.y},${st.a}`);
+  /** @type {any[]} */
+  const starts = spec.source ? edgeStarts(grid, grid.area.x, E) : spec.void ? voidStarts(grid, spec) : edgeStarts(grid, grid.area.x + grid.area.w - 1, W);
+  // (Neither its valve nor a void on the leg.)
+  let left = starts;
+  for (let tries = 0; tries < 6; tries++) {
+    const leg = search(grid, left, isGoal, field, moves);
+    if (!leg) break;
+    const tiles = new Set(leg.pieces.map(p => key(p.x, p.y)));
+    const sp = at.get(`${leg.state.x},${leg.state.y},${leg.state.a}`);
+    const first = leg.pieces[0];
+    const from = left.filter(st => st.x === first.x && st.y === first.y);
+    const end = spec.void ? from.find(st => !coversAny(st.sp.piece, tiles) && !coversAny(st.sp.piece, new Set([key(sp.v.x, sp.v.y)]))) : from[0];
+    if (!end || tiles.has(key(sp.v.x, sp.v.y))) {
+      left = left.filter(st => !from.includes(st));
+      continue;
+    }
+    commitLeg(grid, spec, names.underground, { pieces: [...leg.pieces, sp.piece, ...(end.sp ? [end.sp.piece] : [])] }, pieces);
+    return pieces;
+  }
+  throw new RoutingError(`${spec.fluid}: no path ${spec.source ? 'from the west edge to its valve' : `from its valve to ${spec.void ? `a ${spec.void.name}` : 'the east edge'}`}`);
+}
+
+// Where a valve may stand (ADR 0062): a free tile beside a pipe of those it meets, the tile beyond
+// it on the same line free for one of this route's: the valve facing so that its output (top-up)
+// or input (overflow) meets that pipe. Each { v (the valve's tile), b (the pipe's beyond it), d
+// (from v to b), piece }.
+function valveSpots(grid, spec) {
+  const { name, mode, input, output, pipes } = spec.valve;
+  const out = [];
+  for (const p of pipes) {
+    if (p.kind !== 'pipe') continue;
+    for (const d of [N, E, S, W]) {
+      const [dx, dy] = VEC[d];
+      const v = { x: p.x + dx, y: p.y + dy }, b = { x: v.x + dx, y: v.y + dy };
+      if (!grid.inBounds(v.x, v.y) || !grid.freeFor(v.x, v.y, spec.id) || grid.pipeBlocked.has(key(v.x, v.y)) || grid.fluidPorts.has(key(v.x, v.y))) continue;
+      if (!grid.inBounds(b.x, b.y) || !canPipe(grid, spec, b.x, b.y)) continue;
+      const direction = (opposite(d) - (mode === 'top-up' ? output : input) + 16) % 16;
+      // (flow: the way the fluid goes through it.)
+      out.push({ v, b, d, piece: { name, kind: 'valve', route: spec.id, fluid: spec.fluid, x: v.x, y: v.y, w: 1, h: 1, direction, mode, flow: (output + direction) % 16 } });
+    }
+  }
+  return out;
+}
+
+// Where the tree may end at a void (ADR 0062): every spot its building fits, turned each way, the
+// tile its connection meets free for a pipe: that tile, heading away from it (`sp.piece`: the void).
+function voidStarts(grid, spec) {
+  const building = spec.void;
+  const [c] = building.fluidBoxes[0].connections;
+  const out = [];
+  for (const turn of [N, E, S, W]) {
+    const across = turn === E || turn === W;
+    const w = across ? building.size.h : building.size.w, h = across ? building.size.w : building.size.h;
+    let [rx, ry] = [c.x, c.y];
+    for (let k = 0; k < turn / 4; k++) [rx, ry] = [-ry, rx];
+    const dir = (c.direction + turn) % 16;
+    const { x: ax, y: ay, w: aw, h: ah } = grid.area;
+    for (let y = ay; y + h <= ay + ah; y++) {
+      for (let x = ax; x + w <= ax + aw; x++) {
+        let free = true;
+        for (let dx = 0; dx < w && free; dx++) for (let dy = 0; dy < h && free; dy++) {
+          free = grid.freeFor(x + dx, y + dy, spec.id) && !grid.pipeBlocked.has(key(x + dx, y + dy)) && !grid.fluidPorts.has(key(x + dx, y + dy));
+        }
+        if (!free) continue;
+        const qx = Math.floor(x + w / 2 + rx + VEC[dir][0]), qy = Math.floor(y + h / 2 + ry + VEC[dir][1]);
+        if (!grid.inBounds(qx, qy) || !canPipe(grid, spec, qx, qy)) continue;
+        out.push({ x: qx, y: qy, a: dir, sp: { piece: { name: building.name, kind: 'void', route: spec.id, fluid: spec.fluid, x, y, w, h, direction: turn } } });
+      }
+    }
+  }
+  return out;
 }
 
 // Ways to start the tree at its first machine connection: a pipe there if the pipe could

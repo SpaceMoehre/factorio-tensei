@@ -31,6 +31,10 @@ export function buildFlows(plan) {
     state[c] = 2;
   };
   plan.forEach((_, i) => state[i] || walk(i));
+  // (A fluid fed back through valves closes its loop in the block, ADR 0062: an Internal Path, but
+  // no step of the Dependency Order.)
+  const fedBack = new Set([...closing].filter(e => e.type === 'fluid' && plan[e.from].overflow?.includes(e.item)));
+  for (const e of fedBack) closing.delete(e);
   // A byproduct taken by a Sub-Block that takes nothing else off its producer's belt, while that
   // belt goes on to others with what they take: tapped off it right after the producers (a
   // filter splitter, as a Recipe Loop's feedback is), not riding on through them. Its surplus
@@ -50,6 +54,11 @@ export function buildFlows(plan) {
     const o = sb.outputs.find(o => o.name === item);
     return o && internal.some(e => e.from === into && e.item === item) ? [{ from, into, item, type: o.type, rate: o.rate }] : [];
   }));
+  // A fluid fed back (ADR 0062): what makes up the rest (a Sub-Block's, or the train's) comes into
+  // its producer's pipe through a top-up valve (`valve`).
+  plan.forEach((sb, into) => {
+    for (const [item, { from, rate }] of Object.entries(sb.topUp ?? {})) joined.push({ from, into, item, type: 'fluid', rate, valve: true });
+  });
   const sideInput = [];
   const sideOutput = [];
   // An input no Sub-Block makes arrives by train, and a fluid a loop takes back.
@@ -70,8 +79,8 @@ export function buildFlows(plan) {
   // (A Supplied Item's Use before the consumers of the Sub-Block it joins, where that makes no
   // cycle: its belt joins theirs before them.)
   const reaches = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a) && internal.some(e => e.from === a && reaches(e.to, b, seen)));
-  const ahead = joined.flatMap(j => internal.filter(e => e.from === j.into && e.item === j.item && !reaches(e.to, j.from)).map(e => ({ from: j.from, to: e.to })));
-  return { order: dependencyOrder(plan.length, [...internal, ...ahead]), internal, feedback, joined, sideInput, sideOutput };
+  const ahead = joined.filter(j => typeof j.from === 'number').flatMap(j => internal.filter(e => e.from === j.into && e.item === j.item && !reaches(e.to, j.from)).map(e => ({ from: j.from, to: e.to })));
+  return { order: dependencyOrder(plan.length, [...internal.filter(e => !fedBack.has(e)), ...ahead]), fedBack: [...fedBack], internal, feedback, joined, sideInput, sideOutput };
 }
 
 // What Byproduct Uses' Supplied Items bring a Sub-Block's route of an item.
