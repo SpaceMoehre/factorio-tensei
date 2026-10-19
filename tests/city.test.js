@@ -270,6 +270,28 @@ test('Maximize finds a higher rate that fits, each layout found valid, inside an
   assert.equal(events[1].machines, Math.max(1, events[0].machines));
 });
 
+// An Annex's belts of what the train brings come off the block's on a splitter (ADR 0061): fewer
+// belts from the train than items its Sub-Blocks take from there, every layout valid.
+test("Annexes' belts from the train fed from the block's: one belt from the west edge for both", () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 40, h: 30 }, fixtures: [{ name: 'roboport', kind: 'fixture', number: 1, x: 18, y: 13, w: 4, h: 4 }] }, 1);
+  const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
+  const run = maximize([{ item: 'electronic-circuit', rate: 60 }], catalog, logistics, { made: ['copper-cable'], selections, site, maxCandidates: 12, budgetMs: 120000 });
+  let block = null;
+  for (let step = run.next(); !step.done; step = run.next()) {
+    const value = /** @type {any} */ (step.value);
+    if (value.type !== 'best') continue;
+    assertValid(value.block, catalog, logistics);
+    block = value.block;
+  }
+  assert.ok(block.subBlocks.filter(sb => sb.item === 'electronic-circuit').length > 1, 'no Annex');
+  const belts = block.routes.filter(r => r.kind === 'belt' && r.source === 'side-input');
+  // (The Annex's Sub-Blocks from its electronic circuits on; the trunk the first layout's.)
+  const annex = block.subBlocks.filter(sb => sb.item === 'electronic-circuit')[1].index;
+  const shared = belts.filter(r => r.fedBy !== undefined && r.consumers.every(i => i >= annex) && block.routes[r.fedBy].consumers.every(i => i < annex));
+  assert.ok(shared.length > 0, 'every Annex belt from the west edge');
+  assert.equal(simulate(block).starvation.length, 0);
+});
+
 // Tries at once (ADR 0060): maximize hands its tries out ('start', 'wait', 'cancel'), here to a
 // pool run in turn on this thread, finishing in the order they started. The same block fits as
 // many machines as one try at a time finds, every fit valid and higher than the last.

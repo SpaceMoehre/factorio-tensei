@@ -2,12 +2,14 @@ import { wirePairs } from './layout/wires.js';
 import { prunePoles } from './layout/poles.js';
 import { VEC, key } from './layout/grid.js';
 import { drawnFrom } from './layout/validity.js';
+import { shareSideBelts } from './layout/compact.js';
 
 // Annexes (CONTEXT.md): where a City Block's layout leaves room the chain no longer grows into, a
 // second Compound Block of the same chain, smaller, stands in it: each of its Sub-Blocks a Sub-Block
 // of its own, linked only to its own, its Side Inputs from the west edge and its Side Output to the
 // east edge as the first one's. It is laid out in the City Block with everything the layout before
-// it built as Fixtures, its poles joining theirs.
+// it built as Fixtures, its poles joining theirs; its belts from the train, where it can, off the
+// layout's belts of the same item (shareSideBelts, ADR 0061).
 
 // The City Block an Annex is laid out in: `site` with every entity of `block` a Fixture (its
 // poles as poles; its belts and pipes as what they are, on routes of their own, so no belt of the
@@ -183,14 +185,16 @@ export function annexed(block, annex, site, catalog, logistics) {
     ...block.subBlocks,
     ...annex.subBlocks.map(s => ({ ...s, index: sb(s.index), inserters: s.inserters?.map(x => ({ ...x, route: route(x.route) })) })),
   ];
+  // (Two layouts as one: no Sub-Block of it is moved, edit.js.)
+  const { edit, ...rest } = block;
+  // (The Annex's belts from the train fed from the block's where one carries both, ADR 0061.)
+  const joined = shareSideBelts({ ...rest, subBlocks, entities, routes, site }, catalog, logistics, block.routes.length);
   let x = Infinity, y = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const e of entities) {
+  for (const e of joined.entities) {
     x = Math.min(x, e.x); y = Math.min(y, e.y);
     x1 = Math.max(x1, e.x + e.w); y1 = Math.max(y1, e.y + e.h);
   }
-  // (Two layouts as one: no Sub-Block of it is moved, edit.js.)
-  const { edit, ...rest } = block;
-  return { ...rest, subBlocks, entities, routes, bounds: { x, y, w: x1 - x, h: y1 - y }, site, wires: wirePairs(entities, catalog, site.fixtures) };
+  return { ...joined, bounds: { x, y, w: x1 - x, h: y1 - y }, wires: wirePairs(joined.entities, catalog, site.fixtures) };
 }
 
 // What an Annex's Fixtures other than poles are called, and their routes' ids begin with.

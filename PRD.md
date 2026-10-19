@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v49: An Annex's belts from the train come off the block's (implemented)
+Where v49 differs from v48, v49 wins.
+- **One belt from the train for both:** an Annex's belt of an item the train brings, where the first layout's belt of it carries it alone with room for both, comes off that belt through a splitter rather than from the west edge (ADR 0061). The room its own belt took is left for more Annexes.
+
 ## v48: Tries at once (implemented)
 Where v48 differs from v47, v48 wins.
 - **Tries at once:** Maximize runs several tries side by side, a worker each: as many as the machine has cores but one, and no more than one per gigabyte of its memory. Beside the try the bounds call for come the ones they would call for next were the tries under way not to fit, or were the fewest of them to fit; each outcome closes the bounds as it comes, and a try that can no longer tell anything is stopped. Annexes, Giving Way, the tries sorting byproducts out and those that may starve run their tries at once too; Bands' first look runs beside them. With 4 at once or more, Annexes run beside two first layouts (most machines; most machines and Annex room together), the more they make kept; with no Fixtures in the room, idle workers begin the Annexes while the last tries for more machines run (ADR 0060).
