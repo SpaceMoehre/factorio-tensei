@@ -22,7 +22,9 @@ const DRAWN = [
     .map(([colour, swatch]) => ({ name: `signal-${colour}`, swatch })),
   { name: 'signal-check', glyph: '✓' }, { name: 'signal-info', glyph: 'i' }, { name: 'signal-dot', glyph: '•' },
 ].map(v => ({ ...v, type: 'virtual' }));
-const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop that cannot feed itself (a fluid, or one taking more than it makes)' };
+const TRAIN_REASON = { import: 'by train', 'no recipe': 'by train — nothing makes it', cycle: 'by train — a recipe loop that cannot feed itself (a fluid, or one taking more than it makes)', temperature: 'by train — its step makes it at a temperature this step does not take' };
+// What a fluid by train must come at (ADR 0067): "at 500° or more", "at 100° or less", "at 250–500°".
+const atTemperature = t => (!t ? '' : t.min !== undefined && t.max !== undefined ? `, at ${t.min}–${t.max}°` : t.min !== undefined ? `, at ${t.min}° or more` : `, at ${t.max}° or less`);
 const $ = id => /** @type {any} */ (document.getElementById(id));
 
 const raw = await fetch('data/catalog.json').then(r => r.arrayBuffer());
@@ -435,7 +437,7 @@ function drawChain() {
   for (const entry of chain.entries) step(entry);
   if (chain.trainInputs.length) row('train-head', 'train-head', () => el('div', { className: 'train-head', textContent: 'By train' }));
   for (const input of chain.trainInputs) {
-    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason, input.topUp ?? null]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
+    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason, input.topUp ?? null, input.temperature ?? null]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
   }
   // (Each byproduct once, whichever steps make it.)
   const byproducts = new Map();
@@ -479,7 +481,10 @@ function stepRow(item, recipes, buildings, selection, overflow = []) {
 }
 
 // The building destroying a fluid, in words: "sinkhole", "gas vent" (Py's, its prefix dropped).
-const voidName = fluid => label(catalog.voids[fluid]).toLowerCase().replace(/^py /, '');
+// (Declared, not a const: the chain renders before this line runs where the saved state has fluids fed back.)
+function voidName(fluid) {
+  return label(catalog.voids[fluid]).toLowerCase().replace(/^py /, '');
+}
 
 // A checkbox putting `item` in the state's `list` or taking it out.
 function toggle(list, item, text, title) {
@@ -600,7 +605,7 @@ function trainRow(input) {
   make.hidden = input.reason !== 'import';
   return el('div', { className: 'step train' },
     el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: label(input.item), title: input.item }), el('span', { className: 'rate' }), make),
-    el('div', { className: 'hint', textContent: input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve` : TRAIN_REASON[input.reason] }));
+    el('div', { className: 'hint', textContent: (input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve` : TRAIN_REASON[input.reason] ?? 'by train') + atTemperature(input.temperature) }));
 }
 
 // An item's icon from sprites/ (only its first mipmap is shown), or an empty square.

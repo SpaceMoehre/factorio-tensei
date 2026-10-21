@@ -349,8 +349,16 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   }
   if (!rates || rates.some(r => !Number.isFinite(r) || r < 0)) return null;
   keys.forEach((key, t) => {
-    for (const { name, amount } of ingredientsOf(key)) {
-      if (stepOf(key).byTrain.has(name)) trainInputs.get(name).rate += amount * rates[t] / perCraft[t];
+    for (const ingredient of ingredientsOf(key)) {
+      const { name, amount } = ingredient;
+      if (!stepOf(key).byTrain.has(name)) continue;
+      const input = trainInputs.get(name);
+      input.rate += amount * rates[t] / perCraft[t];
+      // (What it must come at for those taking it, ADR 0067.)
+      if (!ranged(ingredient)) continue;
+      const min = Math.max(input.temperature?.min ?? -Infinity, ingredient.minTemperature ?? -Infinity);
+      const max = Math.min(input.temperature?.max ?? Infinity, ingredient.maxTemperature ?? Infinity);
+      input.temperature = { ...(min > -Infinity ? { min } : {}), ...(max < Infinity ? { max } : {}) };
     }
   });
   // Recycled Byproducts: an ingredient that would come by train though a step makes at least as

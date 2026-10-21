@@ -80,6 +80,9 @@ test('Py hot air: coke oven gas round its loop of temperatures, every stone bric
   assert.equal(chain.entries[reheat].goal.from['coke-oven-gas'], warm);
   assert.equal(chain.entries[warmer].goal.from?.['coke-oven-gas'], undefined, 'the warmer bricks take the heat exchangers\' gas');
   assert.ok(Math.abs(chain.entries[reheat].goal.rate - 8080) < 1, `${chain.entries[reheat].goal.rate}`);
+  // (What comes by train comes at what its takers take: the gas topping up 100° at most, the hot
+  // molten salt 950° at least.)
+  assert.deepEqual(Object.fromEntries(chain.trainInputs.map(t => [t.item, t.temperature])), { 'coke-oven-gas': { max: 100 }, 'hot-molten-salt': { min: 950 } });
   const ctx = context(chain.entries, shipped, py);
   const heats = ctx.routes.filter(r => r.kind === 'pipe' && r.fluid === 'coke-oven-gas' && typeof r.source === 'number').map(r => [ctx.plan[r.source].recipe, r.temperature]);
   assert.deepEqual(Object.fromEntries(heats), { 'warmer-stone-brick-1': 250, 'warm-stone-brick-1': 100, 'reheat-coke-gas': 500 });

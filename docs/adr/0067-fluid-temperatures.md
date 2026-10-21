@@ -31,4 +31,4 @@ Tests: Py hot air's gas round its loop (500° to the warmer bricks, 250° to the
 
 Still:
 - A fluid two steps make at temperatures a taker both takes goes from one of them, as before; mixing them in one pipe is not planned.
-- Where the step making a fluid makes it at a temperature a taker does not take, and no other step does, it comes by train at its default temperature, which that taker may not take either: the chain does not say so.
+- A fluid by train carries the temperatures its takers take (`temperature`: { min, max }), which the page shows ("by train, at 950° or more"); the layout does not check what the train brings.
