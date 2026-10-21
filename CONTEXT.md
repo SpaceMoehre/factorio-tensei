@@ -57,11 +57,11 @@ What a Byproduct Use makes of an item a step of the chain makes: it joins that s
 _Avoid_: feeding a consumer from two belts (one belt into it, the Use's joining it)
 
 **Fuel**:
-The item a burner machine burns, treated as one more input of its Sub-Block, at the rate its power draw requires. Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item.
+The item a burner machine burns, treated as one more ingredient of its recipe, at the rate its power draw requires: made in the block where the user makes it (the chain sizing its step for it), else by train (ADR 0063). Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item.
 _Avoid_: fuel for inserters (burner inserters are never used)
 
 **Liquid Fuel**:
-The fluid a machine burning one burns (Py's glassworks and smelters): one more fluid input of its Sub-Block, at the rate its power draw requires, by train on a pipe of its own into its energy source's box. The user's choice, unless the machine burns one fluid only; chosen only where a machine of the chain burns a fluid.
+The fluid a machine burning one burns (Py's glassworks and smelters): one more fluid ingredient of its recipe, at the rate its power draw requires, made in the block where the user makes it, else by train, on a pipe of its own into its energy source's box. The user's choice, unless the machine burns one fluid only; chosen only where a machine of the chain burns a fluid.
 
 **Joined Through**:
 Machines of a row standing against each other whose box for a fluid has connections on their west and east sides that let it through both ways: their boxes join without a pipe, and the row takes the fluid by one connection, east of its last machine. Machines whose west and east connections carry other fluids (Py's agitators) keep a column between them instead: two pipes side by side would join (ADR 0053).

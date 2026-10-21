@@ -148,3 +148,26 @@ test('a Byproduct Use takes all of its step\'s byproduct, its products leaving b
   assert.equal(without.entries.length, 1);
   assert.deepEqual(without.byproducts.map(b => [b.item, b.rate]), [['iron-slime', 600]]);
 });
+
+// Py's BOF burns coal making red-hot coke from coal: where the chain makes the coal, it makes the
+// coal the BOFs burn too (a Use burning the coal it takes counts it in what it takes), so every
+// Sub-Block's coal is made. Before, the chain made only the recipe's coal and every layout
+// starved 9/min (ADR 0063).
+test('a Fuel item the chain makes: made for the machines burning it too', async () => {
+  const { planSubBlocks } = await import('../js/plan.js');
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const logistics = { fuel: 'coal', liquidFuel: 'methane' };
+  const made = ['redhot-coke', 'coal', 'coarse-coal', 'crushed-coal', 'pressured-air', 'steam', 'water'];
+  const selections = { coke: { recipe: 'quench-redcoke' }, steam: { recipe: 'electric-boiler-water-to-steam' }, water: { recipe: 'offshore-water' } };
+  const uses = [{ item: 'coal', recipe: 'redhot-coke' }];
+  const chainOf = (/** @type {any} */ options) => expandChain([{ item: 'coke', rate: 60 }], shipped, { made, selections, uses, ...options });
+  const coalOf = (/** @type {any} */ entries) => {
+    const plan = planSubBlocks(entries, shipped, logistics);
+    const made = plan.filter(sb => !sb.use).flatMap(sb => sb.outputs).filter(o => o.name === 'coal').reduce((sum, o) => sum + o.rate, 0);
+    return { made, taken: plan.flatMap(sb => sb.inputs).filter(i => i.name === 'coal').reduce((sum, i) => sum + i.rate, 0) };
+  };
+  const before = coalOf(chainOf({}).entries);
+  assert.ok(before.taken > before.made + 8);
+  const { made: coal, taken } = coalOf(chainOf({ logistics }).entries);
+  assert.ok(Math.abs(coal - taken) < 1e-6, `${coal} made, ${taken} taken`);
+});

@@ -6,6 +6,7 @@
 
 import { defaultModules, moduleOptions, machineEffect } from './modules.js';
 import { assignFluidBoxes } from './fluidboxes.js';
+import { fuelOf } from './plan.js';
 
 const MAX_STEPS = 60;
 
@@ -111,7 +112,7 @@ export function useKey(from, item) {
 
 // The chain, its Recipe Loops fed in the block (or with `loopsByTrain`, by train); null when they
 // cannot be (a loop takes more than it makes).
-function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {}, belt = null, exports = [], voids = [], valves = true }, loopsByTrain) {
+function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {}, belt = null, exports = [], voids = [], valves = true, logistics = null }, loopsByTrain) {
   const valved = valves && valvesOf(catalog) !== null;
   const makeHere = new Set([...made, ...goals.map(g => g.item)]);
   const steps = new Map();
@@ -144,6 +145,30 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       return count > 0 ? [{ name: m.name, count }] : [];
     });
   };
+  // A recipe's ingredients as its building takes them: with the fuel its machines burn a craft (the
+  // Fuel item, or the Liquid Fuel), an ingredient like any other, made in the block where the user
+  // makes it, else by train (plan.js adds it to the Sub-Block's inputs). (Py's BOF burns the coal
+  // its chain makes, ADR 0063.) Errors are plan.js's to report.
+  const withFuel = new Map();
+  const ingredientsFor = selection => {
+    const key = `${selection.recipe}|${selection.building}|${JSON.stringify(selection.modules ?? [])}`;
+    if (withFuel.has(key)) return withFuel.get(key);
+    const recipe = catalog.recipes[selection.recipe];
+    const building = catalog.buildings[selection.building];
+    let fuel = null;
+    try { fuel = logistics && fuelOf(building, catalog, logistics); } catch { fuel = null; }
+    let list = recipe.ingredients;
+    if (fuel) {
+      const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
+      const amount = fuel.perMinute * effect.consumption * recipe.time / (building.craftingSpeed * effect.speed * 60);
+      const type = building.energy === 'burner' ? 'item' : 'fluid';
+      list = list.some(i => i.name === fuel.name)
+        ? list.map(i => (i.name === fuel.name ? { ...i, amount: i.amount + amount } : i))
+        : [...list, { type, name: fuel.name, amount }];
+    }
+    withFuel.set(key, list);
+    return list;
+  };
   const toTrain = (item, reason) => {
     if (!trainInputs.has(item)) trainInputs.set(item, { item, rate: 0, reason });
     return true;
@@ -165,7 +190,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     tooMany();
     onPath.add(item);
     const byTrain = new Set();
-    for (const { name, type } of catalog.recipes[selection.recipe].ingredients) {
+    for (const { name, type } of ingredientsFor(selection)) {
       // A step on the way here (or this one) makes it: a Recipe Loop, fed in the block (a fluid
       // by train).
       if (name === item || onPath.has(name)) {
@@ -203,7 +228,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const others = recipe.products.filter(p => p.name !== u.item);
     const product = (others.find(p => p.name === u.recipe) ?? others[0] ?? recipe.products[0]).name;
     const byTrain = new Set();
-    for (const { name } of recipe.ingredients) if (name !== u.item && visit(name, false)) byTrain.add(name);
+    for (const { name } of ingredientsFor(selection)) if (name !== u.item && visit(name, false)) byTrain.add(name);
     used.set(key, { selection, byTrain, from, item: u.item, product, ...(from ? {} : { general: u }) });
     return true;
   };
@@ -227,6 +252,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   const at = new Map(keys.map((key, k) => [key, k]));
   const itemOf = key => used.get(key)?.product ?? key;
   const recipeOf = key => catalog.recipes[stepOf(key).selection.recipe];
+  const ingredientsOf = key => ingredientsFor(stepOf(key).selection);
   const productivity = keys.map(key => {
     const { selection } = stepOf(key);
     return 1 + machineEffect(catalog, selection.recipe, selection.building, selection.modules).productivity;
@@ -236,12 +262,12 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   const a = Array.from({ length: n }, () => new Float64Array(n));
   keys.forEach((key, t) => {
     const use = used.get(key);
-    for (const { name, amount } of recipeOf(key).ingredients) {
+    for (const { name, amount } of ingredientsOf(key)) {
       if (use && name === use.item) continue;
       if (!stepOf(key).byTrain.has(name) && steps.has(name)) a[at.get(name)][t] += amount / perCraft[t];
     }
     if (use) {
-      const takes = recipeOf(key).ingredients.filter(i => i.name === use.item).reduce((sum, i) => sum + i.amount, 0);
+      const takes = ingredientsOf(key).filter(i => i.name === use.item).reduce((sum, i) => sum + i.amount, 0);
       for (const source of sourcesOfUse(use)) {
         const from = at.get(source);
         a[t][from] += makes(source, use.item) / perCraft[from] / takes * perCraft[t];
@@ -273,7 +299,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     for (const key of order) {
       for (const p of recipeOf(key).products) {
         if (p.type !== 'fluid' || p.name === key || !steps.has(p.name) || goals.some(g => g.item === p.name) || takenBy(key, p.name)
-          || recipeOf(key).ingredients.some(i => i.name === p.name) || supplies.some(s => s.from === key && s.item === p.name)) continue;
+          || ingredientsOf(key).some(i => i.name === p.name) || supplies.some(s => s.from === key && s.item === p.name)) continue;
         supplies.push({ from: key, item: p.name, type: 'fluid', per: makes(key, p.name) / perCraft[at.get(key)], valve: true });
       }
     }
@@ -302,7 +328,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   }
   if (!rates || rates.some(r => !Number.isFinite(r) || r < 0)) return null;
   keys.forEach((key, t) => {
-    for (const { name, amount } of recipeOf(key).ingredients) {
+    for (const { name, amount } of ingredientsOf(key)) {
       if (stepOf(key).byTrain.has(name)) trainInputs.get(name).rate += amount * rates[t] / perCraft[t];
     }
   });
@@ -317,14 +343,14 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // (Through what a step takes of another's item, a Use of its byproduct, what a Use supplies.)
   const gives = a => new Set([itemOf(a), ...supplies.filter(s => s.from === a).map(s => s.item)]);
   const feeds = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a)
-    && keys.some(k => ((used.has(k) && sourcesOfUse(used.get(k)).includes(a)) || recipeOf(k).ingredients.some(i => gives(a).has(i.name) && !stepOf(k).byTrain.has(i.name))) && feeds(k, b, seen)));
+    && keys.some(k => ((used.has(k) && sourcesOfUse(used.get(k)).includes(a)) || ingredientsOf(k).some(i => gives(a).has(i.name) && !stepOf(k).byTrain.has(i.name))) && feeds(k, b, seen)));
   const recycled = [];
   const takesFrom = new Map();
   for (const input of [...trainInputs.values()]) {
     if (input.reason !== 'import') continue;
     const item = input.item;
     const takers = keys.filter(k => stepOf(k).byTrain.has(item));
-    const fluid = recipeOf(takers[0]).ingredients.find(i => i.name === item).type === 'fluid';
+    const fluid = ingredientsOf(takers[0]).find(i => i.name === item).type === 'fluid';
     // (A Byproduct Use's product too.)
     const makers = keys.filter(k => !takers.includes(k) && !takenBy(k, item) && recipeOf(k).products.some(p => p.name === item))
       .filter(k => !fluid || valved || !takers.some(t => feeds(t, k)))
@@ -356,7 +382,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // (A fluid fed back: the steps taking it take it from the step whose byproduct it is.)
   for (const s of supplies.filter(s => s.valve)) {
     for (const k of keys) {
-      if (k !== s.item && recipeOf(k).ingredients.some(i => i.name === s.item) && !stepOf(k).byTrain.has(s.item)) takesFrom.set(k, { ...takesFrom.get(k), [s.item]: s.from });
+      if (k !== s.item && ingredientsOf(k).some(i => i.name === s.item) && !stepOf(k).byTrain.has(s.item)) takesFrom.set(k, { ...takesFrom.get(k), [s.item]: s.from });
     }
   }
   // A step's ingredient that a step makes but comes by train (a loop's fluid, or a loop taking
@@ -416,7 +442,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     supplies: supplies.map(s => ({ from: s.from, item: s.item, into: s.item, rate: s.per * rates[at.get(s.from)], ...(s.valve ? { valve: true } : {}) })),
     trainInputs: [...trainInputs.values()],
     loops: loops.map(({ item, into }) => ({
-      item, into, rate: recipeOf(into).ingredients.filter(i => i.name === item).reduce((sum, i) => sum + i.amount, 0) * rates[at.get(into)] / perCraft[at.get(into)],
+      item, into, rate: ingredientsOf(into).filter(i => i.name === item).reduce((sum, i) => sum + i.amount, 0) * rates[at.get(into)] / perCraft[at.get(into)],
     })),
     recycled,
     // (What a Recycled Byproduct's step makes beyond what is taken back.)

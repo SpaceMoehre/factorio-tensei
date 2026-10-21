@@ -63,6 +63,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Tries at once: the bisection's next steps beside the try under way (were they not to fit; were the fewest to fit), stopped once they can tell nothing; Annexes, Giving Way, sorting and starving tries too; Annexes beside two first layouts (most machines; most machines and Annex room) | Titanium 1 h: 5601.56–8226.56 → 9750/min (three runs each), first fit 1224 → 51 s; molybdenum best at 560 → 158–210 s; kicalk 470.4 → 502.4/min (twice) | 0060 |
 | An Annex's belt of a train item off a splitter on the block's belt of it (after the Annex is laid out; cheapest way over what it frees) | Py coalbed gas: drill heads 2 belts from the train → 1, same rate; vanilla circuits 40 × 30: 810 → 900/min (the freed room held another Annex) | 0061 |
 | Fluids fed back through valves (top-up in, overflow out); the top-up's valve planned at its Sub-Block's connection before the pipe it tops up is routed; no placement link for the pipe fed back | Py coalbed gas: 2 offshore pumps → 1; seeds 2–4 7087.5–8287.5 → 7200–8325/min (one seed lower by search luck). Routed after, the fed-back pipe shut the pump's connection in: 11 extractors fit 1 seed in 6 | 0062 |
+| Fuel as an ingredient of the recipe in the chain (made where the user makes it, else by train) | Py coke 60/min: every layout starved 9 (the coal the BOFs burn unmade) → 60/min valid | 0063 |
 
 ## What failed, was reverted, or must not be done
 
@@ -122,6 +123,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A speed-up that shortens the search** (0059). A try's candidates got "as long as designing took" (0030); making designing 2–3× faster cut molybdenum oxide's 10 s tries short, and Maximize found 1 + 1 furnaces, not 3. When one phase gets faster, check what else is timed off it.
 - **Fallbacks tried on every failing candidate** (0058). Across every instrumented run, no fallback made a fit; titanium plate spent half its search on candidates going through them. Where a fallback provably cannot fit (without splitters a tapped byproduct comes by train), skip it.
 - **Throughput without backpressure** (0057). A layout whose tapped byproduct fell back to the train showed no Starvation and delivered its full rate; in the game the byproduct fills its belt and stops the producer. Model what cannot leave as well as what cannot arrive.
+
+- **Starvation equal in every candidate from build start** (0063), again (0055): a Sub-Block's input that the chain did not size its producer for. Compare each Sub-Block's `inputs` with the rates the chain's steps make (`planSubBlocks` on `expandChain`) before touching the search: plan.js added a burner's fuel the chain never counted.
 
 ## Rules every change keeps
 

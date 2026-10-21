@@ -744,7 +744,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     const more = { ...extra };
     for (const [item, rate] of Object.entries(spare)) more[item] = (more[item] ?? 0) + rate;
     for (;;) {
-      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, exports, voids, index, extra: more, belt: logistics.belt, valves: !plain });
+      const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, exports, voids, index, extra: more, belt: logistics.belt, logistics, valves: !plain });
       const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare + 1e-6);
       if (!short.length) return chain;
       for (const [fluid] of short) drawn.delete(fluid);

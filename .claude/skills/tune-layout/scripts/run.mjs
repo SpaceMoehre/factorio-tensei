@@ -87,7 +87,7 @@ if (city.on) {
 
 // ---- A child running one build strategy (forked below) ----
 if (flag('child')) {
-  const chain = expandChain(goals, catalog, { made, selections, uses, exports, voids, index, belt: logistics.belt });
+  const chain = expandChain(goals, catalog, { made, selections, uses, exports, voids, index, belt: logistics.belt, logistics });
   const run = search(chain.entries, catalog, logistics, { seed, deadline: Date.now() + budgetMs, site, strategy: opt('strategy') });
   let step;
   for (step = run.next(); !step.done; step = run.next()) process.send({ type: 'best', block: step.value.block, score: step.value.score, tried: step.value.tried });

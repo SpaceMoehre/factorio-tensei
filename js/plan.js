@@ -88,6 +88,16 @@ function liquidFuelOf(building, catalog, name) {
   return fuel;
 }
 
+// What a busy machine of the building burns a minute, besides its recipe: the Fuel item where it
+// burns items, its Liquid Fuel where it burns a fluid; null where it burns nothing (the chain
+// makes the fuel too where it is a step, chain.js).
+export function fuelOf(building, catalog, logistics = {}) {
+  if (building.energy === 'burner') return { name: logistics.fuel, perMinute: fuelPerMinute(building, catalog, logistics.fuel) };
+  if (building.energy !== 'fluid') return null;
+  const liquid = liquidFuelOf(building, catalog, logistics.liquidFuel);
+  return { name: liquid.name, perMinute: building.energyUsage / (liquid.fuelValue * building.effectivity) * 60 };
+}
+
 // A busy burner machine burns energy_usage / (fuel_value × effectivity) fuel items per second.
 function fuelPerMinute(building, catalog, fuelName) {
   const fuel = catalog.fuels?.[fuelName];

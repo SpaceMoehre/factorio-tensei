@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v51: Fuel as an ingredient (implemented)
+
+A machine's fuel (the Fuel item or Liquid Fuel) is one more ingredient of its recipe in the Production Chain: made in the block where the user makes it, the step making it sized for it, else by train, its Train Input counting it. Py coke at 60/min, whose BOFs burn the coal the chain makes: nothing fit (every layout starved 9/min) → 60/min (ADR 0063).
+
 ## v50: Fluids fed back through valves; leaving by train too; destroyed (implemented)
 Where v50 differs from v49, v50 wins.
 - **Fed-back Fluids:** a fluid a step makes besides its item that the chain also takes goes to the steps taking it first; what makes it makes only the rest, through a top-up valve, and its spare leaves through an overflow valve (ADR 0062). Py coalbed gas's water: one offshore pump, not two.

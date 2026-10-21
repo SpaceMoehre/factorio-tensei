@@ -375,7 +375,7 @@ function showFuels() {
 function drawChain() {
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   try {
-    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, belt: state.logistics.belt }) : null;
+    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, belt: state.logistics.belt, logistics: state.logistics }) : null;
   } catch (e) {
     chain = { error: e.message };
   }
