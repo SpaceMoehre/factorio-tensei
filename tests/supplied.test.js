@@ -136,13 +136,17 @@ test('a belt of two Supplied Items: one sent off, the rest joins the other belt'
   assert.ok(block.routes.some(r => r.fedBy === gravel.id && r.items[0].item === 'grade-3-ti' && r.joins !== undefined), 'the grade 3 sent off');
 });
 
-// Py coke at 1440/min: the BOFs of the coal Use take 1173/min of coal, more than a belt carries,
-// from the crushers and the screeners. Each producer's coal is tapped off its belt onto a belt of
-// its own, both belts past every BOF, rather than the screeners' joining the crushers' (one belt,
-// every layout starving), ADR 0064.
-test('a Use taking more than a belt of a byproduct from two producers: a belt tapped off each', async () => {
+// Py coke at 1440/min, One Item a Belt (ADR 0066): the crushers and the screeners put each product
+// on a belt of its own (their output inserters filtered to it), the BOFs of the coal Use taking
+// their 1173/min of coal, more than a belt carries, off the crushers' coal belt and the screeners'
+// (each its share, every BOF from either), the coal dust on belts of its own to the train; the
+// quenching towers' coke and coal dust, both for the train, sorted apart after them. Before, the
+// screeners' coal joined the crushers' belt, one belt, and every layout starved (ADR 0064).
+test('One Item a Belt: each product its own belt, the BOFs taking coal off two producers\' belts', async () => {
   const { context } = await import('../js/design.js');
   const { simulate } = await import('../js/sim.js');
+  const { riding } = await import('../js/layout/score.js');
+  const { encodeBlueprint } = await import('../js/blueprint.js');
   const coke = { ...base, fuel: 'coal', liquidFuel: 'methane', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
   const made = ['redhot-coke', 'coal', 'coarse-coal', 'crushed-coal', 'pressured-air', 'steam', 'water'];
   const selections = { coke: { recipe: 'quench-redcoke' }, steam: { recipe: 'electric-boiler-water-to-steam' }, water: { recipe: 'offshore-water' } };
@@ -150,13 +154,20 @@ test('a Use taking more than a belt of a byproduct from two producers: a belt ta
   const { entries } = expandChain([{ item: 'coke', rate: 1440 }], shipped, { made, selections, uses, logistics: coke });
   const ctx = context(entries, shipped, coke);
   const use = ctx.plan.findIndex(sb => sb.use);
-  const feeds = ctx.routes.filter(r => r.loop?.tapped && r.consumers[0] === use);
-  assert.deepEqual(feeds.map(r => ctx.plan[r.loop.from].item).sort(), ['coarse-coal', 'crushed-coal']);
-  assert.ok(feeds.every(r => r.items[0].rate <= 900));
+  const coal = ctx.routes.filter(r => r.kind === 'belt' && r.consumers.includes(use) && r.items.some(i => i.item === 'coal'));
+  assert.deepEqual(coal.map(r => ctx.plan[r.source].item).sort(), ['coarse-coal', 'crushed-coal']);
+  assert.ok(coal.every(r => r.portion && r.items.length === 1 && r.items[0].rate <= 900));
+  const crushers = ctx.plan.findIndex(sb => sb.item === 'crushed-coal');
+  assert.deepEqual(ctx.routes.filter(r => r.kind === 'belt' && r.source === crushers).map(r => r.product).sort(), ['coal', 'coal-dust', 'crushed-coal']);
   let found = null;
-  const run = search(entries, shipped, coke, { seed: 1, maxCandidates: 60, unsorted: true, perfect: true });
+  const run = search(entries, shipped, coke, { seed: 1, maxCandidates: 60, perfect: true });
   for (let step = run.next(); !step.done && !found; step = run.next()) if (step.value.score[0] === 0) found = step.value;
   assert.ok(found, 'no layout without starvation');
   assert.equal(simulate(found.block).starvation.length, 0);
+  assert.deepEqual(riding(found.block), []);
+  assert.ok(found.block.routes.some(r => r.filter === 'coal-dust' && ctx.plan[r.source].item === 'coke'), 'the towers\' coal dust sorted out');
   assertValid(found.block, shipped, coke);
+  const { json } = await encodeBlueprint(found.block, shipped);
+  const out = JSON.parse(json).blueprint.entities.filter(e => e.filters);
+  assert.ok(out.length && out.every(e => e.use_filters && e.filters.length === 1));
 });

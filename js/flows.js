@@ -7,8 +7,9 @@
 // makes of an item another Sub-Block makes joins that one's on its way to its consumers
 // (sb.joins: a Supplied Item; `joined`: { from, into, item, type, rate }), what else it makes
 // leaving by train.
-// belt: what a belt carries a minute (Infinity: any).
-export function buildFlows(plan, belt = Infinity) {
+// belt: what a belt carries a minute (Infinity: any). apart(i): whether Sub-Block i puts each solid
+// product on a belt of its own (One Item a Belt, ADR 0066).
+export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number) => boolean} */ (() => false)) {
   const producerOf = new Map(plan.flatMap((sb, i) => (sb.use ? [] : [[sb.item, i]])));
   const edges = [];
   // What a Sub-Block takes by train though another makes it (the chain's choice) is no link.
@@ -59,12 +60,19 @@ export function buildFlows(plan, belt = Infinity) {
     on.rate -= o.rate;
     return [{ from, to: on.to, item, type: o.type, rate: o.rate }];
   }));
-  const internal = edges.filter(e => !closing.has(e) && !tapped.some(t => t.from === e.from && t.to === e.to && t.item === e.item));
-  const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...[...tapped, ...own].map(e => ({ ...e, tapped: true }))];
+  // (A producer putting each product on a belt of its own: nothing to tap off, each a belt of
+  // that product into the step, ADR 0066.)
+  const off = e => !apart(e.from);
+  const sameAs = (a, b) => a.from === b.from && a.to === b.to && a.item === b.item;
+  const internal = [
+    ...edges.filter(e => !closing.has(e) && !tapped.some(t => off(t) && sameAs(t, e))).map(e => tapped.find(t => sameAs(t, e)) ?? e),
+    ...own.filter(e => !off(e)),
+  ];
+  const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...[...tapped, ...own].filter(off).map(e => ({ ...e, tapped: true }))];
   // (Only into an Internal Path: one of the item's consumers' takes it from there.)
   const joined = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
     const o = sb.outputs.find(o => o.name === item);
-    return o && internal.some(e => e.from === into && e.item === item) ? [{ from, into, item, type: o.type, rate: o.rate }] : [];
+    return o && internal.some(e => e.from === into && e.item === item) && !own.some(e => e.from === from && e.item === item) ? [{ from, into, item, type: o.type, rate: o.rate }] : [];
   }));
   // A fluid fed back (ADR 0062): what makes up the rest (a Sub-Block's, or the train's) comes into
   // its producer's pipe through a top-up valve (`valve`).

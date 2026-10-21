@@ -56,6 +56,10 @@ A Byproduct Use the user adds for an item rather than a step's byproduct, from t
 What a Byproduct Use makes of an item a step of the chain makes: it joins that step's on its way to the steps taking it, and the step makes that much less (Py titanium: the recrushers' grade 3 titanium joins the grade 3 screeners'). The Use's belt side-loads onto the step's belt ahead of the first consumer taking it — from a filter splitter after its producers where the rest goes on — and its pipe joins the step's network. A solid only where one lane of the chosen belt carries all the solids the Use makes; none where the step would then make none. Where its belt or pipe finds no way there, it goes to the train and that consumer starves (ADR 0041). The Use's belt is planned for it too, up to the splitter sending it off; a belt of two Supplied Items and nothing else sends the first off and ends side-loading the second (ADR 0055).
 _Avoid_: feeding a consumer from two belts (one belt into it, the Use's joining it)
 
+**One Item a Belt**:
+The user's rule: every belt carries one item. A Sub-Block whose byproduct would ride on its item's belt into a Sub-Block puts each product on a belt of its own, its output inserters filtered to it; a byproduct only the train takes is sorted out after the producers by a filter splitter. A step taking an item off several producers' belts takes its share off each. Off ("mixed outputs"), the products share one belt (ADR 0066).
+_Avoid_: sorting belts, filtered outputs
+
 **Fuel**:
 The item a burner machine burns, treated as one more ingredient of its recipe, at the rate its power draw requires: made in the block where the user makes it (the chain sizing its step for it), else by train (ADR 0063). Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item.
 _Avoid_: fuel for inserters (burner inserters are never used)

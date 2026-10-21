@@ -178,7 +178,19 @@ export function routeModule(core, opts) {
     // A machine's Output Drop moves its products like an inserter fixed on one lane.
     const inserters = [...entities.filter(e => e.kind === 'inserter'), ...machineDrops(machines, opts.lane ?? Infinity)];
     // How each machine's output splits between the belts it drops on, then the lanes.
-    const split = outputSplit(parts.map(p => listOf(p.key)), inserters, machines, opts.inserters, opts.made ?? Infinity);
+    // (Among the belts of one route: a machine putting each product on a belt of its own puts all
+    // of each on its belt, ADR 0066.)
+    const routeKey = p => p.routeIds.join('+');
+    const splits = new Map([...new Set(parts.map(routeKey))].map(rk => {
+      const mine = parts.map((p, k) => k).filter(k => routeKey(parts[k]) === rk);
+      const made = opts.output === undefined || parts[mine[0]].routeIds.includes(opts.output) ? opts.made ?? Infinity : Infinity;
+      const f = outputSplit(mine.map(k => listOf(parts[k].key)), inserters, machines, opts.inserters, made);
+      return [rk, { mine, f }];
+    }));
+    const split = (m, k) => {
+      const { mine, f } = splits.get(routeKey(parts[k]));
+      return f(m, mine.indexOf(k));
+    };
     parts.forEach((p, k) => chooseLanes(listOf(p.key), inserters, machines, opts.inserters, p.dir === W ? 'right' : 'left', {
       made: opts.full ?? opts.made ?? Infinity, lane: opts.lane ?? Infinity, share: m => split(m, k), offsets: opts.offsets ?? false,
     }));

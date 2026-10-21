@@ -38,6 +38,8 @@ export async function encodeBlueprint(block, catalog, city = null, { circuit = '
     // sends it (filter) to that side.
     if (e.priority) out.output_priority = e.priority;
     if (e.filter) out.filter = { name: e.filter };
+    // An output inserter of a machine putting each product on a belt of its own (ADR 0066).
+    if (e.filters) Object.assign(out, { use_filters: true, filters: e.filters.map((name, k) => ({ index: k + 1, name, quality: 'normal', comparator: '=' })) });
     // 90° inserters (Inserter_Config): vectors relative to the inserter, in world axes.
     if (e.vectors) {
       out.pickup_position = { ...e.vectors.pickup };

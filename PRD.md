@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v53: One Item a Belt (implemented)
+
+Every belt carries one item (the user's rule, ADR 0066): a Sub-Block whose byproduct would ride on its item's belt into a Sub-Block puts each product on a belt of its own (filtered output inserters); a byproduct only the train takes is sorted off after the producers by a filter splitter. A step taking an item off several producers' belts takes its share off each. On by default ("One item a belt"); off keeps the products on one belt. It costs rate where room is tight: Py coke 3352.5 → 2160/min (one chain of 6), molybdenum oxide 600 → 387.5/min.
+
 ## v52: A belt tapped off each producer; loops taking all (implemented)
 
 - **A belt tapped off each producer:** a step taking more of a byproduct than a belt carries from several steps takes it on a belt tapped off each (filter splitters after their producers), every machine from either, rather than one belt they all join. Copies in columns chain across them; a sorted-out path's belts carry what rides along. Py coke in 116²: 2520/min in three chains (3 + 3 + 1) → 2880/min in two (5 + 3) (ADR 0064).

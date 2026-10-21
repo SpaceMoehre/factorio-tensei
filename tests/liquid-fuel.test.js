@@ -14,6 +14,9 @@ import { rankOf } from '../js/layout/score.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe', liquidFuel: 'natural-gas' };
+// (Sorting byproducts out after their producers: kept for a machine with an Output Drop, or where
+// the user keeps a machine's products on one belt; else each has its own, ADR 0066.)
+const mixed = { ...logistics, mixedOutputs: true };
 const machinesOf = block => block.entities.filter(e => e.kind === 'building');
 
 // Py's glassworks burn natural gas through connections on their west and east sides that let it
@@ -63,7 +66,7 @@ test('a byproduct is sorted out after its producers: stone off the crushed quart
   const block = solve([
     { goal: { item: 'molten-glass', rate: 1800 }, selection: { recipe: 'glass-2', building: 'glassworks-mk01' } },
     { goal: { item: 'crushed-quartz', rate: 120 }, selection: { recipe: 'crushing-quartz', building: 'jaw-crusher' } },
-  ], shipped, logistics);
+  ], shipped, mixed);
   const quartz = block.routes.filter(r => r.kind === 'belt' && r.items.some(i => i.item === 'crushed-quartz'));
   const sorter = quartz.find(r => r.filter === 'stone');
   assert.ok(sorter, 'no belt sorts out the stone');
@@ -73,7 +76,7 @@ test('a byproduct is sorted out after its producers: stone off the crushed quart
   const splitter = sorter.pieces.find(p => p.kind === 'splitter');
   assert.deepEqual([splitter.filter, splitter.priority !== undefined], ['stone', true]);
   assert.equal(sorter.pieces.at(-1).x, block.bounds.x + block.bounds.w - 1);
-  assertValid(block, shipped, logistics);
+  assertValid(block, shipped, mixed);
 });
 
 // Turned (ADR 0045), the crushers keep the splitter sorting out their stone: it stands where their
@@ -85,9 +88,9 @@ test('a Sub-Block turned keeps the filter splitter sorting its byproduct out, tu
     { goal: { item: 'crushed-quartz', rate: 120 }, selection: { recipe: 'crushing-quartz', building: 'jaw-crusher' } },
   ];
   let block = null;
-  const run = search(entries, shipped, logistics, { seed: 1, maxCandidates: 8 });
+  const run = search(entries, shipped, mixed, { seed: 1, maxCandidates: 8 });
   for (let step = run.next(); !step.done; step = run.next()) block = step.value.block;
-  const ctx = context(block.edit.entries, shipped, logistics);
+  const ctx = context(block.edit.entries, shipped, mixed);
   const splitterOf = b => b.routes.find(r => r.filter === 'stone')?.pieces.find(p => p.kind === 'splitter');
   const before = splitterOf(block);
   assert.ok(before, 'sorted out before');
@@ -98,7 +101,7 @@ test('a Sub-Block turned keeps the filter splitter sorting its byproduct out, tu
     while (!next.done) next = run.next();
     const out = /** @type {any} */ (next.value);
     assert.ok(out.block, `${item} ${turns}: ${out.failure?.message}`);
-    assertValid(out.block, shipped, logistics);
+    assertValid(out.block, shipped, mixed);
     assert.equal(out.score[2], 0, `${item} ${turns}: no byproduct rides on`);
     const splitter = splitterOf(out.block);
     assert.ok(splitter, `${item} ${turns}: sorted out`);
@@ -132,7 +135,7 @@ test('byproduct pipes of one fluid join: blood from two Sub-Blocks to the east e
 test('a byproduct on more than one belt: each of the Internal Path\'s belts sorts it out, nothing starves', () => {
   const entries = expandChain([{ item: 'molybdenite-pulp', rate: 9000 }], shipped, { made: ['molybdenite-dust', 'crushed-molybdenite'], selections: {} }).entries;
   let best = null;
-  const run = search(entries, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 }, { seed: 1, maxCandidates: 4 });
+  const run = search(entries, shipped, { ...mixed, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 }, { seed: 1, maxCandidates: 4 });
   for (let step = run.next(); !step.done; step = run.next()) best = step.value;
   assert.ok(best, 'no layout');
   assert.equal(best.score[0], 0);
@@ -146,7 +149,7 @@ test('a byproduct on more than one belt: each of the Internal Path\'s belts sort
   // side-loading onto a lane with room, not a belt of its own each.
   const gravel = best.block.routes.filter(r => r.filter === 'gravel');
   assert.ok(gravel.length > 1 && gravel.filter(r => r.joins === undefined).length === 1, gravel.map(r => r.joins).join());
-  assertValid(best.block, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
+  assertValid(best.block, shipped, { ...mixed, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
 });
 
 // Py's hydrocyclones at 400/min of molybdenum oxide: 10 make 1200/min of concentrate for 7

@@ -1,7 +1,7 @@
 // Designs each Sub-Block on its own (bottom-up): candidate layouts of its machines and belts,
 // each built as a core and routed as a Module, ranked by Starvation, then Compactness.
 import { planSubBlocks } from './plan.js';
-import { buildFlows } from './flows.js';
+import { buildFlows, taken } from './flows.js';
 import { buildRoutes, coreLinks } from './routes.js';
 import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides, dropOf, oriented, orientationKey } from './layout/core.js';
 import { N, S } from './layout/grid.js';
@@ -39,8 +39,19 @@ export function context(entries, catalog, logistics, site = null) {
   }
   const plan = planSubBlocks(entries, catalog, logistics);
   const belt = catalog.belts[logistics.belt];
-  const flows = buildFlows(plan, belt.itemsPerSecond * 60);
-  const routes = buildRoutes(plan, flows, belt.itemsPerSecond * 60 / 2);
+  // One Item a Belt (the user's rule, ADR 0066): where a byproduct would ride on the item's belt
+  // into a Sub-Block (one taking it, not tapped off by a filter splitter after the producers; or
+  // the train's, past those taking the item), each machine's products on belts of their own, its
+  // output inserters filtered to them; not a machine putting them down itself (an Output Drop),
+  // nor where the user keeps them on one (`mixedOutputs`). (A byproduct only the train takes,
+  // with an item only the train takes, is sorted out after the producers: compose.js.)
+  const mixed = buildFlows(plan, belt.itemsPerSecond * 60);
+  const solidBy = i => plan[i].outputs.filter(o => o.type === 'item' && o.name !== plan[i].item && o.rate > 1e-9);
+  const apart = i => logistics.mixedOutputs !== true && !catalog.buildings[plan[i].building]?.drop && (
+    mixed.internal.some(e => e.from === i && e.type === 'item' && e.item !== plan[i].item)
+    || (mixed.internal.some(e => e.from === i && e.item === plan[i].item) && solidBy(i).some(o => taken(plan, mixed, i, o.name) < o.rate - 1e-6)));
+  const flows = buildFlows(plan, belt.itemsPerSecond * 60, apart);
+  const routes = buildRoutes(plan, flows, belt.itemsPerSecond * 60 / 2, apart);
   plan.forEach((sb, i) => { sb.headroom = spareSpeed(sb, i, routes, belt.itemsPerSecond * 30); });
   const env = {
     routes, inserters,
@@ -721,7 +732,7 @@ function copiesUnfed(ctx, index, kinds) {
   let short = 0;
   for (const route of ctx.routes) {
     if (route.kind !== 'belt' || route.consumers[0] !== index || !isInternal(route)) continue;
-    const each = route.items.reduce((sum, i) => sum + (sb.inputs.find(x => x.name === i.item)?.rate ?? 0), 0) / sb.count;
+    const each = route.items.reduce((sum, i) => sum + takenOff(route, sb, i.item), 0) / sb.count;
     const fed = Math.max(1, Math.floor(2 * route.items[0].capacity / each + 1e-9));
     let runs = 0;
     for (const k of kinds) {
@@ -742,7 +753,7 @@ function copiesUnfed(ctx, index, kinds) {
 // tapped off: Py's crushers' coal and coal dust with their crushed coal, ADR 0064).
 function pathWants(ctx, route, n) {
   const consumer = ctx.plan[route.consumers[0]];
-  const taken = route.items.reduce((sum, i) => sum + (consumer.inputs.find(x => x.name === i.item)?.rate ?? 0), 0);
+  const taken = route.items.reduce((sum, i) => sum + takenOff(route, consumer, i.item), 0);
   const rate = Math.max(taken, route.items.reduce((sum, i) => sum + i.rate, 0) * Math.min(1, taken / Math.max(1e-9, route.items.filter(i => consumer.inputs.some(x => x.name === i.item)).reduce((sum, i) => sum + i.rate, 0))));
   const cuts = exactCuts(Array(consumer.count).fill(1), n);
   if (!cuts) return Array(n).fill(rate / n);
@@ -750,6 +761,12 @@ function pathWants(ctx, route, n) {
 }
 
 const isInternal = route => typeof route.source === 'number' && route.consumers.length === 1 && (route.sink !== 'side-output' || !!route.sorted);
+// What a consumer takes of an item off a route: all of it, but its share where it takes it off
+// several producers' belts (`portion`, ADR 0066).
+const takenOff = (route, consumer, item) => {
+  const rate = consumer.inputs.find(x => x.name === item)?.rate ?? 0;
+  return route.portion ? Math.min(rate, route.items.find(i => i.item === item)?.rate ?? rate) : rate;
+};
 const outputRate = sb => sb.outputs.filter(o => o.type === 'item').reduce((sum, o) => sum + o.rate, 0);
 
 // Parts in `count` runs of neighbours with about equal machines each.
@@ -781,6 +798,8 @@ export function moduleOptions(ctx, links, margin, sb = null) {
     pole: catalog.poles[logistics.pole], inserters: catalog.inserters,
     electric: e => catalog.buildings[e.name].energy === 'electric',
     made: sb ? outputRate(sb) / sb.count : Infinity,
+    // (Its item's belt: the others, its other products', ADR 0066.)
+    output: links.output,
     full: sb ? outputRate(sb) / sb.count * (sb.headroom ?? 1) : Infinity,
     lane: ctx.env.laneCapacity, offsets: ctx.env.rightAngle,
   };
@@ -1082,13 +1101,15 @@ const sbHeight = (shape, rotation) => (rotation === 4 || rotation === 12 ? shape
 // share: sb is a Two-Way Copy's machines; its Internal Path out runs on as many belts as they
 // fill (pathShare).
 export function shapeOf(ctx, sb, index, links, rest = false, share = false) {
-  const belts = [...links.inputs, ...(links.output !== null ? [links.output] : [])].map(routeId => {
+  const belts = [...links.inputs, ...(links.output !== null ? [links.output] : []), ...(links.apart ?? [])].map(routeId => {
     const route = ctx.routes[routeId];
     const isOutput = routeId === links.output;
-    const items = routeItems(sb, route, isOutput);
+    // (Another of its products' belts, ADR 0066: as an input's, but of what it makes.)
+    const apart = !!links.apart?.includes(routeId);
+    const items = routeItems(sb, route, isOutput || apart);
     // (A byproduct sorted out of each of its belts leaves it an Internal Path.)
     const internal = isInternal(route);
-    const splittable = internal || (isOutput ? route.consumers.length === 0 : route.source === 'side-input' && route.consumers.length === 1);
+    const splittable = internal || (isOutput || apart ? route.consumers.length === 0 : route.source === 'side-input' && route.consumers.length === 1);
     // A single-item Side Input that may split can share parallel belts with another: one lane each.
     const perLane = !isOutput && splittable && route.source === 'side-input' && !route.loop && items.length === 1
       ? Math.floor(ctx.env.laneCapacity / (items[0].rate / sb.count) + 1e-9) : 0;
@@ -1202,7 +1223,7 @@ function pathBelts(ctx, route) {
   const rate = route.items.reduce((sum, i) => sum + i.rate, 0);
   // Each belt feeds a run of whole consumer machines: no more of them than one belt carries for.
   const belt = 2 * route.items[0].capacity;
-  const each = route.items.reduce((sum, i) => sum + (consumer.inputs.find(x => x.name === i.item)?.rate ?? 0), 0) / consumer.count;
+  const each = route.items.reduce((sum, i) => sum + takenOff(route, consumer, i.item), 0) / consumer.count;
   const fed = Math.max(1, Math.floor(belt / each + 1e-9));
   const need = Math.max(1, Math.ceil(rate / belt - 1e-9), Math.ceil(producer.count / outputBelt(ctx, producer) - 1e-9), Math.ceil(consumer.count / fed - 1e-9));
   // A consumer built only from copies takes its belts by whole copies, not machines: belts that

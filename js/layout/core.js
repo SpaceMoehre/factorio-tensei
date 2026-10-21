@@ -67,6 +67,8 @@ export class LayoutError extends Error {}
 // env: { routes, inserters: { short, long }, rightAngle, beltReach, pipeReach, laneCapacity, handSize }
 export function buildCore(sb, building, links, variant, env) {
   const belts = variant.belts.map(b => ({ ...b, routeIds: b.routeIds ?? [b.routeId] }));
+  // (The belt of its item, or of another product of it, ADR 0066.)
+  const outputOf = ids => ids.some(id => id === links.output || links.apart?.includes(id));
   const rowLength = Math.min(variant.rowLength ?? sb.count, sb.count);
   // Machines per row: rows of rowLength, the last taking the rest — or where the variant puts them.
   const counts = variant.counts ?? [...Array(Math.ceil(sb.count / rowLength)).keys()].map(r => Math.min(rowLength, sb.count - r * rowLength));
@@ -250,7 +252,7 @@ export function buildCore(sb, building, links, variant, env) {
     // row` tiles out, the machine's first tile `row` tiles in.
     const short = reach.long && env.rightAngle && spec.customVectors ? { pickup: a.depth - reach.row, insert: reach.row } : null;
     const rate = inserterRate(spec, reach.turn, env.handSize, short);
-    const isOutput = a.belt.routeIds.includes(links.output);
+    const isOutput = outputOf(a.belt.routeIds);
     const items = a.belt.routeIds.flatMap(id => routeItems(sb, env.routes[id], isOutput));
     // A Two-Way Output's belt row carries what the variant plans for its row (load), else an
     // equal share of the row's output.
@@ -392,7 +394,9 @@ export function buildCore(sb, building, links, variant, env) {
   // An inserter also carries what it moves, for its clock (clocks.js): into the machine, the
   // items of its belt, shared by the machine's inserters on that belt; out of it, the machine's
   // products, shared by all its output inserters (`sharing`).
-  const moving = (isOutput, items, sharing) => ({ role: isOutput ? 'output' : 'input', moves: items.map(i => i.name), sharing });
+  // (Out of a machine putting each product on a belt of its own, filtered to it, ADR 0066.)
+  const filtered = links.apart?.length > 0;
+  const moving = (isOutput, items, sharing) => ({ role: isOutput ? 'output' : 'input', moves: items.map(i => i.name), sharing, ...(isOutput && filtered ? { filters: items.map(i => i.name) } : {}) });
   // (What a belt tapped off one of several producers brings of what the machines take: its share,
   // routeItems, ADR 0064.)
   const portionOf = ({ isOutput, items }) => {
@@ -593,7 +597,12 @@ export function buildCore(sb, building, links, variant, env) {
   for (const part of parts) {
     for (const routeId of part.routeIds) {
       const route = env.routes[routeId];
-      const items = routeItems(sb, route, routeId === links.output);
+      const items = routeItems(sb, route, outputOf([routeId]));
+      // (Another product's belt: what its machines make of it, on the far lane.)
+      if (links.apart?.includes(routeId)) {
+        overload += Math.max(0, items.reduce((sum, i) => sum + i.rate, 0) * part.machines / sb.count - route.items[0].capacity * part.lanes);
+        continue;
+      }
       if (routeId === links.output) {
         if (internal) continue;
         // A row's Output Drops put up to a lane on its belt, its supporting inserters up to a
@@ -665,7 +674,7 @@ export function buildCore(sb, building, links, variant, env) {
   // inserters it needs for the machine's share (fewest first: fast before long-handed).
   function placeLine({ r, line }) {
     const id = belts.length + lines.indexOf(line);
-    const isOutput = line.routeIds.includes(links.output);
+    const isOutput = outputOf(line.routeIds);
     const items = line.routeIds.flatMap(routeId => routeItems(sb, env.routes[routeId], isOutput));
     const demand = items.reduce((sum, i) => sum + i.rate, 0) / sb.count;
     const y0 = machineY[r];
@@ -974,10 +983,11 @@ class Period {
 // (A belt tapped off one of several producers of an item brings its share of what the step takes,
 // ADR 0064.)
 export function routeItems(sb, route, isOutput) {
-  if (isOutput) return sb.outputs.filter(o => o.type === 'item');
+  // (A belt of one of its products: that product, ADR 0066.)
+  if (isOutput) return sb.outputs.filter(o => o.type === 'item' && (!route.product || o.name === route.product));
   const names = new Set(route.items.map(i => i.item));
   return sb.inputs.filter(i => names.has(i.name)).map(i => {
-    const share = route.loop?.tapped ? route.items.find(x => x.item === i.name).rate : Infinity;
+    const share = route.loop?.tapped || route.portion ? route.items.find(x => x.item === i.name).rate : Infinity;
     return share < i.rate - 1e-9 ? { ...i, rate: share } : i;
   });
 }

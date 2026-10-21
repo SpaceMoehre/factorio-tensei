@@ -617,7 +617,9 @@ test('Bands: Py vrauks-2 fits 52 paddocks, lines from producers past their Parts
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
   const site = siteOf(readCityBlock(blueprint, shipped), 4);
-  const settings = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
+  // (The cocoons' barrels on the cocoon belt, as before ADR 0066: on belts of their own the
+  // cocoon Parts fit no gaps.)
+  const settings = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1, mixedOutputs: true };
   const selections = {
     vrauks: { recipe: 'vrauks-2', building: 'vrauks-paddock-mk01', modules: [{ name: 'vrauks', count: 10 }] },
     cocoon: { recipe: 'vrauks-cocoon-2', building: 'rc-mk01', modules: [{ name: 'vrauks', count: 2 }] },
@@ -745,7 +747,7 @@ test('Layers weighs a bounded number of ways: Py titanium plate\'s 21 Sub-Blocks
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const { made, selections, uses } = JSON.parse(readFileSync(new URL('./fixtures/titanium-plate-uses.json', import.meta.url), 'utf8'));
   const site = siteOf({ area: { x: 0, y: 0, w: 236, h: 236 }, fixtures: [] }, 4);
-  const py = { belt: 'transport-belt', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', pole: 'medium-electric-pole', inserter: 'fast-inserter', longInserter: 'long-handed-inserter', fuel: 'coal', liquidFuel: 'natural-gas', rightAngle: true, handSize: 1 };
+  const py = { belt: 'transport-belt', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', pole: 'medium-electric-pole', inserter: 'fast-inserter', longInserter: 'long-handed-inserter', fuel: 'coal', liquidFuel: 'natural-gas', rightAngle: true, handSize: 1, mixedOutputs: true };
   const plan = planner([{ item: 'titanium-plate', rate: 60 }], shipped, py, { made, selections, uses, site });
   const started = Date.now();
   const { block, failure } = attempt(plan, 1, { site, budgetMs: 60000, unsorted: true });

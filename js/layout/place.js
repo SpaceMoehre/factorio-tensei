@@ -493,7 +493,7 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
   // Consumers first, so each Sub-Block's column follows from its consumers'.
   const order = [...steps].sort((a, b) => depth.get(a) - depth.get(b) || a - b);
   const feeds = new Map(steps.map(i => [i, [...new Set(links.filter(l => l.from === i && l.to !== i).map(l => l.to))]]));
-  const outputs = new Map(steps.map(i => [i, routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.slots.at(-1).inst.step === i).length]));
+  const outputs = new Map(steps.map(i => [i, routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.slots.at(-1)?.inst.step === i).length]));
   const col = new Map();
   // The columns in use, east to west, with their Sub-Blocks, widths, heights and crossing belts.
   const shape = cols => {
@@ -781,7 +781,8 @@ function placeApart(prepared, positions, blocks, moved, links, params, site) {
   }
   for (const route of routes.filter(r => r.kind === 'belt' && r.sink === 'side-output')) {
     const last = route.slots.at(-1);
-    if (last.inst.detached) continue;
+    // (A belt of what is sorted out off another's after its producers: that one's corridor, ADR 0066.)
+    if (!last || last.inst.detached) continue;
     const p = positions[last.inst.index];
     const exit = last.part.pieces.at(-1);
     const x = p.x + exit.x - last.inst.module.area.x + 1;

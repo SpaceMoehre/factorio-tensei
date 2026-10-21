@@ -269,7 +269,9 @@ export function compose(ctx, prepared, positions, layout) {
         tasks.push({ route, slot: k, ...flags(route, k) });
       });
       // (Or to its taps alone, where its feedback takes all it carries, ADR 0065.)
-      if ((route.sink === 'side-output' || route.supplyEnd || (route.taps && route.tapAt === route.slots.length && !layout.plain)) && !route.fanOut) tasks.push({ route, slot: route.slots.length, ...flags(route, route.slots.length) });
+      // (Not the rest of a belt to the train sorted out from it: routed with its splitter, ADR
+      // 0066.)
+      if ((route.sink === 'side-output' || route.supplyEnd || (route.taps && route.tapAt === route.slots.length && !layout.plain)) && !route.fanOut && !(route.fedFrom !== undefined && !route.slots.length)) tasks.push({ route, slot: route.slots.length, ...flags(route, route.slots.length) });
       // A Fan-out from the producers: their line, after their belt, and every consumer's belt.
       if (route.fanOut) tasks.push({ route, slot: route.slots.length, fanOut: route.fanOut });
     }
@@ -1230,6 +1232,12 @@ export function compose(ctx, prepared, positions, layout) {
                   // (To the east edge, or joining a belt that carries the same byproduct there.)
                   const { joins, offered } = joinsFor(trunk);
                   const away = (joins.size && joinedAway(grid, trunk, out, joins)) || routeLink(grid, { id: trunk.id, starts: [out], goal: 'east' }, belts);
+                  // (The rest to the train too, on a belt of its own, ADR 0066.)
+                  if (members.length === 1 && !members[0].slots.length) {
+                    const rest = routeLink(grid, { id: members[0].id, starts: [on], goal: 'east' }, belts);
+                    sortedAway(trunk, away, offered);
+                    return [[trunk.id, [...into, splitter, ...away]], [members[0].id, [splitter, ...rest]]];
+                  }
                   for (const order of lineOrders(members, on)) {
                     splitterOf.set(order, splitter);
                     const legs = routeFan(grid, order, { start: on, trunk: order.at(-1), fedBy: trunk.id, brought: brought([]), pool });
@@ -1589,7 +1597,8 @@ function groupRoutes(ctx, instances, laneCapacity) {
       return [...(stack[0]?.inst.columns > 1 ? stack : [...stack].reverse()), ...apart];
     });
     const consumers = base.consumers.flatMap(step => slotsOf(step, base.id));
-    const products = plan[base.source].outputs.filter(o => o.type === 'item');
+    // (A belt of one of its products: that product, ADR 0066.)
+    const products = plan[base.source].outputs.filter(o => o.type === 'item' && (!base.product || o.name === base.product));
     const total = products.reduce((sum, o) => sum + o.rate, 0);
     const production = slot => total * shareOf(slot);
     const perMachine = total / plan[base.source].count;
@@ -1597,7 +1606,9 @@ function groupRoutes(ctx, instances, laneCapacity) {
     // much less from the producers.)
     const supplied = (base.supplied ?? []).map(s => ({ ...s, slot: consumers.find(c => plan[c.inst.step].inputs.some(x => x.name === s.item)) })).filter(s => s.slot);
     if (supplied.length) suppliedAt.set(base.id, supplied);
-    const wants = run => Math.max(0, run.reduce((sum, s) => sum + base.items.reduce((t, i) => t + flowOf(s.inst.step, i.item, 'input') * shareOf(s), 0), 0)
+    // (A belt of one of several producers' of an item a step takes: its share of it, ADR 0066.)
+    const portionOf = step => (base.portion ? Math.min(1, base.items[0].rate / Math.max(1e-9, flowOf(step, base.items[0].item, 'input'))) : 1);
+    const wants = run => Math.max(0, run.reduce((sum, s) => sum + base.items.reduce((t, i) => t + flowOf(s.inst.step, i.item, 'input') * shareOf(s) * portionOf(s.inst.step), 0), 0)
       - supplied.filter(s => run.includes(s.slot)).reduce((sum, s) => sum + s.rate, 0));
     // Every producer machine of every copy, at its full rate (Path Flow).
     const full = perMachine * (plan[base.source].headroom ?? 1);
@@ -1634,6 +1645,14 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const left = route.items.filter(i => !taken.has(i.item));
       return left.length === 1 && left.length < route.items.length ? left[0].item : null;
     };
+    // The byproduct a belt to the train carries with the item, to sort out (its least, where it
+    // carries more than one), else null: none where a feedback or Supplied Item comes off it.
+    const trainByproduct = route => {
+      const by = route.items.filter(i => i.item !== plan[route.source].item && i.rate > 1e-9);
+      if (ctx.logistics.mixedOutputs === true || route.sink !== 'side-output' || route.items.filter(i => i.rate > 1e-9).length < 2 || !by.length || route.supplies) return null;
+      if (ctx.routes.some(r => r.loop?.from === route.source)) return null;
+      return by.reduce((a, b) => (b.rate < a.rate ? b : a)).item;
+    };
     // A Fan-out from the producers: into Parts of several Sub-Blocks, the producers chaining as one
     // run that leaves east, every consumer entered from the west, the run bringing all they take.
     const fansOut = route => ctx.chained !== 'all' && !ctx.chained?.has(route.id) && route.consumers.length > 1 && route.consumers.every(c => plan[c].part)
@@ -1668,6 +1687,28 @@ function groupRoutes(ctx, instances, laneCapacity) {
       }
       // Copies that cannot chain at all: a belt each.
       groups = (best?.option ?? producers.map(s => [s])).map(g => ({ producers: g, consumers: [] }));
+      // One item a belt (the user's rule, ADR 0066): a byproduct leaving with the item, sorted out
+      // right after each run of producers (`filter`) onto a belt of its own to the east edge, the
+      // rest going on on another (fed from it). Not where a feedback or Supplied Item is tapped
+      // or gathered off it.
+      const off = trainByproduct(base);
+      if (off && ctx.chained !== 'all' && !ctx.chained?.has(base.id)) {
+        for (const g of groups) {
+          const share = g.producers.reduce((sum, slot) => sum + production(slot), 0) / Math.max(1e-9, total);
+          const carried = laneFlow(g.producers, perMachine, laneCapacity)(0, g.producers.length);
+          const trunk = beltRoute(routes.length, base, [base.id], base.items.map(i => ({ ...i, rate: i.rate * share, supply: i.supply * share, capacity: carried, lane: 'out' })), g.producers, plan);
+          trunk.filter = off;
+          routes.push(trunk);
+          const rest = base.items.filter(i => i.item !== off).map(i => ({ ...i, rate: i.rate * share, supply: i.supply * share, lane: 'out' }));
+          const member = beltRoute(routes.length, base, [base.id], rest.map(i => ({ ...i, capacity: rest.reduce((sum, x) => sum + x.rate, 0) })), [], plan);
+          member.servesRows[base.source] = [];
+          member.fedFrom = trunk.id;
+          routes.push(member);
+          trunk.fanOut = [member.id];
+        }
+        ctx.fannedOut = true;
+        continue;
+      }
     } else if (base.consumers.length && base.sink !== 'side-output' && fansOut(base)) {
       // Into Parts of several Sub-Blocks (Bands): one line from the producers, chained as one run
       // that leaves east, past every consumer's entry, a splitter before each sending a belt off
@@ -1960,7 +2001,9 @@ function groupRoutes(ctx, instances, laneCapacity) {
     const first = routes.length;
     groups.forEach((g, j) => {
       const slots = [...g.producers, ...g.consumers];
-      routes.push(beltRoute(routes.length, base, [base.id], itemsOf(expectStraight[j], straight.delivered[j]), slots, plan));
+      const r = beltRoute(routes.length, base, [base.id], itemsOf(expectStraight[j], straight.delivered[j]), slots, plan);
+      for (const step of r.consumers) r.share[step] *= portionOf(step);
+      routes.push(r);
     });
     // Belts through a splitter: what each carries on from it (2 to 2: each its consumers' take of
     // both; 2 to 1: the merged belt ends in it; 1 to 2: the forked belt starts from it).
@@ -1999,7 +2042,8 @@ function supplyJoins(ctx, routes, suppliedAt, laneCapacity) {
   }
   for (const base of ctx.routes.filter(r => r.kind === 'belt' && r.supplies)) {
     for (const { item, into } of base.supplies) {
-      const producer = ctx.routes.find(r => r.kind === 'belt' && r.source === into);
+      // (Its belt of that item: a producer may put each product on its own, ADR 0066.)
+      const producer = ctx.routes.find(r => r.kind === 'belt' && r.source === into && r.items.some(i => i.item === item));
       const s = suppliedAt.get(producer?.id)?.find(s => s.item === item);
       const target = s && routes.find(r => r.kind === 'belt' && r.base === producer.id && r.slots.some(x => x.inst === s.slot.inst && x.part === s.slot.part));
       if (!target) continue;

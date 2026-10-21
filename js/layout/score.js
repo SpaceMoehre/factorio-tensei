@@ -53,12 +53,19 @@ export function starvationOf(block) {
 }
 
 // The belts from producers through their consumers carrying items none of those consumers take
-// (byproducts riding on), each with those items. (A Supplied Item a filter splitter sends off
+// (byproducts riding on), and those to the train carrying a byproduct with the item, each with
+// those items. (A Supplied Item a filter splitter sends off
 // after its producers is not one, nor a byproduct tapped off to the Sub-Block taking it, as a
 // feedback is.)
 export function riding(block) {
   const sentOff = new Set(block.routes.filter(g => g.fedBy !== undefined && (g.joins !== undefined || g.loop)).map(g => `${g.fedBy}:${g.items[0].item}`));
-  return block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number' && r.consumers.length).map(r => ({
-    route: r.id, items: r.items.filter(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item))).map(i => i.item),
+  // (What a belt to the train carries on, past what a filter splitter sends off it.)
+  const onward = r => r.items.filter(i => i.rate > 1e-9 && !sentOff.has(`${r.id}:${i.item}`));
+  return block.routes.filter(r => r.kind === 'belt' && typeof r.source === 'number').map(r => ({
+    route: r.id,
+    items: r.consumers.length ? r.items.filter(i => !sentOff.has(`${r.id}:${i.item}`) && !r.consumers.some(c => block.subBlocks[c].inputs.some(x => x.name === i.item))).map(i => i.item)
+      // (A belt to the train carrying a byproduct with the item, unsorted: one item a belt, ADR
+      // 0066.)
+      : r.sink === 'side-output' && !r.filter ? onward(r).filter(i => i.item !== block.subBlocks[r.source]?.item && onward(r).length > 1).map(i => i.item) : [],
   })).filter(r => r.items.length);
 }

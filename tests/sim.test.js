@@ -137,7 +137,8 @@ test('solved block: a Goal output beyond one lane leaves on parallel belts, each
 test('solved block: a Byproduct shares the far lane with the Goal item, on as many belts or lanes as that takes', async () => {
   const { solve } = await import('../js/solve.js');
   const { catalog, logistics } = await import('./fixtures/catalog.js');
-  const block = solve([{ goal: { item: 'sand', rate: 300 }, selection: { recipe: 'ore-sifting', building: 'assembling-machine-2' } }], catalog, logistics);
+  // (Its products on one belt, as the user may keep them: ADR 0066.)
+  const block = solve([{ goal: { item: 'sand', rate: 300 }, selection: { recipe: 'ore-sifting', building: 'assembling-machine-2' } }], catalog, { ...logistics, mixedOutputs: true });
   const parts = block.routes.filter(r => r.sink === 'side-output');
   assert.ok(parts.every(r => r.items.map(i => i.item).join() === 'sand,gravel'));
   assert.ok(parts.every(r => r.items.reduce((sum, i) => sum + i.rate, 0) <= r.items[0].capacity + 1e-9));

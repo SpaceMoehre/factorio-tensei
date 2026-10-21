@@ -11,7 +11,9 @@ const PIPE_CAPACITY = 6000 * 60;
 // rate }) joins the producer's (`supplied`: { item, rate }) before its consumers, side-loading
 // onto it (compose.js); the Use's pipe of it joins the producer's network (`into`: that route),
 // the producer's pipe carrying both.
-export function buildRoutes(plan, flows, laneCapacity) {
+// apart(i): whether Sub-Block i puts each solid product on a belt of its own (One Item a Belt,
+// ADR 0066).
+export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: number) => boolean} */ (() => false)) {
   const rank = new Map(flows.order.map((sb, i) => [sb, i]));
   const byOrder = (a, b) => rank.get(a) - rank.get(b);
   // (Those taking it by train: not one taking it from a Sub-Block, as Py's RHEs take the coke oven
@@ -49,7 +51,25 @@ export function buildRoutes(plan, flows, laneCapacity) {
     const leavesBlock = o => o.rate - (o.name === sb.item ? sb.extra ?? 0 : 0) + joinedInto(flows, i, o.name) - taken(plan, flows, i, o.name) > 1e-9 * Math.max(1, o.rate);
     const joins = type => (flows.joined ?? []).filter(j => j.from === i && j.type === type);
     const solidOut = sb.outputs.filter(o => o.type === 'item');
-    if (solidOut.length) {
+    // One Item a Belt (the user's rule, ADR 0066): a Sub-Block making more than one solid puts
+    // each on a belt of its own, its output inserters filtered to it: each belt to those taking
+    // that product, or on to the train. A step taking it from several such belts takes its share
+    // from each (`portion`), every machine from any.
+    if (apart(i) && solidOut.filter(o => o.rate > 1e-9).length > 1) {
+      for (const o of [solidOut.find(o => o.name === sb.item), ...solidOut.filter(o => o.name !== sb.item)].filter(o => o && o.rate > 1e-9)) {
+        const consumers = internalConsumers(o.name);
+        const shared = consumers.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === o.name).length > 1;
+        const own = joins('item').filter(j => j.item === o.name);
+        add({
+          kind: 'belt', source: i, sink: leavesBlock(o) ? 'side-output' : null, product: o.name,
+          items: [{ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' }],
+          consumers, ...(shared ? { portion: true } : {}),
+          ...(o.name === sb.item && sb.exports?.includes(sb.item) && consumers.length && !leavesBlock(o) ? { exported: sb.item } : {}),
+          ...(own.length ? { supplies: own.map(j => ({ item: j.item, into: j.into, rate: j.rate })) } : {}),
+          ...(joinedInto(flows, i, o.name) > 0 ? { supplied: [{ item: o.name, rate: joinedInto(flows, i, o.name) }] } : {}),
+        });
+      }
+    } else if (solidOut.length) {
       // (Those taking a byproduct, Byproduct Uses, as those taking its item.)
       const consumers = [...new Set(solidOut.flatMap(o => internalConsumers(o.name)))].sort(byOrder);
       // A byproduct only the train takes, with more than one belt carries: an Internal Path to its
@@ -145,6 +165,8 @@ export function coreLinks(sb, i, routes) {
   return {
     inputs: routes.filter(r => r.kind === 'belt' && r.consumers.includes(i)).map(r => r.id),
     output: routes.find(r => r.kind === 'belt' && r.source === i)?.id ?? null,
+    // (Its other products' belts, One Item a Belt, ADR 0066.)
+    apart: routes.filter(r => r.kind === 'belt' && r.source === i).slice(1).map(r => r.id),
     fluids,
   };
 }

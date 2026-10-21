@@ -141,6 +141,9 @@ $('circuit').addEventListener('change', () => {
 });
 $('right-angle').checked = state.logistics.rightAngle;
 $('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
+// One Item a Belt (ADR 0066): on unless the user keeps a machine's products on one belt.
+$('one-item').checked = state.logistics.mixedOutputs !== true;
+$('one-item').addEventListener('change', () => { state.logistics.mixedOutputs = !$('one-item').checked; save(); });
 $('handSize').value = String(state.logistics.handSize);
 $('handSize').addEventListener('change', () => {
   state.logistics.handSize = Math.min(12, Math.max(1, Math.floor(Number($('handSize').value) || 1)));
