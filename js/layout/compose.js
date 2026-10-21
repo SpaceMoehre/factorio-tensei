@@ -2140,8 +2140,11 @@ export function pipeNetworks(routes, built = []) {
     const sink = r.sink === 'side-output';
     let g = r.network !== undefined ? groups.find(g => g.key === r.network)
       : r.into !== undefined ? groups.find(g => g.ids.includes(r.into))
-      : groups.find(g => !g.closed && g.fluid === r.fluid && g.sink === sink && !makes.some(i => g.takes.has(i)) && !r.consumers.some(i => g.makes.has(i)));
-    if (!g) groups.push(g = { key: r.network ?? r.id, fluid: r.fluid, sink, ids: [], makes: new Set(), takes: new Set() });
+      // (Never two temperatures of it into one: Py's coke oven gas at 500° and at 250°, ADR 0067.)
+      : groups.find(g => !g.closed && g.fluid === r.fluid && g.sink === sink && (sink || g.heat === undefined || r.temperature === undefined || g.heat === r.temperature)
+        && !makes.some(i => g.takes.has(i)) && !r.consumers.some(i => g.makes.has(i)));
+    if (!g) groups.push(g = { key: r.network ?? r.id, fluid: r.fluid, sink, ids: [], makes: new Set(), takes: new Set(), heat: undefined });
+    if (r.temperature !== undefined && !sink) g.heat ??= r.temperature;
     g.ids.push(r.id);
     for (const i of makes) g.makes.add(i);
     for (const i of r.consumers) g.takes.add(i);

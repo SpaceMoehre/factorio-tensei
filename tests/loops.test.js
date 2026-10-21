@@ -59,26 +59,37 @@ test("a Recipe Loop's feedback leaves its producer's output through a splitter t
 });
 
 // Py hot air (warmer air from RHEs): the stone bricks the hot-air RHE gives back all go round the
-// loop to the RHEs warming them, the RHEs' coke oven gas from the heat exchangers, which take
-// theirs by train (a loop of their own). Before, the train's coke oven gas pipe was linked to the
-// RHEs too (three pipes on a machine with two connections: "fluid connections collide"), and the
-// stone bricks' tap was never routed, its belt going nowhere else.
-test('Py hot air: every stone brick fed back from its splitter, the RHEs on the heat exchangers\' gas alone', async () => {
+// loop to the RHEs warming them. Their coke oven gas goes round a loop of temperatures (ADR 0067):
+// the heat exchangers make it at 500°, which the warmer bricks take (500° at least), giving it back
+// at 250°, which the warm bricks take (250° at least), giving it back at 100°, which the heat
+// exchangers take (100° at most), the train topping it up. Before, all of it was one fluid: the
+// heat exchangers made it for both kinds of bricks, theirs by train, the bricks' to the train.
+test('Py hot air: coke oven gas round its loop of temperatures, every stone brick fed back', async () => {
   const { readFileSync } = await import('node:fs');
   const { context } = await import('../js/design.js');
   const { search } = await import('../js/search.js');
   const { rankOf } = await import('../js/layout/score.js');
+  const { pipeNetworks } = await import('../js/layout/compose.js');
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const py = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', liquidFuel: 'methane', handSize: 1 };
   const made = ['pressured-air', 'warmer-stone-brick', 'warm-stone-brick', 'coke-oven-gas'];
-  const { entries } = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, { made, selections: { 'hot-air': { recipe: 'warmer-air-2' } }, logistics: py });
-  const ctx = context(entries, shipped, py);
-  const gas = ctx.routes.filter(r => r.kind === 'pipe' && r.source === 'side-input' && r.fluid === 'coke-oven-gas');
-  assert.deepEqual(gas.flatMap(r => r.consumers).map(i => ctx.plan[i].recipe), ['reheat-coke-gas']);
+  const chain = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, { made, selections: { 'hot-air': { recipe: 'warmer-air-2' } }, logistics: py });
+  const step = recipe => chain.entries.findIndex(e => e.selection.recipe === recipe);
+  const [warmer, warm, reheat] = ['warmer-stone-brick-1', 'warm-stone-brick-1', 'reheat-coke-gas'].map(step);
+  assert.equal(chain.entries[warm].goal.from['coke-oven-gas'], warmer);
+  assert.equal(chain.entries[reheat].goal.from['coke-oven-gas'], warm);
+  assert.equal(chain.entries[warmer].goal.from?.['coke-oven-gas'], undefined, 'the warmer bricks take the heat exchangers\' gas');
+  assert.ok(Math.abs(chain.entries[reheat].goal.rate - 8080) < 1, `${chain.entries[reheat].goal.rate}`);
+  const ctx = context(chain.entries, shipped, py);
+  const heats = ctx.routes.filter(r => r.kind === 'pipe' && r.fluid === 'coke-oven-gas' && typeof r.source === 'number').map(r => [ctx.plan[r.source].recipe, r.temperature]);
+  assert.deepEqual(Object.fromEntries(heats), { 'warmer-stone-brick-1': 250, 'warm-stone-brick-1': 100, 'reheat-coke-gas': 500 });
   let found = null;
-  const run = search(entries, shipped, py, { seed: 1, maxCandidates: 6 });
-  for (let step = run.next(); !step.done; step = run.next()) found = step.value;
+  const run = search(chain.entries, shipped, py, { seed: 1, maxCandidates: 6 });
+  for (let next = run.next(); !next.done; next = run.next()) found = next.value;
   assert.ok(found, 'no layout');
   assert.deepEqual(rankOf(found.block).slice(0, 2), [0, 0]);
+  const networks = pipeNetworks(found.block.routes);
+  const gas = found.block.routes.filter(r => r.kind === 'pipe' && r.fluid === 'coke-oven-gas' && r.temperature !== undefined && r.sink !== 'side-output');
+  for (const a of gas) for (const b of gas) if (a.temperature !== b.temperature) assert.ok(networks.get(a.id) === undefined || networks.get(a.id) !== networks.get(b.id));
   assertValid(found.block, shipped, py);
 });

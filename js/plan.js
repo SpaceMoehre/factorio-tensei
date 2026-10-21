@@ -27,7 +27,9 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
     const perMachinePerMinute = (building.craftingSpeed * effect.speed / recipe.time) * perCraft * 60;
     const craftsPerMinute = goal.rate / perCraft;
     const flow = ({ name, type, amount }) => ({ name, type, rate: amount * craftsPerMinute });
-    const outputs = recipe.products.map(p => ({ ...flow(p), rate: p.amount * (1 + effect.productivity) * craftsPerMinute }));
+    // (A fluid at the temperature it comes out at, ADR 0067.)
+    const heat = p => (p.type === 'fluid' ? { temperature: p.temperature ?? catalog.temperatures?.[p.name] ?? 15 } : {});
+    const outputs = recipe.products.map(p => ({ ...flow(p), rate: p.amount * (1 + effect.productivity) * craftsPerMinute, ...heat(p) }));
     const inputs = recipe.ingredients.map(flow);
     if (building.energy === 'burner') {
       // Machines burn fuel only while they work: the busy share of the Count.

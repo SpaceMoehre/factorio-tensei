@@ -102,7 +102,7 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
       const left = o.rate + more - taken(plan, flows, i, o.name);
       const sink = leavesBlock(o) ? (sb.voids?.includes(o.name) ? 'void' : 'side-output') : null;
       const r = add({
-        kind: 'pipe', fluid: o.name, source: i, sink: valved ? null : sink,
+        kind: 'pipe', fluid: o.name, source: i, sink: valved ? null : sink, ...(o.temperature !== undefined ? { temperature: o.temperature } : {}),
         items: [{ item: o.name, rate: o.rate + more, supply: o.rate + more, capacity: PIPE_CAPACITY }],
         consumers: internalConsumers(o.name),
         ...(target ? into.valve ? { valve: { mode: 'top-up', on: target.id } } : { into: target.id } : {}),

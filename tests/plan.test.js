@@ -57,8 +57,9 @@ test('multi-output recipe: non-Goal outputs are Byproducts at the same craft rat
   }], catalog);
   assert.equal(sb.count, 1);
   assert.deepEqual(sb.byproducts, [
-    { name: 'heavy-oil', type: 'fluid', rate: 50 },
-    { name: 'light-oil', type: 'fluid', rate: 90 },
+    // (A fluid at the temperature it comes out at: its default, 15°, ADR 0067.)
+    { name: 'heavy-oil', type: 'fluid', rate: 50, temperature: 15 },
+    { name: 'light-oil', type: 'fluid', rate: 90, temperature: 15 },
   ]);
 });
 

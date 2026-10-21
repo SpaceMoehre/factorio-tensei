@@ -12,8 +12,16 @@ export function buildCatalog(raw) {
       category: r.category ?? 'crafting',
       time: r.energy_required ?? 0.5,
       // A fluid's fluidbox_index: the one input (output) box it takes, counted from 1 (fluidboxes.js).
-      ingredients: list(r.ingredients).map(i => ({ type: i.type, name: i.name, amount: i.amount, ...(i.fluidbox_index && { fluidboxIndex: i.fluidbox_index }) })),
-      products: list(r.results).map(p => ({ type: p.type, name: p.name, amount: expectedAmount(p), ...(p.fluidbox_index && { fluidboxIndex: p.fluidbox_index }) })),
+      // A fluid's temperature: what it must be to go in (minTemperature, maxTemperature), what it
+      // comes out at (temperature; else its default), ADR 0067.
+      ingredients: list(r.ingredients).map(i => ({
+        type: i.type, name: i.name, amount: i.amount, ...(i.fluidbox_index && { fluidboxIndex: i.fluidbox_index }),
+        ...(i.minimum_temperature !== undefined && { minTemperature: i.minimum_temperature }), ...(i.maximum_temperature !== undefined && { maxTemperature: i.maximum_temperature }),
+      })),
+      products: list(r.results).map(p => ({
+        type: p.type, name: p.name, amount: expectedAmount(p), ...(p.fluidbox_index && { fluidboxIndex: p.fluidbox_index }),
+        ...(p.temperature !== undefined && { temperature: p.temperature }),
+      })),
       ...(r.allowed_module_categories && { allowedModuleCategories: list(r.allowed_module_categories) }),
       ...(r.allow_productivity && { allowProductivity: true }),
     };
@@ -108,7 +116,9 @@ export function buildCatalog(raw) {
   for (const p of Object.values(raw.fluid ?? {})) {
     if (!p.hidden && p.fuel_value && energy(p.fuel_value) > 0) fluidFuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value) };
   }
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
+  // Each fluid's default temperature: what it comes at by train, or from a recipe naming none.
+  const temperatures = Object.fromEntries(Object.values(raw.fluid ?? {}).filter(p => !p.hidden).map(p => [p.name, p.default_temperature ?? 15]));
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
 }
 
 // Valves one can build (Py's overflow and underflow valves; base 2.0's are hidden): { [name]:

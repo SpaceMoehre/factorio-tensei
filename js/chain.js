@@ -173,6 +173,11 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     if (!trainInputs.has(item)) trainInputs.set(item, { item, rate: 0, reason });
     return true;
   };
+  // Fluid temperatures (ADR 0067): what a recipe makes a fluid at (its default where it names
+  // none), and whether an ingredient takes it at that.
+  const heatOf = (recipe, name) => catalog.recipes[recipe].products.find(p => p.name === name)?.temperature ?? catalog.temperatures?.[name] ?? 15;
+  const takesAt = (ingredient, t) => !ingredient || ((ingredient.minTemperature ?? -Infinity) <= t && t <= (ingredient.maxTemperature ?? Infinity));
+  const ranged = ingredient => ingredient?.minTemperature !== undefined || ingredient?.maxTemperature !== undefined;
   const stepOf = key => steps.get(key) ?? used.get(key);
   const tooMany = () => {
     if (steps.size + used.size >= MAX_STEPS) throw new Error(`the chain needs more than ${MAX_STEPS} steps; bring more items by train`);
@@ -190,13 +195,16 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     tooMany();
     onPath.add(item);
     const byTrain = new Set();
-    for (const { name, type } of ingredientsFor(selection)) {
+    for (const ingredient of ingredientsFor(selection)) {
+      const { name, type } = ingredient;
       // A step on the way here (or this one) makes it: a Recipe Loop, fed in the block (a fluid
       // by train).
       if (name === item || onPath.has(name)) {
         if (type === 'fluid' || loopsByTrain) byTrain.add(name) && toTrain(name, 'cycle');
         else loops.push({ item: name, into: item });
       } else if (visit(name, false)) byTrain.add(name);
+      // (Its step makes it hotter or colder than it takes: by train, ADR 0067.)
+      else if (ranged(ingredient) && steps.has(name) && !takesAt(ingredient, heatOf(steps.get(name).selection.recipe, name))) byTrain.add(name) && toTrain(name, 'temperature');
     }
     onPath.delete(item);
     steps.set(item, { selection, byTrain });
@@ -216,12 +224,14 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   const named = uses.filter(u => u.from != null && u.from !== EVERY);
   // (A General Use's: every step and Use making it besides its own item, but one a Use names for
   // it, a step of its recipe and itself.)
+  // (And a Use taking a fluid at a temperature only, from steps making it so, ADR 0067.)
+  const fits = (u, from) => takesAt(catalog.recipes[u.recipe]?.ingredients.find(i => i.name === u.item), heatOf(stepOf(from).selection.recipe, u.item));
   const sourcesOf = (u, key) => [...order, ...used.keys()].filter(from => from !== key && stepOf(from).selection.recipe !== u.recipe
-    && !named.some(v => v.from === from && v.item === u.item) && byproductsOf(from).some(p => p.name === u.item));
+    && !named.some(v => v.from === from && v.item === u.item) && byproductsOf(from).some(p => p.name === u.item) && fits(u, from));
   const addUse = (u, from) => {
     const key = useKey(from ?? EVERY, u.item);
     if (used.has(key) || !index.consumers.get(u.item)?.includes(u.recipe) || !index.buildingsFor.has(u.recipe)) return false;
-    if (from ? !byproductsOf(from).some(p => p.name === u.item) : !sourcesOf(u, key).length) return false;
+    if (from ? !byproductsOf(from).some(p => p.name === u.item) || !fits(u, from) : !sourcesOf(u, key).length) return false;
     tooMany();
     const selection = selectionOf(u.recipe, u);
     const recipe = catalog.recipes[u.recipe];
@@ -284,6 +294,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // it (each of the Use's belts sends its share off onto a lane of the step's). One the step
   // would then make none of leaves by train.
   const lane = belt && catalog.belts?.[belt] ? catalog.belts[belt].itemsPerSecond * 30 : Infinity;
+  /** @type {any[]} */
   let supplies = [];
   for (const [key, u] of used) {
     for (const p of recipeOf(key).products) {
@@ -295,27 +306,37 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // makes for the steps taking it (no Goal's, none a Use takes), goes to those steps first, the
   // step making it making only the rest: through a top-up valve into the byproduct's pipe, its
   // spare off through an overflow valve. (Not a step's taking it itself.)
+  // (Only to those taking it at the temperature it comes at, the step making it making theirs;
+  // a step taking it itself only where it takes it so, ADR 0067.)
   if (valved) {
     for (const key of order) {
       for (const p of recipeOf(key).products) {
+        const t = heatOf(stepOf(key).selection.recipe, p.name);
         if (p.type !== 'fluid' || p.name === key || !steps.has(p.name) || goals.some(g => g.item === p.name) || takenBy(key, p.name)
-          || ingredientsOf(key).some(i => i.name === p.name) || supplies.some(s => s.from === key && s.item === p.name)) continue;
-        supplies.push({ from: key, item: p.name, type: 'fluid', per: makes(key, p.name) / perCraft[at.get(key)], valve: true });
+          || ingredientsOf(key).some(i => i.name === p.name && takesAt(i, t)) || supplies.some(s => s.from === key && s.item === p.name)) continue;
+        const all = keys.filter(k => ingredientsOf(k).some(i => i.name === p.name) && !stepOf(k).byTrain.has(p.name));
+        const takers = all.filter(k => k !== key && takesAt(ingredientsOf(k).find(i => i.name === p.name), t));
+        if (!takers.length) continue;
+        supplies.push({ from: key, item: p.name, type: 'fluid', per: makes(key, p.name) / perCraft[at.get(key)], valve: true, ...(takers.length < all.length ? { takers } : {}) });
       }
     }
   }
   const supply = (s, sign) => { a[at.get(s.item)][at.get(s.from)] -= sign * s.per; };
+  // What a fluid fed back to some only (`takers`) is taken of by them, at the rates.
+  const takenAt = s => s.takers.reduce((sum, k) => sum + ingredientsOf(k).filter(i => i.name === s.item).reduce((t, i) => t + i.amount, 0) * rates[at.get(k)] / perCraft[at.get(k)], 0);
   supplies.forEach(s => supply(s, 1));
   let rates;
   for (;;) {
     rates = loops.length || used.size || supplies.length ? solve(a, goal)?.map(r => Math.round(r * 1e9) / 1e9) : consumersFirst(a, goal);
-    const off = supplies.filter(s => !rates || !(rates[at.get(s.item)] > 1e-6) || (s.type === 'item' && s.per * rates[at.get(s.from)] > lane * (1 + 1e-9)));
+    // (Fed back to some of those taking it only, ADR 0067: covering all they take.)
+    const covers = s => s.takers && rates && s.per * rates[at.get(s.from)] > takenAt(s) * (1 - TOP_UP / 2);
+    const off = supplies.filter(s => !rates || !(rates[at.get(s.item)] > 1e-6) || covers(s) || (s.type === 'item' && s.per * rates[at.get(s.from)] > lane * (1 + 1e-9)));
     // (A fluid fed back covering all: so much less of it fed back that its step makes TOP_UP of
     // what is taken.)
     const over = rates ? off.filter(s => s.valve && !(s.cut > 4)) : [];
     for (const s of over) {
       const supplied = s.per * rates[at.get(s.from)];
-      const need = rates[at.get(s.item)] + supplied;
+      const need = s.takers ? takenAt(s) : rates[at.get(s.item)] + supplied;
       supply(s, -1);
       s.per *= need > 0 && supplied > 0 ? (1 - TOP_UP) * need / supplied : 0;
       s.cut = (s.cut ?? 0) + 1;
@@ -347,13 +368,17 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   const recycled = [];
   const takesFrom = new Map();
   for (const input of [...trainInputs.values()]) {
-    if (input.reason !== 'import') continue;
     const item = input.item;
     const takers = keys.filter(k => stepOf(k).byTrain.has(item));
-    const fluid = ingredientsOf(takers[0]).find(i => i.name === item).type === 'fluid';
+    const taken = takers.length ? ingredientsOf(takers[0]).find(i => i.name === item) : null;
+    // (A fluid a loop takes back, or one its step makes at another temperature, where those taking
+    // it take it at a temperature only: from a step making it so, ADR 0067.)
+    if (input.reason !== 'import' && !(valved && ranged(taken) && ['cycle', 'temperature'].includes(input.reason))) continue;
+    const fluid = taken.type === 'fluid';
     // (A Byproduct Use's product too.)
     const makers = keys.filter(k => !takers.includes(k) && !takenBy(k, item) && recipeOf(k).products.some(p => p.name === item))
       .filter(k => !fluid || valved || !takers.some(t => feeds(t, k)))
+      .filter(k => !fluid || takers.every(t => takesAt(ingredientsOf(t).find(i => i.name === item), heatOf(stepOf(k).selection.recipe, item))))
       .map(k => ({ key: k, rate: makes(k, item) * ratesOf(k) }))
       .sort((a, b) => b.rate - a.rate);
     const from = makers[0];
@@ -377,11 +402,11 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       stepOf(k).byTrain.delete(item);
       takesFrom.set(k, { ...takesFrom.get(k), [item]: from.key });
     }
-    recycled.push({ item, from: from.key, into: takers, rate, spare: Math.max(0, from.rate - input.rate), ...(fluid && valved ? { valve: true } : {}) });
+    recycled.push({ item, from: from.key, into: takers, rate, spare: part ? 0 : Math.max(0, from.rate - input.rate), ...(fluid && valved ? { valve: true } : {}) });
   }
   // (A fluid fed back: the steps taking it take it from the step whose byproduct it is.)
   for (const s of supplies.filter(s => s.valve)) {
-    for (const k of keys) {
+    for (const k of s.takers ?? keys) {
       if (k !== s.item && ingredientsOf(k).some(i => i.name === s.item) && !stepOf(k).byTrain.has(s.item)) takesFrom.set(k, { ...takesFrom.get(k), [s.item]: s.from });
     }
   }
@@ -415,7 +440,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   const valvesOfStep = key => {
     const fed = [...supplies.filter(s => s.valve && s.from === key), ...recycled.filter(r => r.valve && r.from === key)];
     const topUp = [
-      ...supplies.filter(s => s.valve && s.from === key).map(s => [s.item, { from: entryOf.get(s.item), rate: rates[at.get(s.item)] }]),
+      ...supplies.filter(s => s.valve && s.from === key).map(s => [s.item, { from: entryOf.get(s.item), rate: s.takers ? Math.max(0, takenAt(s) - s.per * rates[at.get(key)]) : rates[at.get(s.item)] }]),
       ...[...trainInputs.values()].filter(t => t.topUp === key).map(t => [t.item, { from: 'side-input', rate: t.rate }]),
     ];
     const products = new Set(recipeOf(key).products.map(p => p.name));

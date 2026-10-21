@@ -386,3 +386,25 @@ test('offshore pump: a building of offshore-water on shallow water', () => {
   assert.equal(pump.craftingSpeed * recipes['offshore-water'].products[0].amount / recipes['offshore-water'].time, 1200);
   assert.deepEqual([pump.size, pump.energy, pump.offshore], [{ w: 3, h: 3 }, 'void', { tile: 'water-shallow' }]);
 });
+
+// Fluid temperatures (ADR 0067): what a fluid ingredient must be (Py's warmer stone brick takes
+// coke oven gas at 500° at least) and what a fluid product comes out at (250°); each fluid's
+// default, what it comes at by train or from a recipe naming none.
+test('recipe: a fluid\'s temperatures, in and out, and each fluid\'s default', () => {
+  const { recipes, temperatures } = buildCatalog(dataRaw({
+    recipe: {
+      warm: {
+        name: 'warm', energy_required: 5,
+        ingredients: [{ type: 'fluid', name: 'coke-oven-gas', amount: 100, minimum_temperature: 500 }, { type: 'fluid', name: 'water', amount: 10, maximum_temperature: 100 }],
+        results: [{ type: 'fluid', name: 'coke-oven-gas', amount: 100, temperature: 250 }],
+      },
+    },
+    fluid: { 'coke-oven-gas': { name: 'coke-oven-gas', default_temperature: 15 }, water: { name: 'water' } },
+  }));
+  assert.deepEqual(recipes.warm.ingredients, [
+    { type: 'fluid', name: 'coke-oven-gas', amount: 100, minTemperature: 500 },
+    { type: 'fluid', name: 'water', amount: 10, maxTemperature: 100 },
+  ]);
+  assert.deepEqual(recipes.warm.products, [{ type: 'fluid', name: 'coke-oven-gas', amount: 100, temperature: 250 }]);
+  assert.deepEqual(temperatures, { 'coke-oven-gas': 15, water: 15 });
+});
