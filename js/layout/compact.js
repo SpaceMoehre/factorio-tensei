@@ -263,7 +263,8 @@ function beltGrid(block, catalog, logistics) {
 // each lane carries half a belt at most. Kept where its way is shorter than to the east edge;
 // the longest ways are freed first. Changes the block in place.
 export function mergeByproducts(block, catalog, logistics) {
-  const filtered = r => r.pieces.findIndex(p => p.kind === 'splitter' && p.filter);
+  // (Its own filter splitter, not one tapping an item off it, ADR 0064.)
+  const filtered = r => (r.filter || !r.taps ? r.pieces.findIndex(p => p.kind === 'splitter' && p.filter && (!r.filter || p.filter === r.filter)) : -1);
   const lines = block.routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.joins === undefined && filtered(r) >= 0
     && !block.routes.some(o => o.joins === r.id));
   if (lines.length < 2) return block;
@@ -317,7 +318,9 @@ export function mergeByproducts(block, catalog, logistics) {
     }
     const joined = /** @type {any} */ (leg)?.joined;
     const chosen = joined && offered.get(joined);
-    if (!chosen || legCost(leg, splitter.travel) >= legCost(away, splitter.travel)) {
+    // (Nor one passing over the tiles its splitter takes on its way there, ADR 0064.)
+    const over = chosen && leg.some(p => [chosen.piece, chosen.beside].some(t => t.x === p.x && t.y === p.y));
+    if (!chosen || over || legCost(leg, splitter.travel) >= legCost(away, splitter.travel)) {
       grid.restore(before);
       for (const p of away) grid.place(p);
       for (const [p, q] of tunnels) grid.addTunnel(names.underground, p, q);

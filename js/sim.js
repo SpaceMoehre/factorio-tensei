@@ -40,9 +40,10 @@ export function simulate(block) {
 // where its leftover module takes them apart).
 function inserterStarvation(sb, index) {
   const found = [];
-  for (const { route, role = 'input', items, perMachine } of sb.inserters ?? []) {
+  for (const { route, role = 'input', items, perMachine, portion = 1 } of sb.inserters ?? []) {
     const flows = role === 'input' ? sb.inputs : sb.outputs;
-    const share = flows.filter(f => items.includes(f.name)).reduce((sum, f) => sum + f.rate, 0) / sb.count;
+    // (A belt tapped off one of several producers of an item: its share, ADR 0064.)
+    const share = flows.filter(f => items.includes(f.name)).reduce((sum, f) => sum + f.rate, 0) / sb.count * portion;
     const demand = share * perMachine.length;
     const available = perMachine.reduce((sum, rate) => sum + Math.min(rate, share), 0);
     if (demand > available + EPSILON) found.push({ route, subBlock: index, item: items.join(' + '), demand, available, cause: 'inserters' });

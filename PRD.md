@@ -84,6 +84,11 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v52: A belt tapped off each producer; loops taking all (implemented)
+
+- **A belt tapped off each producer:** a step taking more of a byproduct than a belt carries from several steps takes it on a belt tapped off each (filter splitters after their producers), every machine from either, rather than one belt they all join. Copies in columns chain across them; a sorted-out path's belts carry what rides along. Py coke in 116²: 2520/min in three chains (3 + 3 + 1) → 2880/min in two (5 + 3) (ADR 0064).
+- **A loop taking all its producer makes:** its belt ends at its splitters; a train's pipe goes only to steps taking it by train. Py hot air: nothing ("fluid connections collide") → 6000/min (ADR 0065).
+
 ## v51: Fuel as an ingredient (implemented)
 
 A machine's fuel (the Fuel item or Liquid Fuel) is one more ingredient of its recipe in the Production Chain: made in the block where the user makes it, the step making it sized for it, else by train, its Train Input counting it. Py coke at 60/min, whose BOFs burn the coal the chain makes: nothing fit (every layout starved 9/min) → 60/min (ADR 0063).

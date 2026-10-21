@@ -268,7 +268,8 @@ export function compose(ctx, prepared, positions, layout) {
         if (route.tapOf !== undefined && k === 0 && !layout.plain) return;
         tasks.push({ route, slot: k, ...flags(route, k) });
       });
-      if ((route.sink === 'side-output' || route.supplyEnd) && !route.fanOut) tasks.push({ route, slot: route.slots.length, ...flags(route, route.slots.length) });
+      // (Or to its taps alone, where its feedback takes all it carries, ADR 0065.)
+      if ((route.sink === 'side-output' || route.supplyEnd || (route.taps && route.tapAt === route.slots.length && !layout.plain)) && !route.fanOut) tasks.push({ route, slot: route.slots.length, ...flags(route, route.slots.length) });
       // A Fan-out from the producers: their line, after their belt, and every consumer's belt.
       if (route.fanOut) tasks.push({ route, slot: route.slots.length, fanOut: route.fanOut });
     }
@@ -759,7 +760,11 @@ export function compose(ctx, prepared, positions, layout) {
   // (the grid as it was).
   function routeTaps(grid, task, feeds) {
     const { route } = task;
-    const ends = endsOf(task);
+    // (A belt whose feedback takes all it carries goes no further than its splitters: Py's RHE
+    // making hot air gives every stone brick back to the loop, ADR 0065.)
+    const all = !route.consumers.length && route.sink !== 'side-output';
+    const last = all && task.slot === route.slots.length ? route.slots.at(-1).pieces.at(-1) : null;
+    const ends = last ? { starts: [{ x: last.x + VEC[last.travel][0], y: last.y + VEC[last.travel][1], a: last.travel }], goal: null } : endsOf(task);
     if (!ends) return null;
     const held = [];
     const reserve = (x, y, id) => {
@@ -788,7 +793,7 @@ export function compose(ctx, prepared, positions, layout) {
     let budget = FAN_TRIES * (feeds.length + 1);
     const tap = (j, from) => {
       if (j === feeds.length) {
-        line.push(...routeLink(grid, { id: route.id, starts: [from], goal: ends.goal }, belts));
+        if (ends.goal) line.push(...routeLink(grid, { id: route.id, starts: [from], goal: ends.goal }, belts));
         return true;
       }
       const feed = feeds[j], entry = entryOf(feed);
@@ -1515,8 +1520,11 @@ function groupRoutes(ctx, instances, laneCapacity) {
   // neighbour's, downstream of its stack: a belt runs on from the stack to them, never back.
   // (Between Sub-Blocks, a turned one's belts chain on whatever side: the router turns them.)
   const backward = (a, b) => a.inst.step === b.inst.step && a.inst.detached && !b.inst.detached;
+  // (Copies in columns: a belt crosses from one column's foot or head into the next's, both
+  // running west to east, makeInstances, ADR 0064.)
+  const oneColumn = (a, b) => stacked(a, b) && (a.column ?? 0) === (b.column ?? 0);
   const chainable = (a, b) => a.inst !== b.inst && !backward(a, b) && a.part.canExit && b.part.canEnter
-    && (stacked(a.inst, b.inst) ? exitSide(a) === entrySide(b) : (exitSide(a) === E && entrySide(b) === W) || !!a.inst.module.turns || !!b.inst.module.turns);
+    && (oneColumn(a.inst, b.inst) ? exitSide(a) === entrySide(b) : (exitSide(a) === E && entrySide(b) === W) || !!a.inst.module.turns || !!b.inst.module.turns);
   // A run of copies' parts ends at one leaving east (a turned one's on any side), and starts at one
   // entering from the west (a turned one's from any side).
   const leavesEast = s => s.part.canExit && (exitSide(s) === E || !!s.inst.module.turns);
@@ -1544,7 +1552,10 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const fed = base.loop ? routes.filter(r => r.kind === 'belt' && r.source === base.loop.from && !r.splitter)
         .map(r => r.items.find(i => i.item === base.items[0].item)?.rate ?? 0) : [];
       const capacity = Math.min(perLane ? laneCapacity : 2 * laneCapacity, ...(fed.length ? [Math.max(...fed)] : []));
-      const demand = slot => Object.fromEntries(items.map(i => [i.item, flowOf(slot.inst.step, i.item, 'input') * shareOf(slot)]));
+      // (A belt tapped off one of several producers of an item: its share of what they take, ADR
+      // 0064.)
+      const portion = (step, i) => (base.loop?.tapped ? Math.min(1, i.rate / Math.max(1e-9, flowOf(step, i.item, 'input'))) : 1);
+      const demand = slot => Object.fromEntries(items.map(i => [i.item, flowOf(slot.inst.step, i.item, 'input') * shareOf(slot) * portion(slot.inst.step, i)]));
       const groups = [];
       for (const slot of slots) {
         const group = groups.at(-1);
@@ -1561,7 +1572,9 @@ function groupRoutes(ctx, instances, laneCapacity) {
           ...i, rate: group.reduce((sum, s) => sum + (demand(s)[i.item] ?? 0), 0),
           ...(used.length > 1 || ctx.routes[used[0]].items.length > 1 ? { capacity: laneCapacity, supply: laneCapacity } : {}),
         }));
-        routes.push(beltRoute(routes.length, base, used, its, group, plan));
+        const r = beltRoute(routes.length, base, used, its, group, plan);
+        if (base.loop?.tapped) for (const step of Object.keys(r.share)) r.share[step] *= portion(+step, base.items[0]);
+        routes.push(r);
       }
       if (base.loop) tapLoop(routes, routes.slice(first), base);
       else if (base.consumers.length === 1) fanOut(routes.slice(first));
@@ -1598,7 +1611,10 @@ function groupRoutes(ctx, instances, laneCapacity) {
     // lanes up to there: along too. Left out, each belt was planned short of what its consumers
     // take by its share, ADR 0055.)
     const supplying = new Set((base.supplies ?? []).map(s => s.item));
-    const along = base.sorted ? 1 : base.items.reduce((sum, i) => sum + i.rate, 0)
+    // (A byproduct sorted out rides with them up to its splitter too, and so does what is tapped
+    // off them: a run of producers making only what its consumers take of the rest brought too
+    // little, ADR 0064.)
+    const along = base.items.reduce((sum, i) => sum + i.rate, 0)
       / Math.max(1e-9, base.items.filter(i => base.consumers.some(step => plan[step].inputs.some(x => x.name === i.item))).reduce((sum, i) => sum + i.rate, 0));
     const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) ? wants(g.consumers) * along : null);
     // What each belt of an option delivers: its producers' machines through its lanes, joined by
@@ -2411,7 +2427,8 @@ function supplyOf(instances) {
   const out = new Map();
   for (const inst of instances) {
     for (const s of inst.module.core.supply) {
-      const k = `${s.role}|${s.items.join('+')}`;
+      // (Belts tapped off several producers of an item each bring their share, ADR 0064.)
+      const k = `${s.role}|${s.items.join('+')}${s.portion ? `|${s.route}` : ''}`;
       if (!out.has(k)) out.set(k, { ...s, perMachine: [] });
       out.get(k).perMachine.push(...s.perMachine);
     }

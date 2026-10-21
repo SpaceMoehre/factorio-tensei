@@ -57,3 +57,28 @@ test("a Recipe Loop's feedback leaves its producer's output through a splitter t
   const splitters = JSON.parse(json).blueprint.entities.filter(e => e.name === 'splitter');
   assert.deepEqual(splitters.map(e => e.output_priority), [splitter.priority]);
 });
+
+// Py hot air (warmer air from RHEs): the stone bricks the hot-air RHE gives back all go round the
+// loop to the RHEs warming them, the RHEs' coke oven gas from the heat exchangers, which take
+// theirs by train (a loop of their own). Before, the train's coke oven gas pipe was linked to the
+// RHEs too (three pipes on a machine with two connections: "fluid connections collide"), and the
+// stone bricks' tap was never routed, its belt going nowhere else.
+test('Py hot air: every stone brick fed back from its splitter, the RHEs on the heat exchangers\' gas alone', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { context } = await import('../js/design.js');
+  const { search } = await import('../js/search.js');
+  const { rankOf } = await import('../js/layout/score.js');
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const py = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', liquidFuel: 'methane', handSize: 1 };
+  const made = ['pressured-air', 'warmer-stone-brick', 'warm-stone-brick', 'coke-oven-gas'];
+  const { entries } = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, { made, selections: { 'hot-air': { recipe: 'warmer-air-2' } }, logistics: py });
+  const ctx = context(entries, shipped, py);
+  const gas = ctx.routes.filter(r => r.kind === 'pipe' && r.source === 'side-input' && r.fluid === 'coke-oven-gas');
+  assert.deepEqual(gas.flatMap(r => r.consumers).map(i => ctx.plan[i].recipe), ['reheat-coke-gas']);
+  let found = null;
+  const run = search(entries, shipped, py, { seed: 1, maxCandidates: 6 });
+  for (let step = run.next(); !step.done; step = run.next()) found = step.value;
+  assert.ok(found, 'no layout');
+  assert.deepEqual(rankOf(found.block).slice(0, 2), [0, 0]);
+  assertValid(found.block, shipped, py);
+});

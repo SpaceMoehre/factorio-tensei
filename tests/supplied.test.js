@@ -135,3 +135,28 @@ test('a belt of two Supplied Items: one sent off, the rest joins the other belt'
   assert.deepEqual([gravel.sink, block.subBlocks[block.routes[gravel.joins].source].recipe], [null, 'stone-to-gravel']);
   assert.ok(block.routes.some(r => r.fedBy === gravel.id && r.items[0].item === 'grade-3-ti' && r.joins !== undefined), 'the grade 3 sent off');
 });
+
+// Py coke at 1440/min: the BOFs of the coal Use take 1173/min of coal, more than a belt carries,
+// from the crushers and the screeners. Each producer's coal is tapped off its belt onto a belt of
+// its own, both belts past every BOF, rather than the screeners' joining the crushers' (one belt,
+// every layout starving), ADR 0064.
+test('a Use taking more than a belt of a byproduct from two producers: a belt tapped off each', async () => {
+  const { context } = await import('../js/design.js');
+  const { simulate } = await import('../js/sim.js');
+  const coke = { ...base, fuel: 'coal', liquidFuel: 'methane', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
+  const made = ['redhot-coke', 'coal', 'coarse-coal', 'crushed-coal', 'pressured-air', 'steam', 'water'];
+  const selections = { coke: { recipe: 'quench-redcoke' }, steam: { recipe: 'electric-boiler-water-to-steam' }, water: { recipe: 'offshore-water' } };
+  const uses = [{ item: 'coal', recipe: 'redhot-coke' }];
+  const { entries } = expandChain([{ item: 'coke', rate: 1440 }], shipped, { made, selections, uses, logistics: coke });
+  const ctx = context(entries, shipped, coke);
+  const use = ctx.plan.findIndex(sb => sb.use);
+  const feeds = ctx.routes.filter(r => r.loop?.tapped && r.consumers[0] === use);
+  assert.deepEqual(feeds.map(r => ctx.plan[r.loop.from].item).sort(), ['coarse-coal', 'crushed-coal']);
+  assert.ok(feeds.every(r => r.items[0].rate <= 900));
+  let found = null;
+  const run = search(entries, shipped, coke, { seed: 1, maxCandidates: 60, unsorted: true, perfect: true });
+  for (let step = run.next(); !step.done && !found; step = run.next()) if (step.value.score[0] === 0) found = step.value;
+  assert.ok(found, 'no layout without starvation');
+  assert.equal(simulate(found.block).starvation.length, 0);
+  assertValid(found.block, shipped, coke);
+});

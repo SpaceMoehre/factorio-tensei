@@ -393,6 +393,14 @@ export function buildCore(sb, building, links, variant, env) {
   // items of its belt, shared by the machine's inserters on that belt; out of it, the machine's
   // products, shared by all its output inserters (`sharing`).
   const moving = (isOutput, items, sharing) => ({ role: isOutput ? 'output' : 'input', moves: items.map(i => i.name), sharing });
+  // (What a belt tapped off one of several producers brings of what the machines take: its share,
+  // routeItems, ADR 0064.)
+  const portionOf = ({ isOutput, items }) => {
+    if (isOutput) return {};
+    const all = sb.inputs.filter(i => items.some(x => x.name === i.name)).reduce((sum, i) => sum + i.rate, 0);
+    const brought = items.reduce((sum, i) => sum + i.rate, 0);
+    return brought < all - 1e-9 ? { portion: brought / all } : {};
+  };
   let machine = 0;
   for (let r = 0; r < rowCount; r++) {
     for (let i = 0; i < counts[r]; i++, machine++) {
@@ -428,7 +436,7 @@ export function buildCore(sb, building, links, variant, env) {
         // What a row's drops and their inserters cannot move is its belt's (see the parts).
         if (!s.drop) shortfall += Math.max(0, s.demand - moved);
         const supplyKey = s.belt.routeIds.join('+');
-        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: s.belt.routeIds[0], role: s.isOutput ? 'output' : 'input', items: s.items.map(i => i.name), perMachine: [], machines: [] });
+        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: s.belt.routeIds[0], role: s.isOutput ? 'output' : 'input', items: s.items.map(i => i.name), perMachine: [], machines: [], ...portionOf(s) });
         movedBy.set(supplyKey, (movedBy.get(supplyKey) ?? 0) + moved);
       }
       for (const [k, moved] of movedBy) {
@@ -446,7 +454,7 @@ export function buildCore(sb, building, links, variant, env) {
         const moved = l.inserters.reduce((sum, ins) => sum + ins.rate, 0);
         shortfall += Math.max(0, l.demand - moved);
         const supplyKey = a.line.routeIds.join('+');
-        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: a.line.routeIds[0], role: l.isOutput ? 'output' : 'input', items: l.items.map(i => i.name), perMachine: [], machines: [] });
+        if (!supply.has(supplyKey)) supply.set(supplyKey, { route: a.line.routeIds[0], role: l.isOutput ? 'output' : 'input', items: l.items.map(i => i.name), perMachine: [], machines: [], ...portionOf(l) });
         supply.get(supplyKey).perMachine.push(moved);
         supply.get(supplyKey).machines.push(machine);
       }
@@ -963,10 +971,15 @@ class Period {
 
 // What a Sub-Block takes from (or puts on) a belt route: the route's items it consumes, or its
 // solid products.
+// (A belt tapped off one of several producers of an item brings its share of what the step takes,
+// ADR 0064.)
 export function routeItems(sb, route, isOutput) {
   if (isOutput) return sb.outputs.filter(o => o.type === 'item');
   const names = new Set(route.items.map(i => i.item));
-  return sb.inputs.filter(i => names.has(i.name));
+  return sb.inputs.filter(i => names.has(i.name)).map(i => {
+    const share = route.loop?.tapped ? route.items.find(x => x.item === i.name).rate : Infinity;
+    return share < i.rate - 1e-9 ? { ...i, rate: share } : i;
+  });
 }
 
 // Inserter columns in front of a machine, in the order they are tried.

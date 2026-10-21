@@ -38,8 +38,8 @@ export function context(entries, catalog, logistics, site = null) {
     if (spec.pickup.x !== 0) throw new Error(`${spec.name} does not reach straight ahead; only straight inserters are used`);
   }
   const plan = planSubBlocks(entries, catalog, logistics);
-  const flows = buildFlows(plan);
   const belt = catalog.belts[logistics.belt];
+  const flows = buildFlows(plan, belt.itemsPerSecond * 60);
   const routes = buildRoutes(plan, flows, belt.itemsPerSecond * 60 / 2);
   plan.forEach((sb, i) => { sb.headroom = spareSpeed(sb, i, routes, belt.itemsPerSecond * 30); });
   const env = {
@@ -737,10 +737,13 @@ function copiesUnfed(ctx, index, kinds) {
 }
 
 // What each of an Internal Path's n belts brings its consumer: a run of the consumer's machines
-// each, the runs about equal (as the Compound Block cuts them).
+// each, the runs about equal (as the Compound Block cuts them). Counted as its producers' drops
+// are, with what rides along up to where it leaves the belt (a byproduct sorted out, an item
+// tapped off: Py's crushers' coal and coal dust with their crushed coal, ADR 0064).
 function pathWants(ctx, route, n) {
   const consumer = ctx.plan[route.consumers[0]];
-  const rate = route.items.reduce((sum, i) => sum + (consumer.inputs.find(x => x.name === i.item)?.rate ?? 0), 0);
+  const taken = route.items.reduce((sum, i) => sum + (consumer.inputs.find(x => x.name === i.item)?.rate ?? 0), 0);
+  const rate = Math.max(taken, route.items.reduce((sum, i) => sum + i.rate, 0) * Math.min(1, taken / Math.max(1e-9, route.items.filter(i => consumer.inputs.some(x => x.name === i.item)).reduce((sum, i) => sum + i.rate, 0))));
   const cuts = exactCuts(Array(consumer.count).fill(1), n);
   if (!cuts) return Array(n).fill(rate / n);
   return cuts.map((last, k) => (last - (k ? cuts[k - 1] : -1)) * rate / consumer.count);

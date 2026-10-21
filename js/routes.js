@@ -14,7 +14,10 @@ const PIPE_CAPACITY = 6000 * 60;
 export function buildRoutes(plan, flows, laneCapacity) {
   const rank = new Map(flows.order.map((sb, i) => [sb, i]));
   const byOrder = (a, b) => rank.get(a) - rank.get(b);
-  const consumersOf = item => plan.map((_, i) => i).filter(i => plan[i].inputs.some(x => x.name === item)).sort(byOrder);
+  // (Those taking it by train: not one taking it from a Sub-Block, as Py's RHEs take the coke oven
+  // gas the heat exchangers make, while those take theirs back by train, ADR 0065.)
+  const fed = (i, item) => [...flows.internal, ...flows.feedback ?? []].some(e => e.to === i && e.item === item);
+  const consumersOf = item => plan.map((_, i) => i).filter(i => plan[i].inputs.some(x => x.name === item) && !fed(i, item)).sort(byOrder);
   const routes = [];
   const add = r => routes[routes.push({ id: routes.length, ...r }) - 1];
   const saturated = (item, rate, capacity) => ({ item, rate, supply: capacity, capacity });

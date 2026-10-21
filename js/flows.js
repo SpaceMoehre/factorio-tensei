@@ -7,7 +7,8 @@
 // makes of an item another Sub-Block makes joins that one's on its way to its consumers
 // (sb.joins: a Supplied Item; `joined`: { from, into, item, type, rate }), what else it makes
 // leaving by train.
-export function buildFlows(plan) {
+// belt: what a belt carries a minute (Infinity: any).
+export function buildFlows(plan, belt = Infinity) {
   const producerOf = new Map(plan.flatMap((sb, i) => (sb.use ? [] : [[sb.item, i]])));
   const edges = [];
   // What a Sub-Block takes by train though another makes it (the chain's choice) is no link.
@@ -38,17 +39,28 @@ export function buildFlows(plan) {
   // A byproduct taken by a Sub-Block that takes nothing else off its producer's belt, while that
   // belt goes on to others with what they take: tapped off it right after the producers (a
   // filter splitter, as a Recipe Loop's feedback is), not riding on through them. Its surplus
-  // would stop the belt where it ends (Py's p2s5 with pyrite, ADR 0054). (Not where another
-  // Sub-Block's of it joins that belt, a Supplied Item: it rides on, as before.)
+  // would stop the belt where it ends (Py's p2s5 with pyrite, ADR 0054). Not where another
+  // Sub-Block's of it joins that belt (a Supplied Item): it rides on, as before; but where the
+  // step takes more of it than a belt carries, it is tapped off, and what joined it is tapped off
+  // its own producers' belt onto a belt of its own: the step takes it from both, each of its
+  // machines from either (Py's BOFs taking coal from crushers and screeners, ADR 0064).
   const solidsOf = i => new Set(plan[i].outputs.filter(o => o.type === 'item').map(o => o.name));
   const tapped = edges.filter(e => {
-    if (closing.has(e) || e.type === 'fluid' || e.item === plan[e.from].item || plan.some(sb => sb.joins?.[e.item] === e.from)) return false;
+    if (closing.has(e) || e.type === 'fluid' || e.item === plan[e.from].item) return false;
+    if (plan.some(sb => sb.joins?.[e.item] === e.from) && !(e.rate > belt + 1e-6)) return false;
     const solids = solidsOf(e.from);
     return !plan[e.to].inputs.some(x => x.name !== e.item && solids.has(x.name))
       && edges.some(o => o.from === e.from && o.to !== e.to && o.type !== 'fluid' && o.item !== e.item);
-  });
-  const internal = edges.filter(e => !closing.has(e) && !tapped.includes(e));
-  const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...tapped.map(e => ({ ...e, tapped: true }))];
+  }).map(e => ({ ...e }));
+  const own = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
+    const on = tapped.find(e => e.from === into && e.item === item);
+    const o = sb.outputs.find(o => o.name === item);
+    if (!on || !o) return [];
+    on.rate -= o.rate;
+    return [{ from, to: on.to, item, type: o.type, rate: o.rate }];
+  }));
+  const internal = edges.filter(e => !closing.has(e) && !tapped.some(t => t.from === e.from && t.to === e.to && t.item === e.item));
+  const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...[...tapped, ...own].map(e => ({ ...e, tapped: true }))];
   // (Only into an Internal Path: one of the item's consumers' takes it from there.)
   const joined = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
     const o = sb.outputs.find(o => o.name === item);
