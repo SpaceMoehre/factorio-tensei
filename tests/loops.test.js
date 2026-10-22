@@ -128,3 +128,24 @@ test('Py hot air: molten salt round a closed loop, the train only filling it; th
   assert.ok(pipes.some(r => r.source === 'side-input' && r.valve?.mode === 'top-up' && r.fill));
   assertValid(found.block, shipped, py);
 });
+
+// Py hot air in a City Block 110 tiles high inside its Buffer, at 1.3125 of the RHEs making hot
+// air (ADR 0071). The biomass powerplants, 15 × 15 and each a belt of biomass to itself, stood 7
+// in one column 122 tiles and more high: no design fit, copies came only past 8 machines; now they
+// repeat a module of one or two.
+test('Py hot air in a City Block: few big machines in copies that fit its height', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { context, designStep, designOf, random } = await import('../js/design.js');
+  const { siteOf } = await import('../js/city.js');
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const py = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', fuel: 'biomass', liquidFuel: 'methane', handSize: 1, inserter: 'fast-inserter' };
+  const made = ['warmer-stone-brick', 'warm-stone-brick', 'coke-oven-gas', 'hot-molten-salt'];
+  const site = siteOf({ area: { x: 0, y: 0, w: 118, h: 118 }, fixtures: [] }, 4);
+  const chain = expandChain([{ item: 'hot-air', rate: 11812.5 }], shipped, { made, selections: { 'hot-air': { recipe: 'warmer-air-2' } }, logistics: py });
+  const ctx = context(chain.entries, shipped, py, site);
+  ctx.chained = 'all';
+  const i = ctx.plan.findIndex(sb => sb.item === 'hot-molten-salt');
+  assert.ok(ctx.plan[i].count < 8, `${ctx.plan[i].count} powerplants`);
+  const fits = designStep(ctx, i, random(1), { draws: 0 }).filter(c => c.copies).map(designOf).filter(d => d && d.trouble <= 1e-6);
+  assert.ok(fits.some(d => d.kinds.every(k => k.module.area.h <= site.inner.h)), 'copies of a module that fits the City Block');
+});

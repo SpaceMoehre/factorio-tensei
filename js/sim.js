@@ -65,6 +65,9 @@ function laneShares(items) {
   });
 }
 
+// How much more a Sub-Block with spare machines (`extra`) makes than its belts carry.
+const spareOf = sb => sb.rate / Math.max(1e-9, sb.rate - sb.extra);
+
 // Throughput (ADR 0057): what a layout that starves makes. A Sub-Block short of an input runs as
 // much slower as it is short (`factor`, 0 to 1, by Sub-Block), so it takes that much less of its
 // other inputs and makes that much less for those it feeds, and so on down the chain, until no
@@ -99,7 +102,11 @@ export function throughput(block) {
         const f = r.loop?.tapped && r.fedBy === undefined ? 0 : s === null ? 1 : factor[s];
         return {
           ...r,
-          items: r.items.map(i => {
+          items: r.items.map(it => {
+            // (Spare machines, `extra`: their belts carry what is taken, which the Sub-Block still
+            // makes a little slower, ADR 0071.)
+            const i = s !== null && it.item === block.subBlocks[s].item && block.subBlocks[s].extra > 0 && f > 0
+              ? { ...it, rate: it.rate * Math.min(1 / f, spareOf(block.subBlocks[s])), supply: it.supply * Math.min(1 / f, spareOf(block.subBlocks[s])) } : it;
             const joined = joining.get(`${r.id}:${i.item}`);
             const share = joined ? joined.reduce((sum, g) => sum + g.items[0].rate * factor[from(g)], 0) / Math.max(1e-9, joined.reduce((sum, g) => sum + g.items[0].rate, 0)) : 1;
             // (From the train: as much as the belt carries, however fast its consumers run.)

@@ -88,7 +88,7 @@ The unit of `count` assemblers (plus internal belts/inserters) built to satisfy 
 _Avoid_: block (ambiguous with Compound Block)
 
 **Module**:
-A Sub-Block's machines — all of them, or a share that is repeated — with their inserters, belts and pipes, laid out and routed on their own: every belt enters on its west edge and leaves on its east edge, every fluid reaches its west edge (an input) or its east edge (an output). Each Sub-Block is designed as Modules first, from the leaves of the Production Chain up; the Compound Block only places them and links them. A huge Sub-Block repeats one Module, sized so its busiest belt is used up and the stack of its Copies comes out about square: pairs of short rows facing the belt between them rather than one long row.
+A Sub-Block's machines — all of them, or a share that is repeated — with their inserters, belts and pipes, laid out and routed on their own: every belt enters on its west edge and leaves on its east edge, every fluid reaches its west edge (an input) or its east edge (an output). Each Sub-Block is designed as Modules first, from the leaves of the Production Chain up; the Compound Block only places them and links them. A huge Sub-Block repeats one Module, sized so its busiest belt is used up and the stack of its Copies comes out about square: pairs of short rows facing the belt between them rather than one long row. In a City Block, a few big machines whose rows (as long as their busiest belt feeds) would stand taller than most of its height repeat one too (Py biomass powerplants, a belt of biomass each: ADR 0071).
 _Avoid_: chunk, tile (a tile is one grid square)
 
 **Copy**:

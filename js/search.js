@@ -654,16 +654,29 @@ function sweep(first, designs, site = null) {
     for (const k of [0, 2]) list.push({ ...first, columns: first.columns.map((v, j) => (j === i ? k : v)) });
   });
   // In a City Block of few Sub-Blocks, every pairing of their best designs too, the smallest
-  // first: the shapes that fit its room together are seldom each one's best.
+  // first: the shapes that fit its room together are seldom each one's best. Where there are too
+  // many, each one's designs of another size only, and of the smallest Sub-Blocks fewer, down to
+  // their first: the biggest decide what fits (Py hot air's powerplants and brick heaters, 5
+  // Sub-Blocks, 8^5 pairings, ADR 0071), none starving or too big for the City Block.
   if (site) {
-    const options = designs.map(d => Math.min(d.length, PAIRED));
-    if (options.reduce((n, k) => n * k, 1) <= PAIRINGS) {
-      let all = [[]];
-      for (const k of options) all = all.flatMap(choice => Array.from({ length: k }, (_, c) => [...choice, c]));
-      const area = choice => choice.reduce((sum, c, i) => sum + (designs[i][c].estimate.area ?? 0), 0);
-      const tried = new Set(list.map(c => c.choice.join()));
-      for (const choice of all.filter(c => !tried.has(c.join())).sort((a, b) => area(a) - area(b))) list.push({ ...first, choice });
+    let options = designs.map(d => [...Array(Math.min(d.length, PAIRED)).keys()]);
+    if (options.reduce((n, k) => n * k.length, 1) > PAIRINGS) {
+      options = designs.map((d, i) => {
+        const sizes = new Set();
+        const kept = d.map((_, k) => k).filter(k => {
+          const e = d[k].estimate, key = `${d[k].copies ?? 0}|${e.w}|${e.h}|${e.area}`;
+          return !(e.trouble > 1e-6) && !(e.w !== undefined && !within(site, e)) && !sizes.has(key) && sizes.add(key);
+        }).slice(0, PAIRED);
+        return kept.length ? kept : [first.choice[i]];
+      });
+      const size = i => designs[i][first.choice[i]]?.estimate.area ?? 0;
+      while (options.reduce((n, k) => n * k.length, 1) > PAIRINGS) options[options.map((k, i) => i).filter(i => options[i].length > 1).sort((a, b) => size(a) - size(b))[0]].pop();
     }
+    let all = [[]];
+    for (const ks of options) all = all.flatMap(choice => ks.map(c => [...choice, c]));
+    const area = choice => choice.reduce((sum, c, i) => sum + (designs[i][c].estimate.area ?? 0), 0);
+    const tried = new Set(list.map(c => c.choice.join()));
+    for (const choice of all.filter(c => !tried.has(c.join())).sort((a, b) => area(a) - area(b))) list.push({ ...first, choice });
   }
   return (site ? list.flatMap(c => [c, { ...c, layers: LAYER_SPREAD }]) : list).slice(1);
 }

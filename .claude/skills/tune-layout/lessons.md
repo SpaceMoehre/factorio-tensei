@@ -71,6 +71,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | A Sub-Block finding no room tried placed first; a Supplied Item more than a lane on its own belt (not by train); room east of a Sub-Block sorting its belt to the train | Py coke one chain 6 → 7 towers (2160 → 2520/min); small parts 2775 → 3000 | 0068 |
 | The output edge chosen (right, up, down): the block still runs west to east, only the last legs to the train turn | Py small parts valid up and down; coke 3 towers up | 0069 |
 | A closed fluid loop (given back all it takes) only filled by train, no overflow; a burner unable to burn the Fuel burns its own category's | Py hot air with molten salt made: no build ("burns biomass fuel") → valid 6000/min | 0070 |
+| In a City Block, copies of few big machines whose rows stand taller than the room; where pairings are too many, the biggest Sub-Blocks' designs of other sizes paired; no spare machines breaking a Recipe Loop; Throughput of spare machines | Py hot air 118²: 9000 → 11812.5/min (1 → 1.3125 RHEs, 38 → 50 machines) | 0071 |
 
 ## What failed, was reverted, or must not be done
 
@@ -139,6 +140,10 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Starvation equal in every candidate from build start** (0063), again (0055): a Sub-Block's input that the chain did not size its producer for. Compare each Sub-Block's `inputs` with the rates the chain's steps make (`planSubBlocks` on `expandChain`) before touching the search: plan.js added a burner's fuel the chain never counted.
 
 - **run.mjs builds lost their search results before ADR 0070's fix.** Each strategy's child sent its layouts while the search never yields, and the queued messages were dropped at its exit. Only small early ones arrived, so builds showed "spread" layouts alone, and stopped improving early. Build A/Bs before then (ADR 0065, ADR 0067's hot air) compared partial results. Py hot air at 300 s: 123 × 38 → 116 × 33, with the search's own layouts at 110 × 36.
+
+- **A fit that delivers far less than its rate** (0071). Py hot air at 1.46875 RHEs "fit", Throughput 679/min: the try was ADR 0048's retry with a spare machine, whose chain broke the stone-brick Recipe Loop (by train both ways, no `loop` route, so `rankOf` counted none), and Throughput scaled the spare's belts twice. Check `delivered` in every summary against `rate`; a gap points to the chain the try ran (`plan.chainOf(list, spare)`), not the layout.
+- **Finer Filling and a design fix that gain only through a broken fit** (0071). A tenth of what fits as Filling's least and a belt each for machines over a lane both reached 1.47–1.5 RHEs only with spare machines; once those were refused, neither gained: reverted. Re-measure every change of a pass after its last fix.
+- **`kill $(pgrep -f run.mjs)` in one command** (0071), the shell again: the pattern matched that shell's own command line. List the PIDs in one call (`pgrep -f …` then `ps -o pid,etime,comm -p …`), kill them by number in the next.
 
 ## Rules every change keeps
 

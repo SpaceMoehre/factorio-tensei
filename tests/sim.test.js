@@ -74,6 +74,21 @@ test('throughput: a byproduct its Use takes less of stops its producer', () => {
   assert.ok(Math.abs(delivered('crushed') - 30) < 1e-6);
 });
 
+// Spare machines (ADR 0048): plate machines making 110 for gears taking 100, their belt carrying
+// the 100 taken. Backed up, they run at 100/110, and still bring all the gears take: nothing
+// short down the chain (before, their belt's 100 scaled again to 91, and so round, ADR 0071).
+test('throughput: spare machines run slower, their belts still bringing all that is taken', () => {
+  const sb = (item, input, rateIn, rateOut, extra) => ({ item, rate: rateOut, ...(extra ? { extra } : {}), inputs: [{ name: input, type: 'item', rate: rateIn }], outputs: [{ name: item, type: 'item', rate: rateOut }] });
+  const belt = (id, source, consumers, item, rate, sink = null) => ({ id, kind: 'belt', source, sink, consumers, items: [{ item, rate, supply: rate, capacity: 900 }] });
+  const block = {
+    subBlocks: [sb('gear', 'plate', 100, 50), sb('plate', 'ore', 110, 110, 10)],
+    routes: [belt(0, 'side-input', [1], 'ore', 110), belt(1, 1, [0], 'plate', 100), belt(2, 0, [], 'gear', 50, 'side-output')],
+  };
+  const { factor, delivered } = throughput(block);
+  assert.deepEqual(factor.map(f => Math.round(f * 1000) / 1000), [1, 0.909]);
+  assert.equal(delivered('gear'), 50);
+});
+
 test('items sharing a lane split its capacity in proportion to their supply', () => {
   const block = {
     subBlocks: [needs('a', 200)],

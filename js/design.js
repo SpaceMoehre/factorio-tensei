@@ -20,6 +20,11 @@ const COPIES_FROM = 8;
 // from their ends and the turns of a stack.
 const CITY_SIDES = 12;
 const ONLY_COPIES = 120;
+// In a City Block, fewer machines may repeat a module too where their rows, as long as the
+// busiest belt feeds, stand taller than most of its height (Py biomass powerplants: 7 of 15 × 15,
+// each its own belt of biomass, 128 tall in 110).
+const tallCores = (ctx, sb, shape) => !!ctx.site && sb.count >= 4
+  && Math.ceil(sb.count / shape.rowCap) * (Math.max(shape.building.size.w, shape.building.size.h) + 3) > TALL * ctx.site.inner.h;
 // Machines a column with belts beside them (Side and Head-on Belts) takes at most; in a City
 // Block as many as stand in a column as tall as its room (a machine with a belt row above and
 // below), where a machine that takes more than one face's inserters move can have nothing else
@@ -120,7 +125,7 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
   const links = coreLinks(sb, index, ctx.routes);
   const shape = shapeOf(ctx, sb, index, links, rest);
   /** @type {any[]} */
-  const candidates = whole && sb.count > COPIES_FROM && !only ? copyCandidates(ctx, index, shape, rng) : [];
+  const candidates = whole && (sb.count > COPIES_FROM || tallCores(ctx, sb, shape)) && !only ? copyCandidates(ctx, index, shape, rng) : [];
   const errors = new Map();
   if (sb.count <= ONLY_COPIES || !candidates.length) {
     const cores = new Map();

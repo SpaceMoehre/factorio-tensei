@@ -652,6 +652,18 @@ export function attempt(plan, n, options) {
   if (!short || short.item === list[0].item || first.timedOut || options.starving) return first;
   const machines = Math.ceil(short.rate / short.each - 1e-9);
   if (machines > Math.max(SPARE, Math.ceil(short.count / 10))) return first;
+  // (Nor where the train would bring an item it did not: a Recipe Loop the spare machines' inputs
+  // take more of than its producer makes, ADR 0071 — Py hot air's stone bricks, round the loop
+  // before, by train both ways after one warmer brick RHE more.)
+  const train = sp => {
+    try {
+      return plan.chainOf(list, sp).trainInputs.map(t => t.item);
+    } catch {
+      return null;
+    }
+  };
+  const before = train({}), after = train({ [short.item]: machines * short.each });
+  if (before && after?.some(item => !before.includes(item))) return first;
   const again = once(plan, list, { [short.item]: machines * short.each }, options);
   return again.block ? again : first;
 }
