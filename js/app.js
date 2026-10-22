@@ -473,6 +473,7 @@ function drawChain() {
     shown.querySelector('.rate').textContent = `${fmt(b.rate)}/min`;
     shown.querySelector('.hint').textContent = `from ${stepsNamed(b.from)}`;
   }
+  rows.forEach(syncInfo);
   for (const k of [...chainRows.keys()]) if (!seen.has(k)) chainRows.delete(k);
   if (rows.some((row, i) => list.children[i] !== row) || list.children.length !== rows.length) list.replaceChildren(...rows);
 }
@@ -564,8 +565,8 @@ function byproductRow({ item, type, recipes }) {
     save();
   });
   return el('div', { className: 'step byproduct' },
-    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: label(item), title: item }), el('span', { className: 'rate' })),
-    el('div', { className: 'hint' }),
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: label(item), title: item }), el('span', { className: 'rate' }), infoButton(item)),
+    el('div', { className: 'hint info-text' }),
     el('div', { className: 'selection' }, el('span', { textContent: 'Process' }),
       pictured(add, { kind: 'recipes', title: `Process ${label(item)} in a recipe`, placeholder: recipes.length ? 'Add a step processing it…' : 'No recipe takes it' }),
       // (A fluid destroyed rather than leaving by train, ADR 0062: in the building the game has
@@ -583,9 +584,9 @@ function stepBody(item, recipes, buildings, selection, choose, button, hint = ''
   recipe.addEventListener('change', () => choose({ recipe: recipe.value, building: '', modules: undefined }));
   building.addEventListener('change', () => choose({ building: building.value, modules: undefined }));
   return el('div', { className: 'step' },
-    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: label(item), title: item }), el('span', { className: 'rate' }), button),
-    el('div', { className: 'hint', textContent: hint, hidden: !hint }),
-    el('div', { className: 'hint loop', hidden: true }),
+    el('div', { className: 'step-head' }, iconOf(item), el('span', { className: 'name', textContent: label(item), title: item }), el('span', { className: 'rate' }), infoButton(item), button),
+    el('div', { className: 'hint info-text', textContent: hint, hidden: !hint }),
+    el('div', { className: 'hint loop info-text', hidden: true }),
     el('div', { className: 'selection' }, el('span', { textContent: 'Recipe' }), pictured(recipe, { kind: 'recipes', title: `Recipe for ${label(item)}` }),
       el('span', { textContent: 'Building' }), pictured(building, { title: `Building for ${label(item)}` }),
       ...(selection.modules ? [el('span', { textContent: 'Modules' }), modulesEditor(item, selection, choose)] : []),
@@ -620,13 +621,30 @@ function modulesEditor(item, selection, choose) {
     el('div', { className: 'module' }, el('span', { className: 'hint', textContent: `${used} of ${slots} slots` }), add));
 }
 
+// A chain row's notes (why it comes by train, what it takes back or gives back) stand behind an
+// "i" in its head, shown on click; the "i" only where the row has one.
+function infoButton(item) {
+  const button = el('button', { type: 'button', className: 'info', textContent: 'i', title: 'About this step', ariaLabel: `About ${label(item)}` });
+  button.setAttribute('aria-expanded', 'false');
+  button.addEventListener('click', () => {
+    const open = button.closest('.step').classList.toggle('open');
+    button.setAttribute('aria-expanded', String(open));
+  });
+  return button;
+}
+
+function syncInfo(row) {
+  const button = row.querySelector(':scope > .step-head > .info');
+  if (button) button.hidden = ![...row.querySelectorAll(':scope > .info-text')].some(n => !n.hidden && n.textContent.trim());
+}
+
 function trainRow(input) {
   const make = el('button', { type: 'button', className: 'swap', textContent: 'Make here', title: `Make ${input.item} in the block` });
   make.addEventListener('click', () => { state.made.push(input.item); renderChain(); save(); });
   make.hidden = input.reason !== 'import';
   return el('div', { className: 'step train' },
-    el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: label(input.item), title: input.item }), el('span', { className: 'rate' }), make),
-    el('div', { className: 'hint', textContent: (input.fill ? `a closed loop: the train only fills it, through a top-up valve into the ${label(input.topUp).toLowerCase()} step's pipe`
+    el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: label(input.item), title: input.item }), el('span', { className: 'rate' }), infoButton(input.item), make),
+    el('div', { className: 'hint info-text', textContent: (input.fill ? `a closed loop: the train only fills it, through a top-up valve into the ${label(input.topUp).toLowerCase()} step's pipe`
       : input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve` : TRAIN_REASON[input.reason] ?? 'by train') + atTemperature(input.temperature) }));
 }
 
