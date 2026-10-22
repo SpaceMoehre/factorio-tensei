@@ -1,6 +1,6 @@
 import { turnLanes } from './compose.js';
 import { RoutingError } from './router.js';
-import { VEC, E } from './grid.js';
+import { VEC, E, S, outSide } from './grid.js';
 import { SQUARE } from './score.js';
 
 // Where each copy of each module stands in the Compound Block. Belts run west to east through
@@ -43,6 +43,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const { corridor = 2, gap = 1, stack = 0, weight = 4 } = params;
   const steps = plan.map((_, i) => i);
   const site = ctx.site && siteRules(ctx.site);
+  const outEdge = outSide(ctx.logistics);
 
   // Each Sub-Block's copies stacked (stackOf): their offsets inside the block, and its size.
   // (A Sub-Block whose belt to the train sorts a byproduct out after it: room east of it for the
@@ -174,8 +175,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
     // With nothing to feed here (a Goal), below the Goals already placed (in a City Block,
     // against its east edge).
     const right = site ? site.inner.x + site.inner.w : all.x + all.w;
+    // (With the Output Side down, from the bottom up, ADR 0069.)
+    const down = site && outEdge === S;
     const start = ty === null
-      ? { x: placed.size || site ? right - b.w : 0, y: placed.size ? all.y + all.h + gap + 1 : site ? site.inner.y : 0 }
+      ? { x: placed.size || site ? right - b.w : 0, y: down ? (placed.size ? all.y - gap - 1 - b.h : site.inner.y + site.inner.h - b.h) : placed.size ? all.y + all.h + gap + 1 : site ? site.inner.y : 0 }
       : { x: east, y: ty };
     const candidates = [start];
     for (const j of placed.keys()) {

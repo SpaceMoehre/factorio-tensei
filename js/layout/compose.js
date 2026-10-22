@@ -1,4 +1,4 @@
-import { Grid, N, E, S, W, VEC, key, turnLeft, turnRight, opposite } from './grid.js';
+import { Grid, N, E, S, W, VEC, key, turnLeft, turnRight, opposite, outSide, atOut } from './grid.js';
 import { turnSide } from './turn.js';
 import { routeLink, routePipe, RoutingError, legCost } from './router.js';
 import { PowerError } from './poles.js';
@@ -101,6 +101,8 @@ export function compose(ctx, prepared, positions, layout) {
   // Item's pipe there, even from one copy: it turns back to join its network.)
   const { site = null } = ctx;
   const area = site ? { ...site.inner } : extentOf([...placed, ...(positions.bounds ? [positions.bounds] : [])], layout.margin);
+  // (The edge the belts and pipes to the train leave across, ADR 0069.)
+  const out = outSide(ctx.logistics);
   // Standing on its own, a row along the top for each Recipe Loop's feedback to run back west
   // on, from its producer to the Sub-Block it feeds.
   const feeds = routes.filter(r => r.tapOf !== undefined && !layout.plain);
@@ -136,7 +138,7 @@ export function compose(ctx, prepared, positions, layout) {
 
   // Every copy's machines, inserters and routed pieces, under the global route ids.
   const placeAll = () => {
-    const grid = new Grid(area);
+    const grid = new Grid(area, out);
     for (const f of site?.fixtures ?? []) grid.place(f);
     // (An Annex's City Block: the tunnels the layout before it built, and where a pipe would join
     // its machines.)
@@ -289,7 +291,7 @@ export function compose(ctx, prepared, positions, layout) {
     if (k === route.slots.length) {
       const last = route.slots.at(-1).pieces.at(-1);
       const [dx, dy] = VEC[last.travel];
-      if (last.x === area.x + area.w - 1 && last.travel === E) return null;
+      if (atOut(area, out, last.x, last.y, last.travel)) return null;
       return { starts: [{ x: last.x + dx, y: last.y + dy, a: last.travel }], goal: 'east' };
     }
     const slot = route.slots[k];
@@ -388,7 +390,7 @@ export function compose(ctx, prepared, positions, layout) {
       }
     }
     const reachesWest = route.stubs.some(s => s.side === 'W' && placed[s.inst.index].x + s.x === area.x);
-    const reachesEast = route.stubs.some(s => s.side === 'E' && placed[s.inst.index].x + s.x === area.x + area.w - 1);
+    const reachesEast = out === E && route.stubs.some(s => s.side === 'E' && placed[s.inst.index].x + s.x === area.x + area.w - 1);
     // (In an Annex's City Block, a Side Input drawn from a pipe the layout before it built: only
     // from there where the train brings none, ADR 0032.)
     const drawn = route.source === 'side-input' ? site?.draws?.[route.fluid] : undefined;
@@ -583,7 +585,7 @@ export function compose(ctx, prepared, positions, layout) {
           grid.restore(saved);
         }
         unjoined.add(task.route.id);
-        put(task.route.id, task.slot, last.x === area.x + area.w - 1 && last.travel === E ? [] : routeLink(grid, { id: task.route.id, starts, goal: 'east' }, belts));
+        put(task.route.id, task.slot, atOut(area, out, last.x, last.y, last.travel) ? [] : routeLink(grid, { id: task.route.id, starts, goal: 'east' }, belts));
         return;
       }
       if (task.gather) {

@@ -757,3 +757,23 @@ test('Layers weighs a bounded number of ways: Py titanium plate\'s 21 Sub-Blocks
   assertValid(block, shipped, py);
   assert.deepEqual(simulate(block).starvation, []);
 });
+
+// The Output Side (ADR 0069): the user chooses the edge the products leave across, up or down
+// rather than right; the block runs west to east all the same, its belts to the train turning to
+// that edge, the Goals standing against it (down: from the bottom up).
+test('the Output Side: the belts to the train leave across the edge the user chose', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 60, h: 60 }, fixtures: [] }, 2);
+  for (const [output, out] of /** @type {[string, number][]} */ ([['up', 0], ['down', 8]])) {
+    let best = null;
+    const run = search([asm2('electronic-circuit', 300), asm2('copper-cable', 900)], catalog, { ...logistics, output }, { seed: 1, maxCandidates: 12, site });
+    for (let step = run.next(); !step.done; step = run.next()) best = step.value.block;
+    assert.ok(best, output);
+    assert.equal(best.out, out);
+    for (const r of best.routes.filter(r => r.kind === 'belt' && r.sink === 'side-output')) {
+      const last = r.pieces.at(-1);
+      assert.equal(last.travel, out, `${output}: belt ${r.id} leaves heading ${last.travel}`);
+      assert.equal(last.y, out === 0 ? best.bounds.y : best.bounds.y + best.bounds.h - 1);
+    }
+    assertValid(best, catalog, { ...logistics, output });
+  }
+});

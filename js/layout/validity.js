@@ -430,7 +430,8 @@ export function pipeNetwork(block, route, catalog, logistics, machines) {
   // (Joined with pipes of its network, through theirs; in an Annex's City Block reaching one built
   // before it will do: that was checked with its own.)
   const built = p => route.network !== undefined && p.network === route.network;
-  if (route.sink === 'side-output' && !joinedTo(block, route, reach).some(p => p.x === block.bounds.x + block.bounds.w - 1 || built(p))) problems.push(`${route.fluid} does not reach the east edge`);
+  const atOut = p => ((block.out ?? 4) === 4 ? p.x === block.bounds.x + block.bounds.w - 1 : block.out === 0 ? p.y === block.bounds.y : p.y === block.bounds.y + block.bounds.h - 1);
+  if (route.sink === 'side-output' && !joinedTo(block, route, reach).some(p => atOut(p) || built(p))) problems.push(`${route.fluid} does not reach the train's edge`);
   // A valve between its pipe and the one it tops up or lets the spare off; a void at the end of
   // its pipe (ADR 0062).
   const all = tileMap(block.entities.filter(e => e.kind === 'pipe' || e.kind === 'pipe-to-ground'));
@@ -523,6 +524,7 @@ export function separateNetworks(block, catalog, logistics) {
   return problems;
 }
 
+// (On to the Output Side the user chose, `block.out`: east by default, ADR 0069.)
 export function endsAtEastEdge(block, route) {
   const last = route.pieces[route.pieces.length - 1];
   // A byproduct's belt joining another that carries it there (side-loading onto it).
@@ -530,8 +532,10 @@ export function endsAtEastEdge(block, route) {
     const problems = joinsFromSide(block, route);
     return problems.length ? problems : endsAtEastEdge(block, block.routes[route.joins]);
   }
-  if (last.x !== block.bounds.x + block.bounds.w - 1) return [`route ${route.id} does not reach the east edge`];
-  if (last.travel !== 4) return [`route ${route.id} does not leave eastward`];
+  const out = block.out ?? 4, { x, y, w, h } = block.bounds;
+  const edge = out === 4 ? last.x === x + w - 1 : out === 0 ? last.y === y : last.y === y + h - 1;
+  if (!edge) return [`route ${route.id} does not reach the ${out === 4 ? 'east' : out === 0 ? 'north' : 'south'} edge`];
+  if (last.travel !== out) return [`route ${route.id} does not leave ${out === 4 ? 'east' : out === 0 ? 'north' : 'south'}ward`];
   return [];
 }
 

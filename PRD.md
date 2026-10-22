@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v56: The Output Side (implemented)
+
+The user chooses the edge the products leave across: right (as before), up or down ("Output side"). The train brings the inputs from the left; the block runs west to east, its belts and pipes to the train turning to the chosen edge, the Goals standing against it (ADR 0069).
+
 ## v55: The biggest placed first; a Supplied Item on its own belt; room to sort (implemented)
 
 A Sub-Block that finds no room is tried placed first; a Supplied Item more than a lane goes into its takers on a belt of its own (it went by train, and the chain grew without bound); a Sub-Block sorting a byproduct out of its belt to the train keeps room east of it for the splitter. Py coke with One Item a Belt: one chain of 6 towers (2160/min) → 7 (2520/min), nothing riding; small parts 2775 → 3000/min (ADR 0068).

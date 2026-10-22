@@ -7,9 +7,18 @@ export const key = (x, y) => `${x},${y}`;
 
 const FREE = -2147483648;
 
+// The Output Side (ADR 0069): the edge the block's belts and pipes to the train leave across, as
+// the user chooses it (logistics.output: 'right', 'up' or 'down'; east by default). The block runs
+// west to east all the same; only the last legs to the train turn there.
+export const outSide = logistics => ({ up: N, down: S }[logistics?.output] ?? E);
+// Whether a piece at x, y heading a leaves `area` across the Output Side `out`.
+export const atOut = (area, out, x, y, a) => a === out && (out === E ? x === area.x + area.w - 1 : out === N ? y === area.y : y === area.y + area.h - 1);
+
 export class Grid {
-  constructor(area) {
+  // out: the Output Side (outSide).
+  constructor(area, out = E) {
     this.area = area;
+    this.out = out;
     this.occupied = new Map();
     this.reserved = new Map();
     // The same, by tile index inside the area, for the router's hot lookups.

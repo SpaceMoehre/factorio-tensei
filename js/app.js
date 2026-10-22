@@ -141,6 +141,9 @@ $('circuit').addEventListener('change', () => {
   // Only the blueprint and the map change: the block stays as it is.
   if (best) show(best.block, best.tried, best.found, best.score, { view: map?.viewport() });
 });
+// The Output Side (ADR 0069): the edge the products leave across; the inputs come from the left.
+$('output-side').value = state.logistics.output ?? 'right';
+$('output-side').addEventListener('change', () => { state.logistics.output = $('output-side').value; save(); });
 $('right-angle').checked = state.logistics.rightAngle;
 $('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
 // One Item a Belt (ADR 0066): on unless the user keeps a machine's products on one belt.
@@ -1499,7 +1502,7 @@ function inspect(hit, block) {
     }, iconOf(sb.item), el('span', { textContent: `${label(sb.item)} ×${sb.count}` }));
   };
   const end = (at, west) => (typeof at === 'number' ? sbLink(at)
-    : el('span', { className: 'train' }, iconOf('locomotive'), el('span', { textContent: `Train (${west ? 'west' : 'east'} edge)` })));
+    : el('span', { className: 'train' }, iconOf('locomotive'), el('span', { textContent: `Train (${west ? 'west' : { up: 'north', down: 'south' }[state.logistics.output] ?? 'east'} edge)` })));
   const facts = rows => el('dl', { className: 'facts' }, ...rows.filter(Boolean).flatMap(([k, ...v]) => [el('dt', { textContent: k }), el('dd', {}, ...v)]));
   // A flow: its icon and name, its rate, and how full it runs of `capacity` (a bar).
   const flow = (name, n, capacity = null, note = '') => {

@@ -138,10 +138,14 @@ function rowHeading(waypoints, i) {
   return behind === null || behind === undefined ? null : opposite(behind);
 }
 
-// Leaving the area across its east (or west) edge: the goal and the distance to it.
+// Leaving the area across its east (or west) edge: the goal and the distance to it. 'east' is the
+// Output Side (ADR 0069): the north or south edge where the user chose it.
 function edgeGoal(grid, side) {
+  const { x: ax, y: ay, w, h } = grid.area;
+  if (side === 'east' && grid.out === N) return [s => s.y === ay - 1 && s.a === N, (x, y) => y - (ay - 1)];
+  if (side === 'east' && grid.out === S) return [s => s.y === ay + h && s.a === S, (x, y) => ay + h - y];
   if (side === 'east') {
-    const lastX = grid.area.x + grid.area.w - 1;
+    const lastX = ax + w - 1;
     return [s => s.x === lastX + 1 && s.a === E, x => lastX + 1 - x];
   }
   const firstX = grid.area.x;
@@ -262,8 +266,8 @@ function growTree(grid, spec, names, seedPieces) {
   if (spec.sink && !joined) {
     const voids = spec.void ? voidStarts(grid, spec) : null;
     const leg = voids ? legOff(grid, voids, toTree.isGoal, toTree.heuristic, moves, sp => [sp.piece])
-      : search(grid, edgeStarts(grid, grid.area.x + grid.area.w - 1, W), toTree.isGoal, toTree.heuristic, moves);
-    if (!leg) throw new RoutingError(`${spec.fluid}: no path to ${voids ? `a ${spec.void.name}` : 'the east edge'}`);
+      : search(grid, outStarts(grid), toTree.isGoal, toTree.heuristic, moves);
+    if (!leg) throw new RoutingError(`${spec.fluid}: no path to ${voids ? `a ${spec.void.name}` : 'the train'}`);
     commit(leg);
   }
   return pieces;
@@ -305,7 +309,7 @@ function routeLoose(grid, spec, names) {
   const field = distanceField(grid.area, new Set(spots.map(sp => key(sp.v.x, sp.v.y))));
   const isGoal = st => at.has(`${st.x},${st.y},${st.a}`);
   /** @type {any[]} */
-  const starts = spec.source ? edgeStarts(grid, grid.area.x, E) : spec.void ? voidStarts(grid, spec) : edgeStarts(grid, grid.area.x + grid.area.w - 1, W);
+  const starts = spec.source ? edgeStarts(grid, grid.area.x, E) : spec.void ? voidStarts(grid, spec) : outStarts(grid);
   // (Neither its valve nor a void on the leg.)
   let left = starts;
   for (let tries = 0; tries < 6; tries++) {
@@ -395,6 +399,14 @@ function edgeStarts(grid, x, dir) {
   const starts = [];
   for (let y = grid.area.y; y < grid.area.y + grid.area.h; y++) starts.push({ x, y, a: dir });
   return starts;
+}
+
+// A pipe to the train searched for from the Output Side inward (ADR 0069).
+function outStarts(grid) {
+  const { x: ax, y: ay, w, h } = grid.area;
+  if (grid.out === E) return edgeStarts(grid, ax + w - 1, W);
+  const y = grid.out === N ? ay : ay + h - 1, a = grid.out === N ? S : N;
+  return [...Array(w).keys()].map(k => ({ x: ax + k, y, a }));
 }
 
 function nearest(tiles, x, y) {
