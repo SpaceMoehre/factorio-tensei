@@ -96,3 +96,34 @@ test('Py hot air: coke oven gas round its loop of temperatures, every stone bric
   for (const a of gas) for (const b of gas) if (a.temperature !== b.temperature) assert.ok(networks.get(a.id) === undefined || networks.get(a.id) !== networks.get(b.id));
   assertValid(found.block, shipped, py);
 });
+
+// Py hot air with its hot molten salt made too: the heat exchangers give back as molten salt all
+// the hot molten salt they take, and the biomass powerplants heat all of it again. A closed loop:
+// the train only fills it through a top-up valve, no overflow letting any off to the train. The
+// powerplants burn biomass only: not the Fuel (coal), but the biomass fuel of most energy, or the
+// one chosen for biomass (logistics.fuels).
+test('Py hot air: molten salt round a closed loop, the train only filling it; the powerplants burning biomass', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { search } = await import('../js/search.js');
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const py = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', fuel: 'coal', liquidFuel: 'methane', handSize: 1 };
+  const made = ['pressured-air', 'warmer-stone-brick', 'warm-stone-brick', 'coke-oven-gas', 'hot-molten-salt'];
+  const options = { made, selections: { 'hot-air': { recipe: 'warmer-air-2' } } };
+  const chain = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, { ...options, logistics: py });
+  const reheat = chain.entries.find(e => e.selection.recipe === 'reheat-coke-gas').goal;
+  assert.equal(reheat.overflow, undefined);
+  assert.deepEqual(reheat.closed, ['molten-salt']);
+  const salt = chain.trainInputs.find(t => t.item === 'molten-salt');
+  assert.ok(salt.fill && salt.rate < 0.011 * reheat.rate, JSON.stringify(salt));
+  assert.ok(chain.trainInputs.some(t => t.item === 'charcoal-briquette') && !chain.trainInputs.some(t => t.item === 'coal'));
+  const wood = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, { ...options, logistics: { ...py, fuels: { biomass: 'wood' } } });
+  assert.ok(wood.trainInputs.some(t => t.item === 'wood'));
+  let found = null;
+  const run = search(chain.entries, shipped, py, { seed: 1, maxCandidates: 6 });
+  for (let next = run.next(); !next.done && !found; next = run.next()) found = next.value;
+  assert.ok(found, 'no layout');
+  const pipes = found.block.routes.filter(r => r.kind === 'pipe' && r.fluid === 'molten-salt');
+  assert.ok(pipes.every(r => r.sink !== 'side-output' && r.valve?.mode !== 'overflow'), JSON.stringify(pipes.map(r => [r.source, r.sink, r.valve])));
+  assert.ok(pipes.some(r => r.source === 'side-input' && r.valve?.mode === 'top-up'));
+  assertValid(found.block, shipped, py);
+});

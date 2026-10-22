@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v57: Closed loops; a burner's own fuel (implemented)
+
+A fluid fed back round a loop that gives back all it takes (Py's molten salt) is only filled by the train, no overflow letting a spare off to the train. A burner that cannot burn the Fuel burns one of its own category, chosen beside it ("Biomass fuel"). Py hot air with its hot molten salt made: no build before ("burns biomass fuel, not coal"), valid at 6000/min after (ADR 0070).
+
 ## v56: The Output Side (implemented)
 
 The user chooses the edge the products leave across: right (as before), up or down ("Output side"). The train brings the inputs from the left; the block runs west to east, its belts and pipes to the train turning to the chosen edge, the Goals standing against it (ADR 0069).

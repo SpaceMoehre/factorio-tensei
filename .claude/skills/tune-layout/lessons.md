@@ -69,6 +69,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | One Item a Belt (the user's rule): each product its own belt where a byproduct would ride into a Sub-Block; filter splitter for train-only byproducts | Py coke: 6 towers in one chain, nothing riding (3352.5 → 2160/min, the rule's price in room) | 0066 |
 | Fluid temperatures in the chain: a taker at a temperature only from a step making it so, fed-back fluids only to those taking them so, pipes of two temperatures apart | Py hot air: gas by train 16842 → 505/min, 184 × 12 → 59 × 48 | 0067 |
 | A Sub-Block finding no room tried placed first; a Supplied Item more than a lane on its own belt (not by train); room east of a Sub-Block sorting its belt to the train | Py coke one chain 6 → 7 towers (2160 → 2520/min); small parts 2775 → 3000 | 0068 |
+| The output edge chosen (right, up, down): the block still runs west to east, only the last legs to the train turn | Py small parts valid up and down; coke 3 towers up | 0069 |
+| A closed fluid loop (given back all it takes) only filled by train, no overflow; a burner unable to burn the Fuel burns its own category's | Py hot air with molten salt made: no build ("burns biomass fuel") → valid 6000/min | 0070 |
 
 ## What failed, was reverted, or must not be done
 

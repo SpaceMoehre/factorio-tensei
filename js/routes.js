@@ -102,7 +102,8 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
       // spare off through an overflow valve on a pipe of its own, to the east edge or destroyed.
       const valved = sb.overflow?.includes(o.name) || sb.exports?.includes(o.name);
       const left = o.rate + more - taken(plan, flows, i, o.name);
-      const sink = leavesBlock(o) ? (sb.voids?.includes(o.name) ? 'void' : 'side-output') : null;
+      // (A closed loop's: all of it back into its takers, none to the train.)
+      const sink = leavesBlock(o) && !sb.closed?.includes(o.name) ? (sb.voids?.includes(o.name) ? 'void' : 'side-output') : null;
       const r = add({
         kind: 'pipe', fluid: o.name, source: i, sink: valved ? null : sink, ...(o.temperature !== undefined ? { temperature: o.temperature } : {}),
         items: [{ item: o.name, rate: o.rate + more, supply: o.rate + more, capacity: PIPE_CAPACITY }],

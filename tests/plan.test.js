@@ -75,10 +75,18 @@ test('Fuel: a burner machine takes its Fuel as one more input, at the rate its p
   assert.ok(Math.abs(sb.inputs[1].rate - 2.7) < 1e-9, `coal at ${sb.inputs[1].rate}/min`);
 });
 
-test('Fuel must suit the burner: a furnace cannot burn a nuclear fuel cell', () => {
+// (A burner that cannot burn the Fuel burns its own category's: the one chosen, else that of most
+// energy, ADR 0070; none of its category, an error.)
+test('Fuel must suit the burner: a furnace given nuclear fuel cells burns chemical fuel instead', () => {
+  const plan = logistics => planSubBlocks([{
+    goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' },
+  }], catalog, logistics)[0].inputs.map(i => i.name);
+  assert.deepEqual(plan({ fuel: 'nuclear-fuel-cell' }), ['iron-ore', 'coal']);
+  assert.deepEqual(plan({ fuel: 'nuclear-fuel-cell', fuels: { chemical: 'coal' } }), ['iron-ore', 'coal']);
+  const bare = { ...catalog, fuels: { 'nuclear-fuel-cell': catalog.fuels['nuclear-fuel-cell'] } };
   assert.throws(() => planSubBlocks([{
     goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' },
-  }], catalog, { fuel: 'nuclear-fuel-cell' }), /stone-furnace burns chemical fuel, not nuclear-fuel-cell/);
+  }], bare, { fuel: 'nuclear-fuel-cell' }), /stone-furnace burns chemical fuel, not nuclear-fuel-cell/);
 });
 
 // Py's glassworks: 10MW at effectivity 1 on natural gas of 90kJ burns 10e6 / 90e3 = 111.1 units/s

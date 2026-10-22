@@ -36,7 +36,7 @@ _Avoid_: treating byproducts as satisfying other Goals automatically
 An ingredient a step would bring by train that another step of the chain makes at least as much of as a byproduct, or a Byproduct Use as one of its products: it comes from that step instead (fed back through a splitter where that closes a loop), what is left over leaving by train (Py's sodium hydroxide gives its lime the limestone it takes, ADR 0035; Py titanium's recrushed rejects give the sand its gravel, ADR 0041). Fed back, a solid only where one lane of the chosen belt carries all the solids its step makes, or from a Goal's step: then each of its output belts without a tap gathers its share onto the feedback belt (a Gatherer: a filter splitter and a belt side-loading onto the feedback; ADR 0039, ADR 0040). Where the catalog has valves one can build, a fluid too, though it closes a loop or covers only part of what is taken, the train bringing the rest: a Fed-back Fluid (ADR 0062).
 
 **Fed-back Fluid**:
-A fluid a step makes besides its item that the chain also takes: it goes to the steps taking it first, through its pipe to them, and the step making it (or the train) makes only the rest, through a top-up valve into that pipe; its spare leaves through an overflow valve on a pipe of its own, to the train or destroyed. Where it covers all they take, what makes the rest still makes a hundredth of it, so a loop starts (Py coalbed gas: its extractors' water back into its vacuum pumps, one offshore pump). Only where the catalog has valves one can build (ADR 0062).
+A fluid a step makes besides its item that the chain also takes: it goes to the steps taking it first, through its pipe to them, and the step making it (or the train) makes only the rest, through a top-up valve into that pipe; its spare leaves through an overflow valve on a pipe of its own, to the train or destroyed. Where it covers all they take, what makes the rest still makes a hundredth of it, so a loop starts (Py coalbed gas: its extractors' water back into its vacuum pumps, one offshore pump). Only where the catalog has valves one can build (ADR 0062). A loop given back just as much as it takes, a Closed Loop (Py's molten salt, from the heat exchangers back into the powerplants heating it), has no spare: the train only fills it, no overflow valve (ADR 0070).
 _Avoid_: recycling a fluid without valves (its producers stall or its consumers starve as pressures settle)
 
 **Leaving by Train Too**:
@@ -67,7 +67,7 @@ The user's rule: every belt carries one item. A Sub-Block whose byproduct would 
 _Avoid_: sorting belts, filtered outputs
 
 **Fuel**:
-The item a burner machine burns, treated as one more ingredient of its recipe, at the rate its power draw requires: made in the block where the user makes it (the chain sizing its step for it), else by train (ADR 0063). Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item.
+The item a burner machine burns, treated as one more ingredient of its recipe, at the rate its power draw requires: made in the block where the user makes it (the chain sizing its step for it), else by train (ADR 0063). Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item. A burner that cannot burn it (Py's biomass powerplant) burns the one chosen for its own fuel category ("Biomass fuel"), by default that category's of most energy (ADR 0070).
 _Avoid_: fuel for inserters (burner inserters are never used)
 
 **Liquid Fuel**:

@@ -1,7 +1,8 @@
 import { machineEffect, defaultModules } from './modules.js';
 import { assignFluidBoxes } from './fluidboxes.js';
 
-// logistics.fuel: the Fuel item burner machines burn; logistics.liquidFuel: the Liquid Fuel
+// logistics.fuel: the Fuel item burner machines burn (logistics.fuels: category → the one those
+// that cannot burn it burn, burnerFuel); logistics.liquidFuel: the Liquid Fuel
 // machines burning a fluid burn (unless their energy source takes one fluid only).
 // An entry's byTrain: items it takes by train though a Sub-Block makes them (a Recipe Loop's).
 // An entry's use: a Byproduct Use's (chain.js), its item made besides any step's (it takes its
@@ -33,11 +34,12 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
     const inputs = recipe.ingredients.map(flow);
     if (building.energy === 'burner') {
       // Machines burn fuel only while they work: the busy share of the Count.
-      const perMachine = fuelPerMinute(building, catalog, logistics.fuel) * effect.consumption;
-      const fuel = inputs.find(i => i.name === logistics.fuel);
+      const name = burnerFuel(building, catalog, logistics);
+      const perMachine = fuelPerMinute(building, catalog, name) * effect.consumption;
+      const fuel = inputs.find(i => i.name === name);
       const rate = perMachine * goal.rate / perMachinePerMinute;
       if (fuel) fuel.rate += rate;
-      else inputs.push({ name: logistics.fuel, type: 'item', rate });
+      else inputs.push({ name, type: 'item', rate });
     }
     if (liquid) {
       // The same for a Liquid Fuel, per unit of fluid: a pipe of its own into every machine.
@@ -75,6 +77,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       // rest in through a top-up valve, topUp: fluid → { from: the Sub-Block or 'side-input',
       // rate }; items leaving by train besides, their consumers first; fluids leaving destroyed.)
       ...(goal.overflow ? { overflow: goal.overflow } : {}),
+      // (A closed loop's fluid fed back: none spare, no overflow valve.)
+      ...(goal.closed ? { closed: goal.closed } : {}),
       ...(goal.topUp ? { topUp: goal.topUp } : {}),
       ...(goal.exports ? { exports: goal.exports } : {}),
       ...(goal.voids ? { voids: goal.voids } : {}),
@@ -97,10 +101,29 @@ function liquidFuelOf(building, catalog, name) {
 // burns items, its Liquid Fuel where it burns a fluid; null where it burns nothing (the chain
 // makes the fuel too where it is a step, chain.js).
 export function fuelOf(building, catalog, logistics = {}) {
-  if (building.energy === 'burner') return { name: logistics.fuel, perMinute: fuelPerMinute(building, catalog, logistics.fuel) };
+  if (building.energy === 'burner') {
+    const name = burnerFuel(building, catalog, logistics);
+    return { name, perMinute: fuelPerMinute(building, catalog, name) };
+  }
   if (building.energy !== 'fluid') return null;
   const liquid = liquidFuelOf(building, catalog, logistics.liquidFuel);
   return { name: liquid.name, perMinute: building.energyUsage / (liquid.fuelValue * building.effectivity) * 60 };
+}
+
+// The Fuel item a burner burns: the Fuel, or where it cannot burn that (Py's biomass powerplant
+// burns biomass only), the one chosen for a category it burns (`logistics.fuels`), else that
+// category's of most energy.
+export function burnerFuel(building, catalog, logistics = {}) {
+  const fits = name => catalog.fuels?.[name]?.categories.some(c => building.fuelCategories?.includes(c));
+  if (!catalog.fuels || !building.fuelCategories?.length || fits(logistics.fuel)) return logistics.fuel;
+  const chosen = building.fuelCategories.map(c => logistics.fuels?.[c]).find(fits);
+  return chosen ?? fuelsFor(catalog, building.fuelCategories[0])[0] ?? logistics.fuel;
+}
+
+// The Fuel items of a category, most energy first.
+export function fuelsFor(catalog, category) {
+  return Object.values(catalog.fuels ?? {}).filter(f => f.categories.includes(category))
+    .sort((a, b) => b.fuelValue - a.fuelValue || a.name.localeCompare(b.name)).map(f => f.name);
 }
 
 // A busy burner machine burns energy_usage / (fuel_value × effectivity) fuel items per second.

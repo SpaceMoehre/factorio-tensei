@@ -396,8 +396,13 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const from = makers[0];
     let part = !!from && from.rate < input.rate * (1 - 1e-9);
     if (!from || (part && !(fluid && valved))) continue;
-    // (A loop's fluid the byproduct covers: the train still brings TOP_UP of it, so it starts.)
+    // (A loop's fluid the byproduct covers: the train still brings TOP_UP of it, so it starts.
+    // One it gives back just what they take of, a closed loop (Py's molten salt: the heat
+    // exchanger's back into the powerplants heating it), has no spare: the train only fills it,
+    // and no overflow valve lets any off.)
+    let closed = false;
     if (fluid && valved && !part && takers.some(t => feeds(t, from.key))) {
+      closed = from.rate <= input.rate * (1 + 1e-9);
       from.rate = input.rate * (1 - TOP_UP);
       part = true;
     }
@@ -408,13 +413,13 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     if (!fluid && takers.some(t => feeds(t, from.key)) && !goals.some(g => g.item === from.key)
       && [...solid].reduce((sum, name) => sum + makes(from.key, name) * ratesOf(from.key), 0) > lane * (1 + 1e-9)) continue;
     const rate = part ? from.rate : input.rate;
-    if (part) Object.assign(input, { rate: input.rate - from.rate, topUp: from.key });
+    if (part) Object.assign(input, { rate: input.rate - from.rate, topUp: from.key, ...(closed ? { fill: true } : {}) });
     else trainInputs.delete(item);
     for (const k of takers) {
       stepOf(k).byTrain.delete(item);
       takesFrom.set(k, { ...takesFrom.get(k), [item]: from.key });
     }
-    recycled.push({ item, from: from.key, into: takers, rate, spare: part ? 0 : Math.max(0, from.rate - input.rate), ...(fluid && valved ? { valve: true } : {}) });
+    recycled.push({ item, from: from.key, into: takers, rate, spare: part ? 0 : Math.max(0, from.rate - input.rate), ...(fluid && valved ? { valve: true } : {}), ...(closed ? { closed } : {}) });
   }
   // (A fluid fed back: the steps taking it take it from the step whose byproduct it is.)
   for (const s of supplies.filter(s => s.valve)) {
@@ -447,12 +452,14 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     return { ...(list.length ? { joins: Object.fromEntries(list) } : {}), ...(own.length ? { feeds: Object.fromEntries(own) } : {}) };
   };
   // A step's fluids fed back (ADR 0062): their spare off through an overflow valve (`overflow`),
+  // or none where the loop is closed (`closed`),
   // what makes up the rest through a top-up valve into their pipe (`topUp`: fluid → { from: the
   // entry making it, or 'side-input', rate }). What it makes that the user wants leaving by train
   // too (`exports`, its spare through a splitter or valve giving its consumers priority) and the
   // fluids it makes leaving by train that are destroyed instead (`voids`).
   const valvesOfStep = key => {
-    const fed = [...supplies.filter(s => s.valve && s.from === key), ...recycled.filter(r => r.valve && r.from === key)];
+    const fed = [...supplies.filter(s => s.valve && s.from === key), ...recycled.filter(r => r.valve && r.from === key && !r.closed)];
+    const closed = recycled.filter(r => r.closed && r.from === key).map(r => r.item);
     const topUp = [
       ...supplies.filter(s => s.valve && s.from === key).map(s => [s.item, { from: entryOf.get(s.item), rate: s.takers ? Math.max(0, takenAt(s) - s.per * rates[at.get(key)]) : rates[at.get(s.item)] }]),
       ...[...trainInputs.values()].filter(t => t.topUp === key).map(t => [t.item, { from: 'side-input', rate: t.rate }]),
@@ -462,6 +469,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const gone = voids.filter(f => products.has(f) && recipeOf(key).products.find(p => p.name === f).type === 'fluid' && !out.includes(f));
     return {
       ...(fed.length ? { overflow: [...new Set(fed.map(f => f.item))] } : {}),
+      ...(closed.length ? { closed } : {}),
       ...(topUp.length ? { topUp: Object.fromEntries(topUp) } : {}),
       ...(out.length ? { exports: out } : {}),
       ...(gone.length ? { voids: gone } : {}),

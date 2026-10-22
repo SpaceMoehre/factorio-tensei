@@ -35,7 +35,7 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   plan.forEach((_, i) => state[i] || walk(i));
   // (A fluid fed back through valves closes its loop in the block, ADR 0062: an Internal Path, but
   // no step of the Dependency Order.)
-  const fedBack = new Set([...closing].filter(e => e.type === 'fluid' && plan[e.from].overflow?.includes(e.item)));
+  const fedBack = new Set([...closing].filter(e => e.type === 'fluid' && (plan[e.from].overflow?.includes(e.item) || plan[e.from].closed?.includes(e.item))));
   for (const e of fedBack) closing.delete(e);
   // A byproduct taken by a Sub-Block that takes nothing else off its producer's belt, while that
   // belt goes on to others with what they take: tapped off it right after the producers (a

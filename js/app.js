@@ -1,6 +1,7 @@
 import { simulate } from './sim.js';
 import { expandChain, recipeOptions, useKey, EVERY } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
+import { burnerFuel, fuelsFor } from './plan.js';
 import { encodeBlueprint } from './blueprint.js';
 import { clocksOf, clockLabel } from './clocks.js';
 import { circuitPairs } from './layout/wires.js';
@@ -368,10 +369,26 @@ function renderChain() {
 
 // Fuel and Liquid Fuel show only where a machine of the chain burns one: an item (a burner), or a
 // fluid of the user's choice (one whose energy source takes any).
+// A burner that cannot burn the Fuel (Py's biomass powerplant) burns one of its own category's,
+// chosen beside it ("Biomass fuel", logistics.fuels).
 function showFuels() {
   const buildings = chain?.entries?.map(({ selection }) => catalog.buildings[selection.building]).filter(Boolean) ?? [];
+  const burners = buildings.filter(b => b.energy === 'burner');
+  const others = new Map(burners.filter(b => burnerFuel(b, catalog, state.logistics) !== state.logistics.fuel)
+    .map(b => [b.fuelCategories.find(c => fuelsFor(catalog, c).length) ?? b.fuelCategories[0], b]));
+  $('other-fuels').replaceChildren(...[...others].flatMap(([category, b]) => {
+    const id = `fuel-${category}`;
+    const select = el('select', { id });
+    fillSelect(select, fuelsFor(catalog, category), burnerFuel(b, catalog, state.logistics), label);
+    select.addEventListener('change', () => {
+      state.logistics.fuels = { ...state.logistics.fuels, [category]: select.value };
+      renderChain();
+      save();
+    });
+    return [el('label', { htmlFor: id, textContent: `${label(category)} fuel`, title: `What machines burning ${category} fuel only burn` }), select];
+  }));
   const burns = {
-    fuel: buildings.some(b => b.energy === 'burner'),
+    fuel: burners.some(b => burnerFuel(b, catalog, state.logistics) === state.logistics.fuel),
     liquidFuel: buildings.some(b => b.energy === 'fluid' && !b.fuelFilter && !b.heats),
   };
   for (const [id, shown] of Object.entries(burns)) {
@@ -440,7 +457,7 @@ function drawChain() {
   for (const entry of chain.entries) step(entry);
   if (chain.trainInputs.length) row('train-head', 'train-head', () => el('div', { className: 'train-head', textContent: 'By train' }));
   for (const input of chain.trainInputs) {
-    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason, input.topUp ?? null, input.temperature ?? null]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
+    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason, input.topUp ?? null, input.fill ?? false, input.temperature ?? null]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
   }
   // (Each byproduct once, whichever steps make it.)
   const byproducts = new Map();
@@ -608,7 +625,8 @@ function trainRow(input) {
   make.hidden = input.reason !== 'import';
   return el('div', { className: 'step train' },
     el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: label(input.item), title: input.item }), el('span', { className: 'rate' }), make),
-    el('div', { className: 'hint', textContent: (input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve` : TRAIN_REASON[input.reason] ?? 'by train') + atTemperature(input.temperature) }));
+    el('div', { className: 'hint', textContent: (input.fill ? `a closed loop: the train only fills it, through a top-up valve into the ${label(input.topUp).toLowerCase()} step's pipe`
+      : input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve` : TRAIN_REASON[input.reason] ?? 'by train') + atTemperature(input.temperature) }));
 }
 
 // An item's icon from sprites/ (only its first mipmap is shown), or an empty square.
