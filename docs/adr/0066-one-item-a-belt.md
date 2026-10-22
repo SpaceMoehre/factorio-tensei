@@ -31,6 +31,6 @@ The rule costs rate where room is tight: a belt more at every machine of a Sub-B
 Tests: Py coke at 1440/min: the crushers' three belts, the BOFs' coal off the crushers' and the screeners', both its share; the towers' coal dust sorted out; nothing riding; filtered inserters in the blueprint. Tests of sorting out after the producers, sharing a lane, Bands of vrauks-2 and Layers of titanium plate run with the toggle off.
 
 Still:
-- Py titanium plate's one-machine try (Layers test's setup) finds no layout with the rule: its solid separators' three products on three belts, out of time routing.
+- Py titanium plate's one-machine try (Layers test's setup) takes 687 s to its first layout with the rule, 7 s without: its solid separator's three products on three belts and the grade 3 Use's two, most candidates finding no path for a belt to the east edge or a pipe's connection blocked.
 - Py vrauks-2 in Bands: the cocoons' barrels on a belt of their own, the cocoon Parts fit no gaps between the Fixture rows.
 - Coke above 6 towers: the crushers' first design, 53 × 43, fits no columns, and the 6-tower chain leaves no room in one piece for an Annex.
