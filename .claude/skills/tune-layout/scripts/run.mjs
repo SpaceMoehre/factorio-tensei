@@ -90,8 +90,11 @@ if (flag('child')) {
   const chain = expandChain(goals, catalog, { made, selections, uses, exports, voids, index, belt: logistics.belt, logistics });
   const run = search(chain.entries, catalog, logistics, { seed, deadline: Date.now() + budgetMs, site, strategy: opt('strategy') });
   let step;
-  for (step = run.next(); !step.done; step = run.next()) process.send({ type: 'best', block: step.value.block, score: step.value.score, tried: step.value.tried });
-  process.send({ type: 'done', tried: step.value.tried, failure: step.value.failure?.message ?? null });
+  // (Each message sent before the search goes on: the search never yields, and a large one
+  // queued until it ends was lost at the exit.)
+  const send = m => new Promise(res => process.send(m, res));
+  for (step = run.next(); !step.done; step = run.next()) await send({ type: 'best', block: step.value.block, score: step.value.score, tried: step.value.tried });
+  await send({ type: 'done', tried: step.value.tried, failure: step.value.failure?.message ?? null });
   process.exit(0);
 }
 

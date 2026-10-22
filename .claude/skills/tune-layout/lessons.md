@@ -138,6 +138,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A failure every candidate shares that names a belt not starting at the west edge, or an inserter with nothing to move** (0064, 0065): look at what a post-pass (compact.js) or a fallback did to that belt before the search. A tap's filter splitter was taken for a sorted-out byproduct's; a loop's tap was never routed and its feed fell back to the train from the east.
 - **Starvation equal in every candidate from build start** (0063), again (0055): a Sub-Block's input that the chain did not size its producer for. Compare each Sub-Block's `inputs` with the rates the chain's steps make (`planSubBlocks` on `expandChain`) before touching the search: plan.js added a burner's fuel the chain never counted.
 
+- **run.mjs builds lost their search results before ADR 0070's fix.** Each strategy's child sent its layouts while the search never yields, and the queued messages were dropped at its exit. Only small early ones arrived, so builds showed "spread" layouts alone, and stopped improving early. Build A/Bs before then (ADR 0065, ADR 0067's hot air) compared partial results. Py hot air at 300 s: 123 × 38 → 116 × 33, with the search's own layouts at 110 × 36.
+
 ## Rules every change keeps
 
 - **Rank order:** Starvation, then Recipe Loops by train, then byproducts riding, then output inserters at drops, then Compactness, then entities (`rankOf`). A Maximize fit is a layout without Starvation; once nothing more fits without, a layout that starves counts by what it delivers (Throughput, ADR 0057).
