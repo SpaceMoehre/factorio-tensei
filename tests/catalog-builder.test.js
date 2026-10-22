@@ -408,3 +408,18 @@ test('recipe: a fluid\'s temperatures, in and out, and each fluid\'s default', (
   assert.deepEqual(recipes.warm.products, [{ type: 'fluid', name: 'coke-oven-gas', amount: 100, temperature: 250 }]);
   assert.deepEqual(temperatures, { 'coke-oven-gas': 15, water: 15 });
 });
+
+// The names the game shows (Factorio's --dump-prototype-locale), in whichever shape the dump
+// takes: an item's over its building's and recipe's, a recipe's kept where it differs.
+test('the locale dump gives the names the game shows', async () => {
+  const { localeNames } = await import('../js/catalog-builder.js');
+  const raw = { item: { sic: { name: 'sic', stack_size: 100 } }, module: { 'speed-module': { name: 'speed-module', stack_size: 50 } }, fluid: { water: { name: 'water' } }, recipe: { sic: { name: 'sic' }, 'sic-2': { name: 'sic-2' } } };
+  const want = { names: { sic: 'Silicon carbide', water: 'Water', 'speed-module': 'Speed module' }, recipeNames: { 'sic-2': 'Silicon carbide (fast)' } };
+  const shapes = [
+    { item: { names: { sic: 'Silicon carbide' } }, module: { names: { 'speed-module': 'Speed module' } }, fluid: { names: { water: 'Water' } }, recipe: { names: { sic: 'Silicon carbide', 'sic-2': 'Silicon carbide (fast)' } } },
+    { names: { 'item.sic': 'Silicon carbide', 'module.speed-module': 'Speed module', 'fluid.water': 'Water', 'recipe.sic': 'Silicon carbide', 'recipe.sic-2': 'Silicon carbide (fast)' } },
+    { 'item-name': { sic: 'Silicon carbide', 'speed-module': 'Speed module' }, 'fluid-name': { water: 'Water' }, 'recipe-name': { 'sic-2': 'Silicon carbide (fast)' }, 'item-description': { sic: 'Hard' } },
+  ];
+  for (const locale of shapes) assert.deepEqual(localeNames(raw, locale), want);
+  assert.throws(() => localeNames(raw, { version: 1 }), /names nothing/);
+});

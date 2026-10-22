@@ -4,6 +4,8 @@
 // the whole Sub-Block it is on, anywhere on it, and elsewhere zooms in.
 // A Sub-Block (its stack, or a machine a Breakout stood apart) picked up — pressed and held, or
 // dragged once selected — follows the pointer tile by tile, and onMove hears where it was put.
+import { displayName } from './names.js';
+
 const ARROW = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
 const MIN_SCALE = 2, MAX_SCALE = 64;
 // How long a press picks a Sub-Block up (ms), how far a pointer moves before a press pans (px),
@@ -822,10 +824,9 @@ function offset(dx, dy) {
   return parts.join(', ');
 }
 
-// A name as people read it: "iron-pulp-01" is "Iron pulp 01".
+// A name as people read it: the game's, else "iron-pulp-01" is "Iron pulp 01" (names.js).
 function words(name) {
-  const text = String(name ?? '').replace(/[-_]+/g, ' ').trim();
-  return text.charAt(0).toUpperCase() + text.slice(1);
+  return displayName(name);
 }
 
 function clamp(v, lo, hi) {

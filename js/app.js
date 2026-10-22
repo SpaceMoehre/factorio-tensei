@@ -2,6 +2,7 @@ import { simulate } from './sim.js';
 import { expandChain, recipeOptions, useKey, EVERY } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { burnerFuel, fuelsFor } from './plan.js';
+import { useNames, displayName } from './names.js';
 import { encodeBlueprint } from './blueprint.js';
 import { clocksOf, clockLabel } from './clocks.js';
 import { circuitPairs } from './layout/wires.js';
@@ -30,6 +31,7 @@ const $ = id => /** @type {any} */ (document.getElementById(id));
 
 const raw = await fetch('data/catalog.json').then(r => r.arrayBuffer());
 const catalog = JSON.parse(new TextDecoder().decode(raw));
+useNames(catalog);
 // The catalog's fingerprint in a shared setup: the first 12 hex digits of its SHA-256.
 let catalogId = null;
 crypto.subtle?.digest('SHA-256', raw).then(d => { catalogId = [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12); }, () => {});
@@ -663,8 +665,7 @@ function iconOf(item) {
 
 // A name as people read it: "iron-pulp-01" is "Iron pulp 01".
 function label(name) {
-  const words = String(name ?? '').replace(/[-_]+/g, ' ').trim();
-  return words.charAt(0).toUpperCase() + words.slice(1);
+  return displayName(name);
 }
 
 // An icon with its amount in the corner, as the game shows a recipe's.

@@ -3,7 +3,10 @@ function expectedAmount(p) {
   return (p.probability ?? 1) * (base + (p.extra_count_fraction ?? 0));
 }
 
-export function buildCatalog(raw) {
+// locale: Factorio's prototype locale dump (`--dump-prototype-locale`, script-output/
+// prototype-locale.json), for the names the game shows; without it the page makes words of the
+// prototype names.
+export function buildCatalog(raw, locale = null) {
   const recipes = {};
   for (const r of Object.values(raw.recipe)) {
     if (r.hidden || r.parameter) continue;
@@ -118,7 +121,41 @@ export function buildCatalog(raw) {
   }
   // Each fluid's default temperature: what it comes at by train, or from a recipe naming none.
   const temperatures = Object.fromEntries(Object.values(raw.fluid ?? {}).filter(p => !p.hidden).map(p => [p.name, p.default_temperature ?? 15]));
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw) };
+  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw), ...(locale ? localeNames(raw, locale) : {}) };
+}
+
+// The names the game shows, from its locale dump: `names` (items and fluids first, then buildings
+// and the rest: an item's name over its building's), `recipeNames` (a recipe's only where it
+// differs from what `names` gives its name). The dump is read in any of the shapes it may take:
+// { [type]: { names: { [name]: text } } }, { names: { 'type.name' or name: text } }, or the game's
+// locale keys ({ 'item-name': { [name]: text } }, { 'item-name.x': text }).
+export function localeNames(raw, locale) {
+  const byType = {};
+  const put = (type, name, text) => {
+    if (typeof text !== 'string' || !text) return;
+    (byType[type.replace(/-name$/, '')] ??= {})[name] = text;
+  };
+  const flat = (map, type = null) => {
+    for (const [key, text] of Object.entries(map ?? {})) {
+      if (type) put(type, key, text);
+      else if (key.includes('.')) put(key.slice(0, key.indexOf('.')), key.slice(key.indexOf('.') + 1), text);
+      else put('any', key, text);
+    }
+  };
+  for (const [key, value] of Object.entries(locale)) {
+    if (key === 'names' && value && typeof value === 'object') flat(value);
+    else if (value && typeof value === 'object' && value.names && typeof value.names === 'object') flat(value.names, key);
+    else if (key === 'descriptions' || /-description/.test(key)) continue;
+    else if (value && typeof value === 'object') flat(value, key);
+    else if (key.includes('.')) flat({ [key]: value });
+  }
+  const itemTypes = Object.keys(raw).filter(t => Object.values(raw[t] ?? {}).some(p => p?.stack_size !== undefined));
+  const order = ['fluid', ...itemTypes, 'item', 'any', ...Object.keys(byType).filter(t => t !== 'recipe' && t !== 'technology' && !itemTypes.includes(t))];
+  const names = {};
+  for (const type of new Set(order)) for (const [name, text] of Object.entries(byType[type] ?? {})) names[name] ??= text;
+  const recipeNames = Object.fromEntries(Object.entries(byType.recipe ?? {}).filter(([name, text]) => names[name] !== text));
+  if (!Object.keys(names).length && !Object.keys(recipeNames).length) throw new Error('the locale dump names nothing in a shape this reads');
+  return { names, recipeNames };
 }
 
 // Valves one can build (Py's overflow and underflow valves; base 2.0's are hidden): { [name]:
