@@ -275,9 +275,11 @@ export function buildCore(sb, building, links, variant, env) {
     s.twin = twin;
     if (env.rightAngle && !twin) s.needed = Math.ceil(Math.max(0, s.demand - sure) / s.rate - 1e-9);
   }
-  // An output belt's drops pick their lanes (Drop Offset), but a lane fills by whole inserters:
-  // enough of them that they split onto the two lanes carrying what the belt's rows make (all
-  // the belt rows of its part) — one more per machine where it adds the most.
+  // An output belt's drops pick their lanes (Drop Offset), but a lane fills by whole inserters,
+  // each carrying its share of what its machine makes: enough of them that they split onto the
+  // two lanes carrying what the belt's rows make (all the belt rows of its part) — one more per
+  // machine where it adds the most (15 machines making 58.75 a minute fill no lane of 450 with 8
+  // inserters, 470 a minute; a second inserter each onto the other lane does, ADR 0072).
   if (env.rightAngle) {
     const outputs = belts.filter(b => b.routeIds.includes(links.output));
     for (const part of new Set(outputs.map(b => b.part))) {
@@ -285,7 +287,7 @@ export function buildCore(sb, building, links, variant, env) {
       // Drops fill their lane themselves: their supporting inserters are counted above.
       if (mine.some(s => s.drop)) continue;
       const want = Math.min(2 * env.laneCapacity, mine.reduce((sum, s) => sum + s.demand * counts[s.r], 0));
-      const carried = () => onTwoLanes(mine.flatMap(s => Array(counts[s.r] * s.needed).fill(s.rate)), env.laneCapacity);
+      const carried = () => onTwoLanes(mine.flatMap(s => Array(counts[s.r] * s.needed).fill(Math.min(s.rate, s.demand / s.needed))), env.laneCapacity);
       for (let more = 0; more < 2 * mine.length && carried() < want - 1e-9; more++) {
         const gain = mine.map(s => {
           s.needed++;

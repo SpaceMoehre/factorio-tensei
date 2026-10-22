@@ -270,6 +270,16 @@ export function* search(entries, catalog, logistics, options = {}) {
   // columns): each tried first and, up to RETRIES of them, not counted against `patience` (in
   // an Annex's crowded room every candidate fails and queues more, ADR 0049).
   let retries = 0;
+  // Past RETRIES, they wait behind the structured candidates instead: a candidate placed again
+  // with each Sub-Block finding no room first queues one per Sub-Block, and those had taken the
+  // place of the pairings that fit (Py hot air, 1.47 RHEs: 228 retries, 192 structured
+  // candidates never tried, ADR 0072).
+  const retry = c => {
+    if (retries++ < RETRIES) {
+      structured++;
+      queue.unshift(c);
+    } else queue.push(c);
+  };
   // Candidates in columns (Layers) that fit none, none of them having fit yet: those placed one
   // by one go first from then on (Py titanium plate's 21 Sub-Blocks span more than the City
   // Block's width in columns; some 150 candidates in columns came first, ADR 0055).
@@ -328,16 +338,14 @@ export function* search(entries, catalog, logistics, options = {}) {
       const roomier = roomy ? null : spacedOut(candidate, steps);
       roomy = true;
       if (!roomier) return;
-      queue.unshift(roomier);
-      if (retries++ < RETRIES) structured++;
+      retry(roomier);
     };
     // Fixtures standing on machines leave them out (Making Way); where that layout fails, the same
     // candidate is tried next with every Fixture kept off its machines (`solid`).
     let way = false;
     const solidly = () => {
       if (!way || candidate.solid) return;
-      queue.unshift({ ...candidate, solid: true });
-      if (retries++ < RETRIES) structured++;
+      retry({ ...candidate, solid: true });
     };
     // A stack of copies in one column that finds no room: the same candidate next with it in two
     // (a column of copies about as tall as the City Block stands nowhere among its Fixtures; the
@@ -345,15 +353,13 @@ export function* search(entries, catalog, logistics, options = {}) {
     const inTwo = i => {
       const copies = ready.instances.filter(inst => inst.step === i && !inst.detached).length;
       if (candidate.columns[i] !== null || (ready.columns[i] ?? 1) !== 1 || copies < 4) return;
-      queue.unshift({ ...candidate, columns: candidate.columns.map((v, j) => (j === i ? 2 : v)) });
-      if (retries++ < RETRIES) structured++;
+      retry({ ...candidate, columns: candidate.columns.map((v, j) => (j === i ? 2 : v)) });
     };
     // A Sub-Block that finds no room, placed last (it feeds the rest: Py coke's crushers, 53 × 43):
     // the same candidate next with it placed first, where the room left is in one piece (ADR 0068).
     const placeFirst = i => {
       if (candidate.ahead?.includes(i)) return;
-      queue.unshift({ ...candidate, ahead: [...(candidate.ahead ?? []), i] });
-      if (retries++ < RETRIES) structured++;
+      retry({ ...candidate, ahead: [...(candidate.ahead ?? []), i] });
     };
     let work = ready, used = null, positions = null;
     try {

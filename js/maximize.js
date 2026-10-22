@@ -882,7 +882,10 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     // may not a little slower). Never held back by the Foretelling: a layout found may pack
     // looser than the next, and only a try tells.
     const rate = n => goalsFor(n)[0].rate;
-    for (; fill >= least; fill /= 2) {
+    // (With few machines, down to a tenth of those that fit: a quarter of 1.3 RHEs is a fifth
+    // of the rate, ADR 0072.)
+    const finest = least < 1 && lo > 0 ? Math.min(least, lo / FINEST) : least;
+    for (; fill >= finest; fill /= 2) {
       // (No fewer than one: whole machines.)
       const more = least < 1 ? fill : Math.floor(fill);
       if (lo + more < hiOf() && rate(Math.min(lo + more, most)) > rate(lo)) return lo + more;
@@ -1100,6 +1103,8 @@ const STARVING_MISSES = 2;
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;
 const LEAST = 1 / 4;
+// (Filling's fewest, at least: what fits over FINEST.)
+const FINEST = 10;
 
 // Whether a City Block has Fixtures in its room.
 function crowded(site) {

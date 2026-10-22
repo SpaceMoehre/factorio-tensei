@@ -149,3 +149,40 @@ test('Py hot air in a City Block: few big machines in copies that fit its height
   const fits = designStep(ctx, i, random(1), { draws: 0 }).filter(c => c.copies).map(designOf).filter(d => d && d.trouble <= 1e-6);
   assert.ok(fits.some(d => d.kinds.every(k => k.module.area.h <= site.inner.h)), 'copies of a module that fits the City Block');
 });
+
+// The same at 1.46875 RHEs (ADR 0072). 15 RHEs make 881.25 warmer bricks a minute onto one belt:
+// by whole machines one lane takes 8 (470 of 450), so a core gives a row's machines a second
+// inserter, onto the other lane. And Filling goes finer than a quarter machine where so few fit:
+// 1.3125 fits, 1.625 does not, 1.46875 is tried.
+test('Py hot air in a City Block: whole machines filling two lanes, Filling a tenth', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { context, designStep, designOf, random } = await import('../js/design.js');
+  const { siteOf } = await import('../js/city.js');
+  const { planner } = await import('../js/maximize.js');
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const py = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', fuel: 'biomass', liquidFuel: 'methane', handSize: 1, inserter: 'fast-inserter' };
+  const made = ['warmer-stone-brick', 'warm-stone-brick', 'coke-oven-gas', 'hot-molten-salt'];
+  const selections = { 'hot-air': { recipe: 'warmer-air-2' } };
+  const site = siteOf({ area: { x: 0, y: 0, w: 118, h: 118 }, fixtures: [] }, 4);
+  const designs = (rate, item) => {
+    const chain = expandChain([{ item: 'hot-air', rate }], shipped, { made, selections, logistics: py });
+    const ctx = context(chain.entries, shipped, py, site);
+    ctx.chained = 'all';
+    const i = ctx.plan.findIndex(sb => sb.item === item);
+    return { sb: ctx.plan[i], list: designStep(ctx, i, random(1), { draws: 0 }).filter(c => !c.copies).map(designOf).filter(Boolean) };
+  };
+  const warmer = designs(13218.75, 'warmer-stone-brick');
+  assert.equal(warmer.sb.count, 15);
+  assert.ok(warmer.list.some(d => d.trouble <= 1e-6), `trouble ${warmer.list.map(d => d.trouble)}`);
+
+  const plan = planner([{ item: 'hot-air', rate: 6000 }], shipped, py, { made, selections, site });
+  const asked = [];
+  plan.record(1, { block: {}, placed: null, designed: null, tried: 1 });
+  for (let n = plan.next(); n !== null && asked.length < 12; n = plan.next()) {
+    asked.push(n);
+    if (n <= 1.3125) plan.record(n, { block: {}, placed: null, designed: null, tried: 1 });
+    else plan.record(n, { block: null, starves: false, designed: null, tried: 12 });
+  }
+  assert.ok(asked.includes(1.46875), `${asked}`);
+  assert.equal(plan.lo, 1.3125);
+});

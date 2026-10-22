@@ -72,6 +72,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | The output edge chosen (right, up, down): the block still runs west to east, only the last legs to the train turn | Py small parts valid up and down; coke 3 towers up | 0069 |
 | A closed fluid loop (given back all it takes) only filled by train, no overflow; a burner unable to burn the Fuel burns its own category's | Py hot air with molten salt made: no build ("burns biomass fuel") → valid 6000/min | 0070 |
 | In a City Block, copies of few big machines whose rows stand taller than the room; where pairings are too many, the biggest Sub-Blocks' designs of other sizes paired; no spare machines breaking a Recipe Loop; Throughput of spare machines | Py hot air 118²: 9000 → 11812.5/min (1 → 1.3125 RHEs, 38 → 50 machines) | 0071 |
+| Drop Offset inserters counted at their machine's share, not their own rate (a row's second inserter onto the other lane); retries past RETRIES behind the structured candidates; Filling down to a tenth of what fits | Py hot air 118²: 11812.5 → 13218.75/min (51 → 57 machines); small parts 2775 → 3375 | 0072 |
 
 ## What failed, was reverted, or must not be done
 
@@ -143,6 +144,10 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **A fit that delivers far less than its rate** (0071). Py hot air at 1.46875 RHEs "fit", Throughput 679/min: the try was ADR 0048's retry with a spare machine, whose chain broke the stone-brick Recipe Loop (by train both ways, no `loop` route, so `rankOf` counted none), and Throughput scaled the spare's belts twice. Check `delivered` in every summary against `rate`; a gap points to the chain the try ran (`plan.chainOf(list, spare)`), not the layout.
 - **Finer Filling and a design fix that gain only through a broken fit** (0071). A tenth of what fits as Filling's least and a belt each for machines over a lane both reached 1.47–1.5 RHEs only with spare machines; once those were refused, neither gained: reverted. Re-measure every change of a pass after its last fix.
+- **Retries queued first, without bound** (0072). Each candidate finding no room queued itself again with that Sub-Block placed first, then the next: 228 retries took the turns of 192 of 258 structured candidates, the pairing that fits among them, and the try ended "no room" in 33 s. When a try gives up early, count what is left in its queue (`queue.length` at the `patience` break) before blaming designs or room.
+- **A check that counts a part at its capacity, not its load** (0072). core.js sized a lane's inserters by what each can move (138/min), so 8 inserters "carried" a lane of 450 for machines making 470. Where a design's trouble (Path Flow, machine rates) disagrees with what a core builds for, compare the units the two count in.
+- **A belt each for machines over a lane, again** (0072). Even with the warm bricks fitting, 1.625 RHEs found no room: the fix passes designs, not placement. Twice now it gained nothing; leave it out until 1.625 places.
+- **Wall-clock A/Bs of 10 s tries under load** (0072). Small parts at load 9: 2775 vs 2362.5; at load 7: 2775 vs 3000 and 3375 (maxdet: 2775 vs 3375). Check `uptime` and use maxdet before believing a loss on fast tries.
 - **`kill $(pgrep -f run.mjs)` in one command** (0071), the shell again: the pattern matched that shell's own command line. List the PIDs in one call (`pgrep -f …` then `ps -o pid,etime,comm -p …`), kill them by number in the next.
 
 ## Rules every change keeps
