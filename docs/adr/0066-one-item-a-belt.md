@@ -16,6 +16,7 @@ What changed:
   - Not a machine putting its products down itself (an Output Drop).
 - **A byproduct only the train takes, with an item only the train takes**, is sorted out after the producers (compose.js `trainByproduct`, `fanFrom`): a filter splitter sends it onto a belt of its own to the east edge, the rest going on on another. score.js `riding` counts such a belt unsorted, past what a filter splitter sends off it.
 - **The page** has a toggle, "One item a belt", on by default. Off (`logistics.mixedOutputs`), the products stay on one belt as before.
+- design.js `laneShortfall`, `copiesShortfall`, `corePathShort`: a design's Path Flow is that of its item's belt, at what its machines make of the item (`routeMade`), not of whichever belt came first with all they make (later fix: Py molybdenum oxide 787.47/min in 1 + 1 + 2 → 799.99/min in one layout of 4).
 - place.js, compose.js: a belt with no slots (the rest sorted out off another's) is routed with its splitter. compose.js `supplyJoins`: a Supplied Item joins the producer's belt of that item, not its first.
 
 | Run (side by side with ADR 0064's code) | ADR 0064 | One Item a Belt |

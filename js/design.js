@@ -649,15 +649,24 @@ function scaled(sb, m) {
 // in a copy its own parts' share — in a Two-Way Copy what each of its belts is wanted for
 // (`share`, shapeOf's).
 function laneShortfall(ctx, sb, module, whole = true, share = null) {
-  const parts = module.parts.filter(p => p.drops.length);
+  const parts = module.parts.filter(p => p.drops.length && itemsBelt(ctx, sb, p));
   if (!parts.length) return 0;
   const route = ctx.routes[parts[0].routeIds[0]];
   const internal = isInternal(route);
   const groups = internal ? runs(parts, Math.min(parts.length, pathBelts(ctx, route))) : parts.map(p => [p]);
-  const made = g => g.reduce((sum, p) => sum + p.machines, 0) * outputRate(sb) / sb.count;
+  const made = g => g.reduce((sum, p) => sum + p.machines, 0) * routeMade(sb, route) / sb.count;
   const wants = !internal ? null : whole ? pathWants(ctx, route, groups.length) : share?.length === groups.length ? share : groups.map(made);
-  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), wants, internal && !route.sorted);
+  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), wants, internal && !route.sorted, routeMade(sb, route));
 }
+
+// (A machine putting each product on a belt of its own, ADR 0066: its item's belt, what that
+// carries; the others' judged by their overload, core.js.)
+const itemsBelt = (ctx, sb, part) => {
+  const route = ctx.routes[part.routeIds[0]];
+  return !route.product || route.product === sb.item;
+};
+// (What sb's machines make onto a route: its products, or the one product of a belt of its own.)
+const routeMade = (sb, route) => sb.outputs.filter(o => o.type === 'item' && (!route.product || o.name === route.product)).reduce((sum, o) => sum + o.rate, 0);
 
 // A core's Internal Path, before it is routed (Path Flow on its pathDrops): in a whole module each
 // part is one of the path's belts, bringing its run of consumers what they take; in a copy each
@@ -668,7 +677,7 @@ function corePathShort(ctx, sb, core, whole, share = null) {
   const route = ctx.routes[core.pathDrops.routeId];
   const wants = whole && parts.length === pathBelts(ctx, route) ? pathWants(ctx, route, parts.length)
     : share?.length === parts.length ? share : parts.map(p => p.made);
-  return pathShortfall(ctx, sb, parts.map(p => p.drops), wants, !route.sorted);
+  return pathShortfall(ctx, sb, parts.map(p => p.drops), wants, !route.sorted, routeMade(sb, route));
 }
 
 // What a Sub-Block's belts cannot deliver of its output (Path Flow): every machine at its full
@@ -676,8 +685,7 @@ function corePathShort(ctx, sb, core, whole, share = null) {
 // all it carries, to the train). belts: per belt, its drops (by `machine` key). With `join`
 // (an Internal Path whose belts a splitter may join, compose.js pairUp), a belt short of what it
 // is wanted for is paired with the one that makes the path deliver the most, while that helps.
-function pathShortfall(ctx, sb, belts, wants, join = false) {
-  const total = outputRate(sb);
+function pathShortfall(ctx, sb, belts, wants, join = false, total = outputRate(sb)) {
   const full = total / sb.count * (sb.headroom ?? 1);
   const machines = new Map(belts.flatMap(drops => drops.map(d => [d.machine, full * (d.machines ?? 1)])));
   const want = wants ? wants.reduce((sum, w) => sum + w, 0) : total;
@@ -713,13 +721,13 @@ function copiesShortfall(ctx, index, kinds) {
   const sb = ctx.plan[index];
   let copy = 0;
   const moduleOf = k => (copy++ % 2 && k.reverse ? k.reverse : k.module);
-  const parts = kinds.flatMap((k, n) => Array.from({ length: k.count }, (_, c) => moduleOf(k).parts.filter(p => p.drops.length)
+  const parts = kinds.flatMap((k, n) => Array.from({ length: k.count }, (_, c) => moduleOf(k).parts.filter(p => p.drops.length && itemsBelt(ctx, sb, p))
     .map(p => ({ ...p, drops: p.drops.map(d => ({ ...d, machine: `${n}.${c}:${d.machine}` })) }))).flat());
   if (!parts.length) return 0;
   const route = ctx.routes[parts[0].routeIds[0]];
   if (!isInternal(route)) return 0;
   const groups = runs(parts, Math.min(parts.length, pathBelts(ctx, route)));
-  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), pathWants(ctx, route, groups.length), !route.sorted);
+  return pathShortfall(ctx, sb, groups.map(g => g.flatMap(p => p.drops)), pathWants(ctx, route, groups.length), !route.sorted, routeMade(sb, route));
 }
 
 // What copies take of an Internal Path into them that its belts cannot bring: each belt feeds a
