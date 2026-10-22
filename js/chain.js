@@ -492,9 +492,10 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       item, into, rate: ingredientsOf(into).filter(i => i.name === item).reduce((sum, i) => sum + i.amount, 0) * rates[at.get(into)] / perCraft[at.get(into)],
     })),
     recycled,
-    // (What a Recycled Byproduct's step makes beyond what is taken back.)
+    // (What a Recycled Byproduct's step makes beyond what is taken back; none of a closed loop's,
+    // all of it going round, ADR 0070.)
     byproducts: keys.flatMap((key, t) => byproductsOf(key).filter((p, k, all) => all.findIndex(q => q.name === p.name) === k && !takenBy(key, p.name)
-      && !supplies.some(s => s.from === key && s.item === p.name)).map(p => ({
+      && !supplies.some(s => s.from === key && s.item === p.name) && !recycled.some(r => r.closed && r.from === key && r.item === p.name)).map(p => ({
       from: key, item: p.name, type: p.type,
       rate: makes(key, p.name) * rates[t] / perCraft[t] - recycled.filter(r => r.from === key && r.item === p.name).reduce((sum, r) => sum + r.rate, 0),
       recipes: (index.consumers.get(p.name) ?? []).filter(r => index.buildingsFor.has(r)),

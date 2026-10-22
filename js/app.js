@@ -446,7 +446,8 @@ function drawChain() {
     const loop = shown.querySelector('.loop');
     loop.textContent = [
       ...back.map(l => `↺ ${fmt(l.rate)}/min back into ${l.into === goal.item ? 'itself' : l.into} (a recipe loop)`),
-      ...takes.map(r => `↺ takes ${r.valve ? `${fmt(r.rate)}/min of ` : ''}${label(r.item).toLowerCase()} from the ${nameOf(r.from)}'s ${entryOf(r.from)?.use ? 'products' : 'byproduct'}${r.valve ? ', through valves' : ''}${r.spare > 1e-9 ? ` (${fmt(r.spare)}/min more leaves by train)` : ''}`),
+      // (All of a closed loop's, ADR 0070.)
+      ...takes.map(r => `↺ takes ${r.closed ? 'all its ' : r.valve ? `${fmt(r.rate)}/min of ` : ''}${label(r.item).toLowerCase()} from the ${nameOf(r.from)}'s ${entryOf(r.from)?.use ? 'products' : 'byproduct'}${r.valve ? ', through valves' : ''}${r.spare > 1e-9 ? ` (${fmt(r.spare)}/min more leaves by train)` : ''}`),
       ...joined.map(s => (s.valve ? `+ ${fmt(s.rate)}/min given back by the ${nameOf(s.from)}, so this step makes only the rest, through a top-up valve`
         : `+ ${fmt(s.rate)}/min more from the ${nameOf(s.from)}, so this step makes that much less`)),
       ...supplies.map(s => (s.valve ? `↺ its ${fmt(s.rate)}/min of ${label(s.item).toLowerCase()} goes back to the steps taking it first, its spare off through an overflow valve`

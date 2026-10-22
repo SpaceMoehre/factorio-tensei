@@ -14,6 +14,7 @@ What changed:
 
 - **A closed loop** (chain.js Recycled Byproducts, `closed`; plan.js; flows.js `fedBack`; routes.js): where a loop's fluid fed back is given back just as much as its takers take, the train only fills it (`fill`), through the top-up valve as before. No overflow valve, no pipe to the train: the step's entry has `closed` instead of `overflow`.
 - **A burner's own fuel** (plan.js `burnerFuel`, `fuelsFor`): a burner that cannot burn the Fuel burns the one chosen for a category it burns (`logistics.fuels`), else that category's of most energy (charcoal briquettes for biomass).
+- **Not leaving by train** (chain.js `byproducts`): a closed loop's fluid is no byproduct; before, the hundredth the train brings so it starts showed as made beyond what is taken back, under "Leaves by train" (the user's second report, Py hot air at 60/min). The step taking it "takes all its molten salt".
 - **The page**: the train's row says "a closed loop: the train only fills it, through a top-up valve into the coke oven gas step's pipe"; beside the Fuel, a "Biomass fuel" select for each such category the chain's burners burn; the Fuel itself shows only where a burner burns it.
 
 | Py hot air 6000/min, hot molten salt made, standing on its own | Before | After |

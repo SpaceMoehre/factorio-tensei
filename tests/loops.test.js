@@ -115,6 +115,7 @@ test('Py hot air: molten salt round a closed loop, the train only filling it; th
   assert.deepEqual(reheat.closed, ['molten-salt']);
   const salt = chain.trainInputs.find(t => t.item === 'molten-salt');
   assert.ok(salt.fill && salt.rate < 0.011 * reheat.rate, JSON.stringify(salt));
+  assert.ok(!chain.byproducts.some(b => b.item === 'molten-salt'), JSON.stringify(chain.byproducts));
   assert.ok(chain.trainInputs.some(t => t.item === 'charcoal-briquette') && !chain.trainInputs.some(t => t.item === 'coal'));
   const wood = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, { ...options, logistics: { ...py, fuels: { biomass: 'wood' } } });
   assert.ok(wood.trainInputs.some(t => t.item === 'wood'));
