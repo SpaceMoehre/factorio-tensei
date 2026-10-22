@@ -124,7 +124,9 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
   // producer's pipe, ADR 0062.)
   for (const j of (flows.joined ?? []).filter(j => j.valve && j.from === 'side-input')) {
     const on = routes.find(r => r.kind === 'pipe' && r.source === j.into && r.fluid === j.item);
-    if (on) add({ kind: 'pipe', fluid: j.item, source: 'side-input', sink: null, consumers: [], items: [saturated(j.item, j.rate, PIPE_CAPACITY)], valve: { mode: 'top-up', on: on.id } });
+    // (A closed loop's only fills it, ADR 0070: `fill`.)
+    const fill = plan[j.into]?.closed?.includes(j.item);
+    if (on) add({ kind: 'pipe', fluid: j.item, source: 'side-input', sink: null, consumers: [], items: [saturated(j.item, j.rate, PIPE_CAPACITY)], valve: { mode: 'top-up', on: on.id }, ...(fill ? { fill } : {}) });
   }
   // A Recipe Loop's feedback: the producer's item back into the Sub-Block taking it, a belt of its
   // own like a Side Input's (never merged with another), fed from the producer's output through

@@ -457,7 +457,7 @@ function drawChain() {
   for (const entry of chain.entries) step(entry);
   if (chain.trainInputs.length) row('train-head', 'train-head', () => el('div', { className: 'train-head', textContent: 'By train' }));
   for (const input of chain.trainInputs) {
-    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason, input.topUp ?? null, input.fill ?? false, input.temperature ?? null]), () => trainRow(input)).querySelector('.rate').textContent = `${fmt(input.rate)}/min`;
+    row(`train:${input.item}`, JSON.stringify(['train', input.item, input.reason, input.topUp ?? null, input.fill ?? false, input.temperature ?? null]), () => trainRow(input)).querySelector('.rate').textContent = input.fill ? 'to fill' : `${fmt(input.rate)}/min`;
   }
   // (Each byproduct once, whichever steps make it.)
   const byproducts = new Map();
@@ -1455,7 +1455,7 @@ function fillFlows(list, routes, block) {
       // tapped off it takes back.
       const taken = block ? takes(r, i.item) + (r.taps ?? []).reduce((sum, id) => sum + takes(block.routes[id], i.item), 0) : 0;
       const k = `${i.item} (${r.kind})`;
-      const line = lines.get(k) ?? { item: i.item, kind: r.kind, rate: 0, belts: 0 };
+      const line = lines.get(k) ?? { item: i.item, kind: r.kind, rate: 0, belts: 0, fill: !!r.fill };
       line.rate += block ? Math.max(0, i.rate - taken) : i.rate;
       // A Fan-out's belts count once: the belt from the west edge.
       if (r.fedBy === undefined) line.belts++;
@@ -1463,9 +1463,10 @@ function fillFlows(list, routes, block) {
     }
   }
   // An item nothing of leaves (a product all taken along the way) is no line.
-  list.replaceChildren(...[...lines.values()].filter(({ rate }) => !block || rate >= 0.05).map(({ item, kind, rate, belts }) => el('li', {},
+  // (A closed loop's fluid the train only fills, ADR 0070: no rate.)
+  list.replaceChildren(...[...lines.values()].filter(({ rate }) => !block || rate >= 0.05).map(({ item, kind, rate, belts, fill }) => el('li', {},
     iconOf(item), el('span', { className: 'what', title: item }, label(item), el('span', { className: 'kind', textContent: belts > 1 ? `${kind} ×${belts}` : kind })),
-    el('span', { className: 'per', textContent: `${fmt(rate)}/min` }))));
+    el('span', { className: 'per', textContent: fill ? 'to fill' : `${fmt(rate)}/min` }))));
 }
 
 function describe(entity, block) {

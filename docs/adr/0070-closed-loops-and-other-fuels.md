@@ -25,5 +25,5 @@ What changed:
 Tests: the chain (no overflow, `closed`, the train filling, charcoal briquettes or wood), and a layout: no molten salt pipe to the train or overflow valve, the train's through a top-up valve, valid.
 
 Still:
-- The fill shows the hundredth ADR 0062 brings so a loop starts; a closed loop needs it only until full.
+- The page shows the fill as "to fill", not a rate; the layout sizes its pipe for the hundredth ADR 0062 brings so a loop starts.
 - Coalbed gas's water (ADR 0062) keeps its overflow valve: the offshore pump making the rest is a step of the chain, the user's rule capping it.

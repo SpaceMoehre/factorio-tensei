@@ -124,6 +124,6 @@ test('Py hot air: molten salt round a closed loop, the train only filling it; th
   assert.ok(found, 'no layout');
   const pipes = found.block.routes.filter(r => r.kind === 'pipe' && r.fluid === 'molten-salt');
   assert.ok(pipes.every(r => r.sink !== 'side-output' && r.valve?.mode !== 'overflow'), JSON.stringify(pipes.map(r => [r.source, r.sink, r.valve])));
-  assert.ok(pipes.some(r => r.source === 'side-input' && r.valve?.mode === 'top-up'));
+  assert.ok(pipes.some(r => r.source === 'side-input' && r.valve?.mode === 'top-up' && r.fill));
   assertValid(found.block, shipped, py);
 });
