@@ -11,7 +11,8 @@ import { SQUARE } from './score.js';
 // the rows other Sub-Blocks' Side Inputs arrive on. Corridors between a Sub-Block and its
 // consumers hold the links. Returns each copy's top-left corner (its module's area).
 // Machines broken out of a Sub-Block (Breakout) are placed last, each in a gap of the rest.
-// params: { corridor, gap, stack, order: { [step]: number } (nudges the placing order),
+// params: { corridor, gap, stack, order: { [step]: number } (nudges the placing order), ahead:
+//           [step] (placed first, in turn),
 //           lift: { [step]: number } (nudges a Sub-Block up or down), weight (link length cost),
 //           spot: { [step]: number } (the broken-out machines' next best spots: 1, 2, …),
 //           solid (no Fixture on a machine), stay (no slide west: where it stood), until (true
@@ -33,6 +34,8 @@ const PART = 6;
 // Giving Way: the share of its machines (1 in so many) the Sub-Block that gives way may give up.
 const GIVE = 4;
 const BACKTRACKS = 24;
+// Columns east of a Sub-Block whose belt to the train sorts a byproduct out after it.
+const SORT_ROOM = 4;
 
 export function placeBlocks(ctx, prepared, params = {}) {
   const { plan } = ctx;
@@ -42,10 +45,14 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const site = ctx.site && siteRules(ctx.site);
 
   // Each Sub-Block's copies stacked (stackOf): their offsets inside the block, and its size.
+  // (A Sub-Block whose belt to the train sorts a byproduct out after it: room east of it for the
+  // splitter and the two belts on, ADR 0068.)
+  const sorting = new Set(routes.filter(r => r.kind === 'belt' && r.filter && r.fanOut?.length && r.fanOut.every(id => !routes[id].slots.length)).map(r => r.source));
   const blocks = steps.map(i => {
     // Room the search made round it (`pad`: tiles on every side) where a link found none.
     const pad = params.pad?.[i] ?? 0;
-    const { instances: mine, at, w, h, shape } = stackOf(prepared, i, { stack, pad });
+    const { instances: mine, at, w: inner, h, shape } = stackOf(prepared, i, { stack, pad });
+    const w = inner + (sorting.has(i) ? SORT_ROOM : 0);
     // What a machine left out for a Fixture (Making Way) costs where it is placed: room for four.
     const { size } = ctx.catalog.buildings[plan[i].building];
     const block = { step: i, instances: mine, at, w, h, entries: [], pad, holeCost: 4 * size.w * size.h };
@@ -107,7 +114,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
     return d;
   };
   steps.forEach(i => depthOf(i));
-  const order = [...steps].sort((a, b) => depth.get(a) - depth.get(b) || (params.order?.[a] ?? 0) - (params.order?.[b] ?? 0)
+  // (Those `ahead` first, in turn: one that found no room placed last, ADR 0068.)
+  const ahead = i => (params.ahead?.includes(i) ? params.ahead.indexOf(i) - params.ahead.length : 0);
+  const order = [...steps].sort((a, b) => ahead(a) - ahead(b) || depth.get(a) - depth.get(b) || (params.order?.[a] ?? 0) - (params.order?.[b] ?? 0)
     || links.filter(l => l.from === b).length - links.filter(l => l.from === a).length || a - b);
 
   const placed = new Map();

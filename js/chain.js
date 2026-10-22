@@ -330,7 +330,11 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     rates = loops.length || used.size || supplies.length ? solve(a, goal)?.map(r => Math.round(r * 1e9) / 1e9) : consumersFirst(a, goal);
     // (Fed back to some of those taking it only, ADR 0067: covering all they take.)
     const covers = s => s.takers && rates && s.per * rates[at.get(s.from)] > takenAt(s) * (1 - TOP_UP / 2);
-    const off = supplies.filter(s => !rates || !(rates[at.get(s.item)] > 1e-6) || covers(s) || (s.type === 'item' && s.per * rates[at.get(s.from)] > lane * (1 + 1e-9)));
+    // (A solid more than a lane carries: not onto the step's belt but on a belt of its own into
+    // those taking it, each its share off both, ADR 0068; once a step makes none of it, by
+    // train as before.)
+    for (const s of supplies) if (s.type === 'item' && rates && s.per * rates[at.get(s.from)] > lane * (1 + 1e-9)) s.own = true;
+    const off = supplies.filter(s => !rates || !(rates[at.get(s.item)] > 1e-6) || covers(s));
     // (A fluid fed back covering all: so much less of it fed back that its step makes TOP_UP of
     // what is taken.)
     const over = rates ? off.filter(s => s.valve && !(s.cut > 4)) : [];
@@ -434,11 +438,13 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     u.from = u.sources.reduce((best, k) => (makes(k, u.item) * ratesOf(k) > makes(best, u.item) * ratesOf(best) + 1e-9 ? k : best));
   }
   const joinsOf = key => {
+    // (On a belt of its own into those taking it, `feeds`, ADR 0068.)
+    const own = supplies.filter(s => s.from === key && s.own).map(s => [s.item, entryOf.get(s.item)]);
     const list = [
-      ...supplies.filter(s => s.from === key && !s.valve).map(s => [s.item, entryOf.get(s.item)]),
+      ...supplies.filter(s => s.from === key && !s.valve && !s.own).map(s => [s.item, entryOf.get(s.item)]),
       ...[...used.values()].filter(u => u.sources?.includes(key) && u.from !== key).map(u => [u.item, entryOf.get(u.from)]),
     ];
-    return list.length ? { joins: Object.fromEntries(list) } : {};
+    return { ...(list.length ? { joins: Object.fromEntries(list) } : {}), ...(own.length ? { feeds: Object.fromEntries(own) } : {}) };
   };
   // A step's fluids fed back (ADR 0062): their spare off through an overflow valve (`overflow`),
   // what makes up the rest through a top-up valve into their pipe (`topUp`: fluid → { from: the

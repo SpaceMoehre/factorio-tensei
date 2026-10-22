@@ -66,6 +66,9 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(goal.from ? { from: goal.from } : {}),
       // (A Byproduct Use's Supplied Items: item → the Sub-Block whose route of it they join.)
       ...(goal.joins ? { joins: goal.joins } : {}),
+      // (What it makes of an item another Sub-Block makes, more than a lane carries: on a belt of
+      // its own into those taking it, `feeds`: item → that Sub-Block, ADR 0068.)
+      ...(goal.feeds ? { feeds: goal.feeds } : {}),
       // (An Extension: so much of its item made beyond what is taken, for an Annex to draw.)
       ...(goal.extra ? { extra: goal.extra } : {}),
       // (Fluids fed back, ADR 0062: their spare off through an overflow valve, what makes up the

@@ -53,6 +53,19 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
     return !plan[e.to].inputs.some(x => x.name !== e.item && solids.has(x.name))
       && edges.some(o => o.from === e.from && o.to !== e.to && o.type !== 'fluid' && o.item !== e.item);
   }).map(e => ({ ...e }));
+  // (A Supplied Item more than a lane carries, `feeds`: on a belt of its own into those taking it
+  // off the other's, each their share, ADR 0068.)
+  const fed = plan.flatMap((sb, from) => Object.entries(sb.feeds ?? {}).flatMap(([item, into]) => {
+    const o = sb.outputs.find(o => o.name === item);
+    const takers = edges.filter(e => e.from === into && e.item === item && !closing.has(e));
+    const all = takers.reduce((sum, e) => sum + e.rate, 0);
+    if (!o || !all) return [];
+    return takers.map(e => {
+      const rate = o.rate * e.rate / all;
+      e.rate -= rate;
+      return { from, to: e.to, item, type: o.type, rate };
+    });
+  }));
   const own = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
     const on = tapped.find(e => e.from === into && e.item === item);
     const o = sb.outputs.find(o => o.name === item);
@@ -67,6 +80,7 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   const internal = [
     ...edges.filter(e => !closing.has(e) && !tapped.some(t => off(t) && sameAs(t, e))).map(e => tapped.find(t => sameAs(t, e)) ?? e),
     ...own.filter(e => !off(e)),
+    ...fed,
   ];
   const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...[...tapped, ...own].filter(off).map(e => ({ ...e, tapped: true }))];
   // (Only into an Internal Path: one of the item's consumers' takes it from there.)

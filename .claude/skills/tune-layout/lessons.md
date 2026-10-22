@@ -68,6 +68,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | A loop taking all its producer makes: its link through the taps, ending there; a train pipe only to steps taking it by train | Py hot air: nothing → 6000/min | 0065 |
 | One Item a Belt (the user's rule): each product its own belt where a byproduct would ride into a Sub-Block; filter splitter for train-only byproducts | Py coke: 6 towers in one chain, nothing riding (3352.5 → 2160/min, the rule's price in room) | 0066 |
 | Fluid temperatures in the chain: a taker at a temperature only from a step making it so, fed-back fluids only to those taking them so, pipes of two temperatures apart | Py hot air: gas by train 16842 → 505/min, 184 × 12 → 59 × 48 | 0067 |
+| A Sub-Block finding no room tried placed first; a Supplied Item more than a lane on its own belt (not by train); room east of a Sub-Block sorting its belt to the train | Py coke one chain 6 → 7 towers (2160 → 2520/min); small parts 2775 → 3000 | 0068 |
 
 ## What failed, was reverted, or must not be done
 
@@ -129,6 +130,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Throughput without backpressure** (0057). A layout whose tapped byproduct fell back to the train showed no Starvation and delivered its full rate; in the game the byproduct fills its belt and stops the producer. Model what cannot leave as well as what cannot arrive.
 
 - **A layout that is valid but wrong in the game** (0067): the catalog had no fluid temperatures, so the chain fed 100° gas to recipes wanting 250° at least. When a user says the game would not run it, look for data the catalog drops (`scripts/build-catalog.mjs` on the dump) before the layout code.
+- **A chain that grows without bound past some Count** (0068): print `planSubBlocks` machine totals at n, n+0.5, n+1 (`plan.mjs`). Py coke went 75 → 505 machines from 7 to 8 towers: a Supplied Item over a lane dropped to the train, and the step making it made everything again. Tries above such a jump can never fit, whatever the layout.
 - **A user rule that costs rate** (0066). One Item a Belt cut coke 3352.5 → 2160/min and molybdenum 600 → 387.5: a belt more at every machine making a byproduct. Build the rule as asked, measure what it costs, give it a toggle, and say the cost plainly; don't quietly weaken it.
 - **Balancing belts from several sources by shares** (0064). Feeds of one byproduct from two producers, each into half the machines, came out 700 and 766 for 733 each (whole belts of producers), and spare speed (headroom) is often 1.00 exactly. Run each source's belt past every machine instead: nothing to balance.
 - **A failure every candidate shares that names a belt not starting at the west edge, or an inserter with nothing to move** (0064, 0065): look at what a post-pass (compact.js) or a fallback did to that belt before the search. A tap's filter splitter was taken for a sorted-out byproduct's; a loop's tap was never routed and its feed fell back to the train from the east.

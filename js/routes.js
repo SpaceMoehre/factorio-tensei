@@ -80,11 +80,13 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
       const sorted = consumers.length === 1 && left.length === 1 && left[0].name !== sb.item
         && !plan[consumers[0]].inputs.some(x => x.name === left[0].name)
         && solidOut.reduce((sum, o) => sum + o.rate, 0) > 2 * laneCapacity + 1e-6;
+      // (One of several producers' belts of its one item into its consumer: its share, ADR 0068.)
+      const shared = solidOut.length === 1 && consumers.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === solidOut[0].name).length > 1;
       // Output inserters drop every product onto the far lane, so the products share it.
       add({
         kind: 'belt', source: i, sink: left.length ? 'side-output' : null,
         items: solidOut.map(o => ({ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' })),
-        consumers, ...(sorted ? { sorted: left[0].name } : {}),
+        consumers, ...(sorted ? { sorted: left[0].name } : {}), ...(shared ? { portion: true } : {}),
         // (Its item the user wants leaving by train too, where its consumers take it all: what
         // they leave off a splitter giving them priority, compact.js exportBelts, ADR 0062.)
         ...(sb.exports?.includes(sb.item) && consumers.length && !left.length && solidOut.some(o => o.name === sb.item) ? { exported: sb.item } : {}),

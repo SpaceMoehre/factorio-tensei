@@ -171,3 +171,28 @@ test('a Fuel item the chain makes: made for the machines burning it too', async 
   const { made: coal, taken } = coalOf(chainOf({ logistics }).entries);
   assert.ok(Math.abs(coal - taken) < 1e-6, `${coal} made, ${taken} taken`);
 });
+
+// Py coke at 2880/min: the BOFs of the coal Use make 494/min of red-hot coke, more than a lane
+// carries, so it cannot side-load onto the red-hot coke step's belt. It went by train instead, and
+// the step made all the towers take: its coal, its crushers' byproduct coal, the Use, again — 505
+// machines where 7 towers took 75. Now it goes on a belt of its own into the towers (`feeds`),
+// each taking its share off both (ADR 0068).
+test('a Supplied Item more than a lane: on a belt of its own into its takers, not by train', async () => {
+  const { planSubBlocks } = await import('../js/plan.js');
+  const { buildFlows } = await import('../js/flows.js');
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const logistics = { fuel: 'coal', liquidFuel: 'methane', belt: 'transport-belt' };
+  const made = ['redhot-coke', 'coal', 'coarse-coal', 'crushed-coal', 'pressured-air', 'steam', 'water'];
+  const selections = { coke: { recipe: 'quench-redcoke' }, steam: { recipe: 'electric-boiler-water-to-steam' }, water: { recipe: 'offshore-water' } };
+  const uses = [{ item: 'coal', recipe: 'redhot-coke' }];
+  const { entries } = expandChain([{ item: 'coke', rate: 2880 }], shipped, { made, selections, uses, logistics, belt: 'transport-belt' });
+  const plan = planSubBlocks(entries, shipped, logistics);
+  assert.ok(plan.reduce((sum, sb) => sum + sb.count, 0) < 100, `${plan.reduce((sum, sb) => sum + sb.count, 0)} machines`);
+  const use = plan.findIndex(sb => sb.use), towers = plan.findIndex(sb => sb.item === 'coke');
+  assert.equal(plan[use].feeds?.['redhot-coke'], plan.findIndex(sb => sb.item === 'redhot-coke' && !sb.use));
+  const { internal } = buildFlows(plan);
+  const into = internal.filter(e => e.to === towers && e.item === 'redhot-coke');
+  assert.equal(into.length, 2);
+  const takes = plan[towers].inputs.find(i => i.name === 'redhot-coke').rate;
+  assert.ok(Math.abs(into.reduce((sum, e) => sum + e.rate, 0) - takes) < 1e-6);
+});

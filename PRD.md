@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v55: The biggest placed first; a Supplied Item on its own belt; room to sort (implemented)
+
+A Sub-Block that finds no room is tried placed first; a Supplied Item more than a lane goes into its takers on a belt of its own (it went by train, and the chain grew without bound); a Sub-Block sorting a byproduct out of its belt to the train keeps room east of it for the splitter. Py coke with One Item a Belt: one chain of 6 towers (2160/min) → 7 (2520/min), nothing riding; small parts 2775 → 3000/min (ADR 0068).
+
 ## v54: Fluid temperatures (implemented)
 
 A fluid a recipe takes at a minimum or maximum temperature comes only from a step making it at a temperature it takes (a fluid fed back included), else by train; pipes of a fluid at two temperatures never join. The catalog records them. Py hot air: the coke oven gas goes round its loop of temperatures (500°, 250°, 100°), 505/min by train instead of 16842 (ADR 0067).

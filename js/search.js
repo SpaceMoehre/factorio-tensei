@@ -348,6 +348,13 @@ export function* search(entries, catalog, logistics, options = {}) {
       queue.unshift({ ...candidate, columns: candidate.columns.map((v, j) => (j === i ? 2 : v)) });
       if (retries++ < RETRIES) structured++;
     };
+    // A Sub-Block that finds no room, placed last (it feeds the rest: Py coke's crushers, 53 × 43):
+    // the same candidate next with it placed first, where the room left is in one piece (ADR 0068).
+    const placeFirst = i => {
+      if (candidate.ahead?.includes(i)) return;
+      queue.unshift({ ...candidate, ahead: [...(candidate.ahead ?? []), i] });
+      if (retries++ < RETRIES) structured++;
+    };
     let work = ready, used = null, positions = null;
     try {
       positions = placeBlocks(ctx, ready, bounded ? { ...candidate, until: () => now() > until } : candidate);
@@ -446,7 +453,10 @@ export function* search(entries, catalog, logistics, options = {}) {
       // No pole for a machine there: room round the Sub-Blocks about it.
       if (e instanceof PowerError && e.at && composed) makeRoom(near(composed.subBlocks, e.at));
       else if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
-      else if (e instanceof RoutingError && e.unplaced !== undefined) inTwo(e.unplaced);
+      else if (e instanceof RoutingError && e.unplaced !== undefined) {
+        inTwo(e.unplaced);
+        placeFirst(e.unplaced);
+      }
       solidly();
       failure = e;
       trace(candidate, e);

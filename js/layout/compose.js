@@ -1694,8 +1694,9 @@ function groupRoutes(ctx, instances, laneCapacity) {
       const off = trainByproduct(base);
       if (off && ctx.chained !== 'all' && !ctx.chained?.has(base.id)) {
         for (const g of groups) {
-          const share = g.producers.reduce((sum, slot) => sum + production(slot), 0) / Math.max(1e-9, total);
           const carried = laneFlow(g.producers, perMachine, laneCapacity)(0, g.producers.length);
+          // (What its lanes carry of what its producers make, as a belt to the train is planned.)
+          const share = Math.min(g.producers.reduce((sum, slot) => sum + production(slot), 0), carried) / Math.max(1e-9, total);
           const trunk = beltRoute(routes.length, base, [base.id], base.items.map(i => ({ ...i, rate: i.rate * share, supply: i.supply * share, capacity: carried, lane: 'out' })), g.producers, plan);
           trunk.filter = off;
           routes.push(trunk);
