@@ -7,6 +7,7 @@ import { validateBlock } from './layout/validity.js';
 import { rankOf, starvationOf } from './layout/score.js';
 import { simulate } from './sim.js';
 import { editOf } from './layout/edit.js';
+import { partByConsumer } from './plan.js';
 
 // Anytime layout search, bottom-up (ADR 0005). First every Sub-Block is designed on its own,
 // from the leaves of the Production Chain up to the Goals: candidate layouts of its machines and
@@ -51,6 +52,8 @@ export function* search(entries, catalog, logistics, options = {}) {
   let draws = 0;
   const rng = () => (draws++, source());
   const started = now();
+  // (Parted by Consumer: a producer of more than a belt for several Sub-Blocks, a part each.)
+  entries = partByConsumer(entries, catalog, logistics);
   const ctx = context(entries, catalog, logistics, site);
   // (No byproduct sorted out: each producers' belt chained through its consumers.)
   if (options.unsorted) ctx.chained = 'all';

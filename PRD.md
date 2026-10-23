@@ -84,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v61: Parted by Consumer; copies of few machines that starve whole (implemented)
+
+A step whose item, more than a belt carries, goes to several Sub-Blocks is laid out as a Sub-Block for each, making what that one takes, its belts an Internal Path of their own on parallel belts (a belt to several consumers is one belt). A Sub-Block of 2 machines or more gets copy candidates too where every whole Module of it starves. Py small parts 2 in 116² among 32 poles: 1139.95/min delivered (7 factories, 420 starving) → 1496.23/min (9) (ADR 0074).
+
 ## v60: Bands with a fluid's Use; Shared Slots; the regression suite (implemented)
 
 Bands takes a chain with a Byproduct Use of a fluid: the Use takes it from its source's first Part, the other Parts' pipes joining that one's. A producer all of whose machines one Part takes, in a Slot holding more, takes them whole and leaves the rest of the Slot to others, below it or beside it, whichever holds the most of the Goal's machines; each producer's first Part is tried in several Slots; a Sub-Block left out of the Parts with no rows deep enough for it fails the packing; Sub-Blocks with a spot are placed first. Copies count their leftover copy on the belt snaking through them. Py trits in 118² among 4 roboports: 4.45/min (18 reefs) → 6.94/min (27). The regression suite (`npm run suite`): 15 tuned setups laid out the same on any host, each against its recorded result (ADR 0073).

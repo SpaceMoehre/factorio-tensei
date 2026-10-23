@@ -164,6 +164,10 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     // between Fixtures where rows of machines do not).
     const best = Math.min(...[...cores.values()].map(c => trouble(c.core)));
     if (!only && (!(best <= 1e-6) || ctx.site?.fixtures.length)) for (const variant of sideVariants(shape, links, sb, rng, sidesUpTo(ctx, building))) attempt(variant);
+    // Fewer machines repeat a module too where every whole core starves: machines each taking or
+    // making most of a belt (Py bolts, 600 sticks a minute in and 600 bolts out) want a belt or two
+    // a copy, which no row of them shares.
+    if (whole && !only && !candidates.length && sb.count >= 2 && !([...cores.values()].some(c => trouble(c.core) <= 1e-6))) candidates.push(...copyCandidates(ctx, index, shape, rng));
     // Stacked rows whose connections face the bands above and below but have no pipe rows rarely
     // route: their pipes must find their own way between the rows. Those come last. (Connections
     // on the machines' sides are reached through the gaps between them.)

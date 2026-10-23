@@ -88,7 +88,7 @@ The unit of `count` assemblers (plus internal belts/inserters) built to satisfy 
 _Avoid_: block (ambiguous with Compound Block)
 
 **Module**:
-A Sub-Block's machines — all of them, or a share that is repeated — with their inserters, belts and pipes, laid out and routed on their own: every belt enters on its west edge and leaves on its east edge, every fluid reaches its west edge (an input) or its east edge (an output). Each Sub-Block is designed as Modules first, from the leaves of the Production Chain up; the Compound Block only places them and links them. A huge Sub-Block repeats one Module, sized so its busiest belt is used up and the stack of its Copies comes out about square: pairs of short rows facing the belt between them rather than one long row. In a City Block, a few big machines whose rows (as long as their busiest belt feeds) would stand taller than most of its height repeat one too (Py biomass powerplants, a belt of biomass each: ADR 0071).
+A Sub-Block's machines — all of them, or a share that is repeated — with their inserters, belts and pipes, laid out and routed on their own: every belt enters on its west edge and leaves on its east edge, every fluid reaches its west edge (an input) or its east edge (an output). Each Sub-Block is designed as Modules first, from the leaves of the Production Chain up; the Compound Block only places them and links them. A huge Sub-Block repeats one Module, sized so its busiest belt is used up and the stack of its Copies comes out about square: pairs of short rows facing the belt between them rather than one long row. In a City Block, a few big machines whose rows (as long as their busiest belt feeds) would stand taller than most of its height repeat one too (Py biomass powerplants, a belt of biomass each: ADR 0071). So do fewer machines where every whole Module of them starves: machines each taking or making most of a belt want a belt a Copy, which no row of them shares (Py bolts, 600 sticks a minute in and 600 bolts out: Copies of one, ADR 0074).
 _Avoid_: chunk, tile (a tile is one grid square)
 
 **Copy**:
@@ -195,8 +195,12 @@ _Avoid_: hole, gap (a gap is the room Placement keeps between Sub-Blocks)
 Taking out a row or column of the routed Compound Block that holds nothing but belts or pipes running straight across it and empty tiles; everything beyond moves in by one, belts and tunnels get shorter. Placement leaves room generously; squeezing takes back what the Links did not use. Poles are placed after. A block in a City Block is not squeezed (its Fixtures cannot move with it).
 _Avoid_: compaction (ambiguous with Compactness)
 
+**Parted by Consumer**:
+A step whose item, more than one belt carries, goes to several Sub-Blocks, laid out as a Sub-Block for each of them (its parts), each making what that one takes: each part's belts are an Internal Path to its one consumer, as many in parallel as carry it (Py iron sticks for bolts and small parts 2: 4200 and 1260 a minute where one belt to both carried 900). Not a Goal (the train takes it too), a step with byproducts, a Recipe Loop's, a Byproduct Use or one a Use joins, nor a chain in Bands' Parts already. Done once before designing, so a build, Maximize's tries, Annexes and the user's moves see the same Sub-Blocks.
+_Avoid_: Part (a Part is Bands', a Sub-Block cut by Slots), Breakout
+
 **Internal Path**:
-A belt or pipe between two Sub-Blocks A→B, carrying whichever item(s) A's Recipe Selection outputs that B's Recipe Selection also needs as input. Items travel on belts, fluids in pipes. When several Sub-Blocks consume A's output, one path visits them in Dependency Order. Between two Sub-Blocks it runs on as many Parallel Belts as both ends split into, decided from the plan alone: each belt links a run of A's machines to a run of B's.
+A belt or pipe between two Sub-Blocks A→B, carrying whichever item(s) A's Recipe Selection outputs that B's Recipe Selection also needs as input. Items travel on belts, fluids in pipes. When several Sub-Blocks consume A's output, one path visits them in Dependency Order, on one belt: where that is more than a belt carries, A is Parted by Consumer instead. Between two Sub-Blocks it runs on as many Parallel Belts as both ends split into, decided from the plan alone: each belt links a run of A's machines to a run of B's.
 _Avoid_: hardcoded path items unrelated to the configured Goals
 
 **Side Input**:

@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 export const root = resolve(process.env.ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../..'));
 const { decodeBlueprint, readCityBlock, siteOf } = await import(`${root}/js/city.js`);
 const { planner } = await import(`${root}/js/maximize.js`);
+// (Parted by Consumer as the search parts them, where the code under test does.)
+const { partByConsumer = (/** @type {any} */ e) => e } = await import(`${root}/js/plan.js`);
 export const catalog = JSON.parse(readFileSync(`${root}/data/catalog.json`, 'utf8'));
 
 // { site, logistics, plan, goals, state (the setup itself), entriesFor(n, spare) } for a setup file.
@@ -18,5 +20,5 @@ export async function load(file) {
   const goals = st.goals.filter(g => g.item && g.rate > 0);
   // (Maximize's planner only in a City Block: a setup standing on its own is built.)
   const plan = site ? planner(goals, catalog, logistics, { made: st.made ?? [], selections: st.selections ?? {}, uses: st.uses ?? [], exports: st.exports ?? [], voids: st.voids ?? [], site }) : null;
-  return { site, logistics, plan, goals, state: st, entriesFor: (n, spare = {}) => plan.chainOf(plan.goalsFor(n), spare).entries };
+  return { site, logistics, plan, goals, state: st, entriesFor: (n, spare = {}) => partByConsumer(plan.chainOf(plan.goalsFor(n), spare).entries, catalog, logistics) };
 }

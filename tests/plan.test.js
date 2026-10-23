@@ -110,3 +110,32 @@ test('electric machines take no Fuel', () => {
   }], catalog, { fuel: 'coal' });
   assert.deepEqual(sb.inputs.map(i => i.name), ['iron-plate']);
 });
+
+// Py small parts 2 at 2 machines: 1200 iron sticks a minute into bolts and 360 into the small
+// parts, 1560 on one belt of 900; a part of the iron sticks for each, a belt each.
+test('Parted by Consumer: a producer of more than a belt for several Sub-Blocks makes a part for each', async () => {
+  const pyCatalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const { expandChain } = await import('../js/chain.js');
+  const { buildFlows } = await import('../js/flows.js');
+  const { partByConsumer } = await import('../js/plan.js');
+  const settings = { belt: 'transport-belt' };
+  const selections = Object.fromEntries(['small-parts-02', 'bolts', 'iron-stick', 'belt'].map(item => [item, { recipe: item, building: 'automated-factory-mk01' }]));
+  const entriesAt = rate => expandChain([{ item: 'small-parts-02', rate }], pyCatalog, { made: ['bolts', 'iron-stick', 'belt'], selections }).entries;
+  const parted = partByConsumer(entriesAt(360), pyCatalog, settings);
+  const sticks = parted.map((e, i) => [e, i]).filter(([e]) => e.goal.item === 'iron-stick');
+  assert.equal(sticks.length, 2);
+  assert.ok(sticks.every(([e]) => e.goal.part));
+  const plan = planSubBlocks(parted, pyCatalog, settings);
+  const flows = buildFlows(plan, 900);
+  const into = item => flows.internal.filter(e => e.item === 'iron-stick' && plan[e.to].item === item);
+  assert.deepEqual(into('bolts').map(e => Math.round(e.rate)), [1200]);
+  assert.deepEqual(into('small-parts-02').map(e => Math.round(e.rate)), [360]);
+  assert.notEqual(into('bolts')[0].from, into('small-parts-02')[0].from);
+  // Each part makes what its consumer takes; nothing leaves by train.
+  for (const e of [...into('bolts'), ...into('small-parts-02')]) assert.ok(Math.abs(plan[e.from].rate - e.rate) < 1e-6);
+  assert.ok(!flows.sideOutput.some(o => o.item === 'iron-stick'));
+  // At 1 machine, 780 a minute: one belt carries it, nothing parted; parted entries are kept.
+  const one = entriesAt(180);
+  assert.equal(partByConsumer(one, pyCatalog, settings), one);
+  assert.equal(partByConsumer(parted, pyCatalog, settings), parted);
+});

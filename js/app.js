@@ -1,7 +1,7 @@
 import { simulate } from './sim.js';
 import { expandChain, recipeOptions, useKey, EVERY } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
-import { burnerFuel, fuelsFor } from './plan.js';
+import { burnerFuel, fuelsFor, partByConsumer } from './plan.js';
 import { useNames, displayName } from './names.js';
 import { encodeBlueprint } from './blueprint.js';
 import { clocksOf, clockLabel } from './clocks.js';
@@ -923,7 +923,9 @@ async function build(upTo = false) {
   $('stop').hidden = false;
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   const started = Date.now();
-  const job = { entries: chain.entries, logistics: logisticsOf(), seed: 1, site };
+  const logistics = logisticsOf();
+  // (Parted by Consumer before designing, as the search parts them: each Sub-Block by its index.)
+  const job = { entries: partByConsumer(chain.entries, catalog, logistics), logistics, seed: 1, site };
   // (The user's moves lay the block out again for the chain it was built for.)
   built.job = job;
   // A build first designs each Sub-Block on its own, every one in a worker of its own at once;
@@ -931,7 +933,7 @@ async function build(upTo = false) {
   let designs = null;
   if (!built.maximize) {
     const ticket = built;
-    showEmpty(`Designing ${count(chain.entries.length, 'Sub-Block')}…`, true);
+    showEmpty(`Designing ${count(job.entries.length, 'Sub-Block')}…`, true);
     try {
       designs = await designEach(job, ticket);
     } catch (e) {

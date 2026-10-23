@@ -1,5 +1,6 @@
 import { machineEffect, defaultModules } from './modules.js';
 import { assignFluidBoxes } from './fluidboxes.js';
+import { buildFlows } from './flows.js';
 
 // logistics.fuel: the Fuel item burner machines burn (logistics.fuels: category → the one those
 // that cannot burn it burn, burnerFuel); logistics.liquidFuel: the Liquid Fuel
@@ -85,6 +86,43 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(use ? { use: true } : {}),
     };
   });
+}
+
+// Parted by Consumer: a step whose item, more than a belt carries, goes to several Sub-Blocks, in a
+// part for each, making what that one takes (`part`; each consumer takes it `from` its own). A
+// belt to several consumers is one belt, so it starved them; a part's belts to its one consumer
+// are an Internal Path, as many in parallel as carry it (Py iron sticks for bolts and small parts
+// 2: 1560 a minute on one belt of 900 at 2 machines). Not a Goal, a step with byproducts, a
+// Recipe Loop's, a Byproduct Use, nor one a Use joins; nor a chain in parts already (Bands). The
+// parts past the first after the other entries, so no entry's index changes.
+export function partByConsumer(entries, catalog, logistics) {
+  const belt = (catalog.belts?.[logistics.belt]?.itemsPerSecond ?? Infinity) * 60;
+  if (!(belt < Infinity) || entries.some(e => e.goal.part)) return entries;
+  let plan, flows;
+  try {
+    plan = planSubBlocks(entries, catalog, logistics);
+    flows = buildFlows(plan, belt);
+  } catch {
+    return entries;
+  }
+  const out = entries.map(e => ({ ...e, goal: { ...e.goal } }));
+  let parted = false;
+  const named = (sb, key) => Object.values(sb[key] ?? {}).map(v => (typeof v === 'object' ? v.from : v));
+  plan.forEach((sb, i) => {
+    const edges = flows.internal.filter(e => e.from === i && e.item === sb.item);
+    const plain = !sb.use && sb.outputs.length === 1 && sb.outputs[0].type === 'item' && !sb.extra && !sb.joins && !sb.feeds && !sb.exports
+      && !flows.sideOutput.some(o => o.item === sb.item) && !flows.feedback.some(e => e.from === i || e.to === i)
+      && !plan.some(s => ['joins', 'feeds', 'topUp'].some(key => named(s, key).includes(i)));
+    if (!plain || edges.length < 2 || new Set(edges.map(e => e.to)).size < edges.length) return;
+    if (!(edges.reduce((sum, e) => sum + e.rate, 0) > belt + 1e-6)) return;
+    parted = true;
+    edges.forEach((e, k) => {
+      const at = k ? out.push({ ...entries[i], goal: { ...entries[i].goal } }) - 1 : i;
+      out[at].goal = { ...out[at].goal, rate: e.rate, part: true };
+      out[e.to].goal = { ...out[e.to].goal, from: { ...out[e.to].goal.from, [sb.item]: at } };
+    });
+  });
+  return parted ? out : entries;
 }
 
 // The Liquid Fuel a machine burning a fluid burns: its energy source's own fluid, else the one

@@ -323,6 +323,28 @@
         "machines": null,
         "failure": "belt 43: no path from 430,70 to the east edge"
       }
+    },
+    {
+      "name": "small-parts-02-116",
+      "file": "small-parts-02-116.json",
+      "what": "Py small parts 2 among 32 poles, 116²: machines each taking or making most of a belt (bolts), iron sticks for two consumers past a belt (Parted by Consumer)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 182.5,
+        "tries": 10,
+        "rate": 1496.23,
+        "machines": 9,
+        "failure": null,
+        "delivered": 1496.23,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "106x110",
+        "entities": 3891,
+        "hash": "7753f234876a"
+      }
     }
   ]
 }

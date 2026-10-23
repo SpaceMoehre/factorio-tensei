@@ -74,6 +74,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | In a City Block, copies of few big machines whose rows stand taller than the room; where pairings are too many, the biggest Sub-Blocks' designs of other sizes paired; no spare machines breaking a Recipe Loop; Throughput of spare machines | Py hot air 118²: 9000 → 11812.5/min (1 → 1.3125 RHEs, 38 → 50 machines) | 0071 |
 | Drop Offset inserters counted at their machine's share, not their own rate (a row's second inserter onto the other lane); retries past RETRIES behind the structured candidates; Filling down to a tenth of what fits | Py hot air 118²: 11812.5 → 13218.75/min (51 → 57 machines); small parts 2775 → 3375 | 0072 |
 | Bands with a fluid's Use (the Use from the source's first Part, the rest joining its pipe); Shared Slots (a producer's Part leaving the rest of its Slot below or beside it); producers' Slots searched; no room for a Sub-Block left out fails the packing | Py trits 118²: 4.45 → 6.94/min (18 → 27 reefs) | 0073 |
+| Parted by Consumer (a producer of more than a belt for several Sub-Blocks, a part each, each an Internal Path on parallel belts); copies of 2+ machines where every whole Module starves | Py small parts 2 116²: 1139.95 (starving) → 1496.23/min (7 → 9 factories) | 0074 |
 
 ## What failed, was reverted, or must not be done
 
@@ -156,6 +157,9 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A check calibrated on one chain** (0073). The packing check counted a row as a machine and its BAND (6): right for trits' rcs, but it turned away vrauks' 34 sap extractors, which fit two rows in 18, and Bands' top fell 78 → 72. The suite caught it on its first run; a check meant to reject the impossible should count tight.
 - **A 3-row middle band, the user's rule, ungated** (0073's next pass). Rows of reefs a tile closer (the core model holds 3 shared belt rows in a band of 3 with 90° inserters; structured variants tried only 4–6): the suite showed coke 2160 → 2520 and rayon 487.5 → 584.37, but hot air 8437.5 → 4921.87, perylene 3300 → 2793.75 and molybdenum 999.98 → 799.98. More variants change which designs the search pairs; gate it before keeping it.
 - **A design fix that passes designs but not placement** (0073, again 0071/0072): copies of 19 reefs stopped starving (the leftover copy on the snake), and still found no room. Count whether the fix's designs are in the final layout before crediting it.
+
+- **Every main try failing in a second, the result all Annexes** (0074). Py small parts 2 at 7 machines: the first layout fit 1, then Annexes of 1 each. "Every design starves" at every Count above 1 is a belt the plan cannot split, not room: look at `shapeOf`'s belts (`splittable`, `perBelt`) for the starving Sub-Block before the search. A producer's belt to several consumers was one belt whatever it carried.
+- **Two causes, each alone no gain** (0074): parting the sticks without copies of the bolts ran out of time routing; copies without parting still starved. Test each half alone before writing either off, and before crediting either (a scratch worktree with one half applied).
 
 ## Rules every change keeps
 
