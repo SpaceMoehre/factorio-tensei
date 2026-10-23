@@ -41,6 +41,11 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       const rate = perMachine * goal.rate / perMachinePerMinute;
       if (fuel) fuel.rate += rate;
       else inputs.push({ name, type: 'item', rate });
+      // A fuel's Burnt Result (Py's ash), one for each item burnt: a byproduct like any other.
+      const burnt = catalog.fuels?.[name]?.burntResult;
+      const left = burnt && outputs.find(o => o.name === burnt);
+      if (left) left.rate += rate;
+      else if (burnt) outputs.push({ name: burnt, type: 'item', rate });
     }
     if (liquid) {
       // The same for a Liquid Fuel, per unit of fluid: a pipe of its own into every machine.

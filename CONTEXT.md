@@ -67,7 +67,7 @@ The user's rule: every belt carries one item. A Sub-Block whose byproduct would 
 _Avoid_: sorting belts, filtered outputs
 
 **Fuel**:
-The item a burner machine burns, treated as one more ingredient of its recipe, at the rate its power draw requires: made in the block where the user makes it (the chain sizing its step for it), else by train (ADR 0063). Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item. A burner that cannot burn it (Py's biomass powerplant) burns the one chosen for its own fuel category ("Biomass fuel"), by default that category's of most energy (ADR 0070).
+The item a burner machine burns, treated as one more ingredient of its recipe, at the rate its power draw requires: made in the block where the user makes it (the chain sizing its step for it), else by train (ADR 0063). Only machines take fuel; inserters are always electric. Chosen only where a machine of the chain burns an item. A burner that cannot burn it (Py's biomass powerplant) burns the one chosen for its own fuel category ("Biomass fuel"), by default that category's of most energy (ADR 0070). A Fuel item with a Burnt Result (Py's coal and coke leave ash) leaves one for each item burnt: a Byproduct of the step burning it, by train, to a Use, or taken back, as any other (ADR 0076).
 _Avoid_: fuel for inserters (burner inserters are never used)
 
 **Liquid Fuel**:

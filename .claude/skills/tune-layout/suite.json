@@ -207,18 +207,18 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 952.3,
-        "tries": 15,
-        "rate": 2160,
-        "machines": 6,
+        "secs": 512.5,
+        "tries": 14,
+        "rate": 1800,
+        "machines": 5,
         "failure": null,
-        "delivered": 2160,
+        "delivered": 1800,
         "valid": true,
         "starving": 0,
         "riding": 0,
         "bounds": "110x110",
-        "entities": 2762,
-        "hash": "f983239aa3d1"
+        "entities": 2624,
+        "hash": "ee56bf21fc88"
       }
     },
     {

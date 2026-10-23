@@ -75,6 +75,17 @@ test('Fuel: a burner machine takes its Fuel as one more input, at the rate its p
   assert.ok(Math.abs(sb.inputs[1].rate - 2.7) < 1e-9, `coal at ${sb.inputs[1].rate}/min`);
 });
 
+// A fuel's Burnt Result (Py's coal leaves ash): one for each item burnt, a byproduct of the step.
+test('Fuel: a burner machine makes its fuel\'s Burnt Result as a byproduct, one for each item burnt', () => {
+  const ashy = { ...catalog, fuels: { ...catalog.fuels, coal: { ...catalog.fuels.coal, burntResult: 'ash' } } };
+  const [sb] = planSubBlocks([{
+    goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' },
+  }], ashy, { fuel: 'coal' });
+  const ash = sb.outputs.find(o => o.name === 'ash');
+  assert.ok(ash && Math.abs(ash.rate - 2.7) < 1e-9, `ash at ${ash?.rate}/min`);
+  assert.deepEqual(sb.byproducts.map(o => o.name), ['ash']);
+});
+
 // (A burner that cannot burn the Fuel burns its own category's: the one chosen, else that of most
 // energy, ADR 0070; none of its category, an error.)
 test('Fuel must suit the burner: a furnace given nuclear fuel cells burns chemical fuel instead', () => {

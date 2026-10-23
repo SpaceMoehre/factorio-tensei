@@ -169,6 +169,26 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     withFuel.set(key, list);
     return list;
   };
+  // Its products as its building makes them: with the fuel's Burnt Result (Py's ash), one for each
+  // Fuel item burnt, a byproduct like any other (`burnt`: no productivity adds to it).
+  const withAsh = new Map();
+  const productsFor = selection => {
+    const key = `${selection.recipe}|${selection.building}|${JSON.stringify(selection.modules ?? [])}`;
+    if (withAsh.has(key)) return withAsh.get(key);
+    const recipe = catalog.recipes[selection.recipe];
+    const building = catalog.buildings[selection.building];
+    let fuel = null;
+    try { fuel = logistics && building.energy === 'burner' && fuelOf(building, catalog, logistics); } catch { fuel = null; }
+    const burnt = fuel && catalog.fuels?.[fuel.name]?.burntResult;
+    let list = recipe.products;
+    if (burnt) {
+      const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
+      const amount = fuel.perMinute * effect.consumption * recipe.time / (building.craftingSpeed * effect.speed * 60);
+      list = [...list, { type: 'item', name: burnt, amount, burnt: true }];
+    }
+    withAsh.set(key, list);
+    return list;
+  };
   const toTrain = (item, reason) => {
     if (!trainInputs.has(item)) trainInputs.set(item, { item, rate: 0, reason });
     return true;
@@ -219,7 +239,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   const byproductsOf = key => {
     const step = steps.get(key) ?? used.get(key);
     if (!step) return [];
-    return catalog.recipes[step.selection.recipe].products.filter(p => !steps.has(key) || p.name !== key);
+    return productsFor(step.selection).filter(p => !steps.has(key) || p.name !== key);
   };
   const named = uses.filter(u => u.from != null && u.from !== EVERY);
   // (A General Use's: every step and Use making it besides its own item, but one a Use names for
@@ -261,13 +281,13 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   const n = keys.length;
   const at = new Map(keys.map((key, k) => [key, k]));
   const itemOf = key => used.get(key)?.product ?? key;
-  const recipeOf = key => catalog.recipes[stepOf(key).selection.recipe];
   const ingredientsOf = key => ingredientsFor(stepOf(key).selection);
+  const productsOf = key => productsFor(stepOf(key).selection);
   const productivity = keys.map(key => {
     const { selection } = stepOf(key);
     return 1 + machineEffect(catalog, selection.recipe, selection.building, selection.modules).productivity;
   });
-  const makes = (key, item) => recipeOf(key).products.filter(p => p.name === item).reduce((sum, p) => sum + p.amount, 0) * productivity[at.get(key)];
+  const makes = (key, item) => productsOf(key).filter(p => p.name === item).reduce((sum, p) => sum + p.amount * (p.burnt ? 1 : productivity[at.get(key)]), 0);
   const perCraft = keys.map(key => makes(key, itemOf(key)));
   const a = Array.from({ length: n }, () => new Float64Array(n));
   keys.forEach((key, t) => {
@@ -297,7 +317,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   /** @type {any[]} */
   let supplies = [];
   for (const [key, u] of used) {
-    for (const p of recipeOf(key).products) {
+    for (const p of productsOf(key)) {
       if (p.name === u.item || !steps.has(p.name) || takenBy(key, p.name) || supplies.some(s => s.from === key && s.item === p.name)) continue;
       supplies.push({ from: key, item: p.name, type: p.type, per: makes(key, p.name) / perCraft[at.get(key)] });
     }
@@ -310,7 +330,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // a step taking it itself only where it takes it so, ADR 0067.)
   if (valved) {
     for (const key of order) {
-      for (const p of recipeOf(key).products) {
+      for (const p of productsOf(key)) {
         const t = heatOf(stepOf(key).selection.recipe, p.name);
         if (p.type !== 'fluid' || p.name === key || !steps.has(p.name) || goals.some(g => g.item === p.name) || takenBy(key, p.name)
           || ingredientsOf(key).some(i => i.name === p.name && takesAt(i, t)) || supplies.some(s => s.from === key && s.item === p.name)) continue;
@@ -388,7 +408,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     if (input.reason !== 'import' && !(valved && ranged(taken) && ['cycle', 'temperature'].includes(input.reason))) continue;
     const fluid = taken.type === 'fluid';
     // (A Byproduct Use's product too.)
-    const makers = keys.filter(k => !takers.includes(k) && !takenBy(k, item) && recipeOf(k).products.some(p => p.name === item))
+    const makers = keys.filter(k => !takers.includes(k) && !takenBy(k, item) && productsOf(k).some(p => p.name === item))
       .filter(k => !fluid || valved || !takers.some(t => feeds(t, k)))
       .filter(k => !fluid || takers.every(t => takesAt(ingredientsOf(t).find(i => i.name === item), heatOf(stepOf(k).selection.recipe, item))))
       .map(k => ({ key: k, rate: makes(k, item) * ratesOf(k) }))
@@ -409,7 +429,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     // (Fed back, a solid only where one lane carries all its step makes, the item with the rest,
     // or from a Goal's step: an Internal Path's belts, joined by splitters, take no tap, so the
     // feedback is tapped off one of them; a Goal's belts on to the train each feed a belt of it.)
-    const solid = new Set(recipeOf(from.key).products.filter(p => p.type === 'item').map(p => p.name));
+    const solid = new Set(productsOf(from.key).filter(p => p.type === 'item').map(p => p.name));
     if (!fluid && takers.some(t => feeds(t, from.key)) && !goals.some(g => g.item === from.key)
       && [...solid].reduce((sum, name) => sum + makes(from.key, name) * ratesOf(from.key), 0) > lane * (1 + 1e-9)) continue;
     const rate = part ? from.rate : input.rate;
@@ -464,9 +484,9 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
       ...supplies.filter(s => s.valve && s.from === key).map(s => [s.item, { from: entryOf.get(s.item), rate: s.takers ? Math.max(0, takenAt(s) - s.per * rates[at.get(key)]) : rates[at.get(s.item)] }]),
       ...[...trainInputs.values()].filter(t => t.topUp === key).map(t => [t.item, { from: 'side-input', rate: t.rate }]),
     ];
-    const products = new Set(recipeOf(key).products.map(p => p.name));
+    const products = new Set(productsOf(key).map(p => p.name));
     const out = exports.filter(i => i === itemOf(key));
-    const gone = voids.filter(f => products.has(f) && recipeOf(key).products.find(p => p.name === f).type === 'fluid' && !out.includes(f));
+    const gone = voids.filter(f => products.has(f) && productsOf(key).find(p => p.name === f).type === 'fluid' && !out.includes(f));
     return {
       ...(fed.length ? { overflow: [...new Set(fed.map(f => f.item))] } : {}),
       ...(closed.length ? { closed } : {}),

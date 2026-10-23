@@ -172,6 +172,21 @@ test('a Fuel item the chain makes: made for the machines burning it too', async 
   assert.ok(Math.abs(coal - taken) < 1e-6, `${coal} made, ${taken} taken`);
 });
 
+// Py's BOFs burn coal, which leaves ash: a byproduct of theirs as the chain counts it (by train,
+// or to a Use), as many a minute as their Sub-Blocks make.
+test('a fuel\'s Burnt Result is a byproduct of the steps burning it', async () => {
+  const { planSubBlocks } = await import('../js/plan.js');
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const logistics = { fuel: 'coal', liquidFuel: 'methane' };
+  const made = ['redhot-coke', 'coal', 'coarse-coal', 'crushed-coal', 'pressured-air', 'steam', 'water'];
+  const selections = { coke: { recipe: 'quench-redcoke' }, steam: { recipe: 'electric-boiler-water-to-steam' }, water: { recipe: 'offshore-water' } };
+  const chain = expandChain([{ item: 'coke', rate: 60 }], shipped, { made, selections, uses: [{ item: 'coal', recipe: 'redhot-coke' }], logistics });
+  const ash = chain.byproducts.filter(b => b.item === 'ash');
+  assert.ok(ash.length > 0);
+  const planned = planSubBlocks(chain.entries, shipped, logistics).flatMap(sb => sb.byproducts).filter(o => o.name === 'ash');
+  assert.ok(Math.abs(ash.reduce((sum, b) => sum + b.rate, 0) - planned.reduce((sum, o) => sum + o.rate, 0)) < 1e-6);
+});
+
 // Py coke at 2880/min: the BOFs of the coal Use make 494/min of red-hot coke, more than a lane
 // carries, so it cannot side-load onto the red-hot coke step's belt. It went by train instead, and
 // the step made all the towers take: its coal, its crushers' byproduct coal, the Use, again — 505

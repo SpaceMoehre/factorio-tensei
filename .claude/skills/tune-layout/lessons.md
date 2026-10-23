@@ -76,6 +76,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Bands with a fluid's Use (the Use from the source's first Part, the rest joining its pipe); Shared Slots (a producer's Part leaving the rest of its Slot below or beside it); producers' Slots searched; no room for a Sub-Block left out fails the packing | Py trits 118²: 4.45 → 6.94/min (18 → 27 reefs) | 0073 |
 | Parted by Consumer (a producer of more than a belt for several Sub-Blocks, a part each, each an Internal Path on parallel belts); copies of 2+ machines where every whole Module starves | Py small parts 2 116²: 1139.95 (starving) → 1496.23/min (7 → 9 factories) | 0074 |
 | Placement takes next, of those whose consumers stand, one of 5 belts or more to them, more than twice those behind the next by depth (a heavy producer beside the step it feeds) | Py small parts 2 116²: 1496.23 → 1619.98/min, the bolts' iron sticks 35 → 15 tiles from the bolts | 0075 |
+| A fuel's Burnt Result (Py's ash) a byproduct of the step burning it, one per item burnt (chain.js `productsFor`, plan.js) | Py coke 116², page: 2520 → 2632.5/min, the BOFs' ash by train (before: left in them; the game stops them) | 0076 |
 
 ## What failed, was reverted, or must not be done
 

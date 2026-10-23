@@ -111,7 +111,8 @@ export function buildCatalog(raw, locale = null) {
   const fuels = {};
   for (const type of ITEM_TYPES.filter(t => t !== 'fluid')) {
     for (const p of Object.values(raw[type] ?? {})) {
-      if (p.fuel_value && energy(p.fuel_value) > 0) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p) };
+      // (Its Burnt Result: what a machine burning it is left with, one an item burnt: Py's ash.)
+      if (p.fuel_value && energy(p.fuel_value) > 0) fuels[p.name] = { name: p.name, fuelValue: energy(p.fuel_value), categories: fuelCategories(p), ...(p.burnt_result ? { burntResult: p.burnt_result } : {}) };
     }
   }
   // Liquid Fuels: fluids with a fuel value, burnt per unit.

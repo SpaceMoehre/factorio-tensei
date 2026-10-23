@@ -26,6 +26,7 @@ See `CONTEXT.md` for the domain glossary (Goal, Sub-Block, Compound Block, Tunne
 - Pan/zoom map-style preview of the Compound Block (not a static fixed-size SVG) — renders real per-Sub-Block dimensions and positions.
 - Side input path (train) and output path (to train), per the Side Input/Output glossary definitions.
 
+
 ## v2: dynamic layout search (implemented)
 v1 stamps a fixed template per Sub-Block. v2 replaces that with a search over layout variants that keeps the most compact valid Compound Block (ADR 0004). Where v2 differs from the requirements above, v2 wins.
 
@@ -63,7 +64,7 @@ v1 stamps a fixed template per Sub-Block. v2 replaces that with a search over la
   - 90° inserters sit behind a toggle, on by default, because blueprints using them need the Inserter_Config mod.
   - Py cranes are out of scope for now.
 - **Inserter throughput:** Starvation also reports machines whose inserters cannot keep up. Rates come from each inserter's real swing speed in the catalog times the hand size (items per swing, a logistics setting for inserter capacity research, default 1); this is an approximation.
-- **Fuel:** burner machines take Fuel as one more input, at the rate their power draw needs. The Fuel item is a logistics setting (default: coal) and flows like any Side Input, including Belt Merge. Burner inserters are never used.
+- **Fuel:** burner machines take Fuel as one more input, at the rate their power draw needs. A Fuel item's Burnt Result (Py's ash), one for each item burnt, is a byproduct of theirs. The Fuel item is a logistics setting (default: coal) and flows like any Side Input, including Belt Merge. Burner inserters are never used.
 - **Blueprint:** includes custom pickup/drop vectors for 90° inserters, each machine's modules as item requests (one per slot, so robots bring Py farms' plants and animals along), and a display panel just outside the block where each Side Input enters and each Side Output leaves, showing its item's icon and name with the rate.
 - **Modules:** every step of the Production Chain chooses its building's modules — the ones its categories, effects and recipe allow, up to its slots. They set the machine's speed (and so the Count), productivity (where the recipe allows it) and power draw (burner Fuel). A building that cannot run without modules starts full of its lowest-tier plant or animal: a Py farm, -100% base speed in Py for Factorio 2.1; in Py for Factorio 2.0 no base effect, but its slots take nothing but its plants or animals and Py's script stops it while they are empty.
 - **Unchanged:** planning (Count, Byproducts), flows, Belt Merge rules, the Side Input and Side Output definitions, and the blueprint encoding.
@@ -83,6 +84,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Speed:** the router dives only where the tile ahead is blocked, keeps tiles in typed arrays, caps a leg's search by its distance and gives up early when a flood shows no way; pole placement keeps gains in buckets, joins components through a union-find from the smallest outward, and prunes with articulation points and a local check of whether a pole's neighbours stay connected without it; validity checks index inserters, tunnels and poles. Side Belt variants are a few canonical moves of the four busiest belts. The test suite runs in about 55 s instead of 270 s. Py small parts at 600/min with its four intermediates (14 automated factories, hand size 1): first valid layout in about 1 s, no Starvation, 1,540–1,660 tiles (67×23 in the app) after 10 s (v2: 1,568 tiles, starving the Side Output and bolts). 9000 moss/min (1,875 moss farms, the test fixture's modules): a valid, starvation-free, about square block (324×397) in about 8 s, its moss leaving on 18 belts snaking through pairs of Copies.
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
+
+## v63: Burnt Results as byproducts (implemented)
+
+A Fuel item's Burnt Result (Py's coal, coke and coal dust leave ash) is a byproduct of the step whose machines burn it, one for each item burnt (no productivity adds to it): in the Production Chain (by train, to a Byproduct Use, or a Recycled Byproduct) and in the Sub-Block's outputs, its machines' output inserters taking it out. Py coke at 60/min: its BOFs leave 9 ash a minute, which nothing took out of them before (in the game they stop once full); Py coke in 116² among 32 poles, the page's Maximize: 2520 → 2632.5/min (ADR 0076).
 
 ## v62: Placement takes a producer of many belts next (implemented)
 
