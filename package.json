@@ -7,7 +7,8 @@
     "test": "node --test",
     "typecheck": "tsc -p .",
     "build-catalog": "node scripts/build-catalog.mjs",
-    "build-sprites": "node scripts/build-sprites.mjs"
+    "build-sprites": "node scripts/build-sprites.mjs",
+    "suite": "node .claude/skills/tune-layout/scripts/suite.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.20.4",

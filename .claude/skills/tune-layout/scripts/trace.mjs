@@ -26,4 +26,4 @@ for (step = run.next(); !step.done; step = run.next()) {
   if (step.value.score[0] === 0) break;
 }
 console.log('end', step.done ? JSON.stringify({ tried: step.value.tried, failure: step.value.failure?.message, short: step.value.short }) : 'found one');
-for (const [m, k] of [...errs].sort((a, b) => b[1] - a[1]).slice(0, 25)) console.log(String(k).padStart(4), m);
+for (const [m, k] of [...errs].sort((a, b) => b[1] - a[1]).slice(0, +(process.env.TOP ?? 25))) console.log(String(k).padStart(4), m);

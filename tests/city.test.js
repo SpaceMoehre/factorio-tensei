@@ -777,3 +777,55 @@ test('the Output Side: the belts to the train leave across the edge the user cho
     assertValid(best, catalog, { ...logistics, output });
   }
 });
+
+// Py trits in a 118 × 118 City Block, four roboports and their big poles in it (ADR 0073): the
+// setup as the page saved it, its planner and City Block.
+async function tritsSetup() {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const setup = JSON.parse(readFileSync(new URL('./fixtures/trits-118.json', import.meta.url), 'utf8'));
+  const site = siteOf(readCityBlock(await decodeBlueprint(setup.city.blueprint), shipped), setup.city.buffer);
+  const { budget, ...py } = setup.logistics;
+  const plan = planner(setup.goals, shipped, py, { made: setup.made, selections: setup.selections, uses: setup.uses, site });
+  return { shipped, site, py, plan };
+}
+
+// Copies of 19 trits reefs (5 + 5 + 5 and a leftover copy of 4) on one trits-pup belt snaking
+// through them all, the leftover copy too: each copy takes so little that one belt feeds every
+// machine. Before, the leftover copy counted as a run of its own, and every design of copies
+// starved 1.63/min (ADR 0073).
+test('copies with a leftover copy chain on the belt snaking through them: Py trits reefs starve nothing', async () => {
+  const { shipped, site, py, plan } = await tritsSetup();
+  const ctx = context(plan.chainOf(plan.goalsFor(19)).entries, shipped, py, site);
+  const reefs = ctx.plan.findIndex(sb => sb.item === 'trits');
+  const copies = designStep(ctx, reefs, random(1), {}).map(designOf).filter(d => d?.copies);
+  assert.ok(copies.length);
+  for (const d of copies) assert.ok(d.trouble <= 1e-6, `${d.kinds.map(k => `${k.count} × ${k.module.area.w}×${k.module.area.h}`).join(' + ')} starves ${d.trouble}`);
+});
+
+// Bands with a fluid's Byproduct Use and a Recipe Loop (ADR 0073): 27 reefs in Parts in the three
+// gaps between the roboports' rows, the four rcs making trits-pup a Part of one row sharing the
+// tall gap with a Part of reefs below it (the rest of the Slot a Slot of its own), the wood-seeds
+// factories beside that Part (the rest of its row the reefs'). The urea evaporator takes the
+// waste-water of every Part (theirs joining the first one's pipe). (The trits the rcs take come
+// by train: no choice of the reef Part feeding them closes the loop, Still in ADR 0073.)
+test('Bands: Py trits at 27 reefs, trits-pup sharing a gap with reefs, waste-water to its Use', async () => {
+  const { shipped, site, py, plan } = await tritsSetup();
+  const out = bands(plan.chainOf(plan.goalsFor(27), {}, true).entries, shipped, py, site);
+  assert.ok(out?.block, out?.failure?.message);
+  const { block } = out;
+  const reefs = block.subBlocks.filter(sb => sb.item === 'trits');
+  assert.equal(reefs.reduce((sum, sb) => sum + sb.count, 0), 27);
+  const pups = block.subBlocks.find(sb => sb.item === 'trits-pup');
+  assert.ok(pups.part, 'trits-pup in a Part');
+  const rowsOf = sb => block.entities.filter(e => e.kind === 'building' && e.subBlock === sb.index);
+  const top = Math.min(...rowsOf(pups).map(e => e.y)), bottom = Math.max(...rowsOf(pups).map(e => e.y + e.h));
+  assert.ok(reefs.some(sb => rowsOf(sb).every(e => e.y >= bottom && e.y - bottom < 30)), 'a Part of reefs right below the rcs');
+  assert.ok(top >= 31 && bottom <= 87, 'the rcs in the tall gap');
+  // Every Part's waste-water into the evaporator; nothing of it to the train.
+  const urea = block.subBlocks.find(sb => sb.item === 'urea');
+  const water = block.routes.filter(r => r.kind === 'pipe' && r.fluid === 'waste-water');
+  assert.ok(water.some(r => r.consumers.includes(urea.index)));
+  assert.ok(water.every(r => r.sink !== 'side-output'), 'no waste-water by train');
+  assertValid(block, shipped, py);
+  assert.deepEqual(simulate(block).starvation, []);
+});

@@ -748,10 +748,39 @@ function copiesUnfed(ctx, index, kinds) {
     const each = route.items.reduce((sum, i) => sum + takenOff(route, sb, i.item), 0) / sb.count;
     const fed = Math.max(1, Math.floor(2 * route.items[0].capacity / each + 1e-9));
     let runs = 0;
-    for (const k of kinds) {
-      for (const p of k.module.parts.filter(q => q.routeIds.includes(route.id))) {
-        const snakes = k.count > 1 && k.reverse?.parts.find(q => q.key === p.key)?.dir !== p.dir;
-        runs += snakes ? Math.ceil(k.count * p.machines / fed) : k.count * Math.ceil(p.machines / fed);
+    const on = module => module.parts.filter(q => q.routeIds.includes(route.id));
+    if (kinds.every(k => on(k.module).length <= 1)) {
+      // (One part a copy: the copies in the order the belt runs through them, a kind's module and
+      // its reverse in turn as compose.js makeInstances stands them, the leftover module after the
+      // rest. A run goes on into the next copy where its part runs the other way, the belt
+      // snaking down the column, while it has machines left to feed; else a new run starts.)
+      let copy = 0, dir = null, left = 0;
+      for (const k of kinds) {
+        for (let c = 0; c < k.count; c++) {
+          const p = on(copy++ % 2 && k.reverse ? k.reverse : k.module)[0];
+          if (!p) continue;
+          let machines = p.machines;
+          if (dir === null || p.dir === dir || !left) {
+            runs++;
+            left = fed;
+          }
+          for (;;) {
+            const fit = Math.min(left, machines);
+            machines -= fit;
+            left -= fit;
+            if (machines <= 0) break;
+            runs++;
+            left = fed;
+          }
+          dir = p.dir;
+        }
+      }
+    } else {
+      for (const k of kinds) {
+        for (const p of on(k.module)) {
+          const snakes = k.count > 1 && k.reverse?.parts.find(q => q.key === p.key)?.dir !== p.dir;
+          runs += snakes ? Math.ceil(k.count * p.machines / fed) : k.count * Math.ceil(p.machines / fed);
+        }
       }
     }
     const belts = pathBelts(ctx, route);

@@ -16,6 +16,7 @@ export async function load(file) {
   const site = !city.on ? null : siteOf(city.blueprint ? readCityBlock(await decodeBlueprint(city.blueprint), catalog) : { area: { x: 0, y: 0, w: city.w, h: city.h }, fixtures: [] }, city.buffer);
   const { budget, ...logistics } = st.logistics;
   const goals = st.goals.filter(g => g.item && g.rate > 0);
-  const plan = planner(goals, catalog, logistics, { made: st.made ?? [], selections: st.selections ?? {}, uses: st.uses ?? [], exports: st.exports ?? [], voids: st.voids ?? [], site });
+  // (Maximize's planner only in a City Block: a setup standing on its own is built.)
+  const plan = site ? planner(goals, catalog, logistics, { made: st.made ?? [], selections: st.selections ?? {}, uses: st.uses ?? [], exports: st.exports ?? [], voids: st.voids ?? [], site }) : null;
   return { site, logistics, plan, goals, state: st, entriesFor: (n, spare = {}) => plan.chainOf(plan.goalsFor(n), spare).entries };
 }

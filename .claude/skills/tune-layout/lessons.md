@@ -73,6 +73,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | A closed fluid loop (given back all it takes) only filled by train, no overflow; a burner unable to burn the Fuel burns its own category's | Py hot air with molten salt made: no build ("burns biomass fuel") → valid 6000/min | 0070 |
 | In a City Block, copies of few big machines whose rows stand taller than the room; where pairings are too many, the biggest Sub-Blocks' designs of other sizes paired; no spare machines breaking a Recipe Loop; Throughput of spare machines | Py hot air 118²: 9000 → 11812.5/min (1 → 1.3125 RHEs, 38 → 50 machines) | 0071 |
 | Drop Offset inserters counted at their machine's share, not their own rate (a row's second inserter onto the other lane); retries past RETRIES behind the structured candidates; Filling down to a tenth of what fits | Py hot air 118²: 11812.5 → 13218.75/min (51 → 57 machines); small parts 2775 → 3375 | 0072 |
+| Bands with a fluid's Use (the Use from the source's first Part, the rest joining its pipe); Shared Slots (a producer's Part leaving the rest of its Slot below or beside it); producers' Slots searched; no room for a Sub-Block left out fails the packing | Py trits 118²: 4.45 → 6.94/min (18 → 27 reefs) | 0073 |
 
 ## What failed, was reverted, or must not be done
 
@@ -150,7 +151,15 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Wall-clock A/Bs of 10 s tries under load** (0072). Small parts at load 9: 2775 vs 2362.5; at load 7: 2775 vs 3000 and 3375 (maxdet: 2775 vs 3375). Check `uptime` and use maxdet before believing a loss on fast tries.
 - **`kill $(pgrep -f run.mjs)` in one command** (0071), the shell again: the pattern matched that shell's own command line. List the PIDs in one call (`pgrep -f …` then `ps -o pid,etime,comm -p …`), kill them by number in the next.
 
+- **A chain the main phase cannot lay out, refused by the phase that could** (0073). Bands returned null for any Byproduct Use, so a chain among Fixture rows with one urea evaporator never reached it, and the search packed 18 reefs round the roboports where Bands fits 27. When a block among Fixture rows stalls, run `bandsTop` first: a 0 there is a gate, not a verdict.
+- **A packing that counts what Placement must still find room for as fitting** (0073). Bands' top 32 left the 22-tile rcs to Placement where no gap was deep enough: 600 s of tries from 32 down. A cheap check at packing time (rows deep enough for what is left out) made the top 27, the first try a fit.
+- **A check calibrated on one chain** (0073). The packing check counted a row as a machine and its BAND (6): right for trits' rcs, but it turned away vrauks' 34 sap extractors, which fit two rows in 18, and Bands' top fell 78 → 72. The suite caught it on its first run; a check meant to reject the impossible should count tight.
+- **A 3-row middle band, the user's rule, ungated** (0073's next pass). Rows of reefs a tile closer (the core model holds 3 shared belt rows in a band of 3 with 90° inserters; structured variants tried only 4–6): the suite showed coke 2160 → 2520 and rayon 487.5 → 584.37, but hot air 8437.5 → 4921.87, perylene 3300 → 2793.75 and molybdenum 999.98 → 799.98. More variants change which designs the search pairs; gate it before keeping it.
+- **A design fix that passes designs but not placement** (0073, again 0071/0072): copies of 19 reefs stopped starving (the leftover copy on the snake), and still found no room. Count whether the fix's designs are in the final layout before crediting it.
+
 ## Rules every change keeps
+
+- **The suite, not one setup** (the user: "for every new recipe chain I need to run tune-layout — is there no general fix?"). Each pass fixed what its own chain hit, checked against one or two other setups. `npm run suite` runs every setup tuned so far, laid out the same on any host, against its recorded result: no change is kept with a LOSS in it, and every new setup joins it.
 
 - **Rank order:** Starvation, then Recipe Loops by train, then byproducts riding, then output inserters at drops, then Compactness, then entities (`rankOf`). A Maximize fit is a layout without Starvation; once nothing more fits without, a layout that starves counts by what it delivers (Throughput, ADR 0057).
 - **A try is one layout search at one Count** (0007). Do not search the rate inside one layout search: designs change with the Count.

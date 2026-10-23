@@ -1,0 +1,328 @@
+{
+  "note": "The regression suite (scripts/suite.mjs): each setup in setups/, K candidates a try, tier fast (minutes) or full, timeout in seconds, and the result recorded to compare with (--record).",
+  "setups": [
+    {
+      "name": "small-parts-100",
+      "file": "small-parts-100.json",
+      "what": "Py small parts in 100², Buffer 3, few Fixtures: busy belts, Layers, Filling",
+      "K": 60,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 16.6,
+        "tries": 60,
+        "rate": 600,
+        "machines": null,
+        "failure": null,
+        "delivered": 600,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "94x20",
+        "entities": 356,
+        "hash": "ba9b8fe9020d"
+      }
+    },
+    {
+      "name": "trits-118",
+      "file": "trits-118.json",
+      "what": "Py trits among 4 roboports, 118²: reefs and rcs 22², a Recipe Loop, a fluid Byproduct Use",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 538.5,
+        "tries": 5,
+        "rate": 6.94,
+        "machines": 27,
+        "failure": null,
+        "delivered": 6.94,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "110x110",
+        "entities": 3515,
+        "hash": "5f908e8bbf3f"
+      }
+    },
+    {
+      "name": "hot-air-118",
+      "file": "hot-air-118.json",
+      "what": "Py hot air among 32 poles, 118²: few big machines, closed fluid loops, temperatures",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 204.3,
+        "tries": 6,
+        "rate": 8437.5,
+        "machines": 1,
+        "failure": null,
+        "delivered": 8437.5,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "110x110",
+        "entities": 1240,
+        "hash": "7fe955e49618"
+      }
+    },
+    {
+      "name": "silicon-116",
+      "file": "silicon-116.json",
+      "what": "Py silicon, 116²: copies lanes, spare producers, pipe capacity",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 370.9,
+        "tries": 14,
+        "rate": 555,
+        "machines": 5,
+        "failure": null,
+        "delivered": 555,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "110x104",
+        "entities": 1536,
+        "hash": "528cb4147049"
+      }
+    },
+    {
+      "name": "anthraquinone-116",
+      "file": "anthraquinone-116.json",
+      "what": "Py anthraquinone, 116²: agitators with side pipes, the Precheck",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 279.2,
+        "tries": 8,
+        "rate": 9000,
+        "machines": 3,
+        "failure": null,
+        "delivered": 9000,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "110x107",
+        "entities": 2086,
+        "hash": "baab00ec5b92"
+      }
+    },
+    {
+      "name": "perylene-116",
+      "file": "perylene-116.json",
+      "what": "Py perylene and anhydride, 116²: two Goals, tapped byproducts",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 403.6,
+        "tries": 13,
+        "rate": 3300,
+        "machines": 11,
+        "failure": null,
+        "delivered": 3300,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "110x109",
+        "entities": 2694,
+        "hash": "0196b0511f64"
+      }
+    },
+    {
+      "name": "coalbed-gas-80x40",
+      "file": "coalbed-gas-80x40.json",
+      "what": "Py coalbed gas, 80 × 40: fluids fed back through valves, Annexes",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 24.7,
+        "tries": 9,
+        "rate": 6000,
+        "machines": 10,
+        "failure": null,
+        "delivered": 6000,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "72x32",
+        "entities": 504,
+        "hash": "10536773cf22"
+      }
+    },
+    {
+      "name": "vrauks-100",
+      "file": "vrauks-100.json",
+      "what": "Py vrauks among roboports, 100²: Bands, Parting",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 699.3,
+        "tries": 5,
+        "rate": 55.84,
+        "machines": 78,
+        "failure": null,
+        "delivered": 55.84,
+        "valid": true,
+        "starving": 0,
+        "riding": 10,
+        "bounds": "228x228",
+        "entities": 8691,
+        "hash": "280353532d08"
+      }
+    },
+    {
+      "name": "nexelit-100",
+      "file": "nexelit-100.json",
+      "what": "Py nexelit among roboports, 100², up to the rate: Making Way, backtracking",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 236,
+        "tries": 6,
+        "rate": 900,
+        "machines": 50,
+        "failure": null,
+        "delivered": 900,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "116x115",
+        "entities": 2389,
+        "hash": "58858838d973"
+      }
+    },
+    {
+      "name": "coke-116",
+      "file": "coke-116.json",
+      "what": "Py coke, 116²: One Item a Belt, byproducts from several producers, fuel made",
+      "K": 20,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 952.3,
+        "tries": 15,
+        "rate": 2160,
+        "machines": 6,
+        "failure": null,
+        "delivered": 2160,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "110x110",
+        "entities": 2762,
+        "hash": "f983239aa3d1"
+      }
+    },
+    {
+      "name": "rayon-116",
+      "file": "rayon-116.json",
+      "what": "Py rayon, 116² without Fixtures: byproducts sorted out and merged",
+      "K": 20,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 1100.5,
+        "tries": 12,
+        "rate": 487.5,
+        "machines": 10,
+        "failure": null,
+        "delivered": 487.5,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "108x105",
+        "entities": 2520,
+        "hash": "ffd71bd8b32b"
+      }
+    },
+    {
+      "name": "molybdenum-oxide-roboports",
+      "file": "molybdenum-oxide-roboports.json",
+      "what": "Py molybdenum oxide, 236² among roboports: byproducts, many Sub-Blocks",
+      "K": 20,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 2308.3,
+        "tries": 12,
+        "rate": 999.98,
+        "machines": 5,
+        "failure": null,
+        "delivered": 999.98,
+        "valid": true,
+        "starving": 0,
+        "riding": 1,
+        "bounds": "228x228",
+        "entities": 10411,
+        "hash": "1cff0a95a017"
+      }
+    },
+    {
+      "name": "kicalk-roboports",
+      "file": "kicalk-roboports.json",
+      "what": "Py kicalk 400/min, 236² among roboports, up to the rate: Fixture rows, Parting, Giving Way, Annexes",
+      "K": 20,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 1220.3,
+        "tries": 41,
+        "rate": 400,
+        "machines": 125,
+        "failure": null,
+        "delivered": 400,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "228x228",
+        "entities": 7486,
+        "hash": "0d9d5422eadd"
+      }
+    },
+    {
+      "name": "titanium-plate-236",
+      "file": "titanium-plate-236.json",
+      "what": "Py titanium plate, 236²: 21 Sub-Blocks, Uses, Supplied Items",
+      "K": 6,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 1454.1,
+        "tries": 23,
+        "rate": 4992.18,
+        "machines": 14,
+        "failure": null,
+        "delivered": 4992.18,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "228x202",
+        "entities": 6779,
+        "hash": "b150889f59dd"
+      }
+    },
+    {
+      "name": "titanium-free",
+      "file": "titanium-free.json",
+      "what": "Py titanium plate 1800/min standing on its own: a build, Uses",
+      "K": 10,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 177.9,
+        "tries": 10,
+        "rate": null,
+        "machines": null,
+        "failure": "belt 43: no path from 430,70 to the east edge"
+      }
+    }
+  ]
+}

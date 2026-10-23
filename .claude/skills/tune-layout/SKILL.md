@@ -23,6 +23,7 @@ The setup decides the target. The user's complaint (for example "not maxed, put 
 | `node $SKILL/scripts/ascii.mjs <best.json> x0 y0 x1 y1` | A region as text, tile by tile: quicker than a PNG for one belt's shape. |
 | `node $SKILL/scripts/loops.mjs <best.json> [pieces]` | Belts turning 180° or more just after a splitter (ADR 0051). |
 | `node $SKILL/scripts/maxdet.mjs <setup.json> [K] [most]` | Maximize with no time limit, K candidates a try (20): the same run on any host under any load. Prints each event with a hash of its layout, then one hash of them all, and the seconds. Two runs of code meant to lay out the same (a speed-up) must match (ADR 0058). `ROOT=` for another worktree, `STOPAT=<machines>` to stop at a fit. |
+| `npm run suite -- [--tier fast\|full] [--only a,b] [--parallel N] [--root DIR] [--record]` | The regression suite (`scripts/suite.mjs`): every setup in `suite.json`, each laid out the same on any host (K candidates a try, as maxdet), side by side, against the result recorded for it: gain, LOSS, same rate, same layout, WORSE (invalid or starving). Exits 1 on any loss. `--record` makes these the results to compare with. |
 | `node $SKILL/scripts/profsum.mjs <file.cpuprofile> [top]` | A CPU profile summed by function: inclusive and self seconds, largest first. Make one with `node --cpu-prof --cpu-prof-dir=<dir> $SKILL/scripts/run.mjs …`; it is written when the run ends (`--total` ends it). |
 
 The probes below go one level under a failed try. Each takes the same setup file, `ROOT=` for another repo, and `[spare JSON]` (for example `'{"soil":240}'`) to give a step spare output.
@@ -48,14 +49,10 @@ The search in a Maximize try (`perfect`) passes over candidates silently when a 
 
 `attempt --n N [--giving] [--unsorted]` runs one Maximize try at N of the first Goal's machines. It prints the failure message, which names the Sub-Blocks or links that failed. This is the main diagnostic.
 
-Reference setups in `$SKILL/setups/` are for regressions:
+The regression suite's setups are in `$SKILL/setups/`, listed in `$SKILL/suite.json` with what each exercises (its `what`), its tier and its recorded result. Every setup a tuning pass starts from goes in too (step 8): a fix is general only if it loses on none of them.
 
-| Setup | What it is | Exercises |
-|---|---|---|
-| `kicalk-roboports.json` | Py kicalk 400/min, 236² among roboports and big poles, Buffer 4, fill-up | Fixture rows, Parting, Giving Way, Annexes. Slow: an hour or more in full. |
-| `molybdenum-oxide-roboports.json` | Same City Block, Maximize | Byproducts, sorting, many Sub-Blocks |
-| `small-parts-100.json` | Py small parts in 100², Buffer 3, few Fixtures | Busy belts, Layers, Filling. Fast: about 1 min to the best. |
-| `titanium-free.json` | Py titanium plate 1800/min, standing on its own | Uses, Supplied Items. Known hard: may find no layout. |
+- `fast`: minutes each; run on every change.
+- `full`: the rest (kicalk among roboports an hour or more; titanium plate known hard: may find no layout).
 
 ## The loop
 
@@ -123,9 +120,10 @@ Write down the cause in one sentence before changing code.
    (`HEAD` is the code before your change; commit nothing yet.) Then `compare.mjs`. Remove the worktree after (`git worktree remove`).
 
    Compare one try at a time (`--parallel 1`, the default) unless the change is about tries at once: then give each side the same number of cores (two runs of `--parallel 3` on 8 cores), and say so. A run's tries at once take a core each and some 0.6 GB on large chains.
-3. Regressions:
-   - Run `small-parts-100.json` (fast) plus the reference setup that shares the mechanism you touched, A/B the same way.
-   - A change that wins here but loses there needs a gate, not a shrug.
+3. Regressions: the suite.
+   - `npm run suite` (the fast tier) on every change, then `npm run suite -- --tier full` before committing. It compares with the recorded results, so it needs no second worktree; the layouts are the same on any host, so load does not matter (time does: say it).
+   - A setup that changed in `suite.json`'s record since HEAD (another pass) is compared with that record; run `--root` on a HEAD worktree where in doubt.
+   - A change that wins here but loses there needs a gate, not a shrug. A LOSS that is only search luck (one Count fitting by chance) is still a loss until the A/B on that setup says otherwise.
 4. Tests:
    - First the targeted file: `node --test tests/city.test.js`, or whichever covers the module.
    - Then `npm run typecheck`.
@@ -158,6 +156,8 @@ Read the latest ADR in `docs/adr/` and copy its shape.
 - **`lessons.md`:** what worked or failed here, one line each with its ADR. The skill learns this way.
 
 ### 8. Commit and push
+
+- Add the user's setup to the suite: `setups/<name>.json` and an entry in `suite.json` (name, file, what it exercises, K, tier, timeout). Then `npm run suite -- --tier full --record` on the changed code, and commit `suite.json` with the change.
 
 - Commit without asking (standing rule). The subject is one long single line in the style of `git log`: what changed, then the result in parentheses with the setup and numbers.
 - After a blank line, add the trailers given by the session's attribution reminder.

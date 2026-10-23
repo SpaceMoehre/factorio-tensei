@@ -1,0 +1,37 @@
+{
+  "catalog": "5f47fc33f974",
+  "goals": [{ "item": "titanium-plate", "rate": 60 }],
+  "logistics": {
+    "belt": "transport-belt", "pipe": "niobium-pipe-to-ground", "pole": "medium-electric-pole",
+    "inserter": "fast-inserter", "longInserter": "long-handed-inserter", "fuel": "coal", "liquidFuel": "natural-gas",
+    "rightAngle": true, "handSize": 1, "budget": 1000, "circuit": "red", "plainPipe": "niobium-pipe"
+  },
+  "made": ["muddy-sludge","soil","carbon-dioxide","water","slacked-lime","lime","molten-titanium","ti-enriched-dust","powdered-ti","grade-4-ti","grade-3-ti","grade-1-ti","grade-2-ti","sand-casting","acetone","propene","pressured-air","petroleum-gas","sncr-alloy"],
+  "selections": {
+    "carbon-dioxide": {"recipe":"moondrop-co2","building":""},
+    "water": {"recipe":"offshore-water","building":""},
+    "lime": {"recipe":"lime","building":"hpf-mk04"},
+    "slacked-lime": {"recipe":"slacked-lime","building":"chemical-plant-mk01"},
+    "sodium-hydroxide": {"recipe":"py-sodium-hydroxide","building":"chemical-plant-mk01"},
+    "molten-titanium": {"recipe":"molten-titanium-01","building":""},
+    "grade-1-ti": {"recipe":"grade-2-ti-crush","building":""},
+    "acetone": {"recipe":"propene-to-acetone","building":""},
+    "biofilm": {"recipe":"biofilm","building":""},
+    "sncr-alloy": {"recipe":"sncr-alloy-2","building":""}
+  },
+  "uses": [
+    {"from":"grade-3-ti","item":"ti-rejects","recipe":"ti-rejects-recrush"},
+    {"from":"grade-2-ti","item":"grade-1-ti","recipe":"grade-3-ti"},
+    {"item":"ti-pulp-03","recipe":"purified-ti-pulp","building":""},
+    {"item":"ti-rejects","recipe":"ti-rejects-recrush"},
+    {"item":"ti-overflow-waste","recipe":"ti-pulp-04","building":""},
+    {"item":"ti-pulp-04","recipe":"purified-ti-pulp-02"},
+    {"item":"purified-ti-pulp","recipe":"high-grade-ti-powder"},
+    {"item":"high-grade-ti-powder","recipe":"concentrated-ti"},
+    {"item":"concentrated-ti","recipe":"molten-titanium-02"},
+    {"item":"stone","recipe":"stone-to-gravel"},
+    {"item":"gravel","recipe":"gravel-to-sand"}
+  ],
+  "city": { "on": true, "blueprint": "", "w": 236, "h": 236, "buffer": 4, "maximize": true },
+  "result": { "status": "Nothing fits the city block without starvation: no layout without starvation fits 117.18/min. Give each try more time, or a bigger block." }
+}

@@ -172,12 +172,16 @@ In a City Block whose Fixtures stand in rows, the Production Chain in Parts, eac
 _Avoid_: grid layout, template
 
 **Part**:
-One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines in one Slot (two only where a design of two rows fits the Slot; a Slot holds one Part, two of the Goal side by side where whole Parts would not divide among their producers, or two of one row one above the other where its height takes two rows but no design of two fits), designed, placed and linked like a Sub-Block of its own; its Side Input comes on a belt of its own, sent off a line it shares with other Parts (Fan-out). A consumer's Part takes each item from one of its producer's Parts with room for it, the Parts chosen together, those whose links are shortest first; a producer's Parts hold a little more than their consumers need.
+One of the pieces a Sub-Block stands in, in Bands: a row or two of its machines in one Slot (two only where a design of two rows fits the Slot; a Slot holds one Part, two of the Goal side by side where whole Parts would not divide among their producers, or two of one row one above the other where its height takes two rows but no design of two fits), designed, placed and linked like a Sub-Block of its own; its Side Input comes on a belt of its own, sent off a line it shares with other Parts (Fan-out). A consumer's Part takes each item from one of its producer's Parts with room for it, the Parts chosen together, those whose links are shortest first; a producer's Parts hold a little more than their consumers need, but a producer all of whose machines one Part takes, in a Slot holding more, takes them whole and leaves the rest of the Slot as a Slot of its own (Shared Slot). Each producer's first Part is tried in several Slots in turn, the first way the Goal's Parts then fit wins. A Byproduct Use of a fluid takes it from its source's first Part, the other Parts' pipes joining that one's.
 _Avoid_: Copy (a Part is designed on its own, not repeated), Breakout
 
 **Slot**:
 In Bands, a run of rows no Fixture stands in across a range of the City Block, less the room kept for links beside it (the lowest west of the corridor may lend the Goal's Part most of the corridor's columns, where the Goal does not fit): what one Part stands in.
 _Avoid_: cell, gap (any room between things)
+
+**Shared Slot**:
+In Bands, a Slot a producer's Part takes only some of: the rest a Slot of its own, below the Part (the two one above the other in the gap, Py trits' rcs above a row of reefs) or east of it (the wood seeds' four factories beside a row of reefs), whichever holds the most of the Goal's machines.
+_Avoid_: split Slot
 
 **Parting**:
 In a City Block, in Layers: a stack of Copies whose belts a Fixture would stand on wherever its column lets it stand parts round the Fixtures. From the top, each Copy moves down as few rows as keep the Fixtures off its belts (no more than its own height and six), the Copies below it with it, so the Fixtures stand in the gaps between Copies; a machine a Fixture stands on makes way as before (Making Way). The stack grows by its gaps and leaves no Nooks; where it then runs past the room, it does not stand there. Only stacks in one column part.
