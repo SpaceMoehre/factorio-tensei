@@ -73,7 +73,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
       const next = slots[k + 1];
       if (!next || next.inst.step === slot.inst.step) return;
       links.push({
-        from: slot.inst.step, to: next.inst.step, fromY: at + exitY(slot),
+        belt: true, from: slot.inst.step, to: next.inst.step, fromY: at + exitY(slot),
         toY: blocks[next.inst.step].at.get(next.inst.index).y + entryY(next),
       });
     });
@@ -84,7 +84,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     const from = own.slots.filter(slot => !slot.inst.detached).at(-1), to = routes[route.into].slots[route.at];
     if (!from || !to || to.inst.detached) continue;
     links.push({
-      from: from.inst.step, to: to.inst.step, fromY: blocks[from.inst.step].at.get(from.inst.index).y + exitY(from),
+      belt: true, from: from.inst.step, to: to.inst.step, fromY: blocks[from.inst.step].at.get(from.inst.index).y + exitY(from),
       toY: blocks[to.inst.step].at.get(to.inst.index).y + entryY(to),
     });
   }
@@ -117,8 +117,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
   steps.forEach(i => depthOf(i));
   // (Those `ahead` first, in turn: one that found no room placed last, ADR 0068.)
   const ahead = i => (params.ahead?.includes(i) ? params.ahead.indexOf(i) - params.ahead.length : 0);
-  const order = [...steps].sort((a, b) => ahead(a) - ahead(b) || depth.get(a) - depth.get(b) || (params.order?.[a] ?? 0) - (params.order?.[b] ?? 0)
+  const byDepth = [...steps].sort((a, b) => ahead(a) - ahead(b) || depth.get(a) - depth.get(b) || (params.order?.[a] ?? 0) - (params.order?.[b] ?? 0)
     || links.filter(l => l.from === b).length - links.filter(l => l.from === a).length || a - b);
+  const order = chainOrder(byDepth, byDepth.filter(i => ahead(i) < 0 || depth.get(i) === 0), consumersOf, i => links.filter(l => l.belt && l.from === i && l.to !== i).length);
 
   const placed = new Map();
   const tileSets = new Map();
@@ -700,6 +701,33 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
       return new Map(items.map(it => [it.i, { x: it.x, y: it.y, ...(parted.has(it.i) ? { parted: parted.get(it.i) } : {}) }]));
     }
   }
+}
+
+// The order Sub-Blocks are placed in: `first` (the Goals, and those placed first), then by depth
+// (`byDepth`: every Sub-Block, consumers before producers), but where one whose consumers all
+// stand has AHEAD belts or more to them, and more than twice the belts of any step in the chain
+// behind the next by depth (it and all that feed it), that one goes next: a step taking far more
+// of what reaches a placed one stands beside it before a lighter one takes that room (Py bolts'
+// iron sticks, 7 belts, came after the small parts' own, 2, and their belts, 1, and found room
+// only east of the Goal, ADR 0075; every looser rule tried lost a Count in the suite).
+// `consumersOf(i)`: the Sub-Blocks i feeds; `linksOf(i)`: its belts to them.
+const AHEAD = 5;
+
+export function chainOrder(byDepth, first, consumersOf, linksOf) {
+  const order = [...first];
+  const placed = new Set(order);
+  const ready = i => !placed.has(i) && consumersOf(i).every(j => j === i || placed.has(j));
+  // The most belts of a step in the chain behind i.
+  const producers = new Map(byDepth.map(i => [i, byDepth.filter(j => j !== i && consumersOf(j).includes(i))]));
+  const weight = (i, seen = new Set([i])) => Math.max(linksOf(i), ...producers.get(i).filter(j => !seen.has(j) && seen.add(j)).map(j => weight(j, seen)));
+  while (order.length < byDepth.length) {
+    const after = byDepth.find(i => !placed.has(i));
+    const most = byDepth.filter(ready).reduce((p, q) => (p === null || linksOf(q) > linksOf(p) ? q : p), null);
+    const next = most !== null && linksOf(most) >= AHEAD && linksOf(most) > 2 * weight(after) ? most : after;
+    placed.add(next);
+    order.push(next);
+  }
+  return order;
 }
 
 // A Sub-Block's copies stacked (Placement): each copy's offset inside its box (`at`, by instance

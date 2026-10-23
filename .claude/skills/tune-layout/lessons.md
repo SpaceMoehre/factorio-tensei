@@ -75,6 +75,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Drop Offset inserters counted at their machine's share, not their own rate (a row's second inserter onto the other lane); retries past RETRIES behind the structured candidates; Filling down to a tenth of what fits | Py hot air 118²: 11812.5 → 13218.75/min (51 → 57 machines); small parts 2775 → 3375 | 0072 |
 | Bands with a fluid's Use (the Use from the source's first Part, the rest joining its pipe); Shared Slots (a producer's Part leaving the rest of its Slot below or beside it); producers' Slots searched; no room for a Sub-Block left out fails the packing | Py trits 118²: 4.45 → 6.94/min (18 → 27 reefs) | 0073 |
 | Parted by Consumer (a producer of more than a belt for several Sub-Blocks, a part each, each an Internal Path on parallel belts); copies of 2+ machines where every whole Module starves | Py small parts 2 116²: 1139.95 (starving) → 1496.23/min (7 → 9 factories) | 0074 |
+| Placement takes next, of those whose consumers stand, one of 5 belts or more to them, more than twice those behind the next by depth (a heavy producer beside the step it feeds) | Py small parts 2 116²: 1496.23 → 1619.98/min, the bolts' iron sticks 35 → 15 tiles from the bolts | 0075 |
 
 ## What failed, was reverted, or must not be done
 
@@ -160,6 +161,9 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **Every main try failing in a second, the result all Annexes** (0074). Py small parts 2 at 7 machines: the first layout fit 1, then Annexes of 1 each. "Every design starves" at every Count above 1 is a belt the plan cannot split, not room: look at `shapeOf`'s belts (`splittable`, `perBelt`) for the starving Sub-Block before the search. A producer's belt to several consumers was one belt whatever it carried.
 - **Two causes, each alone no gain** (0074): parting the sticks without copies of the bolts ran out of time routing; copies without parting still starved. Test each half alone before writing either off, and before crediting either (a scratch worktree with one half applied).
+- **Changing Placement's order** (0075). Five versions each lost a Count in the suite: the chain followed down (titanium plate 14 → 3), the most links ungated or at twice (titanium plate, molybdenum oxide 5 → 4, perylene), each weighed by the chain behind it (anthraquinone, coke). One different layout early changes Maximize's Foretelling and every try after it. Only a narrow gate kept all: belts not pipes (pipe links count stubs, up to 168), 5 or more, more than twice the chain behind the next. And keep the old order exactly where the gate does not fire: "whatever is ready" reordered anthraquinone's Sub-Blocks placed first (`ahead`) with no jump at all.
+- **A fallback that restores the old behaviour where the new fails** (0075). Placing by depth again where a chain-ordered candidate failed kept titanium plate, but the user's setup fit its 8 only by depth and so came out as before. A fallback taken at every failure takes back the gain too. Measure the user's setup page-like (`run.mjs`) with it before keeping it.
+- **A suite LOSS from Maximize's path** (0075). Perylene at 20 candidates a try laid out the same through 9 machines (same hashes), fit 9 sooner, then never reached 11. The page's Maximize gets 2793.75 before and after. Compare `maxdet.mjs` events side by side to tell a path change from a fit lost, and run the page-like A/B on that setup.
 
 ## Rules every change keeps
 

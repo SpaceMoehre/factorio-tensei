@@ -5,6 +5,7 @@
 //
 //   node suite-one.mjs <setup.json> [K] [most]      ROOT=<repo> for another worktree
 import { createHash } from 'node:crypto';
+import { writeFileSync } from 'node:fs';
 import { root, catalog, load } from './probe-common.mjs';
 
 const { maximize } = await import(`${root}/js/maximize.js`);
@@ -52,4 +53,6 @@ if (block) {
     hash: createHash('sha1').update(JSON.stringify(block.entities.map(e => [e.name, e.x, e.y, e.direction]))).digest('hex').slice(0, 12),
   });
 }
+// (BEST=<file>: the layout written there, for draw.mjs and links.mjs.)
+if (block && process.env.BEST) writeFileSync(process.env.BEST, JSON.stringify(block));
 console.log(`RESULT ${JSON.stringify(result)}`);

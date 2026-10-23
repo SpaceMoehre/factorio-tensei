@@ -8,7 +8,7 @@ import { coreLinks } from '../js/routes.js';
 import { buildCore } from '../js/layout/core.js';
 import { routeModule } from '../js/layout/module.js';
 import { prepare, compose, planFan, RoutingError } from '../js/layout/compose.js';
-import { placeBlocks } from '../js/layout/place.js';
+import { placeBlocks, chainOrder } from '../js/layout/place.js';
 import { finishBlock } from '../js/layout/compact.js';
 import { simulate } from '../js/sim.js';
 import { expandChain } from '../js/chain.js';
@@ -364,6 +364,22 @@ test('placement stands a Sub-Block where the search moves it, clear of the other
   const other = boxes.find(b => b.step !== gears);
   const kept = placeBlocks(ctx, ready, { at: { [gears]: { x: other.x, y: other.y } } }).boxes.find(b => b.step === gears);
   assert.notDeepEqual({ x: kept.x, y: kept.y }, { x: other.x, y: other.y });
+});
+
+// Placement order (ADR 0075): Py small parts 2's bolts (1, 7 belts to the Goal), their iron
+// sticks (4, 7 belts to the bolts) and the small parts' own iron sticks (2, 2 belts) and belts (3,
+// 1); by depth the bolts' iron sticks came last, here right after the bolts. Four links over two:
+// by depth. A light step feeding the Goal (7, nitrogen, 1 link) that a heavy one feeds (8, purest
+// nitrogen, 40): by depth, before the molybdenum concentrate (6, 4 links), and the purest nitrogen
+// next. In a Recipe Loop (5 and 6 feeding each other) none is ready: by depth.
+test('placement takes next a Sub-Block of far more links than the chain behind the next by depth', () => {
+  const feeds = { 0: [], 1: [0], 2: [0], 3: [0], 4: [1] };
+  assert.deepEqual(chainOrder([0, 1, 2, 3, 4], [0], i => feeds[i], i => ({ 0: 0, 1: 7, 2: 2, 3: 1, 4: 7 })[i]), [0, 1, 4, 2, 3]);
+  assert.deepEqual(chainOrder([0, 1, 2, 3, 4], [0], i => feeds[i], i => ({ 0: 0, 1: 7, 2: 2, 3: 2, 4: 4 })[i]), [0, 1, 2, 3, 4]);
+  const nitrogen = { 0: [], 7: [0], 6: [0], 8: [7] };
+  assert.deepEqual(chainOrder([0, 7, 6, 8], [0], i => nitrogen[i], i => ({ 0: 0, 7: 1, 6: 4, 8: 40 })[i]), [0, 7, 8, 6]);
+  const loop = { 0: [], 1: [0], 5: [1, 6], 6: [5] };
+  assert.deepEqual(chainOrder([0, 1, 5, 6], [0], i => loop[i], () => 1), [0, 1, 5, 6]);
 });
 
 // Each Sub-Block designed on its own elsewhere (a worker of its own): its candidates handed over

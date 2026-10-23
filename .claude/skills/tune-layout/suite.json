@@ -332,18 +332,18 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 182.5,
-        "tries": 10,
-        "rate": 1496.23,
+        "secs": 182.1,
+        "tries": 11,
+        "rate": 1619.98,
         "machines": 9,
         "failure": null,
-        "delivered": 1496.23,
+        "delivered": 1619.98,
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "106x110",
-        "entities": 3891,
-        "hash": "7753f234876a"
+        "bounds": "107x110",
+        "entities": 3816,
+        "hash": "211127ce9168"
       }
     }
   ]
