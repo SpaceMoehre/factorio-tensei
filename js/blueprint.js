@@ -14,10 +14,10 @@ const CIRCUIT = { red: [1], green: [2], both: [1, 2] };
 // copper wires joining the block's poles to its own. circuit: 'red', 'green' or 'both' wires
 // every pole and inserter of the block onto one circuit network (circuitPairs); 'none' none.
 // signals: an Inserter Clock's signal by its key (clocks.js): its inserters work while the signal
-// is above 0; the others run freely.
-export async function encodeBlueprint(block, catalog, city = null, { circuit = 'none', signals = {} } = {}) {
+// is above 0; the others run freely. handSize: what an inserter moves a swing (its clocks count swings).
+export async function encodeBlueprint(block, catalog, city = null, { circuit = 'none', signals = {}, handSize = 1 } = {}) {
   const kept = city?.entities ?? [];
-  const clocks = Object.keys(signals).length ? clocksOf(block, catalog).of : new Map();
+  const clocks = Object.keys(signals).length ? clocksOf(block, catalog, handSize).of : new Map();
   const numberOf = new Map(kept.map((e, i) => [e.entity_number, i + 1]));
   const merges = mergers(block);
   const entities = [...block.entities, ...merges, ...markers(block, merges)].map((e, i) => {

@@ -38,10 +38,21 @@ test('an inserter\'s clock: what it moves at full speed, items on its belt added
   assert.deepEqual(halves.map(i => of.get(i)), ['1/2', '1/2']);
   assert.equal(of.get(out), '1/3');
   assert.deepEqual(ratios.map(r => [clockLabel(r.key), r.inserters, r.names]), [
-    ['1 in 1 s', 1, ['iron-plate', 'copper-plate']],
-    ['1 in 2 s', 2, ['iron-plate', 'copper-plate']],
-    ['1 in 3 s', 2, ['iron-plate', 'widget']],
+    ['1 swing in 1 s', 1, ['iron-plate', 'copper-plate']],
+    ['1 swing in 2 s', 2, ['iron-plate', 'copper-plate']],
+    ['1 swing in 3 s', 2, ['iron-plate', 'widget']],
   ]);
+});
+
+// A swing moves a hand: with 2 a swing, 1 iron and 2 copper in 3 s (1 a second) take a swing in 2 s.
+test('a clock counts swings: what an inserter moves over its hand size', () => {
+  const both = inserter('input', ['iron-plate', 'copper-plate'], 1);
+  const out = inserter('output', ['widget'], 1);
+  const { of, ratios } = clocksOf(block([both, out]), widgets, 2);
+  assert.equal(of.get(both), '1/2');
+  assert.equal(of.get(out), '1/6');
+  assert.deepEqual(ratios.map(r => [clockLabel(r.key), r.perMinute]), [['1 swing in 2 s', 60], ['1 swing in 6 s', 20]]);
+  assert.equal(clockLabel('3/2'), '3 swings in 2 s');
 });
 
 test('fractions in lowest terms survive float error', () => {

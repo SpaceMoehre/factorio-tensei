@@ -1070,7 +1070,7 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
   // A Recipe Loop's feedback fed in the block is no Side Input.
   fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input' && !(r.loop && r.fedBy !== undefined)));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
-  clocks = clocksOf(block, catalog);
+  clocks = clocksOf(block, catalog, handOf());
   renderClocks();
   await writeBlueprint(block);
   if (best?.block !== block) return;
@@ -1289,12 +1289,15 @@ function where(dx, dy) {
 // The shown block's blueprint, with its Circuit Wires and the signals its inserters' clocks take.
 async function writeBlueprint(block) {
   const mine = ++encoding;
-  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null, { circuit: state.logistics.circuit, signals: state.clocks });
+  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null, { circuit: state.logistics.circuit, signals: state.clocks, handSize: handOf() });
   if (mine !== encoding || best?.block !== block) return;
   $('bp-string').value = string;
   $('bp-json').value = JSON.stringify(JSON.parse(json), null, 2);
   refreshLibrary();
 }
+
+// What an inserter moves a swing in the shown block: the hand size it was built with.
+const handOf = () => built?.job?.logistics?.handSize ?? state.logistics.handSize ?? 1;
 
 // Every clock of the shown block (fastest first): its signal (a button opening the picker), what
 // it moves, the items its inserters move and how many run on it.
@@ -1309,7 +1312,7 @@ function renderClocks() {
       ariaLabel: `Signal for ${label}: ${signal?.name ?? 'none'}`,
     }, signal ? signalFace(signal) : el('span', { className: 'glyph', textContent: '+' }));
     pick.addEventListener('click', () => openPicker(r.key));
-    return el('li', { title: `${fmt(r.items / r.seconds * 60)}/min each: ${r.names.join(', ')}` },
+    return el('li', { title: `${fmt(r.perMinute)}/min each: ${r.names.join(', ')}` },
       pick, el('span', { className: 'label', textContent: label }), el('span', { className: 'what' }, ...r.names.map(iconOf)),
       el('span', { className: 'count', textContent: count(r.inserters, 'inserter') }));
   }));

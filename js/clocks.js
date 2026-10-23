@@ -1,15 +1,18 @@
 import { machineEffect } from './modules.js';
 
-// Inserter Clocks (CONTEXT.md): what each inserter moves while its machine runs at full speed, as
-// whole items in whole seconds, so a clock signal can enable it no more often than that. Into a
-// machine an inserter moves its share of every item on its belt the machine takes (they add up:
-// 1 iron and 2 copper in 3 s are 1 in 1 s); out of one, its share of the machine's products.
+// Inserter Clocks (CONTEXT.md): how often each inserter swings while its machine runs at full
+// speed, as whole swings in whole seconds, so a clock signal can enable it no more often than
+// that (one swing a pulse). A swing moves a hand of one item (`handSize`): what the inserter
+// moves a second over its hand. Into a machine an inserter moves its share of every item on its
+// belt the machine takes (they add up: 1 iron and 2 copper in 3 s are 1 in 1 s, a swing a second
+// with a hand of 1, one in 2 s with a hand of 2); out of one, its share of the machine's products.
 // Inserters on one belt into a machine, or out of one machine, share it evenly (two of them:
 // 1 in 2 s each). Those supporting a machine's Output Drop share what the drop leaves them.
 
-// A block → each inserter's clock (`of`: entity → key, "items/seconds"), and every clock with how
-// many inserters run on it and the items they move, fastest first.
-export function clocksOf(block, catalog) {
+// A block → each inserter's clock (`of`: entity → key, "swings/seconds"), and every clock with
+// how many inserters run on it, the items they move and how many a minute each, fastest first.
+export function clocksOf(block, catalog, handSize = 1) {
+  const hand = Math.max(1, Math.floor(handSize));
   const full = block.subBlocks.map(sb => fullSpeed(sb, catalog));
   const of = new Map();
   const clocks = new Map();
@@ -21,20 +24,20 @@ export function clocksOf(block, catalog) {
     // cannot (dropping: items/s its lane surely takes).
     const perSecond = (moved.reduce((sum, name) => sum + rates.get(name), 0) - (e.dropping ?? 0)) / e.sharing;
     if (!(perSecond > 0)) continue;
-    const [items, seconds] = fraction(perSecond);
-    const key = `${items}/${seconds}`;
+    const [swings, seconds] = fraction(perSecond / hand);
+    const key = `${swings}/${seconds}`;
     of.set(e, key);
-    if (!clocks.has(key)) clocks.set(key, { key, items, seconds, inserters: 0, names: new Set() });
+    if (!clocks.has(key)) clocks.set(key, { key, swings, seconds, perMinute: perSecond * 60, inserters: 0, names: new Set() });
     const clock = clocks.get(key);
     clock.inserters++;
     for (const name of moved) clock.names.add(name);
   }
   const ratios = [...clocks.values()].map(c => ({ ...c, names: [...c.names] }))
-    .sort((a, b) => b.items / b.seconds - a.items / a.seconds);
+    .sort((a, b) => b.swings / b.seconds - a.swings / a.seconds);
   return { of, ratios };
 }
 
-export const clockLabel = key => key.replace('/', ' in ') + ' s';
+export const clockLabel = key => `${key.split('/')[0]} ${key.startsWith('1/') ? 'swing' : 'swings'} in ${key.split('/')[1]} s`;
 
 // Items/s one machine of the Sub-Block takes (input) and makes (output) at full speed, by item:
 // the plan's flows, scaled from the Sub-Block's rate to one machine's (its Fuel included).
