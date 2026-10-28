@@ -17,6 +17,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **For speed, profile, then follow every candidate** (0058).
   - `node --cpu-prof` on whole Maximize runs (`profsum.mjs`) showed each setup's own sink: molybdenum oxide the design that fits most spots between Fixtures (a quarter), kicalk Parting (two thirds), titanium plate fallbacks, Layers and finishing.
   - Then a scratch copy of the search logging every candidate (its kind, how far it got, how long) and every design variant (its family, new or alike, kept, used in a fit). That told work never used from work that made the fits: rows capped by belt load built 105,000 cores in molybdenum oxide for 2 of 20 designs used.
+  - Then by line (the profile's position ticks): object spreads (`{ ...base, k }`) and Map keys above 2³⁰ were the hottest lines in the router and buildCore; written out, the same work took 37% less (0078).
   - Check a speed-up lays out the same with `maxdet.mjs` (no time limit, K candidates a try) before the wall-clock A/B: identical hashes make the A/B about time alone.
 - **Number everything.**
   - Every ADR has a before/after table: rate, machines, size and time on a named setup.
@@ -77,6 +78,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Parted by Consumer (a producer of more than a belt for several Sub-Blocks, a part each, each an Internal Path on parallel belts); copies of 2+ machines where every whole Module starves | Py small parts 2 116²: 1139.95 (starving) → 1496.23/min (7 → 9 factories) | 0074 |
 | Placement takes next, of those whose consumers stand, one of 5 belts or more to them, more than twice those behind the next by depth (a heavy producer beside the step it feeds) | Py small parts 2 116²: 1496.23 → 1619.98/min, the bolts' iron sticks 35 → 15 tiles from the bolts | 0075 |
 | A fuel's Burnt Result (Py's ash) a byproduct of the step burning it, one per item burnt (chain.js `productsFor`, plan.js) | Py coke 116², page: 2520 → 2632.5/min, the BOFs' ash by train (before: left in them; the game stops them) | 0076 |
+| Hot paths written out: no object spreads in the router's moves or buildCore, a tile's own checks once a step, placement memos keyed by small integers (same layouts) | Fast tier 3312 → 2097 s side by side (hot air 394 → 216 s, trits 865 → 501 s), every layout the same | 0078 |
 
 ## What failed, was reverted, or must not be done
 

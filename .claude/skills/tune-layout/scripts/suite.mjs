@@ -39,15 +39,16 @@ const root = resolve(opt('root', resolve(here, '../../../..')));
 
 // One setup in a process of its own, killed past its `timeout` seconds: its RESULT, else { error }.
 const runOne = s => new Promise(done => {
-  const child = spawn(process.execPath, [resolve(here, 'suite-one.mjs'), resolve(here, '../setups', s.file), String(s.K ?? 20), ...(s.most ? [String(s.most)] : [])], { env: { ...process.env, ROOT: root } });
+  // (suite-one's watchdog kills the run past the setup's timeout, TIMEOUT; this, should it hang.)
+  const child = spawn(process.execPath, [resolve(here, 'suite-one.mjs'), resolve(here, '../setups', s.file), String(s.K ?? 20), ...(s.most ? [String(s.most)] : [])], { env: { ...process.env, ROOT: root, TIMEOUT: String(s.timeout ?? 600) } });
   let out = '', err = '';
   child.stdout.on('data', d => (out += d));
   child.stderr.on('data', d => (err += d));
-  const timer = setTimeout(() => child.kill('SIGKILL'), (s.timeout ?? 600) * 1000);
+  const timer = setTimeout(() => child.kill('SIGKILL'), ((s.timeout ?? 600) + 60) * 1000);
   child.on('exit', code => {
     clearTimeout(timer);
     const line = out.split('\n').find(l => l.startsWith('RESULT '));
-    done(line ? JSON.parse(line.slice(7)) : { error: code === null ? `timed out (${s.timeout ?? 600} s)` : err.trim().split('\n').slice(-3).join(' ') || `exit ${code}` });
+    done(line ? JSON.parse(line.slice(7)) : { error: code === null || code === 124 ? `timed out (${s.timeout ?? 600} s)` : err.trim().split('\n').slice(-3).join(' ') || `exit ${code}` });
   });
 });
 

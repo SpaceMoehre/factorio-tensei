@@ -5,6 +5,8 @@
 // Prints `RESULT <json>`: rate, machines, delivered, valid, starving, the layout's hash, seconds.
 //
 //   node suite-one.mjs <setup.json> [K] [most]      ROOT=<repo> for another worktree
+//   TIMEOUT=<seconds>: killed past that (default 10800, 0 for none), exit 124
+import './watchdog.mjs?seconds=10800';
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
 import { root, catalog, load } from './probe-common.mjs';

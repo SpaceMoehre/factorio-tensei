@@ -258,8 +258,10 @@ export function buildCore(sb, building, links, variant, env) {
     // equal share of the row's output.
     const load = a.belt.load?.[a.r];
     const demand = load !== undefined ? load / counts[a.r] : a.share * items.reduce((sum, i) => sum + i.rate, 0) / sb.count;
+    // (Its access written out, not spread: a design builds thousands of cores.)
     return {
-      ...a, spec, rate, short, free: env.rightAngle && spec.customVectors, isOutput, items, demand, id: belts.indexOf(a.belt),
+      r: a.r, belt: a.belt, depth: a.depth, side: a.side, share: a.share, drop: a.drop,
+      spec, rate, short, free: env.rightAngle && spec.customVectors, isOutput, items, demand, id: belts.indexOf(a.belt),
       needed: a.drop ? 0 : Math.max(1, Math.ceil(demand / rate - 1e-9)), twin: false,
       insY: faceY(a.r, a.side, reach.row), beltY: faceY(a.r, a.side, a.depth), columns: [],
     };
@@ -434,7 +436,12 @@ export function buildCore(sb, building, links, variant, env) {
         const dropped = s.drop ? Math.min(s.demand, env.laneCapacity / counts[r]) : 0;
         const dropping = s.drop ? { dropping: Math.max(0, env.laneCapacity - (counts[r] - 1) * s.demand) / 60 } : {};
         for (const { column, side } of placed) {
-          entities.push({ ...inserter(s, x0 + column, side), flow: (s.demand - dropped) / placed.length, machine, ...moving(s.isOutput, s.items, placed.length), ...dropping });
+          // (Built on the inserter's own object, not spread into a new one: a core of many
+          // machines makes thousands, and a design builds thousands of cores.)
+          const e = inserter(s, x0 + column, side);
+          e.flow = (s.demand - dropped) / placed.length;
+          e.machine = machine;
+          entities.push(Object.assign(e, moving(s.isOutput, s.items, placed.length), dropping));
           stamped.set(key(x0 + column, s.insY), 'inserter');
           stamped.set(key(x0 + column + side, s.beltY), { waypoint: s.id });
         }
@@ -570,10 +577,12 @@ export function buildCore(sb, building, links, variant, env) {
   }
   // Every connection needs a way out for its pipe: a pipe row of its fluid in its band, a free
   // tile beside it, or a free tile straight out within a pipe-to-ground's reach.
-  const beltTiles = new Set(rowsOut.flatMap(r => r.reserve.map(([x, y]) => key(x, y))));
+  // (The belt rows' tiles, gathered the first time a connection asks: most cores have none.)
+  let beltTiles = null;
   const free = (x, y) => {
     if (y < 0 || y >= height || x < 0 || x >= width) return true;
     const v = stamped.get(key(x, y));
+    beltTiles ??= new Set(rowsOut.flatMap(r => r.reserve.map(([x, y]) => key(x, y))));
     return !v && !beltTiles.has(key(x, y)) && !machineAt(x, y);
   };
   const bandOf = y => {
@@ -1014,7 +1023,8 @@ function pickConnections(sb, building, fluids, rotation, variant) {
   const picks = fluids.map((f, i) => {
     const options = (f.boxes ?? []).flatMap(b => building.fluidBoxes[b].connections).map(c => placeConnection(c, rotation, building));
     if (!options.length) throw new Error(`${sb.building} has no ${f.role} fluid box for ${f.fluid}`);
-    return { ...options[(variant.ports?.[i] ?? 0) % options.length], routeId: f.routeId, fluid: f.fluid };
+    const { side, dir, tileX, tileY } = options[(variant.ports?.[i] ?? 0) % options.length];
+    return { side, dir, tileX, tileY, routeId: f.routeId, fluid: f.fluid };
   });
   const taken = new Set(picks.map(c => `${c.tileX},${c.tileY}`));
   const unused = building.fluidBoxes.flatMap(b => b.connections.map(c => placeConnection(c, rotation, building)))

@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v64: Hot paths written out (implemented)
+
+The same layouts in less time: the router's moves and `buildCore` without object spreads, a tile's own checks once a search step, placement's memos keyed by small integers. The suite's fast tier, every layout the same: 3312 → 2097 s (Py hot air 394 → 216 s, trits 865 → 501 s). Runs with no time limit (suite-one.mjs, maxdet.mjs) end past `TIMEOUT` seconds; `npm test` gives each test 30 minutes (ADR 0078).
+
 ## v63: Burnt Results as byproducts (implemented)
 
 A Fuel item's Burnt Result (Py's coal, coke and coal dust leave ash) is a byproduct of the step whose machines burn it, one for each item burnt (no productivity adds to it): in the Production Chain (by train, to a Byproduct Use, or a Recycled Byproduct) and in the Sub-Block's outputs, its machines' output inserters taking it out. Py coke at 60/min: its BOFs leave 9 ash a minute, which nothing took out of them before (in the game they stop once full); Py coke in 116² among 32 poles, the page's Maximize: 2520 → 2632.5/min (ADR 0076).

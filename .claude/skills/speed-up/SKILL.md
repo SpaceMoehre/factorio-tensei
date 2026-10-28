@@ -41,8 +41,8 @@ scratchpad (every output goes there, never in the repo).
 
 | Tool | Use |
 |---|---|
-| `node $TL/scripts/suite-one.mjs <setup> [K] [most]` | The page's path (session.js) in one process, K candidates a try, no time limit: the same on any host. Prints `RESULT` with `secs` and the layout's `hash`. The one to profile: every job runs in-process (inlineRunner), so one profile holds designing, both Strategies, every try. |
-| `node --cpu-prof --cpu-prof-dir=$S/prof $TL/scripts/suite-one.mjs …` then `node $TL/scripts/profsum.mjs $S/prof/<file>.cpuprofile [top]` | Where the time goes, inclusive and self, by function. |
+| `node $TL/scripts/suite-one.mjs <setup> [K] [most]` | Killed past `TIMEOUT` seconds (default 3 h; maxdet 4 h; exit 124: `watchdog.mjs` runs it in a child, so profile and measure memory with `TIMEOUT=0`). The page's path (session.js) in one process, K candidates a try, no time limit: the same on any host. Prints `RESULT` with `secs` and the layout's `hash`. The one to profile: every job runs in-process (inlineRunner), so one profile holds designing, both Strategies, every try. |
+| `TIMEOUT=0 node --cpu-prof --cpu-prof-dir=$S/prof $TL/scripts/suite-one.mjs …` then `node $TL/scripts/profsum.mjs $S/prof/<file>.cpuprofile [top]` | Where the time goes, inclusive and self, by function. |
 | `node $TL/scripts/maxdet.mjs <setup> [K] [most]` | Maximize alone with no time limit: each event with its seconds and a layout hash, then one hash of them all. Two codes laying out the same print the same `END` hash. `STOPAT=<machines>` stops at a fit; `ROOT=` for another worktree. |
 | `npm run suite -- [--tier fast\|full] [--only a,b] [--root DIR] [--out F.json]` | Every suite setup, its `secs` and hash against the record. |
 | `node $SP/scripts/speedcmp.mjs A.json B.json` | Two suite `--out` files side by side: seconds before and after per setup, `same layout` or `DIFFERS`, and the total over those laid out the same. Exits 1 where any differs. |

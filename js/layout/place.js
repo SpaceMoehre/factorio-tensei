@@ -400,9 +400,13 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // tiles but its machines and their inserters, and on no more of those than its budget. The
   // machines Fixtures stand on (`index:machine`), else null.
   function lands(i, box) {
+    // (By its size, then its corner: keys small enough to be small integers, which a Map finds
+    // several times faster than larger numbers.)
     if (!landed.has(i)) landed.set(i, new Map());
-    const mine = landed.get(i);
-    const key = ((box.x + 512) * 1024 + box.y + 512) * 1048576 + box.w * 1024 + box.h;
+    const sizes = landed.get(i), size = box.w * 1024 + box.h;
+    if (!sizes.has(size)) sizes.set(size, new Map());
+    const mine = sizes.get(size);
+    const key = (box.x + 512) * 1024 + box.y + 512;
     let out = mine.get(key);
     if (out === undefined) mine.set(key, (out = site.landing(blockTiles(i), box, budget(i))));
     return out;
@@ -416,9 +420,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // offsets, its height, now with no Nooks, and the machines Fixtures stand on), or null where it
   // then runs past the room. Stacks in one column only.
   function part(i, x, y) {
-    const key = `${i}:${x}:${y}`;
-    if (!partings.has(key)) partings.set(key, parting(i, x, y));
-    return partings.get(key);
+    if (!partings.has(i)) partings.set(i, new Map());
+    const mine = partings.get(i), key = (x + 4096) * 8192 + y + 4096;
+    if (!mine.has(key)) mine.set(key, parting(i, x, y));
+    return mine.get(key);
   }
   function parting(i, x, y) {
     const b = blocks[i];
@@ -459,9 +464,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // than `most`), by spot: Parting asks of the same spots again for every spot its stack is tried
   // at (Py kicalk among roboports: two thirds of a Maximize).
   function copyLands(inst, box, most) {
-    const key = (inst.index * 4096 + box.x + 1024) * 4096 + box.y + 1024;
-    let all = copyLanded.get(key);
-    if (all === undefined) copyLanded.set(key, (all = site.landing(copyTiles(inst), box, Infinity)));
+    if (!copyLanded.has(inst.index)) copyLanded.set(inst.index, new Map());
+    const mine = copyLanded.get(inst.index), key = (box.x + 1024) * 4096 + box.y + 1024;
+    let all = mine.get(key);
+    if (all === undefined) mine.set(key, (all = site.landing(copyTiles(inst), box, Infinity)));
     return all && all.size <= most ? all : null;
   }
 

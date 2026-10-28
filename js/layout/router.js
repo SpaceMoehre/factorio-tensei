@@ -476,7 +476,8 @@ function search(grid, starts, isGoal, heuristic, moves, hopeless = () => false, 
   const open = new Heap();
   const best = bestCosts(grid.area);
   for (const s of starts) {
-    open.push({ ...s, reached: false, g: 0, prev: null, pieces: [] }, heuristic(s.x, s.y));
+    // (A state is its tile and heading: whatever else a start carries, no search reads.)
+    open.push({ x: s.x, y: s.y, a: s.a, reached: false, g: 0, prev: null, pieces: [] }, heuristic(s.x, s.y));
     best.set(s, 0);
   }
   // A leg that has not found its goal after exploring every tile many times over has none (nor
@@ -667,32 +668,40 @@ function tunnelMove(node, hop, pieces) {
 function beltMoves(grid, spec, names, pending, target) {
   return node => {
     const options = [];
-    if (pending.has(key(node.x, node.y))) return options;
+    // (Most links hold no tiles for their route's others: no key made then.)
+    const held = (x, y) => pending.size > 0 && pending.has(key(x, y));
+    if (held(node.x, node.y)) return options;
+    // (Whether a belt may stand here at all, whichever way it heads: asked once a node.)
+    if (!grid.freeFor(node.x, node.y, spec.id) || fedByOther(grid, spec, node.x, node.y)) return options;
     const straightOn = spec.straight && node.prev === null && key(node.x, node.y) === target.from;
     for (const d of straightOn ? [node.a] : directions(node.a)) {
-      if (!canBelt(grid, spec, node.x, node.y, d)) continue;
       const [nx, ny] = step(node.x, node.y, d);
+      if (!beltOutputAllowed(grid, spec, nx, ny) && !spec.joins?.has(`${nx},${ny},${d}`)) continue;
       options.push({ x: nx, y: ny, a: d, cost: 1 + (d === node.a ? 0 : TURN_COST), pieces: [beltPiece(spec, names, node.x, node.y, d)] });
     }
     const d = node.a;
-    if (!grid.freeFor(node.x, node.y, spec.id) || fedByOther(grid, spec, node.x, node.y)) return options;
     // A tunnel may not pass under a later waypoint of its own route, nor surface on one.
     const [ax, ay] = step(node.x, node.y, d, 1);
-    if (pending.has(key(ax, ay))) return options;
+    if (held(ax, ay)) return options;
     // Where the tile ahead takes a belt, the belt walks on and dives at the obstacle instead.
-    if (grid.freeFor(ax, ay, spec.id) && !fedByOther(grid, spec, ax, ay) && key(ax, ay) !== target.key) return options;
+    if (grid.freeFor(ax, ay, spec.id) && !fedByOther(grid, spec, ax, ay) && (target.key === null || key(ax, ay) !== target.key)) return options;
+    // (The tunnels of this type on the line every hop runs along: looked up once.)
+    const line = grid.tunnelLine(names.underground, node, { x: ax, y: ay });
     for (const hop of HOPS(names.reach)) {
       const [qx, qy] = step(node.x, node.y, d, hop);
-      if (pending.has(key(qx, qy))) break;
-      if (!grid.freeFor(qx, qy, spec.id) || !grid.tunnelFits(names.underground, node, { x: qx, y: qy })) continue;
+      if (held(qx, qy)) break;
+      if (!grid.freeFor(qx, qy, spec.id)) continue;
+      const s = span(node, { x: qx, y: qy });
+      if (line.some(t => spansOverlap(t, s))) continue;
       if (!beltOutputAllowed(grid, spec, ...step(qx, qy, d)) || fedByOther(grid, spec, qx, qy)) continue;
-      const base = { name: names.underground, kind: 'underground-belt', route: spec.id, w: 1, h: 1, direction: d, travel: d };
+      // (Written out, not spread from one base: every step of every search makes these.)
+      const name = names.underground, route = spec.id;
       const move = tunnelMove(node, hop, [
-        { ...base, underground: 'input', x: node.x, y: node.y, out: null },
-        { ...base, underground: 'output', x: qx, y: qy, out: key(...step(qx, qy, d)) },
+        { name, kind: 'underground-belt', route, w: 1, h: 1, direction: d, travel: d, underground: 'input', x: node.x, y: node.y, out: null },
+        { name, kind: 'underground-belt', route, w: 1, h: 1, direction: d, travel: d, underground: 'output', x: qx, y: qy, out: key(...step(qx, qy, d)) },
       ]);
       // A tunnel surfacing on a waypoint must leave the belt a tile to go on to.
-      move.reached = key(qx, qy) === target.key && (target.last || grid.freeFor(...step(qx, qy, d), spec.id));
+      move.reached = target.key !== null && key(qx, qy) === target.key && (target.last || grid.freeFor(...step(qx, qy, d), spec.id));
       options.push(move);
     }
     return options;
@@ -722,10 +731,10 @@ function pipeMoves(grid, spec, names, pending) {
       const [qx, qy] = step(node.x, node.y, d, hop);
       if (!endOk(qx, qy) || !grid.tunnelFits(names.underground, node, { x: qx, y: qy })) continue;
       // A pipe-to-ground's direction is its above-ground connection side.
-      const base = { name: names.underground, kind: 'pipe-to-ground', route: spec.id, fluid: spec.fluid, w: 1, h: 1, travel: d, out: null };
+      const name = names.underground, route = spec.id, fluid = spec.fluid;
       options.push(tunnelMove(node, hop, [
-        { ...base, underground: 'input', x: node.x, y: node.y, direction: opposite(d) },
-        { ...base, underground: 'output', x: qx, y: qy, direction: d },
+        { name, kind: 'pipe-to-ground', route, fluid, w: 1, h: 1, travel: d, out: null, underground: 'input', x: node.x, y: node.y, direction: opposite(d) },
+        { name, kind: 'pipe-to-ground', route, fluid, w: 1, h: 1, travel: d, out: null, underground: 'output', x: qx, y: qy, direction: d },
       ]));
     }
     return options;
@@ -749,17 +758,19 @@ function canBelt(grid, spec, x, y, d) {
 function beltOutputAllowed(grid, spec, ox, oy) {
   const target = grid.at(ox, oy);
   if (target && target.route !== spec.id && (target.kind === 'belt' || target.kind === 'underground-belt')) return false;
-  const k = key(ox, oy);
   const held = grid.holder(ox, oy);
-  return held === undefined || held === spec.id || grid.fluidPorts.has(k);
+  return held === undefined || held === spec.id || grid.fluidPorts.has(key(ox, oy));
 }
 
+const SIDES = Object.values(VEC);
+
 function fedByOther(grid, spec, x, y) {
-  const here = key(x, y);
-  return Object.values(VEC).some(([nx, ny]) => {
+  let here = null;
+  for (const [nx, ny] of SIDES) {
     const n = grid.at(x + nx, y + ny);
-    return n?.route !== undefined && n.route !== spec.id && n.out === here;
-  });
+    if (n?.route !== undefined && n.route !== spec.id && n.out === (here ??= key(x, y))) return true;
+  }
+  return false;
 }
 
 // A pipe connects on all four sides, so no neighbour may belong to another pipe network — even
@@ -781,33 +792,37 @@ function canPipe(grid, spec, x, y) {
 export class Heap {
   constructor() { this.items = []; }
   get size() { return this.items.length; }
+  // (Sifted with a hole rather than by swaps: the same comparisons, the same order.)
   push(value, priority) {
     const items = this.items;
-    items.push({ value, priority });
-    let i = items.length - 1;
+    const item = { value, priority };
+    let i = items.length;
+    items.push(item);
     while (i > 0) {
       const p = (i - 1) >> 1;
-      if (items[p].priority <= items[i].priority) break;
-      [items[p], items[i]] = [items[i], items[p]];
+      if (items[p].priority <= priority) break;
+      items[i] = items[p];
       i = p;
     }
+    items[i] = item;
   }
   pop() {
     const items = this.items;
     const top = items[0];
     const last = items.pop();
-    if (items.length) {
-      items[0] = last;
+    const n = items.length;
+    if (n) {
       let i = 0;
       for (;;) {
         const l = 2 * i + 1, r = l + 1;
-        let m = i;
-        if (l < items.length && items[l].priority < items[m].priority) m = l;
-        if (r < items.length && items[r].priority < items[m].priority) m = r;
+        let m = i, least = last.priority;
+        if (l < n && items[l].priority < least) { m = l; least = items[l].priority; }
+        if (r < n && items[r].priority < least) m = r;
         if (m === i) break;
-        [items[m], items[i]] = [items[i], items[m]];
+        items[i] = items[m];
         i = m;
       }
+      items[i] = last;
     }
     return top.value;
   }

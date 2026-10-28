@@ -3,9 +3,11 @@
 // a hash of them all: two runs of code that should lay out the same (a speed-up) must match.
 //
 //   node maxdet.mjs <setup.json> [K] [most]      ROOT=<repo> for another worktree
+//   TIMEOUT=<seconds>: killed past that (default 14400, 0 for none), exit 124
 //
 // K: candidates a try (default 20). most: no more of the first Goal's machines.
 // STOPAT=<machines>: stop at the first fit of that many. Wall-clock seconds in the first column.
+import './watchdog.mjs?seconds=14400';
 import { createHash } from 'node:crypto';
 import { root, catalog, load } from './probe-common.mjs';
 

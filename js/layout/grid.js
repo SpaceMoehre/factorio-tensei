@@ -6,6 +6,7 @@ export const opposite = d => (d + 8) % 16;
 export const key = (x, y) => `${x},${y}`;
 
 const FREE = -2147483648;
+const NONE = Object.freeze([]);
 
 // The Output Side (ADR 0069): the edge the block's belts and pipes to the train leave across, as
 // the user chooses it (logistics.output: 'right', 'up' or 'down'; east by default). The block runs
@@ -52,7 +53,13 @@ export class Grid {
   // same type on the same line must not overlap or they would cross-connect.
   tunnelFits(name, a, b) {
     const s = span(a, b);
-    return !(this.tunnelLines.get(lineKey(name, s)) ?? []).some(t => spansOverlap(t, s));
+    return !this.tunnelLine(name, a, b).some(t => spansOverlap(t, s));
+  }
+
+  // The tunnels of this type on the line from a to b (a router weighing several lengths of
+  // tunnel from one tile asks once).
+  tunnelLine(name, a, b) {
+    return this.tunnelLines.get(lineKey(name, span(a, b))) ?? NONE;
   }
 
   // Routing may try an option and take it back: everything it changes is saved here (with
