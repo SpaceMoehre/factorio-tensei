@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { compactness, SQUARE, BEND } from '../js/layout/score.js';
+import { compactness, scoreOf, compare, better, RANK, SQUARE, BEND } from '../js/layout/score.js';
 import { solve } from '../js/solve.js';
 import { catalog, logistics } from './fixtures/catalog.js';
 
@@ -45,4 +45,27 @@ test('the search aims at square blocks: two Sub-Blocks side by side stack about 
     const { w, h } = solve(entries, catalog, logistics).bounds;
     assert.ok(Math.max(w, h) / Math.min(w, h) <= 1.25, `${w}×${h}`);
   }
+});
+
+test('a score ranks part by part, Starvation first: a layout starving less beats any more compact one', () => {
+  const lean = { starving: 0, loopsByTrain: 0, riding: 1, supporting: 0, compactness: 900, entities: 300 };
+  const tight = { starving: 0.5, loopsByTrain: 0, riding: 0, supporting: 0, compactness: 100, entities: 100 };
+  assert.ok(better(lean, tight));
+  assert.ok(!better(tight, lean));
+  assert.ok(better(lean, null), 'anything beats none');
+  assert.equal(compare(lean, { ...lean }), 0);
+  assert.equal(compare({ ...lean, compactness: 800 }, lean), -1);
+  // (Compared through riding only: Compactness and entities make no difference.)
+  assert.equal(compare({ ...lean, compactness: 800 }, lean, 'riding'), 0);
+  assert.equal(compare({ ...lean, riding: 2, compactness: 1 }, lean, 'riding'), 1);
+  assert.deepEqual(RANK, ['starving', 'loopsByTrain', 'riding', 'supporting', 'compactness', 'entities']);
+});
+
+test('scoreOf a laid-out block: its parts by name, nothing starving, its Compactness and entities as counted', () => {
+  const laid = solve([{ goal: { item: 'iron-gear-wheel', rate: 60 }, selection: { recipe: 'iron-gear-wheel', building: 'assembling-machine-2' } }], catalog, logistics, { maxCandidates: 4 });
+  const score = scoreOf(laid);
+  assert.deepEqual(Object.keys(score), RANK);
+  assert.equal(score.starving, 0);
+  assert.equal(score.compactness, compactness(laid).value);
+  assert.equal(score.entities, laid.entities.length);
 });

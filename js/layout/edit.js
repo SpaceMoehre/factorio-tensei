@@ -1,7 +1,6 @@
-import { compose, prepare, RoutingError, PowerError } from './compose.js';
-import { finishBlock, given } from './compact.js';
-import { validateBlock } from './validity.js';
-import { rankOf } from './score.js';
+import { prepare, RoutingError } from './compose.js';
+import { layOut } from './lay.js';
+import { compare } from './score.js';
 import { stackOf } from './place.js';
 import { E, S, W, N, VEC, key } from './grid.js';
 import { trim } from './module.js';
@@ -197,7 +196,7 @@ export function* moveCopies(ctx, edit, move, options = {}) {
   // As good as before: starving no more, no more Recipe Loops fed by train, no more byproducts
   // riding on.
   const before = options.score ?? null;
-  const asGood = score => !before || compare(score.slice(0, 3), before.slice(0, 3)) <= 0;
+  const asGood = score => !before || compare(score, before, 'riding') <= 0;
 
   let frame = standing(edit);
   let fallback = null;
@@ -329,13 +328,13 @@ export function* moveCopies(ctx, edit, move, options = {}) {
       }
       const found = { ...out, at: c.at, pushed: c.pushed, back: frame.back, tried: tried() };
       if (asGood(out.score) || options.first) return found;
-      if (!fallback || compare(out.score.slice(0, 3), fallback.score.slice(0, 3)) < 0) fallback = found;
+      if (!fallback || compare(out.score, fallback.score, 'riding') < 0) fallback = found;
     }
     return null;
   };
   let found = yield* run();
   if (found === AGAIN) found = yield* run();
-  const kept = (found === AGAIN ? null : found) ?? [fallback, spare].filter(Boolean).sort((a, b) => compare(a.score.slice(0, 3), b.score.slice(0, 3)))[0];
+  const kept = (found === AGAIN ? null : found) ?? [fallback, spare].filter(Boolean).sort((a, b) => compare(a.score, b.score, 'riding'))[0];
   if (kept) return { ...kept, tried: tried() };
   const drop = shifted(frame.positions, mover, move.dx, move.dy);
   const why = now() > deadline ? 'out of time laying it out there'
@@ -344,10 +343,6 @@ export function* moveCopies(ctx, edit, move, options = {}) {
   return { failure: new RoutingError(why), tried: tried() };
 }
 
-function compare(a, b) {
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i] ? -1 : 1;
-  return 0;
-}
 
 // The shapes a Sub-Block may take instead (a reshape, ADR 0044), each with about the box its
 // copies take (`w`, `h`, as the map shows a Sub-Block), as the box they take now (`now`) scales:
@@ -470,7 +465,7 @@ export function* reshapeCopies(ctx, edit, { step, way }, options = {}) {
   if (!toward.length) return { failure: new RoutingError(way === 'squarer' ? 'it stands as square as it can' : 'it stands as long as it can'), tried };
   // As good as before (moveCopies): starving no more, no more Recipe Loops fed by train, no more
   // byproducts riding on. A shape that is not is kept only where none is.
-  const asGood = score => !options.score || compare(score.slice(0, 3), options.score.slice(0, 3)) <= 0;
+  const asGood = score => !options.score || compare(score, options.score, 'riding') <= 0;
   // (A squeezed block whose links find no way as it stands: as it was routed, every line back.)
   const frames = [standing(edit), ...(edit.squeeze.length ? [standing(edit, { whole: true })] : [])];
   const designed = new Map();
@@ -522,7 +517,7 @@ export function* reshapeCopies(ctx, edit, { step, way }, options = {}) {
       if (out.failure) continue;
       const found = { ...out, back: out.back + frame.back, tried, was: shapes.now, shape: { columns: stack.columns, copies: stack.copies, w: box.w, h: box.h } };
       if (asGood(out.score)) return found;
-      if (!fallback || compare(out.score.slice(0, 3), fallback.score.slice(0, 3)) < 0) fallback = found;
+      if (!fallback || compare(out.score, fallback.score, 'riding') < 0) fallback = found;
     }
     if (fallback) break;
   }
@@ -660,7 +655,7 @@ export function* compactCopies(ctx, edit, options = {}) {
   const now = options.now ?? (() => Date.now());
   const deadline = options.deadline ?? Infinity;
   const { units, inside, fixtures, tilesAt, boxOf, attempt, tried } = layer(ctx, edit, { ...options, now, deadline });
-  const asGood = score => !options.score || compare(score.slice(0, 3), options.score.slice(0, 3)) <= 0;
+  const asGood = score => !options.score || compare(score, options.score, 'riding') <= 0;
   // (The block as it stands, laid out again: what each slide must beat. A squeezed block whose
   // links find no way as it stands: as it was routed, every line back.)
   let frame = standing(edit);
@@ -708,13 +703,13 @@ export function* compactCopies(ctx, edit, options = {}) {
           for (const n of u.members) next[n] = { x: positions[n].x + (axis === 'x' ? sign * d : 0), y: positions[n].y + (axis === 'y' ? sign * d : 0) };
           yield { type: 'trying', tried: tried() };
           const out = attempt(next);
-          if (!out || !asGood(out.score) || out.score[4] > best.score[4]) continue;
+          if (!out || !asGood(out.score) || out.score.compactness > best.score.compactness) continue;
           best = out;
           positions = next;
           slid++;
           moved = true;
           // (Shown where it beats the block as it was, and the best so far.)
-          if ((!options.score || out.score[4] < options.score[4]) && (!kept || out.score[4] <= kept.score[4])) {
+          if ((!options.score || out.score.compactness < options.score.compactness) && (!kept || out.score.compactness <= kept.score.compactness)) {
             kept = out;
             yield { type: 'better', block: out.block, score: out.score, slid };
           }
@@ -770,27 +765,16 @@ function layer(ctx, edit, { now, deadline, plainToo = false }) {
     const boxes = units.map(u => boxOf(u, positions));
     const x0 = Math.min(...boxes.map(b => b.x)), y0 = Math.min(...boxes.map(b => b.y));
     const bounds = { x: x0, y: y0, w: Math.max(...boxes.map(b => b.x + b.w)) - x0, h: Math.max(...boxes.map(b => b.y + b.h)) - y0 };
-    let used = edit.layout, composed = null;
-    for (const lay of [edit.layout, ...(plainToo && !edit.layout.plain ? [{ ...edit.layout, plain: true }] : [])]) {
-      try {
-        composed = compose(ctx, ready, Object.assign(positions.map(p => ({ ...p })), { bounds }), { ...lay, until: () => now() > deadline });
-        used = lay;
-        break;
-      } catch (e) {
-        if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
-        chain ??= /** @type {any} */ (e).chain;
-      }
-    }
-    if (!composed) return null;
-    try {
-      const block = given(finishBlock(composed, catalog, logistics, { squeeze: false }), edit.giving);
-      if (validateBlock(block, catalog, logistics).length) return null;
-      block.edit = editOf(ready, positions, { layout: used, rooms: edit.rooms, entries: edit.entries, turns: edit.turns, giving: edit.giving });
-      return { block, score: rankOf(block) };
-    } catch (e) {
-      if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
-      return null;
-    }
+    // (As laid out, else without splitters; never chained here: `riding` below chains them.)
+    const out = layOut(ctx, chained => (chained.size ? null : { ready, positions: Object.assign(positions.map(p => ({ ...p })), { bounds }) }), {
+      layout: edit.layout, until: () => now() > deadline, power: true, finish: { squeeze: false }, giving: edit.giving,
+      ladder: plainToo && !edit.layout.plain ? [{ use: { plain: true }, chains: false }] : [],
+    });
+    chain = out.chain;
+    if (out.failure) return null;
+    const { block } = out;
+    block.edit = editOf(ready, positions, { layout: out.used, rooms: edit.rooms, entries: edit.entries, turns: edit.turns, giving: edit.giving });
+    return { block, score: out.score };
   };
   const attempt = positions => laid(prepared, positions);
   // The last layout tried, where a byproduct's splitter found no way there: its producers' belt

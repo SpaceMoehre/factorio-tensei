@@ -10,17 +10,16 @@ import { createHash } from 'node:crypto';
 import { root, catalog, load } from './probe-common.mjs';
 
 const { maximize } = await import(`${root}/js/maximize.js`);
-const { recipeOptions } = await import(`${root}/js/chain.js`);
 const [file, K = '20', most] = process.argv.slice(2);
 if (!file) {
   console.error('usage: node maxdet.mjs <setup.json> [K] [most]');
   process.exit(2);
 }
-const { site, logistics, goals, state } = await load(file);
+const { site, logistics, goals, choices } = await load(file);
 const t0 = performance.now();
 const all = createHash('sha1');
 const run = maximize(goals, catalog, logistics, {
-  made: state.made ?? [], selections: state.selections ?? {}, uses: state.uses ?? [], index: recipeOptions(catalog), site,
+  ...choices, site,
   budgetMs: 1e12, maxCandidates: Number(K), seed: 1, ...(most ? { most: Number(most) } : {}),
 });
 let step;

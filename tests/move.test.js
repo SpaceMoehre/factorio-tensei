@@ -8,7 +8,7 @@ import { finishBlock } from '../js/layout/compact.js';
 import { moveCopies, standing, editOf, reshapeCopies, shapesToward, turnCopies, compactCopies } from '../js/layout/edit.js';
 import { turnModule } from '../js/layout/turn.js';
 import { compactness } from '../js/layout/score.js';
-import { rankOf } from '../js/layout/score.js';
+import { scoreOf } from '../js/layout/score.js';
 import { siteOf } from '../js/city.js';
 import { annexed } from '../js/annex.js';
 import { simulate } from '../js/sim.js';
@@ -31,7 +31,7 @@ function best(site = null) {
 /** @returns {any} */
 function moved(block, move, options = {}) {
   const ctx = context(entries, catalog, logistics, block.site ?? null);
-  const run = /** @type {any} */ (moveCopies(ctx, block.edit, move, { score: rankOf(block), ...options }));
+  const run = /** @type {any} */ (moveCopies(ctx, block.edit, move, { score: scoreOf(block), ...options }));
   let step = run.next();
   for (; !step.done; step = run.next()) assert.equal(step.value.type, 'trying');
   return step.value;
@@ -166,7 +166,7 @@ function withCopies() {
 
 /** @returns {any} */
 function reshaped(ctx, block, step, way, list) {
-  const run = /** @type {any} */ (reshapeCopies(ctx, block.edit, { step, way }, { score: rankOf(block), list }));
+  const run = /** @type {any} */ (reshapeCopies(ctx, block.edit, { step, way }, { score: scoreOf(block), list }));
   let next = run.next();
   for (; !next.done; next = run.next()) assert.equal(next.value.type, 'trying');
   return next.value;
@@ -235,7 +235,7 @@ test('a Sub-Block turned stands turned where it stood, every link routed again, 
   // (Its box half round, as laid out again: a squeezed block's copies whole again.)
   let half = null;
   for (const turns of [2, 1, 3]) {
-    const out = drive(turnCopies(ctx, block.edit, { step: cable, turns }, { score: rankOf(block) }));
+    const out = drive(turnCopies(ctx, block.edit, { step: cable, turns }, { score: scoreOf(block) }));
     assert.ok(out.block, `${turns}: ${out.failure?.message}`);
     assertValid(out.block, catalog, logistics);
     assert.equal(starving(out.block), 0);
@@ -249,7 +249,7 @@ test('a Sub-Block turned stands turned where it stood, every link routed again, 
     if (!out.back && !out.pushed.length) assert.deepEqual(machines(out.block, 1 - cable), machines(block, 1 - cable));
     // (Turned once more from there, it keeps its turn.)
     if (turns === 1) {
-      const again = drive(turnCopies(ctx, out.block.edit, { step: cable, turns: 1 }, { score: rankOf(out.block) }));
+      const again = drive(turnCopies(ctx, out.block.edit, { step: cable, turns: 1 }, { score: scoreOf(out.block) }));
       assert.ok(again.block, again.failure?.message);
       assert.equal(again.block.edit.turns[cable], 2);
     }
@@ -260,12 +260,12 @@ test('pulled together, a block spread out comes back closer, every Sub-Block as 
   let block = best();
   const ctx = context(entries, catalog, logistics);
   for (const [step, dx, dy] of [[0, 12, 0], [1, 0, 10]]) {
-    const out = drive(moveCopies(ctx, block.edit, { step, dx, dy }, { score: rankOf(block) }));
+    const out = drive(moveCopies(ctx, block.edit, { step, dx, dy }, { score: scoreOf(block) }));
     assert.ok(out.block, out.failure?.message);
     block = out.block;
   }
   const spread = compactness(block).value;
-  const out = drive(compactCopies(ctx, block.edit, { score: rankOf(block) }));
+  const out = drive(compactCopies(ctx, block.edit, { score: scoreOf(block) }));
   assert.ok(out.block && out.slid > 0, 'pulled together');
   assertValid(out.block, catalog, logistics);
   assert.equal(starving(out.block), 0);
@@ -274,6 +274,6 @@ test('pulled together, a block spread out comes back closer, every Sub-Block as 
   // (Nothing changes its design: the same machines in each, as many.)
   for (let i = 0; i < 2; i++) assert.equal(machines(out.block, i).size, machines(block, i).size);
   // Pulled together again: nothing closer.
-  const again = drive(compactCopies(ctx, out.block.edit, { score: rankOf(out.block) }));
+  const again = drive(compactCopies(ctx, out.block.edit, { score: scoreOf(out.block) }));
   assert.ok(!again.block || compactness(again.block).value < compactness(out.block).value);
 });

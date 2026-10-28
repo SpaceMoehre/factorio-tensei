@@ -19,7 +19,7 @@ test('water made here: an offshore pump on six tiles of shallow water', async ()
   let found = null;
   const run = search(entries, shipped, logistics, { seed: 1, maxCandidates: 4 });
   for (let step = run.next(); !step.done; step = run.next()) found = step.value;
-  assert.equal(found.score[0], 0, 'starves');
+  assert.equal(found.score.starving, 0, 'starves');
   assertValid(found.block, shipped, logistics);
   const machine = found.block.entities.find(e => e.name === 'offshore-pump');
   const { blueprint } = JSON.parse((await encodeBlueprint(found.block, shipped)).json);

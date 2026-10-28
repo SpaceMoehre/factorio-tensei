@@ -6,19 +6,19 @@ import { fileURLToPath } from 'node:url';
 export const root = resolve(process.env.ROOT ?? resolve(dirname(fileURLToPath(import.meta.url)), '../../../..'));
 const { decodeBlueprint, readCityBlock, siteOf } = await import(`${root}/js/city.js`);
 const { planner } = await import(`${root}/js/maximize.js`);
+// (A setup read as the page reads it; this repo's reading where the code under test has none.)
+const { setupOf } = await import(`${root}/js/setup.js`).catch(() => import('../../../../js/setup.js'));
 // (Parted by Consumer as the search parts them, where the code under test does.)
 const { partByConsumer = (/** @type {any} */ e) => e } = await import(`${root}/js/plan.js`);
 export const catalog = JSON.parse(readFileSync(`${root}/data/catalog.json`, 'utf8'));
 
-// { site, logistics, plan, goals, state (the setup itself), entriesFor(n, spare) } for a setup file.
+// { site, logistics, plan, goals, choices (the Chain Choices), city, state (the setup itself),
+// entriesFor(n, spare) } for a setup file.
 export async function load(file) {
   const st = JSON.parse(readFileSync(file, 'utf8'));
-  const city = { on: false, buffer: 2, w: 100, h: 100, ...st.city };
-  if (st.blueprint && !city.blueprint) Object.assign(city, { on: true, blueprint: st.blueprint });
+  const { goals, choices, logistics, city } = setupOf(st, catalog);
   const site = !city.on ? null : siteOf(city.blueprint ? readCityBlock(await decodeBlueprint(city.blueprint), catalog) : { area: { x: 0, y: 0, w: city.w, h: city.h }, fixtures: [] }, city.buffer);
-  const { budget, ...logistics } = st.logistics;
-  const goals = st.goals.filter(g => g.item && g.rate > 0);
   // (Maximize's planner only in a City Block: a setup standing on its own is built.)
-  const plan = site ? planner(goals, catalog, logistics, { made: st.made ?? [], selections: st.selections ?? {}, uses: st.uses ?? [], exports: st.exports ?? [], voids: st.voids ?? [], site }) : null;
-  return { site, logistics, plan, goals, state: st, entriesFor: (n, spare = {}) => partByConsumer(plan.chainOf(plan.goalsFor(n), spare).entries, catalog, logistics) };
+  const plan = site ? planner(goals, catalog, logistics, { ...choices, site }) : null;
+  return { site, logistics, plan, goals, choices, city, state: st, entriesFor: (n, spare = {}) => partByConsumer(plan.chainOf(plan.goalsFor(n), spare).entries, catalog, logistics) };
 }

@@ -10,10 +10,9 @@
 
 import { planSubBlocks } from './plan.js';
 import { context, designStep, designOf, random } from './design.js';
-import { prepare, compose, RoutingError, PowerError } from './layout/compose.js';
+import { prepare, RoutingError } from './layout/compose.js';
+import { layOut } from './layout/lay.js';
 import { placeBlocks } from './layout/place.js';
-import { finishBlock } from './layout/compact.js';
-import { validateBlock } from './layout/validity.js';
 import { LayoutError } from './layout/core.js';
 import { simulate } from './sim.js';
 
@@ -450,8 +449,12 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
     // belt through its producers and consumers), else all of them; then the Side Inputs' lines
     // past three parts at most; then laid after the producers' (theirs Fan-outs again); then each
     // part's Side Input from the west edge on its own.
-    const linked = fallback => {
-      const ready = prepare(ctx, designs);
+    // The candidate prepared and placed with these routes chained through their consumers.
+    // (Whether the producers' lines fanned out, as preparing them tells: there are lines to chain.)
+    const rechain = chained => {
+      const chainedCtx = /** @type {any} */ ({ ...ctx, chained });
+      const ready = prepare(chainedCtx, designs);
+      if (chainedCtx.fannedOut) ctx.fannedOut = true;
       // Each part in the middle of its gap (room above and below it for links along the gap),
       // against its east end: its belts leave into the corridor east of it, or to the east edge.
       const at = Object.fromEntries(parts.map((p, n) => {
@@ -485,44 +488,33 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
           const takers = ctx.plan.map((sb, c) => c).filter(c => ctx.plan[c].inputs.some(x => x.name === ctx.plan[n].item));
           if (!takers.length || !takers.every(c => ctx.plan[c].part)) continue;
           const out = ctx.routes.find(r => r.kind === 'belt' && r.source === n);
-          if (ctx.chained === 'all' || (out && ctx.chained.has(out.id))) continue;
+          if (chained === 'all' || (out && chained.has(out.id))) continue;
           at[n] = { x: corridor.x + corridor.w + 1, y };
           y += tall(designs[n]) + GAP;
         }
       }
       // (Those with a spot first: one placed where Placement finds room may take another's.)
-      const positions = placeBlocks(ctx, ready, { corridor: 2, gap: 1, weight: 4, at, stay: true, ahead: Object.keys(at).map(Number) });
-      const composed = compose(ctx, ready, positions, { margin: { w: 0, e: 0, n: 1, s: 1 }, until, ...fallback });
-      const block = finishBlock(composed, catalog, logistics);
-      const problems = validateBlock(block, catalog, logistics);
-      if (problems.length) return { failure: new Error(`invalid layout: ${problems[0]}`), built: 3 };
-      const starving = simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
-      if (starving > 1e-6) return { failure: new Error(`the layout starves ${Math.round(starving * 1000) / 1000}/min`), built: 3 };
-      return { block };
+      return { ready, positions: placeBlocks(chainedCtx, ready, { corridor: 2, gap: 1, weight: 4, at, stay: true, ahead: Object.keys(at).map(Number) }) };
     };
+    // (Each where it changes anything: where there are producers' lines to chain, Side Inputs'
+    // lines to lay later, or across parts to shorten or leave.)
+    const ladder = [
+      { use: { chains: true }, chained: 'all', chains: false, when: () => Boolean(ctx.fannedOut) },
+      { use: { short: true }, when: why => why.across },
+      { use: { fansLast: true }, chains: false, when: why => why.fans },
+      { use: { alone: true }, when: why => why.across },
+    ];
+    let laid;
     try {
-      let last = null;
-      for (const fallback of [{}, { chains: true }, { short: true }, { fansLast: true }, { alone: true }]) {
-        // (Each where it changes anything: where there are producers' lines to chain, Side Inputs'
-        // lines to lay later, or across parts to shorten or leave.)
-        if (fallback.chains ? !ctx.fannedOut : fallback.fansLast ? !last?.fans : (fallback.short || fallback.alone) && !last?.across) continue;
-        ctx.chained = fallback.chains ? 'all' : new Set();
-        for (;;) {
-          try {
-            return linked(fallback);
-          } catch (e) {
-            if (!(e instanceof RoutingError)) throw e;
-            last = e;
-            if (fallback.fansLast || fallback.chains || e.chain === undefined || ctx.chained.has(e.chain)) break;
-            ctx.chained.add(e.chain);
-          }
-        }
-      }
-      throw last;
+      laid = layOut(ctx, rechain, { layout: { margin: { w: 0, e: 0, n: 1, s: 1 }, until }, ladder, judge: 'last', score: false });
     } catch (e) {
-      if (!(e instanceof RoutingError || e instanceof PowerError || e instanceof LayoutError)) throw e;
+      if (!(e instanceof LayoutError)) throw e;
       return { failure: e, built: 2 };
     }
+    if (laid.failure) return { failure: laid.failure.error, built: laid.failure.stage === 'valid' ? 3 : 2 };
+    const starving = simulate(laid.block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
+    if (starving > 1e-6) return { failure: new Error(`the layout starves ${Math.round(starving * 1000) / 1000}/min`), built: 3 };
+    return { block: laid.block };
   }
 }
 
@@ -533,11 +525,16 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
 // row; each Slot is checked against them. (A Part's belts visiting both bands outside its rows
 // run round them: with many, the design outgrows the Slot, Py vrauks-2 paddocks two rows of eight
 // 112 wide.)
-const twoRows = new Map();
+// (By catalog; the City Block's inner size and Fixtures, and the seed, decide the designs too: a
+// process laying out several City Blocks, as a run of the regression suite in-process may, keeps
+// each one's apart.)
+const twoRowsOf = new WeakMap();
 function twoRowsFit(entries, plan, catalog, logistics, site, seed, i, slot, perRow) {
+  if (!twoRowsOf.has(catalog)) twoRowsOf.set(catalog, new Map());
+  const twoRows = twoRowsOf.get(catalog);
   const sb = plan[i];
   const machines = Math.min(sb.count, 2 * perRow);
-  const key = JSON.stringify([sb.recipe, sb.building, sb.modules, sb.inputs.map(x => x.name), sb.outputs.map(x => x.name), sb.count, perRow, logistics]);
+  const key = JSON.stringify([sb.recipe, sb.building, sb.modules, sb.inputs.map(x => x.name), sb.outputs.map(x => x.name), sb.count, perRow, logistics, seed, site?.inner.w, site?.inner.h, site?.fixtures.length]);
   if (!twoRows.has(key)) {
     // The Sub-Block as a Part of that many machines, the rest whole.
     const probe = entries.map(e => (e.goal.item !== sb.item ? e : { ...e, goal: { ...e.goal, rate: e.goal.rate * machines / sb.count, part: true, machines } }));

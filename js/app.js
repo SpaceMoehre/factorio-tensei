@@ -1,7 +1,7 @@
 import { simulate } from './sim.js';
 import { expandChain, recipeOptions, useKey, EVERY } from './chain.js';
 import { machineEffect, moduleOptions } from './modules.js';
-import { burnerFuel, fuelsFor, partByConsumer } from './plan.js';
+import { burnerFuel, fuelsFor } from './plan.js';
 import { useNames, displayName } from './names.js';
 import { encodeBlueprint } from './blueprint.js';
 import { clocksOf, clockLabel } from './clocks.js';
@@ -9,7 +9,10 @@ import { circuitPairs } from './layout/wires.js';
 import { createMap, turnsSideways } from './render.js';
 import { decodeBlueprint, readCityBlock, siteOf } from './city.js';
 import { planner } from './maximize.js';
-import { compactness, rankOf, SQUARE, BEND } from './layout/score.js';
+import { compactness, scoreOf, SQUARE, BEND } from './layout/score.js';
+import { setupFrom, normalized, logisticsOptions, plainOf } from './setup.js';
+import { buildSession } from './session.js';
+import { webRunner } from './runners.js';
 import { readLibrary, writeLibrary, addEntry, editEntry, removeEntry, renameFolder, foldersOf, grouped } from './library.js';
 
 const STORAGE_KEY = 'factory-tensei:v1';
@@ -39,45 +42,14 @@ crypto.subtle?.digest('SHA-256', raw).then(d => { catalogId = [...new Uint8Array
 const outdated = !catalog.inserters || !catalog.fuels;
 if (outdated) Object.assign(catalog, { inserters: {}, fuels: {} });
 const index = recipeOptions(catalog);
-// A pipe-to-ground's plain pipe: the one named like it. Pipes of different materials do not
-// connect, so the block takes both of one material (`pipe`, the pipe-to-ground, chosen; its
-// `plainPipe` follows).
-const plainOf = name => name.replace(/-to-ground$/, '');
-const choices = {
-  belt: Object.keys(catalog.belts), pole: Object.keys(catalog.poles),
-  // Pipe-to-grounds with a plain pipe of their material (every one, in a catalog built before
-  // plain pipes were recorded).
-  pipe: Object.keys(catalog.pipes).filter(name => !catalog.plainPipes || catalog.plainPipes.includes(plainOf(name))),
-  inserter: inserterNames(1), longInserter: inserterNames(2), fuel: Object.keys(catalog.fuels).sort(),
-  // Liquid Fuels (a catalog built before them has none).
-  liquidFuel: Object.keys(catalog.fluidFuels ?? {}).sort(),
-};
-const state = load() ?? { goals: [], logistics: {} };
-state.logistics = { ...defaultLogistics(), ...state.logistics };
-state.logistics.plainPipe = plainOf(state.logistics.pipe);
-// What comes by train follows from the Goals' recipes; `made` lists the imports the user chose to
-// make in the block instead. (Saves from before listed Train Inputs instead; that list is dropped.)
-state.made ??= [];
+const choices = logisticsOptions(catalog);
+// The saved state, every default filled in (setup.js). (Saves from before listed Train Inputs
+// instead of `made`; that list is dropped.)
+const state = normalized(load() ?? { goals: [], logistics: {} }, catalog);
 delete state.inputs;
-state.selections ??= {};
-// Byproduct Uses: { from (a step's key), item, recipe, building?, modules? } (chain.js).
-state.uses ??= [];
-// Items made here the user wants leaving by train too, their consumers first; fluids that would
-// leave by train destroyed instead (a sinkhole, a gas vent) (ADR 0062).
-state.exports ??= [];
-state.voids ??= [];
 // Inserter Clocks: the signal chosen for each clock (by its key, "items/seconds"), kept from one
 // build to the next.
 state.clocks ??= {};
-// The City Block to build in: its blueprint string (or a size, without one), the Buffer and
-// whether to look for the highest rate that fits.
-state.city = { on: false, blueprint: '', w: 100, h: 100, buffer: 2, maximize: false, ...state.city };
-// Goals used to carry their own recipe and building; they are now the chain's selections.
-for (const g of state.goals) {
-  if (g.recipe && !state.selections[g.item]) state.selections[g.item] = { recipe: g.recipe, building: g.building };
-  delete g.recipe;
-  delete g.building;
-}
 // The Production Chain for the current Goals, made items and selections, or why there is none.
 /** @type {any} */
 let chain = null;
@@ -87,11 +59,13 @@ const chainRows = new Map();
 // that redraw waits for this one to finish.
 let drawing = false;
 let map = null;
-// The searches running: one worker for each strategy (a Maximize: one), each with how many
-// layouts it tried and whether it is done.
-let workers = [];
-// The layout search's strategies, each run in a worker of its own, side by side (ADR 0013).
-const STRATEGIES = ['search', 'spread'];
+// Where the page's jobs run: each in a web worker of its own (worker.js).
+const runner = webRunner(() => new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }));
+// The most tries a Maximize runs at once (each worker holds its own catalog and search).
+const TRIES_AT_ONCE = 8;
+// The build running (session.js), and how many layouts it has tried.
+let session = null;
+let sessionTried = 0;
 // The best layout the running (or last) search has sent, and how many layouts it had tried.
 let best = null;
 // The City Block read from its blueprint ({ area, fixtures, unknown, blueprint } or { error }),
@@ -292,31 +266,6 @@ if (outdated) {
   showStatus('error', 'The catalog is missing inserter data — regenerate it (see PRD.md, Catalog).');
 }
 
-// Electric inserters (never burner ones) that pick up straight ahead, `reach` tiles out. Py's
-// cranes reach diagonally and are not used.
-function inserterNames(reach) {
-  return Object.values(catalog.inserters)
-    .filter(i => i.energy === 'electric' && i.pickup.x === 0 && Math.abs(Math.abs(i.pickup.y) - reach) < 1e-6)
-    .map(i => i.name).sort();
-}
-
-function defaultLogistics() {
-  const poles = Object.values(catalog.poles).sort((a, b) => b.supplyRadius - a.supplyRadius);
-  const prefer = (list, name) => (list.includes(name) ? name : list[0]);
-  return {
-    belt: prefer(choices.belt, 'transport-belt'),
-    pipe: prefer(choices.pipe, 'pipe-to-ground'),
-    pole: poles[0].name,
-    inserter: prefer(choices.inserter, 'fast-inserter'),
-    longInserter: prefer(choices.longInserter, 'long-handed-inserter'),
-    fuel: prefer(choices.fuel, 'coal'),
-    liquidFuel: prefer(choices.liquidFuel, choices.liquidFuel.includes('natural-gas') ? 'natural-gas' : 'petroleum-gas'),
-    rightAngle: true,
-    handSize: 1,
-    budget: 10,
-    circuit: 'none',
-  };
-}
 
 function renderGoals() {
   $('goals').replaceChildren(...(state.goals.length ? state.goals.map((goal, i) => goalRow(goal, i)) : [
@@ -400,9 +349,9 @@ function showFuels() {
 }
 
 function drawChain() {
-  const goals = state.goals.filter(g => g.item && g.rate > 0);
+  const { goals, choices: chosen, logistics } = setupFrom(state);
   try {
-    chain = goals.length ? expandChain(goals, catalog, { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, belt: state.logistics.belt, logistics: state.logistics }) : null;
+    chain = goals.length ? expandChain(goals, catalog, { ...chosen, logistics }) : null;
   } catch (e) {
     chain = { error: e.message };
   }
@@ -845,24 +794,13 @@ function renderForetell() {
   $('city-foretell').textContent = text ?? '';
 }
 
-// Whether the Goals' own rates are foretold not to fit the City Block.
-function foretoldShort() {
-  const goals = state.goals.filter(g => g.item && g.rate > 0);
-  try {
-    const plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, site: citySite() });
-    return plan.foretold().machines < plan.wanted;
-  } catch {
-    return false;
-  }
-}
-
 function foretellLine() {
-  const goals = state.goals.filter(g => g.item && g.rate > 0);
+  const { goals, choices: chosen, logistics } = setupFrom(state);
   const site = goals.length && chain && !chain.error && !city?.error ? citySite() : null;
   if (!site || site.error) return null;
   let plan;
   try {
-    plan = planner(goals, catalog, logisticsOf(), { made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, index, site });
+    plan = planner(goals, catalog, logistics, { ...chosen, site });
   } catch {
     return null;
   }
@@ -875,12 +813,6 @@ function foretellLine() {
   const side = Math.ceil(Math.sqrt(need / 0.85)) + 2 * state.city.buffer;
   return `Foretelling: ${fits}. ${fmt(goals[0].rate)}/min needs about ${need.toLocaleString('en')} tiles of its ${plan.room.toLocaleString('en')}`
     + ` (a block of about ${side} × ${side})${need > plan.room ? ' — more than it has' : ''}.`;
-}
-
-// The logistics settings the search takes (all but the search time).
-function logisticsOf() {
-  const { budget, ...logistics } = state.logistics;
-  return logistics;
 }
 
 function count(n, noun) {
@@ -902,118 +834,47 @@ async function build(upTo = false) {
     site = citySite();
     if (site.error) return showStatus('error', site.error);
   }
-  for (const w of workers) w.worker.terminate();
-  workers = [];
-  best = null;
+  session?.stop();
   stopMoving();
-  undo = [];
-  $('undo').hidden = true;
-  $('compact').hidden = true;
-  upTo = Boolean(site && !state.city.maximize && (upTo || foretoldShort()));
-  built = { site, blueprint: site && city ? city.blueprint : null, maximize: Boolean(site && (state.city.maximize || upTo)), upTo, trying: null, foretold: null, job: null, designs: null };
-  map?.destroy();
-  map = null;
-  clocks = null;
-  $('area').hidden = true;
-  $('results').hidden = true;
-  $('apply-row').hidden = true;
-  $('bp-string').value = $('bp-json').value = '';
-  showEmpty('Searching for a layout…', true);
-  showStatus('', 'Searching…');
-  $('stop').hidden = false;
-  const goals = state.goals.filter(g => g.item && g.rate > 0);
-  const started = Date.now();
-  const logistics = logisticsOf();
-  // (Parted by Consumer before designing, as the search parts them: each Sub-Block by its index.)
-  const job = { entries: partByConsumer(chain.entries, catalog, logistics), logistics, seed: 1, site };
-  // (The user's moves lay the block out again for the chain it was built for.)
-  built.job = job;
-  // A build first designs each Sub-Block on its own, every one in a worker of its own at once;
-  // the strategies then start from those designs.
-  let designs = null;
-  if (!built.maximize) {
-    const ticket = built;
-    showEmpty(`Designing ${count(job.entries.length, 'Sub-Block')}…`, true);
-    try {
-      designs = await designEach(job, ticket);
-    } catch (e) {
-      if (built !== ticket) return;
-      return finish('Stopped', 0, e.message);
-    }
-    if (built !== ticket || !designs) return;
+  // (A Maximize's tries at once: as many as the machine has cores but one (the Maximize's own,
+  // mostly waiting), and no more than a gigabyte of its memory each (a try of Py titanium plate's
+  // 21 Sub-Blocks holds about 0.6).)
+  const width = Math.max(1, Math.min(TRIES_AT_ONCE, (navigator.hardwareConcurrency ?? 1) - 1, Math.floor(/** @type {any} */ (navigator).deviceMemory ?? 4)));
+  const mine = session = buildSession(setupFrom(state), site, catalog, runner, { width, upTo });
+  sessionTried = 0;
+  for await (const event of mine.events) {
+    if (session !== mine) return;
+    if (event.type === 'start') {
+      best = null;
+      undo = [];
+      $('undo').hidden = true;
+      $('compact').hidden = true;
+      // (The user's moves lay the block out again for the chain it was built for.)
+      built = { site, blueprint: site && city ? city.blueprint : null, maximize: event.maximize, upTo: event.upTo, trying: null, foretold: null, job: event.job, designs: null };
+      map?.destroy();
+      map = null;
+      clocks = null;
+      $('area').hidden = true;
+      $('results').hidden = true;
+      $('apply-row').hidden = true;
+      $('bp-string').value = $('bp-json').value = '';
+      showEmpty('Searching for a layout…', true);
+      showStatus('', 'Searching…');
+      $('stop').hidden = false;
+    } else if (event.type === 'designing') showEmpty(`Designing ${count(event.count, 'Sub-Block')}…`, true);
     // (A reshape tries a Sub-Block's other designs.)
-    built.designs = designs;
-    showEmpty('Searching for a layout…', true);
+    else if (event.type === 'designed') built.designs = event.designs;
+    else if (event.type === 'searching') showEmpty('Searching for a layout…', true);
+    else if (event.type === 'foretell') built.foretold = event;
+    else if (event.type === 'try') trying(event);
+    else if (event.type === 'best') {
+      sessionTried = event.tried;
+      await show(event.block, event.tried, event.found, event.score);
+    } else if (event.type === 'done') {
+      sessionTried = event.tried;
+      finish(event.how, event.tried, event.failure, event.above);
+    }
   }
-  // A Maximize tries one rate after another in one worker; a build runs every strategy at once,
-  // the best layout any of them finds shown (the others go on until the budget is spent).
-  for (const strategy of built.maximize ? ['search'] : STRATEGIES) {
-    const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), tried: 0, done: false };
-    workers.push(run);
-    const tried = () => workers.reduce((sum, w) => sum + w.tried, 0);
-    const over = (failure, above) => {
-      run.done = true;
-      run.worker.terminate();
-      if (workers.every(w => w.done)) finish('Done', tried(), failure, above);
-    };
-    run.worker.onmessage = ({ data }) => {
-      if (data.type === 'foretell') built.foretold = data;
-      else if (data.type === 'try') trying(data);
-      else if (data.type === 'best') {
-        run.tried = data.tried;
-        // A Maximize's every fit is a higher rate than the last: shown whatever its score.
-        if (data.goals || !best || better(data.score, best.score)) show(data.block, tried(), data.goals ? { rate: data.rate, machines: data.machines, goals: data.goals, delivered: data.delivered } : null, data.score);
-      } else if (data.type === 'done') {
-        run.tried = data.tried;
-        over(data.failure, data.above);
-      } else over(data.message);
-    };
-    run.worker.onerror = e => over(e.message);
-    run.worker.postMessage({
-      ...job, strategy, designs,
-      // The search time counts from the start, designing included (each strategy tries a layout
-      // however little is left).
-      budgetMs: Math.max(1, state.logistics.budget * 1000 - (Date.now() - started)),
-      ...(built.maximize ? { maximize: { goals, made: state.made, selections: state.selections, uses: state.uses, exports: state.exports, voids: state.voids, upTo } } : {}),
-    });
-  }
-}
-
-// Each Sub-Block designed in a worker of its own, all at once: their candidates, by Sub-Block.
-// Null once the build was stopped or started again (`ticket` no longer the build running).
-function designEach(job, ticket) {
-  return new Promise((resolve, reject) => {
-    const lists = [];
-    let left = job.entries.length;
-    job.entries.forEach((_, index) => {
-      const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }), tried: 0, done: false };
-      workers.push(run);
-      const end = () => {
-        run.done = true;
-        run.worker.terminate();
-        workers = workers.filter(w => w !== run);
-      };
-      run.worker.onmessage = ({ data }) => {
-        end();
-        if (built !== ticket) return resolve(null);
-        if (data.type !== 'designed') return reject(new Error(data.message));
-        lists[data.index] = data.list;
-        if (--left === 0) resolve(lists);
-      };
-      run.worker.onerror = e => {
-        end();
-        reject(new Error(e.message));
-      };
-      run.worker.postMessage({ ...job, design: index });
-    });
-  });
-}
-
-// Scores compare part by part (Starvation first): whether a beats b.
-function better(a, b) {
-  if (!b) return true;
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
-  return false;
 }
 
 // Maximize: the rate being tried, after the highest that fits so far (Filling: how many machines
@@ -1068,7 +929,7 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
     : `${bounds.w} × ${bounds.h} = ${(bounds.w * bounds.h).toLocaleString('en')} tiles · ${parts}`;
   $('area').title = `Compactness, lower is better: ${SQUARE === 1 ? '' : `${SQUARE} × `}the strip beyond a square, plus the tiles no machine, inserter or pole stands on, plus ${BEND} for every bend of a belt or pipe`;
   $('area').hidden = false;
-  report(block, starvation, workers.some(w => !w.done) ? progress() : null);
+  report(block, starvation, session ? progress() : null);
   // A Recipe Loop's feedback fed in the block is no Side Input.
   fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input' && !(r.loop && r.fedBy !== undefined)));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
@@ -1149,21 +1010,21 @@ function compactBlock() {
   }
   const before = best;
   if (!before?.block.edit || !built?.job) return;
-  if (workers.length) finish('Stopped');
+  if (session) finish('Stopped');
   stopMoving();
-  const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }) };
+  const run = { worker: runner.worker() };
   moving = run;
   pulling = { run, before, slid: 0 };
   $('compact').textContent = 'Stop pulling';
   const was = before.block.bounds;
   showStatus('', 'Pulling the Sub-Blocks together…');
   const over = () => {
-    run.worker.terminate();
+    run.worker.stop();
     if (moving === run) moving = null;
     if (pulling?.run === run) pulling = null;
     $('compact').textContent = 'Pull together';
   };
-  run.worker.onmessage = async ({ data }) => {
+  const on = async data => {
     if (moving !== run) return;
     if (data.type === 'trying') {
       if (data.tried > 1) showStatus('', `Pulling the Sub-Blocks together: ${count(pulling.slid, 'slide')} kept (${count(data.tried, 'layout')} tried)…`);
@@ -1187,15 +1048,11 @@ function compactBlock() {
     const { w, h } = best.block.bounds;
     report(best.block, best.starvation, `Pulled together: ${count(slid, 'slide')}, ${was.w} × ${was.h} → ${w} × ${h} tiles.${data.back ? ` (It opened up by ${count(data.back, 'tile')} first, to lay its belts again.)` : ''}`);
   };
-  run.worker.onerror = e => {
-    over();
-    showStatus('error', `The Sub-Blocks stay where they are: ${e.message}.`);
-  };
   const { logistics, site } = built.job;
-  run.worker.postMessage({
+  runIn(run, {
     entries: before.block.edit.entries ?? built.job.entries, logistics, site, seed: 1, budgetMs: Math.max(10, state.logistics.budget) * 1000,
-    compact: { edit: before.block.edit, score: rankOf(before.block) },
-  });
+    compact: { edit: before.block.edit, score: scoreOf(before.block) },
+  }, on);
 }
 
 // A move or reshape laid out in a worker of its own (`request`: what the worker is asked, besides
@@ -1206,13 +1063,13 @@ function compactBlock() {
 function relayout(request, step, texts) {
   const before = best;
   if (!before?.block.edit || !built?.job) return map?.settle();
-  if (workers.length) finish('Stopped');
+  if (session) finish('Stopped');
   stopMoving();
-  const run = { worker: new Worker(new URL('./worker.js', import.meta.url), { type: 'module' }) };
+  const run = { worker: runner.worker() };
   moving = run;
   showStatus('', texts.busy);
   const over = () => {
-    run.worker.terminate();
+    run.worker.stop();
     if (moving === run) moving = null;
   };
   const stuck = message => {
@@ -1220,7 +1077,7 @@ function relayout(request, step, texts) {
     map?.settle();
     showStatus('error', texts.stuck(message.replace(/\.$/, '')));
   };
-  run.worker.onmessage = async ({ data }) => {
+  const on = async data => {
     if (moving !== run) return;
     if (data.type === 'trying') {
       if (data.tried) showStatus('', texts.trying(data));
@@ -1236,22 +1093,26 @@ function relayout(request, step, texts) {
     const others = pushed.length ? ` To make room, moved ${pushed.join(', ')}.` : '';
     const opened = data.back ? ` The block opened up by ${count(data.back, 'tile')} to lay its belts again.` : '';
     // (Kept though it starves more: no layout there that does not; Undo takes it back.)
-    const worse = data.score[0] > rankOf(before.block)[0] + 1e-6 ? ' It starves more than before (no layout there starves less): Undo takes it back.' : '';
+    const worse = data.score.starving > scoreOf(before.block).starving + 1e-6 ? ' It starves more than before (no layout there starves less): Undo takes it back.' : '';
     // (Kept though a byproduct rides on through its consumers now: no splitter sorting it out
     // finds a way there.)
     const sorted = b => new Set(b.routes.filter(r => r.filter).map(r => r.filter));
     const left = sorted(best.block), rode = [...sorted(before.block)].filter(item => !left.has(item)).map(item => label(item));
-    const riding = data.score[2] > rankOf(before.block)[2] ? ` ${rode.length ? rode.join(', ') : 'A byproduct'} ${rode.length > 1 ? 'ride' : 'rides'} on through ${rode.length > 1 ? 'their' : 'its'} consumers now: no splitter sorting ${rode.length > 1 ? 'them' : 'it'} out finds a way there. Undo takes it back.` : '';
+    const riding = data.score.riding > scoreOf(before.block).riding ? ` ${rode.length ? rode.join(', ') : 'A byproduct'} ${rode.length > 1 ? 'ride' : 'rides'} on through ${rode.length > 1 ? 'their' : 'its'} consumers now: no splitter sorting ${rode.length > 1 ? 'them' : 'it'} out finds a way there. Undo takes it back.` : '';
     report(best.block, best.starvation, `${texts.done(data)}${others}${opened}${worse}${riding}`);
   };
-  run.worker.onerror = e => stuck(e.message);
   const { logistics, site } = built.job;
   const [kind] = Object.keys(request);
   // (A move looks a few seconds at least; a turn or reshape, which may design and try more, ten.)
-  run.worker.postMessage({
+  runIn(run, {
     entries: before.block.edit.entries ?? built.job.entries, logistics, site, seed: 1, budgetMs: Math.max(kind === 'move' ? 5 : 10, state.logistics.budget) * 1000,
-    [kind]: { ...request[kind], edit: before.block.edit, score: rankOf(before.block) },
-  });
+    [kind]: { ...request[kind], edit: before.block.edit, score: scoreOf(before.block) },
+  }, on);
+}
+
+// A job run in a worker of the runner's (`run.worker`), each of its events handed to `on` in turn.
+async function runIn(run, job, on) {
+  for await (const data of run.worker.run(job)) await on(data);
 }
 
 // The layout before the last move, shown again (where the map stands).
@@ -1266,7 +1127,7 @@ function undoMove() {
 
 function stopMoving() {
   if (!moving) return;
-  moving.worker.terminate();
+  moving.worker.stop();
   moving = null;
   map?.settle();
   if (pulling) {
@@ -1399,9 +1260,9 @@ function choose(signal) {
   if (best) writeBlueprint(best.block);
 }
 
-function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (best?.tried ?? 0), error = null, above = null) {
-  for (const w of workers) w.worker.terminate();
-  workers = [];
+function finish(how, tried = sessionTried || (best?.tried ?? 0), error = null, above = null) {
+  session?.stop();
+  session = null;
   $('stop').hidden = true;
   if (built?.maximize) {
     $('apply-row').hidden = !best?.found;
@@ -1427,8 +1288,6 @@ function finish(how, tried = workers.reduce((sum, w) => sum + w.tried, 0) || (be
   if (!best) {
     $('results').hidden = true;
     showEmpty('No layout yet.');
-    // (Nothing fits at the Goals' own rates: filled up to them instead.)
-    if (built?.site && how === 'Done') return build(true);
     if (built?.site) {
       showEmpty('Nothing fits yet.');
       return showStatus('error', `Nothing fits the city block${error ? `: ${error}` : ''}. ${foretellLine() ?? ''} Maximize finds the highest rate that fits.`);
@@ -2144,8 +2003,6 @@ function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
     if (!saved?.goals || !saved?.logistics) return null;
-    // Settings the catalog no longer offers fall back to their defaults.
-    for (const key of SELECTS) if (!choices[key].includes(saved.logistics[key])) delete saved.logistics[key];
     return saved;
   } catch {
     return null;

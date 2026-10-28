@@ -9,11 +9,11 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 16.6,
-        "tries": 60,
+        "secs": 11.6,
+        "tries": 120,
         "rate": 600,
         "machines": null,
-        "failure": null,
+        "failure": "iron-gear-wheel does not fit there in the city block",
         "delivered": 600,
         "valid": true,
         "starving": 0,
@@ -317,11 +317,11 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 177.9,
-        "tries": 10,
+        "secs": 300.2,
+        "tries": 20,
         "rate": null,
         "machines": null,
-        "failure": "belt 43: no path from 430,70 to the east edge"
+        "failure": "invalid layout: no inserter moves route 47 into machine at 373,71"
       }
     },
     {

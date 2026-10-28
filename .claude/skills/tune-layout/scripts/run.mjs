@@ -7,21 +7,24 @@
 // Block's blueprint string at the top level (`blueprint`).
 //
 // options:
-//   --mode auto|maximize|build|attempt   auto (default): as the page does — a City Block with
-//                                        Maximize on maximizes; a City Block the Goals are
-//                                        foretold not to fit (or a build finds no layout in)
-//                                        fills up to them (upTo); elsewhere a build
+//   --mode auto|maximize|build|attempt   auto (default): as the page does (js/session.js, the
+//                                        same code) — a City Block with Maximize on maximizes; a
+//                                        City Block the Goals are foretold not to fit (or a build
+//                                        finds no layout in) fills up to them (upTo); elsewhere a
+//                                        build: each Sub-Block designed in a worker thread of its
+//                                        own, then every strategy side by side. build: the same
+//                                        with Maximize off. maximize: maximize.js directly
 //   --n N             attempt: the first Goal's machines to try (one try of Maximize)
 //   --budget S        seconds: each try's (maximize/attempt), the whole search's (build); default
 //                     the setup's logistics.budget, else 10
-//   --total S         maximize: stop after S seconds of wall clock, keeping the best so far
+//   --total S         auto/build/maximize: stop after S seconds of wall clock, keeping the best so far
 //                     (checked between events: a try running finishes first, up to --budget)
 //   --upTo            maximize no higher than the Goals' own rates
 //   --giving --unsorted --sorting --precheck --starving   attempt: search options as Maximize passes them
 //   --no-annexes --no-bands --no-giving --no-starving   maximize: leave that phase out
 //   --parallel N      maximize: tries at once, each in a worker thread (ADR 0060); default 1,
 //                     one after another (the page runs as many as its machine has cores, less 1)
-//   --seed N          default 1
+//   --seed N          maximize/attempt (auto and build take the page's, 1); default 1
 //   --root DIR        the repo to run (another worktree for an A/B), default this one
 //   --out DIR         where log.txt, best.json and summary.json go (default ./out-<setup name>)
 //   --strategy S      build: one strategy only (search|spread); default both side by side
@@ -30,7 +33,6 @@
 //
 // Prints each event as it comes (seconds, type, rate, machines), then the summary (summary.json).
 import { readFileSync, writeFileSync, mkdirSync, appendFileSync } from 'node:fs';
-import { fork } from 'node:child_process';
 import { basename, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -60,21 +62,16 @@ mkdirSync(out, { recursive: true });
 
 const { decodeBlueprint, readCityBlock, siteOf } = await import(`${root}/js/city.js`);
 const { maximize, planner, attempt } = await import(`${root}/js/maximize.js`);
-const { search } = await import(`${root}/js/search.js`);
-const { expandChain, recipeOptions } = await import(`${root}/js/chain.js`);
+// (A setup read as the page reads it; this repo's reading where the code under test has none.)
+const { setupOf } = await import(`${root}/js/setup.js`).catch(() => import('../../../../js/setup.js'));
 const { validateBlock } = await import(`${root}/js/layout/validity.js`);
 const { simulate, throughput } = await import(`${root}/js/sim.js`);
-const { compactness, rankOf } = await import(`${root}/js/layout/score.js`);
+const { compactness, scoreOf } = await import(`${root}/js/layout/score.js`);
 const catalog = JSON.parse(readFileSync(`${root}/data/catalog.json`, 'utf8'));
 
 const state = JSON.parse(readFileSync(file, 'utf8'));
-const city = { on: false, blueprint: '', w: 100, h: 100, buffer: 2, maximize: false, ...state.city };
-if (state.blueprint && !city.blueprint) Object.assign(city, { on: true, blueprint: state.blueprint });
-const { budget: setupBudget, ...logistics } = state.logistics ?? {};
-for (const key of ['belt', 'pipe', 'pole', 'inserter', 'longInserter']) if (!logistics[key]) console.error(`warning: logistics.${key} is not set (the page fills in its default; set it in the setup)`);
-const goals = (state.goals ?? []).filter(g => g.item && g.rate > 0);
-const made = state.made ?? [], selections = state.selections ?? {}, uses = state.uses ?? [], exports = state.exports ?? [], voids = state.voids ?? [];
-const index = recipeOptions(catalog);
+// (The page's defaults for what the setup leaves unset.)
+const { goals, choices, logistics, budget: setupBudget, city } = setupOf(state, catalog);
 const budgetMs = 1000 * Number(opt('budget', setupBudget ?? 10));
 const seed = Number(opt('seed', 1));
 
@@ -83,19 +80,6 @@ if (city.on) {
   const read = city.blueprint ? readCityBlock(await decodeBlueprint(city.blueprint), catalog) : { area: { x: 0, y: 0, w: city.w, h: city.h }, fixtures: [], unknown: [] };
   site = siteOf(read, city.buffer);
   cityInfo = { area: read.area, buffer: city.buffer, fixtures: read.fixtures.length, unknown: read.unknown };
-}
-
-// ---- A child running one build strategy (forked below) ----
-if (flag('child')) {
-  const chain = expandChain(goals, catalog, { made, selections, uses, exports, voids, index, belt: logistics.belt, logistics });
-  const run = search(chain.entries, catalog, logistics, { seed, deadline: Date.now() + budgetMs, site, strategy: opt('strategy') });
-  let step;
-  // (Each message sent before the search goes on: the search never yields, and a large one
-  // queued until it ends was lost at the exit.)
-  const send = m => new Promise(res => process.send(m, res));
-  for (step = run.next(); !step.done; step = run.next()) await send({ type: 'best', block: step.value.block, score: step.value.score, tried: step.value.tried });
-  await send({ type: 'done', tried: step.value.tried, failure: step.value.failure?.message ?? null });
-  process.exit(0);
 }
 
 const t0 = Date.now();
@@ -112,18 +96,10 @@ if (opt('profile-slow')) {
   }).on('error', e => console.error('profiler:', e.message)).unref();
 }
 
-const plan = () => planner(goals, catalog, logistics, { made, selections, uses, exports, voids, index, site });
+const plan = () => planner(goals, catalog, logistics, { ...choices, site });
+// (auto and build: as the page builds, session.js; it says which it runs.)
 let mode = opt('mode', 'auto');
 let upTo = flag('upTo');
-if (mode === 'auto') {
-  if (!site) mode = 'build';
-  else if (city.maximize) mode = 'maximize';
-  else {
-    const p = plan();
-    mode = p.foretold().machines < p.wanted ? 'maximize' : 'build';
-    upTo = true;
-  }
-}
 log(`# ${basename(file)} mode=${mode}${upTo ? ' upTo' : ''} budget=${budgetMs / 1000}s root=${root} goals=${goals.map(g => `${g.item}@${g.rate}`).join(',')}`
   + (state.result?.status ? `\n# the page said: ${state.result.status}` : '')
   + (site ? ` site=${site.area.w}x${site.area.h} buffer=${site.buffer} fixtures=${site.fixtures.length}` : ''));
@@ -147,7 +123,7 @@ if (mode === 'attempt') {
   const total = opt('total') ? Number(opt('total')) * 1000 : Infinity;
   const parallel = Number(opt('parallel', 1));
   const generator = maximize(goals, catalog, logistics, {
-    made, selections, uses, exports, voids, index, upTo, site, budgetMs, seed, parallel,
+    ...choices, upTo, site, budgetMs, seed, parallel,
     ...(flag('no-annexes') ? { annexes: false } : {}), ...(flag('no-bands') ? { bands: false } : {}), ...(flag('no-giving') ? { giving: false } : {}), ...(flag('no-starving') ? { starving: false } : {}),
   });
   // (Tries at once: each in a worker thread, ADR 0060.)
@@ -192,29 +168,53 @@ if (mode === 'attempt') {
   result = step.done ? { ...step.value, failure: step.value.failure?.message ?? null } : { stopped: true };
   result.tries = tries;
 } else {
-  // A build: every strategy side by side (the page's workers), the best any finds kept.
-  const strategies = opt('strategy') ? [opt('strategy')] : ['search', 'spread'];
-  const better = (a, b) => {
-    for (let i = 0; i < Math.max(a.length, b.length); i++) if ((a[i] ?? 0) !== (b[i] ?? 0)) return (a[i] ?? 0) < (b[i] ?? 0);
-    return false;
-  };
-  const done = await Promise.all(strategies.map(strategy => new Promise(res => {
-    const child = fork(fileURLToPath(import.meta.url), [...process.argv.slice(2).filter(a => a !== '--strategy' && !strategies.includes(a)), '--child', '--strategy', strategy], { serialization: 'advanced' });
-    let last = null;
-    child.on('message', m => {
-      if (m.type === 'best') {
-        const rank = rankOf(m.block);
-        if (!best || better(rank, best.rank)) {
-          keep(m.block, { rank, strategy });
-          log(`${secs()} BEST ${strategy} tried=${m.tried} rank=${JSON.stringify(rank)} ${m.block.bounds.w}x${m.block.bounds.h}`);
-        }
-      } else last = m;
-    });
-    child.on('exit', () => res({ strategy, ...last }));
-  })));
-  result = { strategies: done };
-  log(`${secs()} build done ${done.map(d => `${d.strategy}: tried=${d.tried}${d.failure ? ` failure=${d.failure}` : ''}`).join('; ')}`);
-  if (!best && site && mode === 'build' && opt('mode', 'auto') === 'auto') log('# no layout: the page would now fill up to the rate — rerun with --mode maximize --upTo');
+  // As the page builds (session.js): in a City Block with Maximize on (not with --mode build), the
+  // highest rate that fits; elsewhere each Sub-Block designed in a worker thread of its own, then
+  // every strategy side by side from those designs, the best any finds kept; a City Block the
+  // Goals are foretold not to fit, or one a build finds no layout in, filled up to them.
+  const { buildSession } = await import(`${root}/js/session.js`);
+  const { threadRunner } = await import(`${root}/js/node-runner.js`);
+  const total = opt('total') ? Number(opt('total')) * 1000 : Infinity;
+  const parallel = Number(opt('parallel', 1));
+  const session = buildSession({ goals, choices, logistics, budget: budgetMs / 1000, city: mode === 'build' ? { ...city, maximize: false } : city }, site, catalog, threadRunner(`${root}/data/catalog.json`), {
+    width: parallel, upTo, ...(opt('strategy') ? { strategies: [opt('strategy')] } : {}),
+    maximize: { ...(flag('no-annexes') ? { annexes: false } : {}), ...(flag('no-bands') ? { bands: false } : {}), ...(flag('no-giving') ? { giving: false } : {}), ...(flag('no-starving') ? { starving: false } : {}) },
+  });
+  const tries = [];
+  let open = null, maximizing = false;
+  for await (const v of session.events) {
+    if (v.type === 'start') {
+      [maximizing, upTo] = [v.maximize, v.upTo];
+      mode = maximizing ? 'maximize' : 'build';
+      log(`${secs()} start ${mode}${upTo ? ' upTo' : ''} subBlocks=${v.job.entries.length}`);
+    } else if (v.type === 'best') {
+      if (v.found) {
+        keep(v.block, { rate: v.found.rate, machines: v.found.machines });
+        // (Tries at once: the fit is the try of its rate, not the last begun.)
+        const fit = parallel > 1 ? tries.findLast(t => t.rate === v.found.rate && t.machines === v.found.machines) : open;
+        if (fit) fit.fit = true;
+        log(`${secs()} BEST rate=${v.found.rate}${v.found.delivered !== undefined ? ` delivered=${v.found.delivered}` : ''} machines=${v.found.machines} goalCounts=${goalCounts(v.block).join('+')}`);
+      } else {
+        keep(v.block, { rank: v.score });
+        log(`${secs()} BEST tried=${v.tried} rank=${JSON.stringify(v.score)} ${v.block.bounds.w}x${v.block.bounds.h}`);
+      }
+    } else if (v.type === 'try' || v.type === 'foretell') {
+      if (v.type === 'try') tries.push(open = { t: secs(), rate: v.rate, machines: v.machines, more: v.more ?? null, giving: v.giving ?? false, starving: v.starving ?? false, fit: false });
+      log(`${secs()} ${v.type} rate=${v.rate} machines=${v.machines}${v.more ? ` more=${v.more}` : ''}${v.giving ? ' giving' : ''}${v.starving ? ' starving' : ''}`);
+    } else if (v.type === 'done') {
+      result = { how: v.how, tried: v.tried, failure: v.failure, above: v.above ?? null, ...(v.found ?? {}) };
+      log(`${secs()} ${mode} done tried=${v.tried}${v.failure ? ` failure=${v.failure}` : ''}`);
+    } else log(`${secs()} ${v.type}${v.count !== undefined ? ` ${v.count}` : ''}`);
+    if (Date.now() - t0 > total) {
+      log(`${secs()} STOPPED (--total)`);
+      session.stop();
+      result = { stopped: true };
+      break;
+    }
+  }
+  // (Tries at once: no try's own time, only when it began.)
+  tries.forEach((t, i) => t.secs = parallel > 1 ? null : +((tries[i + 1]?.t ?? secs()) - t.t).toFixed(1));
+  if (maximizing) result.tries = tries;
 }
 
 function goalCounts(block) {
@@ -236,7 +236,7 @@ if (best) {
     compactness: compactness(b),
     valid: errors.length === 0, errors: errors.slice(0, 5),
     starving: +starvation.reduce((s, x) => s + x.demand - x.available, 0).toFixed(3), starvation: starvation.slice(0, 5),
-    loopsByTrain: rankOf(b)[1], byproductsRiding: rankOf(b)[2],
+    loopsByTrain: scoreOf(b).loopsByTrain, byproductsRiding: scoreOf(b).riding,
     delivered: goals[0] ? +throughput(b).delivered(goals[0].item).toFixed(2) : null,
     entities: b.entities.length, routes: b.routes.length,
   });

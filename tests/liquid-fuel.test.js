@@ -10,7 +10,7 @@ import { search } from '../js/search.js';
 import { expandChain } from '../js/chain.js';
 import { context, designStep, designOf, random } from '../js/design.js';
 import { turnCopies } from '../js/layout/edit.js';
-import { rankOf } from '../js/layout/score.js';
+import { scoreOf } from '../js/layout/score.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe', liquidFuel: 'natural-gas' };
@@ -96,13 +96,13 @@ test('a Sub-Block turned keeps the filter splitter sorting its byproduct out, tu
   assert.ok(before, 'sorted out before');
   for (const [item, turns] of /** @type {[string, number][]} */ ([['crushed-quartz', 1], ['crushed-quartz', 2], ['crushed-quartz', 3], ['molten-glass', 1]])) {
     const step = block.subBlocks.findIndex(sb => sb.item === item);
-    const run = turnCopies(ctx, block.edit, { step, turns }, { score: rankOf(block) });
+    const run = turnCopies(ctx, block.edit, { step, turns }, { score: scoreOf(block) });
     let next = run.next();
     while (!next.done) next = run.next();
     const out = /** @type {any} */ (next.value);
     assert.ok(out.block, `${item} ${turns}: ${out.failure?.message}`);
     assertValid(out.block, shipped, mixed);
-    assert.equal(out.score[2], 0, `${item} ${turns}: no byproduct rides on`);
+    assert.equal(out.score.riding, 0, `${item} ${turns}: no byproduct rides on`);
     const splitter = splitterOf(out.block);
     assert.ok(splitter, `${item} ${turns}: sorted out`);
     if (item === 'crushed-quartz') assert.equal(splitter.direction, (before.direction + 4 * turns) % 16, `${turns}: facing as turned`);
@@ -138,12 +138,12 @@ test('a byproduct on more than one belt: each of the Internal Path\'s belts sort
   const run = search(entries, shipped, { ...mixed, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 }, { seed: 1, maxCandidates: 4 });
   for (let step = run.next(); !step.done; step = run.next()) best = step.value;
   assert.ok(best, 'no layout');
-  assert.equal(best.score[0], 0);
+  assert.equal(best.score.starving, 0);
   for (const item of ['molybdenite-dust', 'crushed-molybdenite']) {
     assert.ok(best.block.routes.filter(r => r.kind === 'belt' && r.items.some(i => i.item === item) && !r.fedFrom).length >= 2, `${item} on one belt`);
   }
   // Every belt sorts its byproduct out: none rides on through the consumers.
-  assert.equal(best.score[2], 0);
+  assert.equal(best.score.riding, 0);
   assert.ok(best.block.routes.some(r => r.filter === 'stone') && best.block.routes.some(r => r.filter === 'gravel'));
   // The gravel sorted out of each belt (45/min) joins one gravel belt on to the east edge,
   // side-loading onto a lane with room, not a belt of its own each.

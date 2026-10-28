@@ -170,7 +170,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **The suite, not one setup** (the user: "for every new recipe chain I need to run tune-layout — is there no general fix?"). Each pass fixed what its own chain hit, checked against one or two other setups. `npm run suite` runs every setup tuned so far, laid out the same on any host, against its recorded result: no change is kept with a LOSS in it, and every new setup joins it.
 
-- **Rank order:** Starvation, then Recipe Loops by train, then byproducts riding, then output inserters at drops, then Compactness, then entities (`rankOf`). A Maximize fit is a layout without Starvation; once nothing more fits without, a layout that starves counts by what it delivers (Throughput, ADR 0057).
+- **Rank order:** Starvation, then Recipe Loops by train, then byproducts riding, then output inserters at drops, then Compactness, then entities (`scoreOf`, score.js RANK). A Maximize fit is a layout without Starvation; once nothing more fits without, a layout that starves counts by what it delivers (Throughput, ADR 0057).
 - **A try is one layout search at one Count** (0007). Do not search the rate inside one layout search: designs change with the Count.
 - **Every aggressive mode has a fallback to the old behaviour,** tried next on failure:
   - Making Way → solid;

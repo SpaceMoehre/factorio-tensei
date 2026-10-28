@@ -1,10 +1,9 @@
 import { context, designStep, designOf, revive, random, breakoutDesign, detachCopy, leaveOut, grownDesign } from './design.js';
 import { LayoutError } from './layout/core.js';
-import { prepare, compose, starvedBy, RoutingError, PowerError } from './layout/compose.js';
+import { prepare, starvedBy, RoutingError, PowerError } from './layout/compose.js';
+import { layOut, failureOf } from './layout/lay.js';
 import { placeBlocks, roomFor } from './layout/place.js';
-import { finishBlock, given } from './layout/compact.js';
-import { validateBlock } from './layout/validity.js';
-import { rankOf, starvationOf } from './layout/score.js';
+import { starvationOf, better } from './layout/score.js';
 import { simulate } from './sim.js';
 import { editOf } from './layout/edit.js';
 import { partByConsumer } from './plan.js';
@@ -331,8 +330,8 @@ export function* search(entries, catalog, logistics, options = {}) {
       // Maximize may try again with a few spare machines of it.)
       if (perfect && ready.least > 0 && starved.producer !== null && !(nearest && nearest.rate <= ready.least)) nearest = shortOf(starved.producer, ready.least);
     }
-    if ((best && ready.least > best.score[0]) || (perfect && ready.least > 0)) continue;
-    let block, placed, boxes, composed = null, unfinished = false;
+    if ((best && ready.least > best.score.starving) || (perfect && ready.least > 0)) continue;
+    let placed, boxes;
     // A link that found no room makes room (spacedOut): the same candidate is tried next with
     // its Sub-Blocks spaced out round the link (the user's rule: a belt that cannot be connected
     // spaces the blocks out).
@@ -365,6 +364,21 @@ export function* search(entries, catalog, logistics, options = {}) {
       retry({ ...candidate, ahead: [...(candidate.ahead ?? []), i] });
     };
     let work = ready, used = null, positions = null;
+    // A failure's hints acted on: the next candidates try what it suggests. (`composed`: the block
+    // as routed, where finishing it failed.)
+    const failed = ({ error, hint }, composed = null) => {
+      if (candidate.layers && hint.noColumns && !columned && ++unfit === LAYERS_UNFIT) queue.splice(0, queue.length, ...queue.filter(c => !c.layers), ...queue.filter(c => c.layers));
+      // No pole for a machine there: room round the Sub-Blocks about it.
+      if (hint.pole && composed) makeRoom(near(composed.subBlocks, hint.pole));
+      else if (hint.room) makeRoom(hint.room);
+      else if (hint.unplaced !== undefined) {
+        inTwo(hint.unplaced);
+        placeFirst(hint.unplaced);
+      }
+      solidly();
+      failure = error;
+      trace(candidate, error);
+    };
     try {
       positions = placeBlocks(ctx, ready, bounded ? { ...candidate, until: () => now() > until } : candidate);
       if (positions.holes?.size) {
@@ -373,116 +387,73 @@ export function* search(entries, catalog, logistics, options = {}) {
         if (!made) throw new RoutingError('no machine to build apart where a Fixture stands on one');
         ({ ready: work, positions } = made);
       }
-      if (candidate.layers) columned = true;
-      placed = positions.bounds.w * positions.bounds.h;
-      boxes = positions.boxes;
-      // A Breakout trial packs no looser than the best, or it is not worth routing. Where one
-      // machine broken out does, more of that Sub-Block's are tried too.
-      const trial = trials.get(candidate);
-      if (trial && placed > best.placed) continue;
-      if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
-      // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
-      // (Looking for a layout without Starvation, `strict`: a pair of belts whose splitter finds
-      // no room fails the layout where they starve unbalanced, ADR 0059.)
-      const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: bounded ? () => (timedOut ||= now() > until) : null, ...(perfect && ctx.giving === undefined ? { strict: true } : {}) };
-      // A byproduct's splitter after its producers that finds no way: their belt chained through
-      // the consumers instead (or that run of them, a line past its consumers riding on), route by
-      // route — however the links are routed. (`used`: how the links were routed, for the user's
-      // moves to route them again so.)
-      const chaining = lay => {
-        try {
-          const out = compose(ctx, work, positions, lay);
-          // (The user's moves lay it out again as routed, unbalanced where a splitter finds no room.)
-          const { strict: _, ...as } = lay;
-          used = as;
-          return out;
-        } catch (first) {
-          let e = first;
-          const chained = new Set();
-          while (e instanceof RoutingError && e.chain !== undefined && !chained.has(e.chain) && work === ready && ready.chaining) {
-            chained.add(e.chain);
-            const again = ready.chaining(new Set(chained));
-            const moved = placeBlocks(ctx, again, candidate);
-            if (moved.holes?.size) break;
-            try {
-              const out = compose(ctx, again, moved, lay);
-              const { strict: _, ...as } = lay;
-              [work, positions, used] = [again, moved, as];
-              placed = positions.bounds.w * positions.bounds.h;
-              boxes = positions.boxes;
-              return out;
-            } catch (next) {
-              if (!(next instanceof RoutingError)) throw next;
-              e = next;
-            }
-          }
-          throw first;
-        }
-      };
-      // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
-      // else without those across Sub-Blocks, else without splitters (a Recipe Loop's feedback
-      // by train) — and the roomier one next.
-      const fallBack = e => {
-        if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
-        if (!(e instanceof RoutingError) || !(e.fans || e.across || work.routes.some(r => r.splitter || r.fan || r.taps))) throw e;
-        const fallbacks = [...(e.fans ? [{ fansLast: true }] : []), ...(e.across ? [{ alone: true }] : [])];
-        for (const fallback of fallbacks) {
-          try {
-            return chaining({ ...layout, ...fallback });
-          } catch (again) {
-            if (!(again instanceof RoutingError)) throw again;
-          }
-        }
-        // (Not where it would bring a tapped byproduct by train: that is no fit in a try that may
-        // not starve, nor delivers it in one that may, ADR 0054, ADR 0057. Candidates routed again
-        // so took half of Py titanium plate's search, none fitting, ADR 0058.)
-        if (bounded && work.routes.some(r => r.loop?.tapped)) throw e;
-        // (Nor where a pair of belts found no room for its splitter: without splitters they starve
-        // unbalanced all the same.)
-        if (e.unbalanced) throw e;
-        return chaining({ ...layout, plain: true });
-      };
-      try {
-        composed = chaining(layout);
-      } catch (first) {
-        if (!(first instanceof RoutingError)) throw first;
-        composed = fallBack(first);
-      }
-      // Looking for a layout without Starvation, one that starves as routed starves once finished
-      // too; nor does finishing give a tapped byproduct the splitter it found no room for. Neither
-      // is finished (pipes buried, belts straightened, poles placed): passed over below as routed.
-      // (Py titanium plate's tries at 12 and 13 casting units finished 25 to 40 such layouts each,
-      // 5 to 7 s each, ADR 0058.)
-      const routed = bounded ? given(composed, ctx.giving) : null;
-      unfinished = Boolean(routed && ((perfect && starvationOf(routed) > 0) || untappedOf(routed)));
-      block = unfinished ? routed : given(finishBlock(composed, catalog, logistics), ctx.giving);
     } catch (e) {
       if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
-      if (candidate.layers && e instanceof RoutingError && e.noColumns && !columned && ++unfit === LAYERS_UNFIT) queue.splice(0, queue.length, ...queue.filter(c => !c.layers), ...queue.filter(c => c.layers));
-      // No pole for a machine there: room round the Sub-Blocks about it.
-      if (e instanceof PowerError && e.at && composed) makeRoom(near(composed.subBlocks, e.at));
-      else if (e instanceof RoutingError && e.steps) makeRoom(e.steps);
-      else if (e instanceof RoutingError && e.unplaced !== undefined) {
-        inTwo(e.unplaced);
-        placeFirst(e.unplaced);
-      }
-      solidly();
-      failure = e;
-      trace(candidate, e);
+      failed(failureOf(e));
       continue;
     }
-    const problems = unfinished ? [] : validateBlock(block, catalog, logistics);
-    if (problems.length) {
-      solidly();
-      failure = new Error(`invalid layout: ${problems[0]}`);
-      trace(candidate, failure);
+    if (candidate.layers) columned = true;
+    placed = positions.bounds.w * positions.bounds.h;
+    boxes = positions.boxes;
+    // A Breakout trial packs no looser than the best, or it is not worth routing. Where one
+    // machine broken out does, more of that Sub-Block's are tried too.
+    const trial = trials.get(candidate);
+    if (trial && placed > best.placed) continue;
+    if (trial?.spec === '1') refining.push(...register(more(best.candidate, trial.step, ctx.plan[trial.step])));
+    // Looking for a layout without Starvation, a candidate's routing ends with the search's time.
+    // (Looking for a layout without Starvation, `strict`: a pair of belts whose splitter finds
+    // no room fails the layout where they starve unbalanced, ADR 0059.)
+    const layout = { margin: { w: 0, e: 0, n: 1, s: 1 }, until: bounded ? () => (timedOut ||= now() > until) : null, ...(perfect && ctx.giving === undefined ? { strict: true } : {}) };
+    // A byproduct's splitter after its producers that finds no way: their belt chained through
+    // the consumers instead (or that run of them, a line past its consumers riding on), route by
+    // route — however the links are routed (not once Fixtures made machines give way).
+    const start = { ready: work, positions };
+    const rechain = chained => {
+      if (!chained.size) return start;
+      if (work !== ready || !ready.chaining) return null;
+      const again = ready.chaining(chained);
+      const moved = placeBlocks(ctx, again, candidate);
+      return moved.holes?.size ? null : { ready: again, positions: moved };
+    };
+    // Splitters took the room a link needed: the same layout with the Fan-outs routed last,
+    // else without those across Sub-Blocks, else without splitters (a Recipe Loop's feedback
+    // by train) — and the roomier one next.
+    // (Not without splitters where it would bring a tapped byproduct by train: that is no fit in
+    // a try that may not starve, nor delivers it in one that may, ADR 0054, ADR 0057. Candidates
+    // routed again so took half of Py titanium plate's search, none fitting, ADR 0058. Nor where
+    // a pair of belts found no room for its splitter: without splitters they starve unbalanced
+    // all the same.)
+    const splitting = () => work.routes.some(r => r.splitter || r.fan || r.taps);
+    const ladder = [
+      { use: { fansLast: true }, when: why => why.fans },
+      { use: { alone: true }, when: why => why.across },
+      { use: { plain: true }, tells: true, when: why => (why.fans || why.across || splitting()) && !(bounded && work.routes.some(r => r.loop?.tapped)) && !why.unbalanced },
+    ];
+    // Looking for a layout without Starvation, one that starves as routed starves once finished
+    // too; nor does finishing give a tapped byproduct the splitter it found no room for. Neither
+    // is finished (pipes buried, belts straightened, poles placed): passed over below as routed.
+    // (Py titanium plate's tries at 12 and 13 casting units finished 25 to 40 such layouts each,
+    // 5 to 7 s each, ADR 0058.)
+    const leaveRouted = bounded ? routed => (perfect && starvationOf(routed) > 0) || Boolean(untappedOf(routed)) : null;
+    const out = layOut(ctx, rechain, { layout, ladder, giving: ctx.giving, leaveRouted });
+    if (out.room) makeRoom(out.room);
+    if (out.failure) {
+      failed(out.failure, out.composed);
       continue;
     }
+    const { block, score } = out;
+    if (out.ready !== work) {
+      [work, positions] = [out.ready, out.positions];
+      placed = positions.bounds.w * positions.bounds.h;
+      boxes = positions.boxes;
+    }
+    // (The user's moves lay it out again as routed, unbalanced where a splitter finds no room.)
+    const { strict: _, ...kept } = out.used;
+    used = kept;
     // Starvation first, then Recipe Loops fed by train, byproducts riding on unsorted, then
     // machines that put their products on a belt themselves (Output Drop) rather than through
-    // inserters: the fewest inserters at them; then Compactness.
-    const score = rankOf(block);
-    if (perfect && score[0] > 0) {
+    // inserters: the fewest inserters at them; then Compactness (layOut's score).
+    if (perfect && score.starving > 0) {
       // (Its belts as routed starving one producer's consumers alone, by the least yet: Maximize
       // may try again with a few spare machines of it, as for a prepared layout's.)
       const by = new Map();
@@ -491,9 +462,9 @@ export function* search(entries, catalog, logistics, options = {}) {
         by.set(key, (by.get(key) ?? 0) + s.demand - s.available);
       }
       const [producer] = by.size === 1 ? [...by.keys()] : [null];
-      if (producer !== null && !(nearest && nearest.rate <= score[0])) nearest = shortOf(producer, score[0]);
+      if (producer !== null && !(nearest && nearest.rate <= score.starving)) nearest = shortOf(producer, score.starving);
       solidly();
-      failure = new Error(`the layout starves ${score[0]}/min`);
+      failure = new Error(`the layout starves ${score.starving}/min`);
       trace(candidate, failure);
       continue;
     }
@@ -771,11 +742,6 @@ const untappedOf = block => block.routes.find(r => r.loop?.tapped && r.fedBy ===
 
 // Whether a box (w × h) fits inside a City Block's Buffer.
 const within = (site, { w, h }) => w <= site.inner.w && h <= site.inner.h;
-
-function better(a, b) {
-  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return a[i] < b[i];
-  return false;
-}
 
 const choose = (list, rng) => list[Math.floor(rng() * list.length)];
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));

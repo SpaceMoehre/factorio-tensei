@@ -6,7 +6,7 @@ import { bands } from './bands.js';
 import { annexSite, annexed } from './annex.js';
 import { validateBlock } from './layout/validity.js';
 import { simulate, throughput } from './sim.js';
-import { rankOf, riding } from './layout/score.js';
+import { scoreOf, riding } from './layout/score.js';
 
 // Maximize (CONTEXT.md): the highest rate of the Goals whose Compound Block fits the City Block
 // without Starvation, its Recipe Selections, modules and the items made here as chosen. The
@@ -87,7 +87,7 @@ export function* maximize(goals, catalog, logistics, options) {
     best = { rate: list[0].rate, machines: n, count: n, goals: list };
     bestN = null;
     bestBlock = outcome.block;
-    yield { type: 'best', block: outcome.block, score: [0], tried, ...best };
+    yield { type: 'best', block: outcome.block, score: scoreOf(outcome.block), tried, ...best };
     return outcome.block;
   }
   // From the most its parts hold down, BAND_TRIES Counts one by one; then (with many machines'
@@ -217,7 +217,7 @@ export function* maximize(goals, catalog, logistics, options) {
     // byproduct riding alone (sorting out).
     let spec = null;
     const ahead = () => best && bestN !== null && probing === null && options.annexes !== false && options.site && !crowded(options.site)
-      && most - best.count >= LEAST && !(bestScore[2] > 0 && riding(bestBlock).some(r => r.items.length === 1));
+      && most - best.count >= LEAST && !(bestScore.riding > 0 && riding(bestBlock).some(r => r.items.length === 1));
     // (Its events on to where it waits for a try or ends: tries under way kept, layouts held back.)
     function* onward(step) {
       for (;;) {
@@ -398,7 +398,7 @@ export function* maximize(goals, catalog, logistics, options) {
   // (A byproduct riding on clogs the belts into its consumers, ADR 0052: where none sorts it out
   // at the most that fit, fewer machines that do, SORT_BELOW whole numbers below it, at least the
   // least asked for; with tries at once, all of them together, ADR 0060.)
-  if (best && bestN !== null && bestScore[2] > 0 && riding(bestBlock).some(r => r.items.length === 1)) {
+  if (best && bestN !== null && bestScore.riding > 0 && riding(bestBlock).some(r => r.items.length === 1)) {
     const routing = Math.max(options.budgetMs ?? 0, SORTING_MS), least = Math.max(1, options.least ?? 1);
     const fewer = giving ? [] : [...Array(SORT_BELOW).keys()].map(k => Math.ceil(bestN) - 1 - k).filter(n => n >= least);
     const sorting = [{ n: bestN, extra: { routing, sorting: true, giving } }, ...fewer.map(n => ({ n, extra: { routing, sorting: true } }))];
@@ -406,12 +406,12 @@ export function* maximize(goals, catalog, logistics, options) {
     yield* inTurn(() => sorting.shift() ?? null, function* (n, out) {
       tried += out.tried;
       if (n === was) {
-        if (!out.block || out.score[2] >= bestScore[2] || (giving && lead(out.block) < best.machines)) return true;
+        if (!out.block || out.score.riding >= bestScore.riding || (giving && lead(out.block) < best.machines)) return true;
         [bestScore, bestBlock] = [out.score, out.block];
         yield { type: 'best', block: out.block, score: out.score, tried, ...best };
         return false;
       }
-      if (!out.block || out.score[2] > 0) return true;
+      if (!out.block || out.score.riding > 0) return true;
       const list = plan.goalsFor(n);
       best = { rate: list[0].rate, machines: n, count: n, goals: list };
       [bestN, bestScore, bestBlock] = [n, out.score, out.block];
@@ -538,12 +538,12 @@ export function* maximize(goals, catalog, logistics, options) {
       const stage = { n: stages[i].n, giving: stages[i].giving, extra: i === j ? extra : stages[i].extra, base: built };
       const out = relay(stage.n, stage.extra, built, stage.giving);
       // (Laid out again, its byproducts riding on where they were sorted out: not worth it, ADR 0052.)
-      if (!out || rankOf(out.alone)[2] > rankOf(stages[i].alone)[2]) return null;
+      if (!out || scoreOf(out.alone).riding > scoreOf(stages[i].alone).riding) return null;
       redone.push({ ...stage, alone: out.alone, block: out.block });
       built = out.block;
     }
     const out = relay(found.stage.n, {}, built);
-    if (!out || out.alone.subBlocks.length >= found.stage.alone.subBlocks.length || rankOf(out.alone)[2] > rankOf(found.stage.alone)[2]) return null;
+    if (!out || out.alone.subBlocks.length >= found.stage.alone.subBlocks.length || scoreOf(out.alone).riding > scoreOf(found.stage.alone).riding) return null;
     const stage = { n: found.stage.n, giving: false, extra: {}, alone: out.alone, base: built, block: out.block };
     return { found: { ...found, block: out.block, score: out.score, stage }, stages: [...stages.slice(0, j), ...redone, stage] };
   }
@@ -708,11 +708,11 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
         const failure = step.value.failure ?? new Error(`no layout without starvation fits ${list[0].rate}/min`);
         return { block: null, tried: step.value.tried, designed, starves: Boolean(step.value.starves || step.value.timedOut), timedOut: Boolean(step.value.timedOut), failure, short: step.value.short ?? null };
       }
-      if (sorting && step.value.score[0] === 0 && step.value.score[2] > 0) kept = step.value;
-      else if (!sorting && step.value.score[0] === 0 && step.value.score[1] > 0) {
+      if (sorting && step.value.score.starving === 0 && step.value.score.riding > 0) kept = step.value;
+      else if (!sorting && step.value.score.starving === 0 && step.value.score.loopsByTrain > 0) {
         if (!kept) until = now() + Math.max(1000, now() - start);
         kept = step.value;
-      } else if (step.value.score[0] === 0) {
+      } else if (step.value.score.starving === 0) {
         run.return(undefined);
         return { block: step.value.block, score: step.value.score, placed: step.value.placed, tried: step.value.tried, designed, starves: false, failure: null };
       }

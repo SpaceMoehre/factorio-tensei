@@ -32,7 +32,7 @@ const FAN_RUN = 16, FAN_SHORT = 3;
 // made of (the designs, the columns each stack stands in, the routes chained through their
 // consumers), for the user's reshapes to make it again (edit.js).
 export function prepare(ctx, designs, columns = []) {
-  const laneCapacity = ctx.catalog.belts[ctx.logistics.belt].itemsPerSecond * 30;
+  const laneCapacity = ctx.env.laneCapacity;
   // In a City Block, a stack of copies taller than its room stands in as many columns as it needs
   // (unless the candidate says how many).
   const fit = ctx.site ? designs.map((d, i) => {
@@ -1119,7 +1119,7 @@ export function compose(ctx, prepared, positions, layout) {
   // one carries (each lane half a belt). joins: the `x,y,a` keys; offered: per key, the line and
   // the lane.
   function joinsFor(trunk) {
-    const laneCapacity = catalog.belts[logistics.belt].itemsPerSecond * 30;
+    const laneCapacity = ctx.env.laneCapacity;
     const joins = new Set(), offered = new Map();
     const rate = trunk.items.find(i => i.item === trunk.filter)?.rate ?? 0;
     for (const line of sortedOut.get(trunk.filter) ?? []) {

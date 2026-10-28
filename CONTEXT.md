@@ -20,6 +20,10 @@ _Avoid_: recipe tree (it is not always a tree: steps share ingredients, and loop
 A step's item that a step it feeds — or the step itself — takes again (arqads for arqad eggs that make arqads). The chain sizes every step of the loop so the Goal still leaves on the train and the loop is fed besides (a loop giving back five of every six arqads makes six times its Goal). Its last link, back into the loop, is its feedback: a belt of its own from the producer's output, through a splitter whose output priority is the feedback's side, so the loop never runs short while the rest goes on. A loop that takes more than it makes, or one of fluids, comes by train instead.
 _Avoid_: cycle (the chain's word for what comes by train)
 
+**Chain Choices**:
+What the user chose about the Production Chain beside its Goals: the items made in the block, each step's Recipe Selection, the Byproduct and General Uses, what leaves by train too, and the Destroyed Fluids. They stay as chosen while Maximize scales the Goals.
+_Avoid_: options (the chain's other settings), state (the page's whole saved state)
+
 **Train Input**:
 An item the Production Chain does not make but receives by train: an ingredient of a step that the user has not chosen to make here (the default), one no recipe makes, or a Recipe Loop's that cannot feed itself (a fluid, or one taking more than it makes). Train Inputs are what the Side Input carries.
 _Avoid_: raw material (a Train Input can be any intermediate)

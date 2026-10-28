@@ -27,7 +27,7 @@ test('Byproduct Uses: iron slime piped to its Use, that Use\'s unslimed iron bel
     { from, item: 'unslimed-iron', recipe: 'molten-iron-06' },
   ] });
   const { block, score } = best(entries);
-  assert.equal(score[0], 0, 'starves');
+  assert.equal(score.starving, 0, 'starves');
   const route = item => block.routes.find(r => (r.fluid ?? r.items[0].item) === item);
   assert.deepEqual([route('iron-slime').source, route('iron-slime').sink, route('iron-slime').consumers], [0, null, [1]]);
   assert.deepEqual([route('unslimed-iron').sink, route('unslimed-iron').consumers], [null, [2]]);
@@ -44,8 +44,8 @@ test('a Byproduct Use of a solid: a filter splitter sends it off to the Use, the
     uses: [{ from: 'processed-iron-ore', item: 'stone', recipe: 'saline-water' }],
   });
   const { block, score } = best(entries);
-  assert.equal(score[0], 0, 'starves');
-  assert.equal(score[2], 0, 'the stone rides on');
+  assert.equal(score.starving, 0, 'starves');
+  assert.equal(score.riding, 0, 'the stone rides on');
   const ore = block.routes.filter(r => r.kind === 'belt' && r.source === 1);
   assert.ok(ore.length && ore.every(r => r.sink === null), 'the stone leaves by train');
   assert.deepEqual([...new Set(ore.flatMap(r => r.consumers))], [0]);
@@ -63,7 +63,7 @@ test('a General Use of a byproduct: the byproduct filtered off to it, its belt c
     made: ['p2s5'], selections: { p2s5: { recipe: 'p2s5-2', building: '' } }, uses: [{ item: 'pyrite', recipe: 'p2s5' }],
   });
   const { block, score } = best(entries);
-  assert.deepEqual(score.slice(0, 3), [0, 0, 0]);
+  assert.deepEqual([score.starving, score.loopsByTrain, score.riding], [0, 0, 0]);
   const furnaces = block.subBlocks.findIndex(sb => sb.recipe === 'p2s5-2'), use = block.subBlocks.findIndex(sb => sb.use);
   const out = block.routes.find(r => r.kind === 'belt' && r.source === furnaces);
   assert.ok(!out.consumers.includes(use) && out.sink === null);

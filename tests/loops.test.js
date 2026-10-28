@@ -68,7 +68,7 @@ test('Py hot air: coke oven gas round its loop of temperatures, every stone bric
   const { readFileSync } = await import('node:fs');
   const { context } = await import('../js/design.js');
   const { search } = await import('../js/search.js');
-  const { rankOf } = await import('../js/layout/score.js');
+  const { scoreOf } = await import('../js/layout/score.js');
   const { pipeNetworks } = await import('../js/layout/compose.js');
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const py = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', liquidFuel: 'methane', handSize: 1 };
@@ -90,7 +90,8 @@ test('Py hot air: coke oven gas round its loop of temperatures, every stone bric
   const run = search(chain.entries, shipped, py, { seed: 1, maxCandidates: 6 });
   for (let next = run.next(); !next.done; next = run.next()) found = next.value;
   assert.ok(found, 'no layout');
-  assert.deepEqual(rankOf(found.block).slice(0, 2), [0, 0]);
+  const { starving, loopsByTrain } = scoreOf(found.block);
+  assert.deepEqual([starving, loopsByTrain], [0, 0]);
   const networks = pipeNetworks(found.block.routes);
   const gas = found.block.routes.filter(r => r.kind === 'pipe' && r.fluid === 'coke-oven-gas' && r.temperature !== undefined && r.sink !== 'side-output');
   for (const a of gas) for (const b of gas) if (a.temperature !== b.temperature) assert.ok(networks.get(a.id) === undefined || networks.get(a.id) !== networks.get(b.id));

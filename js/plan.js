@@ -2,6 +2,11 @@ import { machineEffect, defaultModules } from './modules.js';
 import { assignFluidBoxes } from './fluidboxes.js';
 import { buildFlows } from './flows.js';
 
+// What a belt carries a minute (items), and one lane of it: half that. Infinity for a belt the
+// catalog does not have.
+export const beltRate = (catalog, belt) => (catalog.belts?.[belt]?.itemsPerSecond ?? Infinity) * 60;
+export const laneRate = (catalog, belt) => beltRate(catalog, belt) / 2;
+
 // logistics.fuel: the Fuel item burner machines burn (logistics.fuels: category → the one those
 // that cannot burn it burn, burnerFuel); logistics.liquidFuel: the Liquid Fuel
 // machines burning a fluid burn (unless their energy source takes one fluid only).
@@ -64,7 +69,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       count,
       // How much faster than the plan needs its machines can run (the Count is rounded up): a
       // machine makes its share of every flow times this at full speed (as far as its inputs
-      // keep up: design.js narrows it).
+      // keep up: design.js context() narrows it on the plan it makes for itself; a plan from
+      // here stays as rounded).
       headroom: count * perMachinePerMinute / goal.rate,
       inputs,
       outputs,
@@ -101,7 +107,7 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
 // Recipe Loop's, a Byproduct Use, nor one a Use joins; nor a chain in parts already (Bands). The
 // parts past the first after the other entries, so no entry's index changes.
 export function partByConsumer(entries, catalog, logistics) {
-  const belt = (catalog.belts?.[logistics.belt]?.itemsPerSecond ?? Infinity) * 60;
+  const belt = beltRate(catalog, logistics.belt);
   if (!(belt < Infinity) || entries.some(e => e.goal.part)) return entries;
   let plan, flows;
   try {

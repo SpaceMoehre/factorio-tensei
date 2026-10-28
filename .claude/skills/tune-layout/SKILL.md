@@ -17,7 +17,7 @@ The setup decides the target. The user's complaint (for example "not maxed, put 
 
 | Script | What it does |
 |---|---|
-| `node $SKILL/scripts/run.mjs <setup.json> [--mode auto\|maximize\|build\|attempt] [--n N] [--budget S] [--total S] [--parallel N] [--root DIR] [--out DIR]` | Runs the setup as the page does (auto); `--parallel N`: Maximize's tries N at once in worker threads, as the page runs them on a machine of N + 1 cores (ADR 0060; default 1, one at a time). Logs each event and writes `log.txt`, `best.json` and `summary.json`: rate, goal machines, Sub-Blocks, valid, starving, byproducts riding, room empty, machine share, tries with ✓/✗ and seconds. |
+| `node $SKILL/scripts/run.mjs <setup.json> [--mode auto\|maximize\|build\|attempt] [--n N] [--budget S] [--total S] [--parallel N] [--root DIR] [--out DIR]` | Runs the setup as the page does (auto: js/session.js, the page's own code); `--parallel N`: Maximize's tries N at once in worker threads, as the page runs them on a machine of N + 1 cores (ADR 0060; default 1, one at a time). Logs each event and writes `log.txt`, `best.json` and `summary.json`: rate, goal machines, Sub-Blocks, valid, starving, byproducts riding, room empty, machine share, tries with ✓/✗ and seconds. |
 | `node $SKILL/scripts/draw.mjs <best.json> <out.png> [scale]` | Draws the layout as a PNG: Fixtures grey, each Sub-Block's machines a colour labelled `index item ×count`, belts yellow, pipes blue, splitters red, the Buffer outlined red. Then Read the PNG to look at it. |
 | `node $SKILL/scripts/compare.mjs a/summary.json b/summary.json …` | A table of those summaries side by side. |
 | `node $SKILL/scripts/ascii.mjs <best.json> x0 y0 x1 y1` | A region as text, tile by tile: quicker than a PNG for one belt's shape. |
@@ -63,7 +63,7 @@ The regression suite's setups are in `$SKILL/setups/`, listed in `$SKILL/suite.j
 - Save it as `$S/<name>/setup.json`.
 - Keep `exports` (items also leaving by train) and `voids` (fluids destroyed) as the page saved them (ADR 0062).
 - The City Block blueprint goes in `city.blueprint` (or a top-level `blueprint`). Keep `city.buffer` and `city.maximize`.
-- `run.mjs` warns if a logistics key is missing. The page fills in defaults for missing keys, so set them explicitly to match what the user saw.
+- `run.mjs` reads a setup as the page does (js/setup.js), defaults for missing logistics keys and all; auto and build run the page's own build (js/session.js, ADR 0077), so `--root` must be a worktree that has it.
 - Note the user's numbers: what they got (`result.status`, `result.subBlocks`), and what they believe fits.
 - A setup's `logistics.budget` is each try's seconds. The page's 1000 lets a single Maximize try run for minutes; pass `--budget` to cap it for quick looks.
 

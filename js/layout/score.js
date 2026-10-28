@@ -41,13 +41,39 @@ export function compactness(block) {
 // (per minute, to a thousandth), Recipe Loops whose feedback comes by train (no room for its
 // splitter), byproducts riding on through their producers' consumers (no room to sort them out
 // after them; a Supplied Item a filter splitter sends off after them is not), output inserters at
-// machines with an Output Drop, Compactness, entities.
-export function rankOf(block) {
-  const loopsByTrain = block.routes.filter(r => r.loop && r.fedBy === undefined).length;
-  return [starvationOf(block), loopsByTrain, riding(block).length, supporting(block), compactness(block).value, block.entities.length];
+// machines with an Output Drop, Compactness, entities. Its parts by name, ranked in RANK's order.
+export const RANK = /** @type {const} */ (['starving', 'loopsByTrain', 'riding', 'supporting', 'compactness', 'entities']);
+
+/** @typedef {Record<typeof RANK[number], number>} Score */
+
+/** @returns {Score} */
+export function scoreOf(block) {
+  return {
+    starving: starvationOf(block),
+    loopsByTrain: block.routes.filter(r => r.loop && r.fedBy === undefined).length,
+    riding: riding(block).length,
+    supporting: supporting(block),
+    compactness: compactness(block).value,
+    entities: block.entities.length,
+  };
 }
 
-// What a layout starves in all, a minute (to 1/1000), as rankOf ranks it first.
+// Two scores part by part in RANK's order, up to `through` (the last part compared): -1 where a
+// ranks first, 1 where b does, 0 where they tie.
+export function compare(a, b, through = RANK[RANK.length - 1]) {
+  for (const part of RANK) {
+    if (a[part] !== b[part]) return a[part] < b[part] ? -1 : 1;
+    if (part === through) break;
+  }
+  return 0;
+}
+
+// Whether score a beats b (any score beats none).
+export function better(a, b) {
+  return !b || compare(a, b) < 0;
+}
+
+// What a layout starves in all, a minute (to 1/1000), as scoreOf ranks it first.
 export function starvationOf(block) {
   return Math.round(simulate(block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0) * 1000) / 1000;
 }

@@ -4,12 +4,11 @@
 // runs them in a pool of workers and yields everything else as it comes. Each environment makes
 // its own workers (the page's Web Workers, Node's worker threads), each running runTry.
 import { planner, attempt, bandsTop } from './maximize.js';
-import { recipeOptions } from './chain.js';
 
 // One try, as a worker runs it: attempt's outcome, its failure as its message. (Or, `top`, the
 // most machines Bands' parts hold: { top }.)
 export function runTry(job, catalog, logistics) {
-  const plan = planner(job.goals, catalog, logistics, { ...job.planner, index: recipeOptions(catalog) });
+  const plan = planner(job.goals, catalog, logistics, job.planner);
   if (job.top) return { top: bandsTop(plan, job.planner.site) };
   const outcome = attempt(plan, job.n, job.options);
   return { ...outcome, failure: outcome.failure ? { message: outcome.failure.message } : null };

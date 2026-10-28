@@ -68,7 +68,7 @@ test('Supplied Items laid out: a belt joining the step’s belt before its consu
   const chain = expandChain([{ item: 'powdered-ti', rate: 60 }], shipped, { made, uses: [recrush, { from: 'powdered-ti', item: 'ti-pulp-03', recipe: 'titanium-pulp-stage-3-void' }] });
   assert.deepEqual(chain.supplies.map(s => s.item).sort(), ['grade-3-ti', 'mibc']);
   const { block, score } = best(chain.entries);
-  assert.equal(score[0], 0, 'starves');
+  assert.equal(score.starving, 0, 'starves');
   assertValid(block, shipped, logistics);
   const step = item => block.subBlocks.findIndex(sb => sb.item === item && !sb.use);
   const target = block.routes.find(r => r.kind === 'belt' && r.source === step('grade-3-ti') && r.items.some(i => i.joined));
@@ -88,7 +88,7 @@ test('a Use’s belt of nothing but a Supplied Item joins the step’s belt itse
   ] });
   assert.deepEqual(chain.supplies.map(s => s.item), ['grade-4-ti']);
   const { block, score } = best(chain.entries);
-  assert.equal(score[0], 0, 'starves');
+  assert.equal(score.starving, 0, 'starves');
   assertValid(block, shipped, logistics);
   const use = block.subBlocks.findIndex(sb => sb.use && sb.item === 'grade-4-ti');
   const own = block.routes.find(r => r.kind === 'belt' && r.source === use);
@@ -100,7 +100,7 @@ test('a Use’s belt of nothing but a Supplied Item joins the step’s belt itse
 test('a General Use laid out: the other steps’ byproduct joins the belt into it', () => {
   const chain = expandChain([{ item: 'ti-enriched-dust', rate: 60 }], shipped, { made, uses: [recrush] });
   const { block, score } = best(chain.entries);
-  assert.equal(score[0], 0, 'starves');
+  assert.equal(score.starving, 0, 'starves');
   assertValid(block, shipped, logistics);
   const step = item => block.subBlocks.findIndex(sb => sb.item === item && !sb.use);
   const use = block.subBlocks.findIndex(sb => sb.use);
@@ -116,7 +116,7 @@ const molten = { made: ['molten-titanium', 'ti-enriched-dust', 'powdered-ti', 'g
 test('a belt with a Supplied Item on it brings its consumers all they take', () => {
   const chain = expandChain([{ item: 'molten-titanium', rate: 60 }], shipped, { ...molten, uses: [recrush] });
   const { block, score } = best(chain.entries);
-  assert.equal(score[0], 0, 'starves');
+  assert.equal(score.starving, 0, 'starves');
   assertValid(block, shipped, logistics);
   const dust = block.routes.find(r => r.kind === 'belt' && r.source === block.subBlocks.findIndex(sb => sb.item === 'ti-enriched-dust'));
   assert.ok(block.routes.some(r => r.fedBy === dust.id && r.joins !== undefined && r.items[0].item === 'ti-rejects'), 'the rejects sent off');
@@ -129,7 +129,7 @@ test('a belt of two Supplied Items: one sent off, the rest joins the other belt'
   const uses = [recrush, { item: 'stone', recipe: 'stone-to-gravel' }, { item: 'gravel', recipe: 'gravel-to-sand' }];
   const chain = expandChain([{ item: 'molten-titanium', rate: 60 }], shipped, { ...molten, uses });
   const { block, score } = best(chain.entries);
-  assert.equal(score[0], 0, 'starves');
+  assert.equal(score.starving, 0, 'starves');
   assertValid(block, shipped, logistics);
   const gravel = block.routes.find(r => r.kind === 'belt' && block.subBlocks[r.source]?.recipe === 'ti-rejects-recrush');
   assert.deepEqual([gravel.sink, block.subBlocks[block.routes[gravel.joins].source].recipe], [null, 'stone-to-gravel']);
@@ -161,7 +161,7 @@ test('One Item a Belt: each product its own belt, the BOFs taking coal off two p
   assert.deepEqual(ctx.routes.filter(r => r.kind === 'belt' && r.source === crushers).map(r => r.product).sort(), ['coal', 'coal-dust', 'crushed-coal']);
   let found = null;
   const run = search(entries, shipped, coke, { seed: 1, maxCandidates: 60, perfect: true });
-  for (let step = run.next(); !step.done && !found; step = run.next()) if (step.value.score[0] === 0) found = step.value;
+  for (let step = run.next(); !step.done && !found; step = run.next()) if (step.value.score.starving === 0) found = step.value;
   assert.ok(found, 'no layout without starvation');
   assert.equal(simulate(found.block).starvation.length, 0);
   assert.deepEqual(riding(found.block), []);

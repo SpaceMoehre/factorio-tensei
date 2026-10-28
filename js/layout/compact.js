@@ -3,6 +3,7 @@ import { routeLink, RoutingError, legCost } from './router.js';
 import { placePoles, PowerError } from './poles.js';
 import { inserterTiles, fluidEnds } from './validity.js';
 import { wirePairs } from './wires.js';
+import { beltRate, laneRate } from '../plan.js';
 
 // Squeezes a routed Compound Block: every column (and row) that holds nothing but belts and
 // pipes running straight across it, and empty tiles, comes out, and everything beyond moves in
@@ -274,7 +275,7 @@ export function mergeByproducts(block, catalog, logistics) {
   if (!belted) return block;
   const { names, grid, partner, reached, unplace, dropTunnel } = belted;
   const spec = catalog.belts[logistics.belt];
-  const laneCapacity = spec.itemsPerSecond * 30;
+  const laneCapacity = laneRate(catalog, logistics.belt);
   const splitterName = spec.splitter ?? spec.name.replace(/transport-belt$/, 'splitter');
   const itemOf = r => r.pieces[filtered(r)].filter;
   const rateOf = r => r.items.find(i => i.item === itemOf(r))?.rate ?? 0;
@@ -369,7 +370,7 @@ export function shareSideBelts(block, catalog, logistics, from) {
   if (!belted) return block;
   const { names, grid, partner, reached, unplace, dropTunnel } = belted;
   const spec = catalog.belts[logistics.belt];
-  const capacity = spec.itemsPerSecond * 60;
+  const capacity = beltRate(catalog, logistics.belt);
   const splitterName = spec.splitter ?? spec.name.replace(/transport-belt$/, 'splitter');
   const feeders = new Set(block.entities.filter(e => e.out).map(e => e.out));
   const free = (x, y) => grid.inBounds(x, y) && !grid.at(x, y) && grid.holder(x, y) === undefined && !feeders.has(key(x, y)) && !reached.has(key(x, y));

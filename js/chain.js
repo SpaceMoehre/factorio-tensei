@@ -6,7 +6,7 @@
 
 import { defaultModules, moduleOptions, machineEffect } from './modules.js';
 import { assignFluidBoxes } from './fluidboxes.js';
-import { fuelOf } from './plan.js';
+import { fuelOf, laneRate } from './plan.js';
 
 const MAX_STEPS = 60;
 
@@ -66,8 +66,8 @@ export function recipeOptions(catalog) {
 //            index: recipeOptions(catalog),
 //            extra: { [item]: rate } an Extension's: so much more of a step's item made, not taken
 //              (its entry's goal.extra),
-//            belt: the belt the block is built with (a Recycled Byproduct's step must make no more
-//              solids than a lane of it carries),
+//            belt: the belt the block is built with, else logistics.belt (a Recycled Byproduct's
+//              step must make no more solids than a lane of it carries),
 //            exports: items made here leaving by train too, voids: fluids leaving destroyed,
 //            valves: false for no Fed-back Fluids (Bands) }
 // A step's modules are the chosen ones its building takes, or else its building's default.
@@ -113,6 +113,7 @@ export function useKey(from, item) {
 // The chain, its Recipe Loops fed in the block (or with `loopsByTrain`, by train); null when they
 // cannot be (a loop takes more than it makes).
 function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {}, belt = null, exports = [], voids = [], valves = true, logistics = null }, loopsByTrain) {
+  belt ??= logistics?.belt ?? null;
   const valved = valves && valvesOf(catalog) !== null;
   const makeHere = new Set([...made, ...goals.map(g => g.item)]);
   const steps = new Map();
@@ -313,7 +314,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
   // row of A less what one of the Use's gives. A solid only where one lane of the belt carries
   // it (each of the Use's belts sends its share off onto a lane of the step's). One the step
   // would then make none of leaves by train.
-  const lane = belt && catalog.belts?.[belt] ? catalog.belts[belt].itemsPerSecond * 30 : Infinity;
+  const lane = belt ? laneRate(catalog, belt) : Infinity;
   /** @type {any[]} */
   let supplies = [];
   for (const [key, u] of used) {

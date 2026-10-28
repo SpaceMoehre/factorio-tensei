@@ -1,6 +1,6 @@
 // Designs each Sub-Block on its own (bottom-up): candidate layouts of its machines and belts,
 // each built as a core and routed as a Module, ranked by Starvation, then Compactness.
-import { planSubBlocks } from './plan.js';
+import { planSubBlocks, beltRate, laneRate } from './plan.js';
 import { buildFlows, taken } from './flows.js';
 import { buildRoutes, coreLinks } from './routes.js';
 import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides, dropOf, oriented, orientationKey } from './layout/core.js';
@@ -50,21 +50,22 @@ export function context(entries, catalog, logistics, site = null) {
   // output inserters filtered to them; not a machine putting them down itself (an Output Drop),
   // nor where the user keeps them on one (`mixedOutputs`). (A byproduct only the train takes,
   // with an item only the train takes, is sorted out after the producers: compose.js.)
-  const mixed = buildFlows(plan, belt.itemsPerSecond * 60);
+  const mixed = buildFlows(plan, beltRate(catalog, logistics.belt));
   const solidBy = i => plan[i].outputs.filter(o => o.type === 'item' && o.name !== plan[i].item && o.rate > 1e-9);
   const apart = i => logistics.mixedOutputs !== true && !catalog.buildings[plan[i].building]?.drop && (
     mixed.internal.some(e => e.from === i && e.type === 'item' && e.item !== plan[i].item)
     || (mixed.internal.some(e => e.from === i && e.item === plan[i].item) && solidBy(i).some(o => taken(plan, mixed, i, o.name) < o.rate - 1e-6)));
-  const flows = buildFlows(plan, belt.itemsPerSecond * 60, apart);
-  const routes = buildRoutes(plan, flows, belt.itemsPerSecond * 60 / 2, apart);
-  plan.forEach((sb, i) => { sb.headroom = spareSpeed(sb, i, routes, belt.itemsPerSecond * 30); });
+  const lane = laneRate(catalog, logistics.belt);
+  const flows = buildFlows(plan, beltRate(catalog, logistics.belt), apart);
+  const routes = buildRoutes(plan, flows, lane, apart);
+  plan.forEach((sb, i) => { sb.headroom = spareSpeed(sb, i, routes, lane); });
   const env = {
     routes, inserters,
     // 90° inserters need custom vectors: the toggle, and a prototype that allows them.
     rightAngle: logistics.rightAngle !== false && inserters.short.customVectors,
     beltReach: belt.underground.maxDistance,
     pipeReach: catalog.pipes[logistics.pipe].maxDistance,
-    laneCapacity: belt.itemsPerSecond * 30,
+    laneCapacity: lane,
     // Items per swing: 1, more with inserter capacity research.
     handSize: Math.max(1, Math.floor(logistics.handSize ?? 1)),
   };

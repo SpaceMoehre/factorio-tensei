@@ -23,7 +23,7 @@ let step;
 for (step = run.next(); !step.done; step = run.next()) {
   const s = simulate(step.value.block).starvation;
   console.log('layout at', (Date.now() - t) / 1000, 's score', JSON.stringify(step.value.score), 'starving', JSON.stringify(s.slice(0, 3)));
-  if (step.value.score[0] === 0) break;
+  if (step.value.score.starving === 0) break;
 }
 console.log('end', step.done ? JSON.stringify({ tried: step.value.tried, failure: step.value.failure?.message, short: step.value.short }) : 'found one');
 for (const [m, k] of [...errs].sort((a, b) => b[1] - a[1]).slice(0, +(process.env.TOP ?? 25))) console.log(String(k).padStart(4), m);
