@@ -161,8 +161,10 @@ before"), before changing code.
    called luck. Watch what the later phases lose when an earlier one finds more (0060's kicalk:
    more machines first, less Annex room).
 5. **Memory**: a try of titanium plate's 21 Sub-Blocks holds about 0.6 GB; anything kept between
-   tries (caches) multiplies by the tries at once. Check the peak (`/usr/bin/time -v`) on the
-   biggest setup.
+   tries (caches) multiplies by the tries at once. Check the peak on the biggest setup
+  : add
+   `process.on('exit', () => console.error(process.resourceUsage().maxRSS))` to a scratch copy of
+   `suite-one.mjs` (KB).
 6. **Tests**: the targeted file first (`node --test tests/search.test.js`, `session.test.js`…),
    `npm run typecheck`, then `npm test` in the background (about 20 min). Add a test where the
    change has behaviour of its own (a bound says none at once; a cache gives the same as without).
