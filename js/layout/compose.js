@@ -147,7 +147,7 @@ export function compose(ctx, prepared, positions, layout) {
     // Copies may stand in each other's empty corners (a refined placement), never on each other.
     const put = e => {
       for (let dx = 0; dx < e.w; dx++) for (let dy = 0; dy < e.h; dy++) {
-        if (grid.occupied.has(key(e.x + dx, e.y + dy))) throw new RoutingError(`copies overlap at ${e.x + dx},${e.y + dy}`);
+        if (grid.taken(e.x + dx, e.y + dy)) throw new RoutingError(`copies overlap at ${e.x + dx},${e.y + dy}`);
       }
       grid.place(e);
     };
@@ -171,9 +171,9 @@ export function compose(ctx, prepared, positions, layout) {
       for (const [x, y] of core.pipeBlocked) grid.pipeBlocked.add(key(x + ox, y + oy));
       for (const [x, y] of core.surfacePorts) grid.surfaceOnly.add(key(x + ox, y + oy));
       for (const p of inst.module.poles) grid.reserve(p.x + ox, p.y + oy, -1);
-      for (const [x, y] of core.poleSlots) if (!grid.occupied.has(key(x + ox, y + oy))) grid.reserve(x + ox, y + oy, -1);
+      for (const [x, y] of core.poleSlots) if (!grid.taken(x + ox, y + oy)) grid.reserve(x + ox, y + oy, -1);
       // Drop tiles no belt takes stay clear: a link there would get the machine's products.
-      for (const [x, y] of core.dropTiles ?? []) if (!grid.occupied.has(key(x + ox, y + oy))) grid.reserve(x + ox, y + oy, -1);
+      for (const [x, y] of core.dropTiles ?? []) if (!grid.taken(x + ox, y + oy)) grid.reserve(x + ox, y + oy, -1);
       for (const f of inst.module.fluids) {
         const id = pipeRouteOf(routes, f.routeId);
         const abs = f.pieces.map(p => ({ ...move(p), route: id, copy: n }));
@@ -218,7 +218,7 @@ export function compose(ctx, prepared, positions, layout) {
         snaking.forEach((route, j) => {
           for (let y = y0; y <= y1; y++) {
             for (const x of [x0 - 2 - 2 * j, x1 + 2 + 2 * j]) {
-              if (grid.inBounds(x, y) && !grid.occupied.has(key(x, y)) && !grid.reserved.has(key(x, y))) grid.reserve(x, y, route.id);
+              if (grid.inBounds(x, y) && !grid.taken(x, y) && !grid.reserved.has(key(x, y))) grid.reserve(x, y, route.id);
             }
           }
         });
@@ -2461,7 +2461,7 @@ function addTunnels(grid, pieces, name) {
 }
 
 const hold = (grid, x, y, id) => {
-  if (grid.inBounds(x, y) && !grid.occupied.has(key(x, y)) && !grid.reserved.has(key(x, y))) grid.reserve(x, y, id);
+  if (grid.inBounds(x, y) && !grid.taken(x, y) && !grid.reserved.has(key(x, y))) grid.reserve(x, y, id);
 };
 
 const westEdge = area => [...Array(area.h).keys()].map(k => ({ x: area.x, y: area.y + k, a: E }));

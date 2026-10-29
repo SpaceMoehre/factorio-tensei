@@ -241,11 +241,7 @@ function beltGrid(block, catalog, logistics) {
       reached.add(pickup).add(drop);
     } else if (e.kind === 'building' && e.drop) reached.add(key(Math.floor(e.x + e.drop.x), Math.floor(e.y + e.drop.y)));
   }
-  const unplace = p => {
-    grid.occupied.delete(key(p.x, p.y));
-    const i = grid.index(p.x, p.y);
-    if (i >= 0) grid.cells[i] = undefined;
-  };
+  const unplace = p => grid.clear(p.x, p.y);
   const dropTunnel = (p, q) => {
     const s = span(p, q);
     const line = grid.tunnelLines.get(`${names.underground}|${s.axis}|${s.line}`) ?? [];

@@ -20,17 +20,18 @@ export class Grid {
   constructor(area, out = E) {
     this.area = area;
     this.out = out;
+    // What stands on each tile: outside the area by key (`occupied`), inside it by tile index
+    // (`cells`). (A snapshot copies the few outside, not every entity's every tile.)
     this.occupied = new Map();
     this.reserved = new Map();
-    // The same, by tile index inside the area, for the router's hot lookups.
     this.cells = new Array(area.w * area.h);
     this.held = new Int32Array(area.w * area.h).fill(FREE);
     // Machine fluid connections: held for their route, and no other pipe may touch them.
-    this.fluidPorts = new Set();
+    this.fluidPorts = new TileSet(area);
     // Machine fluid connections not used by the recipe: no pipe may sit there.
-    this.pipeBlocked = new Set();
+    this.pipeBlocked = new TileSet(area);
     // Connections that must take a plain pipe, never a pipe-to-ground.
-    this.surfaceOnly = new Set();
+    this.surfaceOnly = new TileSet(area);
     this.tunnels = [];
     // Tunnels by type and line, for tunnelFits.
     this.tunnelLines = new Map();
@@ -98,9 +99,9 @@ export class Grid {
   place(entity) {
     for (let dx = 0; dx < entity.w; dx++) {
       for (let dy = 0; dy < entity.h; dy++) {
-        this.occupied.set(key(entity.x + dx, entity.y + dy), entity);
         const i = this.index(entity.x + dx, entity.y + dy);
         if (i >= 0) this.cells[i] = entity;
+        else this.occupied.set(key(entity.x + dx, entity.y + dy), entity);
       }
     }
   }
@@ -132,9 +133,68 @@ export class Grid {
     return r === FREE || r === routeId;
   }
 
+  // Whether anything stands on the tile.
+  taken(x, y) {
+    const i = this.index(x, y);
+    return i >= 0 ? this.cells[i] !== undefined : this.occupied.has(key(x, y));
+  }
+
+  // Nothing stands on the tile any more.
+  clear(x, y) {
+    const i = this.index(x, y);
+    if (i >= 0) this.cells[i] = undefined;
+    else this.occupied.delete(key(x, y));
+  }
+
   at(x, y) {
     const i = this.index(x, y);
     return i >= 0 ? this.cells[i] : this.occupied.get(key(x, y));
+  }
+}
+
+// A set of tile keys (`x,y`) that also answers by coordinates (`hasAt`) without making a key:
+// inside the area from a mask kept as keys come and go. (The router asks for every tile of every
+// step of every pipe it searches.)
+export class TileSet extends Set {
+  /** @param {{ x: number, y: number, w: number, h: number }} area */
+  constructor(area) {
+    super();
+    this.area = area;
+    this.mask = new Uint8Array(area.w * area.h);
+  }
+
+  // The tile's index in the mask, or -1 outside the area.
+  spot(k) {
+    const [x, y] = String(k).split(',').map(Number);
+    // (Only a key as `key` makes it is the tile's.)
+    if (key(x, y) !== k) return -1;
+    const i = x - this.area.x, j = y - this.area.y;
+    return i >= 0 && j >= 0 && i < this.area.w && j < this.area.h ? j * this.area.w + i : -1;
+  }
+
+  add(k) {
+    super.add(k);
+    // (The constructor's super() adds nothing: no mask yet.)
+    const i = this.mask ? this.spot(k) : -1;
+    if (i >= 0) this.mask[i] = 1;
+    return this;
+  }
+
+  delete(k) {
+    const i = this.spot(k);
+    if (i >= 0) this.mask[i] = 0;
+    return super.delete(k);
+  }
+
+  clear() {
+    this.mask.fill(0);
+    super.clear();
+  }
+
+  hasAt(x, y) {
+    const i = x - this.area.x, j = y - this.area.y;
+    if (i < 0 || j < 0 || i >= this.area.w || j >= this.area.h) return this.has(key(x, y));
+    return this.mask[j * this.area.w + i] === 1;
   }
 }
 

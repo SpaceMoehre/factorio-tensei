@@ -57,7 +57,7 @@ export function routeModule(core, opts) {
     for (const [x, y] of core.poleSlots) grid.reserve(x, y, -1);
     // A drop tile no belt of the machine's output takes stays clear: a belt there would get its
     // products.
-    for (const [x, y] of core.dropTiles ?? []) if (!grid.occupied.has(key(x, y)) && grid.holder(x, y) === undefined) grid.reserve(x, y, -1);
+    for (const [x, y] of core.dropTiles ?? []) if (!grid.taken(x, y) && grid.holder(x, y) === undefined) grid.reserve(x, y, -1);
     // A fluid with pipe rows in several bands joins them in a riser column beside the core: the
     // first such fluid on the west, the next on the east, then further out.
     const risers = fluidIds.filter(id => core.pipeRows.filter(p => p.routeId === id).length > 1);
@@ -66,7 +66,7 @@ export function routeModule(core, opts) {
       const x = k % 2 ? core.w - 1 + out : -out;
       const ys = core.pipeRows.filter(p => p.routeId === id).map(p => p.y);
       for (let y = Math.min(...ys); y <= Math.max(...ys); y++) {
-        if (!grid.occupied.has(key(x, y)) && !grid.reserved.has(key(x, y))) grid.reserve(x, y, pipeId(id));
+        if (!grid.taken(x, y) && !grid.reserved.has(key(x, y))) grid.reserve(x, y, pipeId(id));
       }
     });
     return grid;
@@ -123,7 +123,7 @@ export function routeModule(core, opts) {
           const edge = job.role === 'input' ? area.x : area.x + area.w - 1;
           for (const p of pieces.get(job.key).filter(q => q.x === edge)) {
             for (const y of [p.y - 1, p.y + 1]) {
-              if (grid.inBounds(edge, y) && !grid.occupied.has(key(edge, y)) && !grid.reserved.has(key(edge, y))) grid.reserve(edge, y, job.id);
+              if (grid.inBounds(edge, y) && !grid.taken(edge, y) && !grid.reserved.has(key(edge, y))) grid.reserve(edge, y, job.id);
             }
           }
         }

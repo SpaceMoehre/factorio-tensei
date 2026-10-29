@@ -126,7 +126,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const partings = new Map();
   const copyLanded = new Map();
   // Where each Sub-Block may stand (lands), by spot: Backtracking asks again for the same spots.
-  const landed = new Map();
+  // (By Sub-Block, then size: each spot's answer in an array over the City Block.)
+  /** @type {Map<number, { at: Int32Array, found: Set<string>[] }>[]} */
+  const landed = [];
   // Sub-Blocks placed parted round the Fixtures (Parting), while placing one by one: their shape.
   const partedNow = new Map();
   const shapeOf = i => partedNow.get(i)?.block ?? blocks[i];
@@ -148,7 +150,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     if (p.parted) {
       Object.assign(blocks[i], { at: p.parted.at, h: p.parted.h, nooks: [], need: null, near: undefined });
       tileSets.delete(i);
-      landed.clear();
+      landed.length = 0;
     }
     placed.set(i, { x: p.x, y: p.y });
   }
@@ -213,7 +215,12 @@ export function placeBlocks(ctx, prepared, params = {}) {
     // (`back`: the spots not west of the consumers, else only those that are.)
     const scored = (spots, back = false) => {
       const out = [];
-      const boxes = [...placed.keys()].map(j => ({ ...box(j), step: j, entries: blocks[j].entries.map(e => placed.get(j).y + e) }));
+      // (`shape`: as it stands, parted or not, for `apart`: as clashes has it, the lookups done once.)
+      const boxes = [...placed.keys()].map(j => ({ ...box(j), step: j, entries: blocks[j].entries.map(e => placed.get(j).y + e), shape: shapeOf(j) }));
+      const clear = (me, mine) => {
+        for (const o of boxes) if (!apart(mine, me, o.shape, o, gap)) return false;
+        return true;
+      };
       const targets = mine.map(l => ({ x: placed.get(l.to).x, y: placed.get(l.to).y + l.toY - l.fromY }));
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const o of boxes) [x0, y0, x1, y1] = [Math.min(x0, o.x), Math.min(y0, o.y), Math.max(x1, o.x + o.w), Math.max(y1, o.y + o.h)];
@@ -223,7 +230,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
         let behind = 0;
         for (const t of targets) behind += Math.max(0, c.x + b.w + 1 - t.x);
         if (!behind === back) continue;
-        if (boxes.some(o => clashes(i, me, o.step))) continue;
+        if (!clear(me, b)) continue;
         // In a City Block, Fixtures on none of its tiles but some of its machines: those left out;
         // else its stack parted round them (Parting), taller.
         let holes = site ? lands(i, me) : null, parted = null;
@@ -231,7 +238,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
           parted = part(i, c.x, c.y);
           if (!parted) continue;
           me = { ...me, h: parted.h };
-          if (boxes.some(o => clashes(i, me, o.step, parted.block))) continue;
+          if (!clear(me, parted.block)) continue;
           holes = parted.hits;
         }
         const gw = Math.max(x1, c.x + b.w) - Math.min(x0, c.x), gh = Math.max(y1, c.y + me.h) - Math.min(y0, c.y);
@@ -316,7 +323,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
   for (const [i, p] of partedNow) {
     Object.assign(blocks[i], { at: p.at, h: p.h, nooks: [], need: null, near: undefined });
     tileSets.delete(i);
-    landed.clear();
+    landed.length = 0;
   }
   partedNow.clear();
   // In a City Block, the whole block slides west as far as it fits: the Side Inputs, its many
@@ -400,16 +407,24 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // tiles but its machines and their inserters, and on no more of those than its budget. The
   // machines Fixtures stand on (`index:machine`), else null.
   function lands(i, box) {
-    // (By its size, then its corner: keys small enough to be small integers, which a Map finds
-    // several times faster than larger numbers.)
-    if (!landed.has(i)) landed.set(i, new Map());
-    const sizes = landed.get(i), size = box.w * 1024 + box.h;
-    if (!sizes.has(size)) sizes.set(size, new Map());
-    const mine = sizes.get(size);
-    const key = (box.x + 512) * 1024 + box.y + 512;
-    let out = mine.get(key);
-    if (out === undefined) mine.set(key, (out = site.landing(blockTiles(i), box, budget(i))));
-    return out;
+    // (Outside the City Block it lands nowhere, as `landing` says first. Inside, by its size, then
+    // its corner's tile: an array read, not a Map's; Layers asks some twenty million times in Py
+    // small parts 2. 0: not asked yet, -1: null, else its answer in `found`.)
+    const { inner } = site;
+    if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return null;
+    const sizes = landed[i] ??= new Map(), size = box.w * 1024 + box.h;
+    let mine = sizes.get(size);
+    if (mine === undefined) sizes.set(size, (mine = { at: new Int32Array(inner.w * inner.h), found: [null] }));
+    const k = (box.y - inner.y) * inner.w + box.x - inner.x;
+    let n = mine.at[k];
+    // (A corner off the tile grid: not kept.)
+    if (n === undefined) return site.landing(blockTiles(i), box, budget(i));
+    if (n === 0) {
+      const out = site.landing(blockTiles(i), box, budget(i));
+      n = out ? mine.found.push(out) - 1 : -1;
+      mine.at[k] = n;
+    }
+    return n < 0 ? null : mine.found[n];
   }
 
   // Parting (in a City Block): where a Fixture would stand on the belts of a stack of copies
@@ -514,22 +529,42 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
   const feeds = new Map(steps.map(i => [i, [...new Set(links.filter(l => l.from === i && l.to !== i).map(l => l.to))]]));
   const outputs = new Map(steps.map(i => [i, routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.slots.at(-1)?.inst.step === i).length]));
   const col = new Map();
+  // (Each Sub-Block's Side Outputs by step, for shape.)
+  const outs = steps.map(i => outputs.get(i));
   // The columns in use, east to west, with their Sub-Blocks, widths, heights and crossing belts.
+  // (Asked for every way weighed, and for every Sub-Block put in on the way: written out in
+  // loops. Sub-Blocks not in a column yet count nowhere.)
   const shape = cols => {
     const used = [...new Set(cols.values())].sort((a, b) => a - b);
-    const k = new Map(used.map((c, n) => [c, n]));
-    const members = used.map(c => steps.filter(i => cols.get(i) === c));
-    const width = members.map(list => Math.max(...list.map(i => blocks[i].w)));
+    // (A column's place from the east, by its number.)
+    const place = [];
+    used.forEach((c, n) => { place[c] = n; });
+    const k = { get: c => place[c] };
+    const members = used.map(() => []);
+    for (const i of steps) {
+      const c = cols.get(i);
+      if (c !== undefined) members[place[c]].push(i);
+    }
+    const width = members.map(list => {
+      let w = -Infinity;
+      for (const i of list) if (blocks[i].w > w) w = blocks[i].w;
+      return w;
+    });
     // Belts turning in the corridor west of each column, and crossing each column.
     const turning = used.map(() => 0), crossing = used.map(() => 0);
     for (const l of links) {
-      const a = k.get(cols.get(l.to)), b = k.get(cols.get(l.from));
+      const to = cols.get(l.to), from = cols.get(l.from);
+      if (to === undefined || from === undefined) continue;
+      const a = place[to], b = place[from];
       for (let n = a; n < b; n++) turning[n]++;
       for (let n = a + 1; n < b; n++) crossing[n]++;
     }
     for (const i of steps) {
-      for (let n = k.get(cols.get(i)) + 1; n < used.length; n++) crossing[n] += blocks[i].entries.length;
-      for (let n = 0; n < k.get(cols.get(i)); n++) crossing[n] += outputs.get(i);
+      const c = cols.get(i);
+      if (c === undefined) continue;
+      const m = place[c], entries = blocks[i].entries.length;
+      for (let n = m + 1; n < used.length; n++) crossing[n] += entries;
+      for (let n = 0; n < m; n++) crossing[n] += outs[i];
     }
     // One below the other; where that is too tall, as tight as their Nooks let them.
     const height = members.map((list, n) => {
@@ -689,7 +724,10 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
         const clear = y => lands(it.i, boxOf(it, y)) && items.every(o => o === it || apart(blocks[it.i], { x: it.x, y }, blockOf(o.i), o, gap));
         if (clear(it.y)) continue;
         let moved = null;
-        for (let d = 1; d < inner.h && moved === null; d++) for (const y of [it.y - d, it.y + d]) if (moved === null && clear(y)) moved = y;
+        for (let d = 1; d < inner.h && moved === null; d++) {
+          if (clear(it.y - d)) moved = it.y - d;
+          else if (clear(it.y + d)) moved = it.y + d;
+        }
         // Parting: no spot clear, its stack parts round the Fixtures, standing as near where it
         // wants to as that lets it.
         for (let d = 0; parting && d < inner.h && moved === null; d++) {
@@ -985,6 +1023,36 @@ function makeRules(site) {
     if (x1 <= x0 || y1 <= y0) return 0;
     return sum[y1 * (gw + 1) + x1] - sum[y0 * (gw + 1) + x1] - sum[y1 * (gw + 1) + x0] + sum[y0 * (gw + 1) + x0];
   };
+  // A box's tiles (`hard`, `soft`: by tileKey) as a mask over where they lie, x0, y0 its corner
+  // (by the box's): -1 hard, 0 none, else the machine's number in `machines`, plus one. `landing`
+  // reads an array, not a Set and a Map, for every tile of every Fixture near a box.
+  const masks = new WeakMap();
+  const maskOf = tiles => {
+    if (!masks.has(tiles)) {
+      const { hard, soft } = tiles;
+      const at = t => [Math.floor(t / 1048576) - 4, (t % 1048576) - 4];
+      let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+      for (const t of [...hard, ...soft.keys()]) {
+        const [x, y] = at(t);
+        [x0, y0, x1, y1] = [Math.min(x0, x), Math.min(y0, y), Math.max(x1, x), Math.max(y1, y)];
+      }
+      if (x0 === Infinity) [x0, y0, x1, y1] = [0, 0, -1, -1];
+      const mw = x1 - x0 + 1, mh = y1 - y0 + 1;
+      const mask = new Int32Array(mw * mh), machines = [];
+      for (const [t, m] of soft) {
+        const [x, y] = at(t);
+        machines.push(m);
+        mask[(y - y0) * mw + x - x0] = machines.length;
+      }
+      // (Hard before soft, as landing had them.)
+      for (const t of hard) {
+        const [x, y] = at(t);
+        mask[(y - y0) * mw + x - x0] = -1;
+      }
+      masks.set(tiles, { x0, y0, mw, mh, mask, machines });
+    }
+    return masks.get(tiles);
+  };
   // The tiles of a box no Fixture may stand on that lie inside it (by the box's size).
   const hardInside = new WeakMap();
   const insideOf = (hard, w, h) => {
@@ -1020,25 +1088,33 @@ function makeRules(site) {
   // The machines a box's Fixtures stand on (`soft`: tileKey → machine), when they stand on none
   // of its other tiles (`hard`) and on no more than `most` machines; else null. Inside the City
   // Block only.
-  const landing = ({ hard, soft }, box, most) => {
+  const landSeen = new Int32Array(fixtures.length);
+  let landStamp = 0;
+  const landing = (tiles, box, most) => {
+    const { hard } = tiles;
     if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return null;
     if (fixtureTiles(box) > box.w * box.h - insideOf(hard, box.w, box.h)) return null;
+    const { x0, y0, mw, mh, mask, machines } = maskOf(tiles);
     const hit = new Set();
-    const seen = new Set();
+    // (Each Fixture looked at once: stamped, as `room` does.)
+    landStamp++;
     for (let cx = Math.floor((box.x - 1) / CELL); cx <= Math.floor((box.x + box.w) / CELL); cx++) {
       for (let cy = Math.floor((box.y - 1) / CELL); cy <= Math.floor((box.y + box.h) / CELL); cy++) {
         for (const n of cells.get(cx * 65536 + cy) ?? []) {
-          if (seen.has(n)) continue;
-          seen.add(n);
+          if (landSeen[n] === landStamp) continue;
+          landSeen[n] = landStamp;
           const f = fixtures[n];
           if (f.x > box.x + box.w || f.x + f.w < box.x || f.y > box.y + box.h || f.y + f.h < box.y) continue;
           for (let x = f.x; x < f.x + f.w; x++) {
+            const mx = x - box.x - x0;
+            if (mx < 0 || mx >= mw) continue;
             for (let y = f.y; y < f.y + f.h; y++) {
-              const k = tileKey(x - box.x, y - box.y);
-              if (hard.has(k)) return null;
-              const m = soft.get(k);
-              if (m === undefined) continue;
-              hit.add(m);
+              const my = y - box.y - y0;
+              if (my < 0 || my >= mh) continue;
+              const v = mask[my * mw + mx];
+              if (v === 0) continue;
+              if (v < 0) return null;
+              hit.add(machines[v - 1]);
               if (hit.size > most) return null;
             }
           }
@@ -1204,6 +1280,12 @@ function apart(a, pa, b, pb, gap) {
   const mine = a.need ??= full(a), theirs = b.near ??= around(b, gap), tw = b.w + 2 * gap;
   const x0 = Math.max(pa.x, pb.x - gap), x1 = Math.min(pa.x + a.w, pb.x + b.w + gap);
   const y0 = Math.max(pa.y, pb.y - gap), y1 = Math.min(pa.y + a.h, pb.y + b.h + gap);
+  if (x1 <= x0 || y1 <= y0) return true;
+  // Where either needs every tile of the stretch they share, they keep apart where the other
+  // needs none of it: a sum over a rectangle, not a look at each tile (Placement weighs every
+  // spot of a City Block against each Sub-Block placed, most of them overlapping some).
+  if (sumsOf(mine, a.w).full) return !anyIn(theirs, tw, x0 - pb.x + gap, y0 - pb.y + gap, x1 - x0, y1 - y0);
+  if (sumsOf(theirs, tw).full) return !anyIn(mine, a.w, x0 - pa.x, y0 - pa.y, x1 - x0, y1 - y0);
   for (let y = y0; y < y1; y++) {
     const r = (y - pa.y) * a.w - pa.x, t = (y - pb.y + gap) * tw - pb.x + gap;
     for (let x = x0; x < x1; x++) if (mine[r + x] && theirs[t + x]) return false;
@@ -1213,6 +1295,31 @@ function apart(a, pa, b, pb, gap) {
 
 // Every tile of a box needed.
 const full = block => new Uint8Array(block.w * block.h).fill(1);
+
+// A mask's sums over rectangles from its corner (an integral image, `w` its width) and whether it
+// is all ones: kept by mask.
+const sums = new WeakMap();
+function sumsOf(mask, w) {
+  let out = sums.get(mask);
+  if (out === undefined) {
+    const h = mask.length / w, sum = new Int32Array((w + 1) * (h + 1));
+    let full = true;
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        if (!mask[y * w + x]) full = false;
+        sum[(y + 1) * (w + 1) + x + 1] = (mask[y * w + x] ? 1 : 0) + sum[y * (w + 1) + x + 1] + sum[(y + 1) * (w + 1) + x] - sum[y * (w + 1) + x];
+      }
+    }
+    sums.set(mask, (out = { sum, full }));
+  }
+  return out;
+}
+
+// Whether any tile of the mask (`w` wide) is set in the rectangle at x, y, rw × rh.
+function anyIn(mask, w, x, y, rw, rh) {
+  const { sum } = sumsOf(mask, w), W = w + 1;
+  return sum[(y + rh) * W + x + rw] - sum[y * W + x + rw] - sum[(y + rh) * W + x] + sum[y * W + x] > 0;
+}
 
 // The tiles within g of one a Sub-Block needs, over its box grown by g on every side.
 function around(block, g) {
