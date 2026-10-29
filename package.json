@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "description": "Factorio factory block blueprint generator",
   "scripts": {
-    "test": "node --test --test-timeout=1800000",
+    "test": "node --test --test-timeout=1800000 tests/",
     "typecheck": "tsc -p .",
     "build-catalog": "node scripts/build-catalog.mjs",
     "build-sprites": "node scripts/build-sprites.mjs",
