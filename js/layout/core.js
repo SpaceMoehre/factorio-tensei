@@ -1,4 +1,4 @@
-import { N, E, S, W, VEC, key } from './grid.js';
+import { N, E, S, W, VEC } from './grid.js';
 import { inserterRate } from '../inserters.js';
 import { pathFlow } from './flow.js';
 
@@ -20,6 +20,10 @@ const REACH = {
 };
 
 export class LayoutError extends Error {}
+
+// A core's tile as a small integer, for its maps and sets (a string key per tile took much of a
+// core's time): columns and rows from -256, columns below 65280.
+const cell = (x, y) => (y + 256) * 65536 + x + 256;
 
 // Lays out one Sub-Block in local coordinates from a variant — the choices the layout search
 // makes for it. Machines stand in rows (chains) of `rowLength`, stacked top to bottom; bands of
@@ -138,9 +142,11 @@ export function buildCore(sb, building, links, variant, env) {
   // Each machine row takes each route from exactly one belt row (or side or head-on belt).
   const access = [];
   const lineAccess = [];
+  const both = [...belts, ...lines];
+  const bothRoutes = new Set(both.flatMap(b => b.routeIds));
   for (let r = 0; r < rowCount; r++) {
-    for (const routeId of new Set([...belts, ...lines].flatMap(b => b.routeIds))) {
-      const serving = [...belts, ...lines].filter(b => b.routeIds.includes(routeId) && b.serves.includes(r));
+    for (const routeId of bothRoutes) {
+      const serving = both.filter(b => b.routeIds.includes(routeId) && b.serves.includes(r));
       // Two-Way Output: a row may drop its output onto a band belt on either side, half each.
       const twoWay = routeId === links.output && serving.length === 2 && serving.every(b => !b.kind) && serving[0].band !== serving[1].band;
       if (serving.length !== 1 && !twoWay) throw new LayoutError('a machine row needs exactly one belt for each route');
@@ -401,6 +407,14 @@ export function buildCore(sb, building, links, variant, env) {
   // (Out of a machine putting each product on a belt of its own, filtered to it, ADR 0066.)
   const filtered = links.apart?.length > 0;
   const moving = (isOutput, items, sharing) => ({ role: isOutput ? 'output' : 'input', moves: items.map(i => i.name), sharing, ...(isOutput && filtered ? { filters: items.map(i => i.name) } : {}) });
+  // (The same keys in the same order, set on the inserter itself.)
+  const move = (e, isOutput, items, sharing) => {
+    e.role = isOutput ? 'output' : 'input';
+    e.moves = items.map(i => i.name);
+    e.sharing = sharing;
+    if (isOutput && filtered) e.filters = items.map(i => i.name);
+    return e;
+  };
   // (What a belt tapped off one of several producers brings of what the machines take: its share,
   // routeItems, ADR 0064.)
   const portionOf = ({ isOutput, items }) => {
@@ -409,6 +423,19 @@ export function buildCore(sb, building, links, variant, env) {
     const brought = items.reduce((sum, i) => sum + i.rate, 0);
     return brought < all - 1e-9 ? { portion: brought / all } : {};
   };
+  // What each row's machines stamp from the period, found once a row (the period no longer
+  // changes): its slots and lines, taps, joins, and the pole slots.
+  const rowSlots = counts.map((_, r) => slots.filter(s => s.r === r));
+  const rowLines = counts.map((_, r) => lineAccess.filter(a => a.r === r));
+  const rowTaps = counts.map(() => []), rowJoins = counts.map(() => []), poleTiles = [];
+  for (let i = 0; i < period.tiles.length; i++) {
+    const v = period.tiles[i];
+    if (!v) continue;
+    const at = [i % pitch, Math.floor(i / pitch)];
+    if (v.type === 'tap') rowTaps[v.row]?.push(at);
+    if (v.join) rowJoins[v.row]?.push(at);
+    if (v.type === 'pole') poleTiles.push(at);
+  }
   let machine = 0;
   for (let r = 0; r < rowCount; r++) {
     for (let i = 0; i < counts[r]; i++, machine++) {
@@ -417,33 +444,38 @@ export function buildCore(sb, building, links, variant, env) {
       const movedBy = new Map();
       // A machine with an Output Drop carries its drop point (relative to its corner).
       const d = drops[r];
-      entities.push({ name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine, ...(mirrorOf(r) && { mirror: true }), ...(d && { drop: d.point }) });
+      const m = { name: sb.building, kind: 'building', recipe: sb.recipe, x: x0 + mxOff + off(r), y: machineY[r], w: Wm, h: Hm, direction: rotationOf(r), row: r, machine };
+      if (mirrorOf(r)) m.mirror = true;
+      if (d) m.drop = d.point;
+      entities.push(m);
       const first = entities.length;
       // Its drop tile: a waypoint of the output belt past it, else kept clear.
       if (d) {
         const [x, y] = [x0 + mxOff + off(r) + d.tileX, machineY[r] + d.tileY];
         const used = slots.find(s => s.drop && s.r === r);
-        if (used) stamped.set(key(x, y), { waypoint: used.id });
+        if (used) stamped.set(cell(x, y), { waypoint: used.id });
         else {
           dropTiles.push([x, y]);
-          if (!stamped.has(key(x, y))) stamped.set(key(x, y), 'drop');
+          if (!stamped.has(cell(x, y))) stamped.set(cell(x, y), 'drop');
         }
       }
-      for (const s of slots.filter(s => s.r === r)) {
+      for (const s of rowSlots[r]) {
         const placed = columns.get(s);
         // A machine's drop takes its share of the lane; supporting inserters move the rest, and
         // their clock counts only that (what the drop surely takes, items/s).
         const dropped = s.drop ? Math.min(s.demand, env.laneCapacity / counts[r]) : 0;
-        const dropping = s.drop ? { dropping: Math.max(0, env.laneCapacity - (counts[r] - 1) * s.demand) / 60 } : {};
+        const dropping = s.drop ? Math.max(0, env.laneCapacity - (counts[r] - 1) * s.demand) / 60 : null;
         for (const { column, side } of placed) {
           // (Built on the inserter's own object, not spread into a new one: a core of many
           // machines makes thousands, and a design builds thousands of cores.)
           const e = inserter(s, x0 + column, side);
           e.flow = (s.demand - dropped) / placed.length;
           e.machine = machine;
-          entities.push(Object.assign(e, moving(s.isOutput, s.items, placed.length), dropping));
-          stamped.set(key(x0 + column, s.insY), 'inserter');
-          stamped.set(key(x0 + column + side, s.beltY), { waypoint: s.id });
+          move(e, s.isOutput, s.items, placed.length);
+          if (dropping !== null) e.dropping = dropping;
+          entities.push(e);
+          stamped.set(cell(x0 + column, s.insY), 'inserter');
+          stamped.set(cell(x0 + column + side, s.beltY), { waypoint: s.id });
         }
         const moved = placed.length * s.rate + dropped;
         // What a row's drops and their inserters cannot move is its belt's (see the parts).
@@ -456,14 +488,14 @@ export function buildCore(sb, building, links, variant, env) {
         supply.get(k).perMachine.push(moved);
         supply.get(k).machines.push(machine);
       }
-      for (const a of lineAccess.filter(a => a.r === r)) {
+      for (const a of rowLines[r]) {
         const l = lineSlots.get(a);
         for (const ins of l.inserters) {
           entities.push({ ...ins.entity, x: x0 + ins.entity.x, flow: l.demand / l.inserters.length, machine, ...moving(l.isOutput, l.items, l.inserters.length) });
-          stamped.set(key(x0 + ins.entity.x, ins.entity.y), 'inserter');
-          stamped.set(key(x0 + ins.pick[0], ins.pick[1]), { waypoint: l.id });
+          stamped.set(cell(x0 + ins.entity.x, ins.entity.y), 'inserter');
+          stamped.set(cell(x0 + ins.pick[0], ins.pick[1]), { waypoint: l.id });
         }
-        for (const [x, y] of l.tiles) if (!stamped.has(key(x0 + x, y))) stamped.set(key(x0 + x, y), { line: l.id });
+        for (const [x, y] of l.tiles) if (!stamped.has(cell(x0 + x, y))) stamped.set(cell(x0 + x, y), { line: l.id });
         const moved = l.inserters.reduce((sum, ins) => sum + ins.rate, 0);
         shortfall += Math.max(0, l.demand - moved);
         const supplyKey = a.line.routeIds.join('+');
@@ -473,12 +505,12 @@ export function buildCore(sb, building, links, variant, env) {
       }
       const outputs = entities.slice(first).filter(e => e.role === 'output');
       for (const e of outputs) e.sharing = outputs.length;
-      for (const [c, y] of period.all(v => v.type === 'tap' && v.row === r)) {
-        stamped.set(key(x0 + c, y), 'tap');
+      for (const [c, y] of rowTaps[r]) {
+        stamped.set(cell(x0 + c, y), 'tap');
         taps.push({ routeId: period.get(c, y).route, tile: [x0 + c, y] });
       }
-      for (const [c, y] of period.all(v => v.join && v.row === r)) joins.push([x0 + c, y]);
-      if (r === 0) for (const [c, y] of period.all(v => v.type === 'pole')) stamped.set(key(x0 + c, y), 'pole');
+      for (const [c, y] of rowJoins[r]) joins.push([x0 + c, y]);
+      if (r === 0) for (const [c, y] of poleTiles) stamped.set(cell(x0 + c, y), 'pole');
     }
   }
 
@@ -497,37 +529,45 @@ export function buildCore(sb, building, links, variant, env) {
         port.tiles.push([x, y, c.dir]);
         // On its own fluid's pipe row, the connection takes a plain pipe, so the row runs through.
         if (pipeRows.some(p => p.routeId === c.routeId && p.y === y)) surfacePorts.push([x, y]);
-        stamped.set(key(x, y), 'port');
+        stamped.set(cell(x, y), 'port');
       }
     }
   }
   // A connection must lie in the core, clear of machines and other connections, and a pipe on a
   // neighbour's unused connection would plug into it.
-  const machineAt = (x, y) => entities.some(e => e.kind === 'building' && x >= e.x && x < e.x + e.w && y >= e.y && y < e.y + e.h);
-  const unused = new Set(pipeBlocked.map(([x, y]) => key(x, y)));
+  const buildings = entities.filter(e => e.kind === 'building');
+  const machineAt = (x, y) => buildings.some(e => x >= e.x && x < e.x + e.w && y >= e.y && y < e.y + e.h);
+  const unused = new Set(pipeBlocked.map(([x, y]) => cell(x, y)));
   const portTiles = ports.flatMap(p => p.tiles);
-  if (new Set(portTiles.map(([x, y]) => key(x, y))).size !== portTiles.length
-    || portTiles.some(([x, y]) => x < 0 || x >= width || y < 0 || y >= height || machineAt(x, y) || unused.has(key(x, y)))) {
+  if (new Set(portTiles.map(([x, y]) => cell(x, y))).size !== portTiles.length
+    || portTiles.some(([x, y]) => x < 0 || x >= width || y < 0 || y >= height || machineAt(x, y) || unused.has(cell(x, y)))) {
     throw new LayoutError('fluid connections collide');
   }
 
   // Belt rows: the route holds every tile of its row that no inserter, connection or pole slot
   // takes; the tiles its inserters reach are its waypoints. Pipe rows are held the same way.
-  const held = y => [...Array(width).keys()].filter(x => {
-    const v = stamped.get(key(x, y));
-    return v !== 'inserter' && v !== 'port' && v !== 'pole' && v !== 'tap' && v !== 'drop';
+  const held = y => {
+    const out = [];
+    for (let x = 0; x < width; x++) {
+      const v = stamped.get(cell(x, y));
+      if (v !== 'inserter' && v !== 'port' && v !== 'pole' && v !== 'tap' && v !== 'drop') out.push(x);
+    }
+    return out;
+  };
+  const rowsOut = beltRows.map(b => {
+    const xs = held(b.y);
+    return {
+      routeIds: b.routeIds, part: b.part, y: b.y, reserve: xs.map(x => [x, b.y]),
+      waypoints: xs.filter(x => stamped.get(cell(x, b.y))?.waypoint === b.id).map(x => [x, b.y]),
+    };
   });
-  const rowsOut = beltRows.map(b => ({
-    routeIds: b.routeIds, part: b.part, y: b.y, reserve: held(b.y).map(x => [x, b.y]),
-    waypoints: held(b.y).filter(x => stamped.get(key(x, b.y))?.waypoint === b.id).map(x => [x, b.y]),
-  }));
   const pipeRowsOut = pipeRows.map(p => ({ routeId: p.routeId, y: p.y, reserve: held(p.y).map(x => [x, p.y]) }));
   // Side and Head-on Belts: their tiles held for them, the ones their inserters reach in order
   // along the belt (down a side belt, toward the machine or away from it along a head-on one).
   for (const a of lineAccess) {
     const l = lineSlots.get(a);
     const along = p => (l.axis === 'v' ? p[1] : p[0]);
-    const waypoints = l.tiles.filter(([x, y]) => stamped.get(key(x, y))?.waypoint === l.id).sort((p, q) => along(p) - along(q));
+    const waypoints = l.tiles.filter(([x, y]) => stamped.get(cell(x, y))?.waypoint === l.id).sort((p, q) => along(p) - along(q));
     rowsOut.push({
       routeIds: a.line.routeIds, part: a.line.part, kind: a.line.kind, face: a.line.face, axis: l.axis,
       y: l.axis === 'h' ? l.tiles[0][1] : null, x: l.axis === 'v' ? l.tiles[0][0] : null, reserve: l.tiles, waypoints,
@@ -581,9 +621,9 @@ export function buildCore(sb, building, links, variant, env) {
   let beltTiles = null;
   const free = (x, y) => {
     if (y < 0 || y >= height || x < 0 || x >= width) return true;
-    const v = stamped.get(key(x, y));
-    beltTiles ??= new Set(rowsOut.flatMap(r => r.reserve.map(([x, y]) => key(x, y))));
-    return !v && !beltTiles.has(key(x, y)) && !machineAt(x, y);
+    const v = stamped.get(cell(x, y));
+    beltTiles ??= new Set(rowsOut.flatMap(r => r.reserve.map(([x, y]) => cell(x, y))));
+    return !v && !beltTiles.has(cell(x, y)) && !machineAt(x, y);
   };
   const bandOf = y => {
     if (y < top) return 0;
@@ -641,7 +681,7 @@ export function buildCore(sb, building, links, variant, env) {
       }
     }
   }
-  const poleSlots = [...stamped].filter(([, v]) => v === 'pole').map(([k]) => k.split(',').map(Number));
+  const poleSlots = [...stamped].filter(([, v]) => v === 'pole').map(([k]) => [k % 65536 - 256, Math.floor(k / 65536) - 256]);
   return {
     w: width, h: height, entities, rows: rowsOut, pipeRows: pipeRowsOut, parts, ports, pipeBlocked, surfacePorts: [...surfacePorts, ...joins], taps, poleSlots,
     dropTiles, supply: [...supply.values()], shortfall, overload, pathDrops: internal ? { routeId: links.output, parts: pathDrops() } : null,
@@ -971,15 +1011,9 @@ class Period {
 
   lastColumn() {
     let last = -1;
-    this.tiles.forEach((v, i) => { if (v) last = Math.max(last, i % this.pitch); });
+    const { tiles, pitch } = this;
+    for (let i = 0; i < tiles.length; i++) if (tiles[i]) last = Math.max(last, i % pitch);
     return last;
-  }
-
-  // [column, y] of every tile matching.
-  all(match) {
-    const out = [];
-    this.tiles.forEach((v, i) => { if (v && match(v)) out.push([i % this.pitch, Math.floor(i / this.pitch)]); });
-    return out;
   }
 
   // [column, y] of the first tile matching.
@@ -1020,16 +1054,28 @@ function columnOrder(Wm, mode) {
 // One connection per fluid among its boxes', as the variant picks it (by default the first), plus
 // every connection left unused.
 function pickConnections(sb, building, fluids, rotation, variant) {
+  const boxes = placedBoxes(building, rotation);
   const picks = fluids.map((f, i) => {
-    const options = (f.boxes ?? []).flatMap(b => building.fluidBoxes[b].connections).map(c => placeConnection(c, rotation, building));
+    const options = (f.boxes ?? []).flatMap(b => boxes[b]);
     if (!options.length) throw new Error(`${sb.building} has no ${f.role} fluid box for ${f.fluid}`);
     const { side, dir, tileX, tileY } = options[(variant.ports?.[i] ?? 0) % options.length];
     return { side, dir, tileX, tileY, routeId: f.routeId, fluid: f.fluid };
   });
-  const taken = new Set(picks.map(c => `${c.tileX},${c.tileY}`));
-  const unused = building.fluidBoxes.flatMap(b => b.connections.map(c => placeConnection(c, rotation, building)))
-    .filter(c => !taken.has(`${c.tileX},${c.tileY}`));
+  const taken = new Set(picks.map(c => cell(c.tileX, c.tileY)));
+  const unused = [];
+  for (const box of boxes) {
+    for (const c of box) if (!taken.has(cell(c.tileX, c.tileY))) unused.push({ side: c.side, dir: c.dir, tileX: c.tileX, tileY: c.tileY });
+  }
   return [...picks, ...unused];
+}
+
+// Each fluid box's connections placed for a rotation (placeConnection), by building: kept, so a
+// design's thousands of cores do not place them again.
+const placements = new WeakMap();
+function placedBoxes(building, rotation) {
+  let byRotation = placements.get(building);
+  if (!byRotation) placements.set(building, byRotation = []);
+  return byRotation[rotation] ??= building.fluidBoxes.map(b => b.connections.map(c => placeConnection(c, rotation, building)));
 }
 
 // A fluid's connections letting it through both ways on a machine's west and east sides, facing

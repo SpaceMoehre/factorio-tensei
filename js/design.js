@@ -135,14 +135,17 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     // core of one row, pipe shifts with no pipe row to shift; most of them in Py molybdenum oxide.)
     const built = new Map();
     // Whether the variant builds a core that starves nothing (variants() asks, ADR 0058).
+    // (A variant yielded again, the same object, keeps its key.)
+    const keys = new WeakMap();
     const attempt = variant => {
       if (!variant) return false;
-      const key = JSON.stringify(variant);
+      let key = keys.get(variant);
+      if (key === undefined) keys.set(variant, key = JSON.stringify(variant));
       if (!built.has(key)) {
         try {
           const core = buildCore(sb, building, links, variant, ctx.env);
           core.pathShort = corePathShort(ctx, sb, core, whole);
-          const signature = JSON.stringify([core.w, core.h, core.entities.map(e => [e.x, e.y, e.name, e.direction]), core.rows.map(r => [r.routeIds, r.part, r.y, r.x]), core.pipeRows.map(r => r.y), core.poleSlots]);
+          const signature = signatureOf(core);
           if (!cores.has(signature)) cores.set(signature, { variant, core });
           built.set(key, { clean: trouble(core) <= 1e-6 });
         } catch (e) {
@@ -180,14 +183,21 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     // come first, starving no more: the fewest output inserters at them. Then the cores whose
     // belts of an Internal Path sorting a byproduct out (no splitter evens them) take the least
     // more than an equal share of it.
-    const ranked = mirrorsThatHelp([...cores.values()]).sort((a, b) => stuck(a) - stuck(b) || trouble(a.core) - trouble(b.core)
-      || a.core.supporting - b.core.supporting || uneven(ctx, sb, index, a.core) - uneven(ctx, sb, index, b.core) || areaOf(a.core) - areaOf(b.core) || sides(a) - sides(b));
+    // (Each core's measures worked out once, not at every comparison.)
+    const listed = mirrorsThatHelp([...cores.values()]);
+    const measures = new Map(listed.map(c => [c, { stuck: stuck(c), trouble: trouble(c.core), uneven: uneven(ctx, sb, index, c.core), area: areaOf(c.core), sides: sides(c) }]));
+    const ranked = listed.sort((a, b) => {
+      const p = measures.get(a), q = measures.get(b);
+      return p.stuck - q.stuck || p.trouble - q.trouble || a.core.supporting - b.core.supporting || p.uneven - q.uneven || p.area - q.area || p.sides - q.sides;
+    });
     // The best of each kind first (row length, pipe rows, merged belts, side belts, Two-Way
     // Output), so a bigger
     // kind that routes where the smallest cannot still gets a turn.
     const kind = ({ variant }) => `${variant.rowLength}|${variant.pipes.length > 0}|${variant.belts.some(b => b.routeIds.length > 1)}|${(variant.sides?.length ?? 0) + (variant.heads?.length ?? 0) > 0}|${variant.belts.some(b => b.load)}`;
-    const leaders = ranked.filter((v, i) => ranked.findIndex(w => kind(w) === kind(v)) === i);
-    for (const { variant, core } of [...leaders, ...ranked.filter(v => !leaders.includes(v))].slice(0, ROUTE_TRIES)) {
+    const firstOfKind = new Map();
+    for (const v of ranked) if (!firstOfKind.has(kind(v))) firstOfKind.set(kind(v), v);
+    const leaders = new Set(firstOfKind.values());
+    for (const { variant, core } of [...ranked.filter(v => leaders.has(v)), ...ranked.filter(v => !leaders.has(v))].slice(0, ROUTE_TRIES)) {
       const spec = { core, variant, machines: sb.count, whole };
       candidates.push({
         estimate: { trouble: trouble(core), area: areaOf(core), stuck: stuck({ variant, core }), supporting: core.supporting, uneven: uneven(ctx, sb, index, core), w: core.w, h: core.h }, variant,
@@ -219,6 +229,21 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     if (d && d.trouble < candidates[0].design.trouble - 1e-6) candidates.unshift(...candidates.splice(k, 1));
   }
   return candidates.filter(c => !c.failed);
+}
+
+// What makes two cores alike: their size, where each entity stands and faces, their belt rows
+// and pipe rows and pole slots. (Joined by hand: JSON.stringify of each core took long; the same
+// cores come out alike. A missing x or direction reads as null, as JSON has it.)
+function signatureOf(core) {
+  let s = `${core.w},${core.h}`;
+  for (const e of core.entities) s += `;${e.x},${e.y},${e.name},${e.direction ?? null}`;
+  s += '|';
+  for (const r of core.rows) s += `;${r.routeIds.join(',')}/${r.part},${r.y},${r.x ?? null}`;
+  s += '|';
+  for (const r of core.pipeRows) s += `,${r.y}`;
+  s += '|';
+  for (const [x, y] of core.poleSlots) s += `;${x},${y}`;
+  return s;
 }
 
 // Breakout: a Sub-Block's design with some of its machines broken out of it, so what is left
@@ -499,14 +524,25 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   // A Two-Way Copy's belts out: what each is wanted for.
   const wants = share ? shape.belts.find(b => b.isOutput)?.wants ?? null : null;
   const found = [];
+  // (A variant like one built before, field for field, builds the same core or fails the same
+  // way: built once, the core taken again.)
+  const built = new Map();
   const attempt = variant => {
     if (!variant) return;
+    const key = JSON.stringify(variant);
+    if (built.has(key)) {
+      const core = built.get(key);
+      if (core) found.push({ variant, core });
+      return;
+    }
     try {
       const core = buildCore(sb, building, links, variant, ctx.env);
       core.pathShort = corePathShort(ctx, sb, core, false, wants);
       found.push({ variant, core });
+      built.set(key, core);
     } catch (e) {
       if (!(e instanceof LayoutError)) throw e;
+      built.set(key, null);
     }
   };
   // Output Drop: each row onto a belt of its own, or two rows onto one between them.
@@ -562,7 +598,13 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   found.splice(0, found.length, ...mirrorsThatHelp(found));
   found.sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || routed(a) - routed(b));
   let failure = null;
+  // (A core taken again by a variant alike routes as it did: one that failed is not routed again.)
+  const failed = new Map();
   for (const { variant, core } of found.slice(0, 8)) {
+    if (failed.has(core)) {
+      failure = failed.get(core);
+      continue;
+    }
     for (const margin of margins(core, variant)) {
       try {
         const module = routeModule(core, moduleOptions(ctx, links, margin, sb));
@@ -591,6 +633,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
         failure = e;
       }
     }
+    failed.set(core, failure);
   }
   throw failure ?? new LayoutError(`${full.recipe}: no module of ${m} routes`);
 }
@@ -880,11 +923,19 @@ const areaOf = core => core.w * core.h;
 // only: rows only as long as asked (`lengths`): those, Fluids Between and random draws.
 function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, lengths = [], lean = false, only = false) {
   const rotations = rotationsFor(shape, links);
+  // A plain variant draws no random numbers: asked again (row caps alike, the same rows asked
+  // twice), it is the one made before, not made again.
+  const plainMade = new Map();
+  const plainVariant = opts => {
+    const k = JSON.stringify(opts);
+    if (!plainMade.has(k)) plainMade.set(k, stackVariant(shape, opts, rng));
+    return plainMade.get(k);
+  };
   // Rows as long as asked (a part of a Sub-Block in Bands: as many as its gap takes) first.
   for (const rowLength of lengths) {
     for (const { rotation, mirror } of rotations) {
       for (const middle of [4, 5, 6]) {
-        for (const pipes of links.fluids.length ? [false, true] : [false]) yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes, middle }, rng);
+        for (const pipes of links.fluids.length ? [false, true] : [false]) yield plainVariant({ rotation, mirror, rowLength, flip: true, plain: true, pipes, middle });
       }
     }
   }
@@ -907,12 +958,12 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
     for (const middle of [1, 4, 5, 6]) {
       for (const pipes of links.fluids.length ? [false, true] : [false]) {
         // Connections on the machines' sides need a gap between them.
-        for (const gap of [0, 1]) yield stackVariant(shape, { rotation, mirror, rowLength, flip: true, plain: true, pipes, middle, drop: true, gap }, rng);
+        for (const gap of [0, 1]) yield plainVariant({ rotation, mirror, rowLength, flip: true, plain: true, pipes, middle, drop: true, gap });
       }
     }
   }
   for (const { rotation, mirror } of rotations) {
-    yield stackVariant(shape, { rotation, mirror, rowLength: sb.count, plain: true }, rng);
+    yield plainVariant({ rotation, mirror, rowLength: sb.count, plain: true });
     // Rows as long as the busiest belt allows, half that (pairs of rows facing a belt fill both
     // its lanes), as many as fill one output lane, and about square; in a City Block also as
     // long as its room is wide, less room for the links beside them.
@@ -928,8 +979,8 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
           // Building every shift took most of a design's time in Py molybdenum oxide and titanium
           // plate, its cores almost never kept, ADR 0058.)
           for (const shift of pipes ? [0, -1, 1, -2, 2, -3, 3, -4, 4].slice(0, lean ? 3 : 9) : [0]) {
-            const clean = yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift }, rng);
-            const first = yield stackVariant(shape, { rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true }, rng);
+            const clean = yield plainVariant({ rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift });
+            const first = yield plainVariant({ rotation, mirror, rowLength: cap, flip: true, plain: true, pipes, merge, middle, shift, outputFirst: true });
             if (shift === 0 && clean && first) break;
           }
         }
@@ -949,7 +1000,7 @@ function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, 
         for (const pipes of links.fluids.length ? [false, true] : [false]) {
           for (const gap of [0, 1]) {
             for (const dual of /** @type {const} */ ([true, 'shared'])) {
-              for (const outputFirst of [false, true]) yield stackVariant(shape, { rotation, mirror, rowLength: length, flip: true, plain: true, pipes, middle, dual, outputFirst, gap }, rng);
+              for (const outputFirst of [false, true]) yield plainVariant({ rotation, mirror, rowLength: length, flip: true, plain: true, pipes, middle, dual, outputFirst, gap });
             }
           }
         }
@@ -1514,8 +1565,9 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
     taken.add(`${band},${row}`);
     used.set(band, (used.get(band) ?? 0) + 1);
     for (const r of w.serves) faces.set(`${r}|${band}`, (faces.get(`${r}|${band}`) ?? 0) + 1);
-    const { band: _, depth: __, ...rest } = w;
-    placed.push({ ...rest, band, row });
+    // (Written out, not spread: a design draws thousands of variants. Its keys as `wanted` has
+    // them, less band and depth.)
+    placed.push('load' in w ? { routeIds: w.routeIds, part: w.part, serves: w.serves, load: w.load, band, row } : { routeIds: w.routeIds, part: w.part, serves: w.serves, band, row });
   }
   // Every second row may sit to the side, within the gap after each machine.
   const sideways = shift ?? (rows > 1 && !plain && rng() < 0.3 ? choose([-4, -3, -2, -1, 1, 2, 3, 4], rng) : 0);
