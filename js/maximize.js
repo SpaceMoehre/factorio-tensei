@@ -64,7 +64,13 @@ export function* maximize(goals, catalog, logistics, options) {
   // them, ADR 0060.)
   let top = 0, topId = null;
   const plannerOf = () => ({ made: options.made, selections: options.selections, uses: options.uses, exports: options.exports, voids: options.voids, site: options.site, least: options.least, extra: options.extra });
-  const width = Math.max(1, Math.floor(options.parallel ?? 1));
+  // (`parallel` a function: an Annex begun beside the caller's tries, as many at once as the
+  // caller's workers it leaves, asked anew before each; its tries go to those workers even one at
+  // a time, `pooled`, not run here in turn while the caller's wait, ADR 0083.)
+  const share = typeof options.parallel === 'function' ? options.parallel : null;
+  const width = Math.max(1, Math.floor((share ? share() : options.parallel) ?? 1));
+  const atOnce = () => (share ? Math.max(1, Math.floor(share())) : width);
+  const pooled = width > 1 || options.pooled === true;
   if (options.bands !== false && width > 1 && crowded(options.site) && options.starving !== 'only') {
     topId = ++trySeq;
     yield { type: 'start', id: topId, job: { top: true, goals, planner: plannerOf() } };
@@ -147,14 +153,14 @@ export function* maximize(goals, catalog, logistics, options) {
     const going = [];
     let ended = false;
     for (;;) {
-      while (!ended && going.length < width) {
+      while (!ended && going.length < atOnce()) {
         const t = next();
         if (!t) {
           ended = true;
           break;
         }
         if (t.say) yield t.say;
-        if (width === 1) {
+        if (!pooled) {
           going.push({ ...t, outcome: attempt(plan, t.n, { ...options, ...t.extra }) });
           break;
         }
@@ -211,7 +217,7 @@ export function* maximize(goals, catalog, logistics, options) {
   };
   // (The Annexes begun early, beside the best while its last tries run: what they returned.)
   let early = null;
-  if (width > 1 && !only) {
+  if (pooled && !only) {
     // Several tries at once (ADR 0060): first the one the planner would make next; then, in turn,
     // those it would make were the tries under way not to fit, and were the one of the fewest
     // machines to fit (between it and the next: a bisection). A try is stopped once it can no
@@ -245,7 +251,7 @@ export function* maximize(goals, catalog, logistics, options) {
     for (;;) {
       yield* foretelling();
       // (An Annex's first try alone: none fitting for want of room, no more is tried.)
-      while (going.size + (spec?.ids.size ?? 0) < width && !(probing !== null && going.size)) {
+      while (going.size + (spec?.ids.size ?? 0) < atOnce() && !(probing !== null && going.size)) {
         const ns = [...going.values()].map(g => g.n);
         const hope = going.size % 2 === 0 && going.size > 0;
         const least = Math.min(...ns);
@@ -495,7 +501,7 @@ export function* maximize(goals, catalog, logistics, options) {
     const alone = { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) };
     let found = null;
     for (const room of Object.values(site.draws).some(d => d.only) ? [site, alone] : [site]) {
-      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false, starving: starving ? 'only' : false, parallel });
+      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false, starving: starving ? 'only' : false, parallel, pooled: width > 1 });
       let step, reply;
       for (step = run.next(); !step.done; step = run.next(reply)) {
         const v = step.value;
@@ -575,7 +581,7 @@ export function* maximize(goals, catalog, logistics, options) {
     let { best: got, stages: staged } = from, last = from.block;
     for (let built = from.block; built && options.annexes !== false && options.site && most - got.count >= LEAST;) {
       const before = got;
-      let found = yield* annexOf(built, before, most - before.count, false, typeof parallel === 'function' ? parallel() : parallel);
+      let found = yield* annexOf(built, before, most - before.count, false, parallel);
       if (!found) break;
       const better = staged && extend(found, staged);
       if (better) {

@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v69: An early Annex's tries on the workers (implemented)
+
+With tries at once, an Annex begun beside the last try for more machines hands its tries to the workers even when one is left for it, rather than running them in turn in the thread driving Maximize while that try's outcome waits; once the tries end it takes every worker. Py titanium plate on the page, 2 at once, an hour: 16 machines (5976.56/min) before this session's speed-ups, 24 (8859.37/min) after, where master had shown 13 with its Annex's layouts held back (ADR 0083).
+
 ## v68: Modules routed once (implemented)
 
 The same layouts in less time: a core routed into a module before (copies of it alike) taken again, plain stacks made once, Path Flows worked out once. The fast tier 773 → 741 s (Py nexelit 68 → 56 s, silicon 136 → 120 s); titanium plate's peak memory 1186 → 1290 MB (ADR 0082).

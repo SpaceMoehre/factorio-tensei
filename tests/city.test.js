@@ -365,6 +365,27 @@ test('Maximize with tries at once begins the Annexes early, while the last tries
   assert.equal(next.value.rate, step.value.rate);
 });
 
+// The Annexes begun early with one worker left them, beside the last try for more machines: their
+// tries go to the workers one at a time, none run in turn where Maximize runs while that try's
+// outcome waits (ADR 0083). The same rate as one at a time.
+test('Maximize with 2 tries at once hands an Annex begun early its tries to the workers, one at a time', async () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 40, h: 30 }, fixtures: [] }, 1);
+  const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
+  const options = { made: ['copper-cable'], selections, site, maxCandidates: 12, budgetMs: 120000 };
+  const goals = [{ item: 'electronic-circuit', rate: 60 }];
+  const alone = maximize(goals, catalog, logistics, options);
+  let step = alone.next();
+  while (!step.done) step = alone.next();
+  let started = 0;
+  const pool = tryPool(() => ({ run: job => { if (!job.top) started++; return new Promise(done => setTimeout(() => done(runTry(job, catalog, logistics)), job.n * 30)); }, stop() {} }));
+  const events = drive(maximize(goals, catalog, logistics, { ...options, parallel: 2 }), pool);
+  let tries = 0;
+  let next = await events.next();
+  for (; !next.done; next = await events.next()) if (/** @type {any} */ (next.value).type === 'try') tries++;
+  assert.equal(started, tries);
+  assert.equal(next.value.rate, step.value.rate);
+});
+
 const pyItems = ['small-parts-01', 'bolts', 'iron-stick', 'copper-cable', 'iron-gear-wheel'];
 const pySelections = Object.fromEntries(pyItems.map(i => [i, { recipe: i, building: 'automated-factory-mk01' }]));
 
