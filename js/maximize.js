@@ -189,9 +189,17 @@ export function* maximize(goals, catalog, logistics, options) {
     fits.sort((a, b) => b.machines - a.machines);
     fits.length = Math.min(fits.length, FITS_KEPT);
   };
+  // The Precheck (the Side Output's Sub-Blocks designed first from structured variants,
+  // search.js) only once a try's designs starved: it ends such a try early, and costs every
+  // other those designs again (Py nexelit: 3 to 6 s a try, passing every time). In the suite
+  // only one try failed it, an Annex of 1 in Py molybdenum oxide, which the design after it,
+  // random draws and all, then fits (ADR 0084).
+  let starvedOnce = false;
+  const prechecked = n => starvedOnce && n > plan.designable;
   // A try's outcome taken in: the planner told, the best kept where it fits more machines.
   function* took(n, outcome) {
     plan.record(n, outcome);
+    if (!outcome.block && outcome.starves && !outcome.timedOut) starvedOnce = true;
     tried += outcome.tried;
     const list = plan.goalsFor(n);
     if (outcome.block) {
@@ -267,7 +275,7 @@ export function* maximize(goals, catalog, logistics, options) {
         yield { ...trying(n), others: [...going.values()].map(g => Math.ceil(g.n)) };
         const id = ++trySeq;
         going.set(id, { n, on });
-        yield { type: 'start', id, job: jobOf(n, { precheck: n > plan.designable, unsorted: true }) };
+        yield { type: 'start', id, job: jobOf(n, { precheck: prechecked(n), unsorted: true }) };
         if (probing !== null) break;
       }
       if (!spec && going.size && going.size < width && ahead()) {
@@ -343,7 +351,7 @@ export function* maximize(goals, catalog, logistics, options) {
       const n = only || past ? null : probing ?? plan.next();
       if (n === null) break;
       yield trying(n);
-      const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true });
+      const outcome = attempt(plan, n, { ...options, precheck: prechecked(n), unsorted: true });
       yield* took(n, outcome);
       if (!outcome.block && probing !== null && !outcome.starves) break;
       probing = null;
