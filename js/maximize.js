@@ -23,9 +23,10 @@ import { scoreOf, riding } from './layout/score.js';
 // the outcomes change it), { type: 'try', rate, machines, more } before each try (`more`: while
 // Filling, how many machines more than the highest that fit) and { type: 'best',
 // block, score, tried, rate, machines, goals } for each that fits; returns { rate, machines,
-// goals, tried, failure, above } of the highest that fit (machines 0 when none did), `above` the
-// lowest rate tried above it that did not fit and why ({ rate, machines, reason }, null when none
-// did not).
+// goals, tried, failure, above, drawFailed } of the highest that fit (machines 0 when none did),
+// `above` the lowest rate tried above it that did not fit and why ({ rate, machines, reason },
+// null when none did not), `drawFailed` whether a try failed on a fluid the room has it draw only
+// from a built pipe (an Annex's).
 // Then Annexes (annex.js): in the room the highest that fit leaves, the chain again, maximized
 // there with what was built as Fixtures, while one fits (yielded as the layouts together: `rate`,
 // `machines` and `goals` theirs summed). Then, once nothing more fits without Starvation, layouts
@@ -196,8 +197,17 @@ export function* maximize(goals, catalog, logistics, options) {
   // random draws and all, then fits (ADR 0084).
   let starvedOnce = false;
   const prechecked = n => starvedOnce && n > plan.designable;
+  // In an Annex's room: whether a try failed on a fluid it draws only from a built pipe (ADR
+  // 0032: the Annex then tries once more, making that fluid itself).
+  const drawn = Object.entries(options.site?.draws ?? {}).filter(([, d]) => d.only).map(([fluid]) => `${fluid}:`);
+  let drawFailed = false;
+  const noted = outcome => {
+    const message = outcome.failure?.message ?? '';
+    if (!outcome.block && drawn.some(f => message.startsWith(f))) drawFailed = true;
+  };
   // A try's outcome taken in: the planner told, the best kept where it fits more machines.
   function* took(n, outcome) {
+    noted(outcome);
     plan.record(n, outcome);
     if (!outcome.block && outcome.starves && !outcome.timedOut) starvedOnce = true;
     tried += outcome.tried;
@@ -480,6 +490,7 @@ export function* maximize(goals, catalog, logistics, options) {
       return { n, extra: { unsorted: true, starving: true }, say: { type: 'try', rate: list[0].rate, machines: Math.ceil(n), starving: true } };
     }, function* (n, out) {
       tried += out.tried;
+      noted(out);
       if (!out.block || out.delivered <= deliveredBy(best) + 1e-6) return ++missed < STARVING_MISSES;
       missed = 0;
       const list = plan.goalsFor(n);
@@ -537,7 +548,11 @@ export function* maximize(goals, catalog, logistics, options) {
       tried += step.value.tried;
       // (The last Annex, starving, leaves what did not fit without as it was.)
       if (!starving) annexAbove = step.value.above && { ...step.value.above, rate: plus(step.value.above.rate, before.rate), machines: step.value.above.machines + before.machines };
-      if (found) break;
+      // (Making the fluid itself only where drawing it found nothing: where the tries failed for
+      // want of room or of designs, the Annex making it too fared no better anywhere in the
+      // suite, and each such Maximize took 6 to 74 s again: Py coke, rayon, molybdenum oxide,
+      // ADR 0084.)
+      if (found || !step.value.drawFailed) break;
     }
     return found;
   }
@@ -645,7 +660,7 @@ export function* maximize(goals, catalog, logistics, options) {
   }
   // (A number that starved may lie below the highest that fit.)
   const above = annexAbove ?? misses.filter(m => m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
-  return { ...(best ?? { rate: 0, machines: 0, count: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above };
+  return { ...(best ?? { rate: 0, machines: 0, count: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above, drawFailed };
 }
 
 // What an Extension makes beyond what it takes for the Annex `annex` (its layout alone): each

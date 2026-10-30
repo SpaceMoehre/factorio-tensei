@@ -7,7 +7,7 @@ import { coreLinks } from '../js/routes.js';
 import { buildCore } from '../js/layout/core.js';
 import { logistics as base } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
-import { planner, attempt } from '../js/maximize.js';
+import { planner, attempt, maximize } from '../js/maximize.js';
 import { siteOf } from '../js/city.js';
 import { annexSite, annexed } from '../js/annex.js';
 import { simulate } from '../js/sim.js';
@@ -93,6 +93,31 @@ test('An Annex draws a fluid it has enough of from a built pipe, and makes it wh
   assert.deepEqual(chain(18).entries.map(e => e.goal.item), ['moss', 'muddy-sludge', 'soil']);
   assert.equal(chain(18).trainInputs.find(t => t.item === 'carbon-dioxide').rate, 1080);
   assert.ok(chain(25).entries.some(e => e.goal.item === 'carbon-dioxide'));
+});
+
+// An Annex's room drawing a fluid only from a built pipe: Maximize there says whether a try
+// failed on that fluid (the Annex then tries once more, making it itself); a room whose tries
+// fail otherwise does not.
+test('Maximize in an Annex\'s room tells whether a try failed drawing its fluid from the built pipe', () => {
+  const options = {
+    made: ['muddy-sludge', 'carbon-dioxide', 'soil'],
+    selections: { moss: moss(0)[0].selection, 'carbon-dioxide': { recipe: 'moondrop-co2', building: 'moondrop-greenhouse-mk01', modules: [{ name: 'moondrop-mk02', count: 16 }] } },
+  };
+  const run = site => {
+    const it = maximize([{ item: 'moss', rate: 750 }], shipped, logistics, { ...options, site, probe: true, annexes: false, bands: false, giving: false, starving: false, least: 1, most: 2, maxCandidates: 2, budgetMs: 60000 });
+    let step = it.next();
+    while (!step.done) step = it.next();
+    return step.value;
+  };
+  // (No tile beside the built pipe to start from: drawing finds no way.)
+  const draws = { 'carbon-dioxide': { route: 'built2', spare: 1200, only: true, starts: [] } };
+  const drawing = run({ ...siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 1), annex: true, draws });
+  assert.equal(drawing.machines, 0);
+  assert.ok(drawing.drawFailed, drawing.failure?.message);
+  // (Too small for the farms: no room, whatever is drawn.)
+  const small = run({ ...siteOf({ area: { x: 0, y: 0, w: 14, h: 14 }, fixtures: [] }, 1), annex: true, draws });
+  assert.equal(small.machines, 0);
+  assert.ok(!small.drawFailed, small.failure?.message);
 });
 
 // With its carbon dioxide, muddy sludge and soil made here, the moss stops at 135 farms in 116 x
