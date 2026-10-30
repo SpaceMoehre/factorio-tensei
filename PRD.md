@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v68: Modules routed once (implemented)
+
+The same layouts in less time: a core routed into a module before (copies of it alike) taken again, plain stacks made once, Path Flows worked out once. The fast tier 773 → 741 s (Py nexelit 68 → 56 s, silicon 136 → 120 s); titanium plate's peak memory 1186 → 1290 MB (ADR 0082).
+
 ## v67: No search above a Bands fit (implemented)
 
 Where Bands goes first and fits FILL more than the Foretelling foretold, Maximize tries nothing above it (its Placement packs looser than Bands' Parts: every such try found no room); with tries at once, Bands runs as soon as its top is known rather than after every try. Py vrauks among roboports on the page with 2 tries at once: the same 78 paddocks at 55 s, not 503 s; one at a time, done at 116 s, not 233 s (ADR 0081).

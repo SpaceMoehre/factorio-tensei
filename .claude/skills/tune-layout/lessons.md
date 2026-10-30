@@ -82,6 +82,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Routing and placement for the hot loop: router states of one shape, pieces only for the leg found, a pipe tree's distance grown, tile sets with masks, snapshots without inside tiles, clashes by integral image, lands by typed array (same layouts) | Fast tier 2232 → 1658 s side by side after 0078 (hot air 163 → 87 s), every layout the same | 0079 |
 | Designing without work done twice: plain variants taken as made, repeated modules' cores once, cores kept between designs (last 2000, keyed by all buildCore reads, copies handed out), buildCore without string keys (same layouts) | Fast tier 1289 → 1095 s (nexelit 131 → 79 s); molybdenum oxide on the page 799.99/min either way, best at 1487 → 579 s vs before 0078 | 0080 |
 | No search above a Bands fit (FILL above foretold); Bands as soon as its top is known with tries at once | Vrauks page 2 at once: 78 paddocks at 503 → 55 s; trits 175 → 133 s; same rates, suite same layouts | 0081 |
+| Modules routed once (by content, not object: most repeats are copies), plain stacks once, Path Flows once (same layouts) | Fast tier 773 → 741 s (nexelit 68 → 56 s); titanium plate +104 MB peak | 0082 |
 
 ## What failed, was reverted, or must not be done
 
