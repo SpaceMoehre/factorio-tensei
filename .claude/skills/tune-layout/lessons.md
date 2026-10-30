@@ -81,6 +81,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Hot paths written out: no object spreads in the router's moves or buildCore, a tile's own checks once a step, placement memos keyed by small integers (same layouts) | Fast tier 3312 → 2097 s side by side (hot air 394 → 216 s, trits 865 → 501 s), every layout the same | 0078 |
 | Routing and placement for the hot loop: router states of one shape, pieces only for the leg found, a pipe tree's distance grown, tile sets with masks, snapshots without inside tiles, clashes by integral image, lands by typed array (same layouts) | Fast tier 2232 → 1658 s side by side after 0078 (hot air 163 → 87 s), every layout the same | 0079 |
 | Designing without work done twice: plain variants taken as made, repeated modules' cores once, cores kept between designs (last 2000, keyed by all buildCore reads, copies handed out), buildCore without string keys (same layouts) | Fast tier 1289 → 1095 s (nexelit 131 → 79 s); molybdenum oxide on the page 799.99/min either way, best at 1487 → 579 s vs before 0078 | 0080 |
+| No search above a Bands fit (FILL above foretold); Bands as soon as its top is known with tries at once | Vrauks page 2 at once: 78 paddocks at 503 → 55 s; trits 175 → 133 s; same rates, suite same layouts | 0081 |
 
 ## What failed, was reverted, or must not be done
 
@@ -169,6 +170,9 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Changing Placement's order** (0075). Five versions each lost a Count in the suite: the chain followed down (titanium plate 14 → 3), the most links ungated or at twice (titanium plate, molybdenum oxide 5 → 4, perylene), each weighed by the chain behind it (anthraquinone, coke). One different layout early changes Maximize's Foretelling and every try after it. Only a narrow gate kept all: belts not pipes (pipe links count stubs, up to 168), 5 or more, more than twice the chain behind the next. And keep the old order exactly where the gate does not fire: "whatever is ready" reordered anthraquinone's Sub-Blocks placed first (`ahead`) with no jump at all.
 - **A fallback that restores the old behaviour where the new fails** (0075). Placing by depth again where a chain-ordered candidate failed kept titanium plate, but the user's setup fit its 8 only by depth and so came out as before. A fallback taken at every failure takes back the gain too. Measure the user's setup page-like (`run.mjs`) with it before keeping it.
 - **A suite LOSS from Maximize's path** (0075). Perylene at 20 candidates a try laid out the same through 9 machines (same hashes), fit 9 sooner, then never reached 11. The page's Maximize gets 2793.75 before and after. Compare `maxdet.mjs` events side by side to tell a path change from a fit lost, and run the page-like A/B on that setup.
+
+- **A starving climb stopping at a Count that found no room** (0081). With K candidates a try, more machines do not always take more room: Py titanium plate's last Annex found none for 1 machine, then fit 2 and 3 (14 → 11 machines, twice). Never bound a climb by "found no room below".
+- **Skipping a probe where the machines' tiles exceed the usable room** (0081): usable room counts only spots a Goal machine fits with a margin; smaller machines stand in the slivers. Not a bound.
 
 ## Rules every change keeps
 
