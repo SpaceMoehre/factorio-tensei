@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v65: Routing and placement written for the hot loop (implemented)
+
+The same layouts in less time again: the router's search states of one shape, pieces made only for the leg found, a pipe tree's distance field grown rather than made afresh, tiles asked by coordinates rather than keys, snapshots copying only tiles outside the area; placement's clashes summed over full masks and where a Sub-Block lands read from a typed array. The fast tier, every layout the same: 2232 → 1658 s (Py hot air 163 → 87 s, perylene 337 → 226 s) (ADR 0079).
+
 ## v64: Hot paths written out (implemented)
 
 The same layouts in less time: the router's moves and `buildCore` without object spreads, a tile's own checks once a search step, placement's memos keyed by small integers. The suite's fast tier, every layout the same: 3312 → 2097 s (Py hot air 394 → 216 s, trits 865 → 501 s). Runs with no time limit (suite-one.mjs, maxdet.mjs) end past `TIMEOUT` seconds; `npm test` gives each test 30 minutes (ADR 0078).

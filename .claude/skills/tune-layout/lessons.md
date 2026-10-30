@@ -79,6 +79,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Placement takes next, of those whose consumers stand, one of 5 belts or more to them, more than twice those behind the next by depth (a heavy producer beside the step it feeds) | Py small parts 2 116²: 1496.23 → 1619.98/min, the bolts' iron sticks 35 → 15 tiles from the bolts | 0075 |
 | A fuel's Burnt Result (Py's ash) a byproduct of the step burning it, one per item burnt (chain.js `productsFor`, plan.js) | Py coke 116², page: 2520 → 2632.5/min, the BOFs' ash by train (before: left in them; the game stops them) | 0076 |
 | Hot paths written out: no object spreads in the router's moves or buildCore, a tile's own checks once a step, placement memos keyed by small integers (same layouts) | Fast tier 3312 → 2097 s side by side (hot air 394 → 216 s, trits 865 → 501 s), every layout the same | 0078 |
+| Routing and placement for the hot loop: router states of one shape, pieces only for the leg found, a pipe tree's distance grown, tile sets with masks, snapshots without inside tiles, clashes by integral image, lands by typed array (same layouts) | Fast tier 2232 → 1658 s side by side after 0078 (hot air 163 → 87 s), every layout the same | 0079 |
 
 ## What failed, was reverted, or must not be done
 
