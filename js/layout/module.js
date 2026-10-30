@@ -25,7 +25,60 @@ const REROUTES = 3;
 //         chosen by it), full: what each makes at full speed (its lanes are chosen to carry
 //         that), lane: items/min a lane carries, offsets: every output inserter whose
 //         prototype allows custom vectors picks its lane by its drop point (Inserter_Config) }
+//
+// (Routed once a core and options: Maximize designs the same Sub-Block again and again, its
+// repeated modules routed again in every try, and candidates come back from other workers as
+// copies. Routing draws no random numbers. A module routed before is taken again, by everything
+// routing reads: the core field for field (less what its design adds, pathShort) and the
+// options. Its own object over the same entities, parts and pieces, which no one changes; its
+// core this core with where the squeeze moved its tiles. A core that failed fails again, with the
+// same error. The last ROUTED_KEPT cores.)
+const ROUTED_KEPT = 50;
+const routedKept = new Map();
+// A core's fields as a key, once a core (copies of a kept core share its entities, design.js).
+const coreKeys = new WeakMap();
 export function routeModule(core, opts) {
+  let ck = coreKeys.get(core.entities);
+  if (ck === undefined) {
+    const { pathShort, ...fields } = core;
+    coreKeys.set(core.entities, ck = JSON.stringify(fields));
+  }
+  let known = routedKept.get(ck);
+  if (known) routedKept.delete(ck);
+  else known = new Map();
+  routedKept.set(ck, known);
+  if (routedKept.size > ROUTED_KEPT) routedKept.delete(routedKept.keys().next().value);
+  const { margin: m, belt, pipe } = opts;
+  let k = `${m.w},${m.e},${m.n},${m.s}|${belt.belt},${belt.underground},${belt.reach}|${pipe.pipe},${pipe.underground},${pipe.reach}|${opts.pole.name}`
+    + `|${opts.made}|${opts.output}|${opts.full}|${opts.lane}|${opts.offsets}|${opts.squeeze}|`;
+  for (const f of opts.fluids) k += `;${f.routeId},${f.fluid},${f.role}`;
+  k += '|';
+  for (const id of opts.west ?? []) k += `,${id}`;
+  k += '|';
+  for (const key of opts.reverse ?? []) k += `;${key}`;
+  k += opts.reverse ? '|r' : '|';
+  for (const key of opts.order ?? []) k += `;${key}`;
+  k += opts.order ? '|o' : '|';
+  let hit = known.get(k);
+  // (The catalog's own objects: the same catalog.)
+  if (hit === undefined || hit.inserters !== opts.inserters || hit.pole !== opts.pole) {
+    try {
+      hit = { module: routeAnew(core, opts), inserters: opts.inserters, pole: opts.pole };
+    } catch (e) {
+      if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+      hit = { error: e, inserters: opts.inserters, pole: opts.pole };
+    }
+    known.set(k, hit);
+  }
+  if (hit.error) throw hit.error;
+  const { module } = hit, moved = module.core;
+  return {
+    area: module.area, w: module.w, h: module.h, entities: module.entities, parts: module.parts, fluids: module.fluids, poles: module.poles,
+    core: { ...core, ports: moved.ports, pipeBlocked: moved.pipeBlocked, surfacePorts: moved.surfacePorts, poleSlots: moved.poleSlots, dropTiles: moved.dropTiles, taps: moved.taps },
+  };
+}
+
+function routeAnew(core, opts) {
   const { margin } = opts;
   const area = { x: -margin.w, y: -margin.n, w: core.w + margin.w + margin.e, h: core.h + margin.n + margin.s };
   // Each part with the belt rows (and side or head-on belts) it runs along.

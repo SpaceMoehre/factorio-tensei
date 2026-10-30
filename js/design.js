@@ -135,13 +135,10 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     // core of one row, pipe shifts with no pipe row to shift; most of them in Py molybdenum oxide.)
     const built = new Map();
     // Whether the variant builds a core that starves nothing (variants() asks, ADR 0058).
-    // (A variant yielded again, the same object, keeps its key.)
-    const keys = new WeakMap();
     const kept = keptCores(ctx, sb, links);
     const attempt = variant => {
       if (!variant) return false;
-      let key = keys.get(variant);
-      if (key === undefined) keys.set(variant, key = JSON.stringify(variant));
+      const key = keyOf(variant);
       if (!built.has(key)) {
         try {
           const { core, signature } = kept(variant, key);
@@ -231,23 +228,44 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
   return candidates.filter(c => !c.failed);
 }
 
+// A variant's key, field for field. (A variant asked again, the same object, keeps its key: plain
+// variants are made once, stackVariant.)
+const variantKeys = new WeakMap();
+function keyOf(variant) {
+  let key = variantKeys.get(variant);
+  if (key === undefined) variantKeys.set(variant, key = JSON.stringify(variant));
+  return key;
+}
+
 // Cores built before in this process, by everything buildCore reads (the Sub-Block, its links
 // and their routes, the logistics' env, the variant), the last CORES_KEPT: Maximize designs a
 // Sub-Block of the same Count again and again (its tries, the Precheck and the design after it,
 // Bands, Annexes), most of its variants the plain ones drawing no random numbers. Each taken as a
 // copy of the core built (what the caller adds to it is its own), with its signature; a variant
-// that failed fails again. Kept by catalog: the building is the catalog's.
+// that failed fails again. Kept by catalog: the building is the catalog's. (Each context by a
+// number of its own, CONTEXTS at most: a key of the whole context made and looked up for every
+// variant took long.)
 const CORES_KEPT = 2000;
+const CONTEXTS = 20000;
 const coresKept = new WeakMap();
 function keptCores(ctx, sb, links) {
-  if (!coresKept.has(ctx.catalog)) coresKept.set(ctx.catalog, new Map());
-  const kept = coresKept.get(ctx.catalog);
+  if (!coresKept.has(ctx.catalog)) coresKept.set(ctx.catalog, { cores: new Map(), contexts: new Map(), next: 0 });
+  const store = coresKept.get(ctx.catalog);
+  const { cores: kept, contexts } = store;
   const building = ctx.catalog.buildings[sb.building];
   const ids = [...links.inputs, links.output, ...links.apart, ...links.fluids.map(f => f.routeId)];
   const { routes, ...env } = ctx.env;
   let context = null;
   return (variant, variantKey) => {
-    context ??= JSON.stringify([sb, links, ids.map(id => (id === null ? null : routes[id])), env]);
+    if (context === null) {
+      const whole = JSON.stringify([sb, links, ids.map(id => (id === null ? null : routes[id])), env]);
+      if (!contexts.has(whole)) {
+        // (Numbers never given twice: a design under way keeps its own.)
+        if (contexts.size >= CONTEXTS) contexts.clear();
+        contexts.set(whole, store.next++);
+      }
+      context = contexts.get(whole);
+    }
     const key = `${context}\n${variantKey}`;
     let hit = kept.get(key);
     if (hit === undefined) {
@@ -568,7 +586,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   const kept = keptCores(ctx, sb, links);
   const attempt = variant => {
     if (!variant) return;
-    const key = JSON.stringify(variant);
+    const key = keyOf(variant);
     if (built.has(key)) {
       const core = built.get(key);
       if (core) found.push({ variant, core });
@@ -763,13 +781,25 @@ const routeMade = (sb, route) => sb.outputs.filter(o => o.type === 'item' && (!r
 // A core's Internal Path, before it is routed (Path Flow on its pathDrops): in a whole module each
 // part is one of the path's belts, bringing its run of consumers what they take; in a copy each
 // part brings its own share (in a Two-Way Copy what it is wanted for: `share`).
+// (Cores of one Sub-Block mostly drop alike: their shortfall is worked out once for the same
+// drops and wants, by everything pathShortfall reads, the last PATH_SHORTS.)
+const PATH_SHORTS = 2000;
+const pathShorts = new Map();
 function corePathShort(ctx, sb, core, whole, share = null) {
   if (!core.pathDrops) return 0;
   const { parts } = core.pathDrops;
   const route = ctx.routes[core.pathDrops.routeId];
   const wants = whole && parts.length === pathBelts(ctx, route) ? pathWants(ctx, route, parts.length)
     : share?.length === parts.length ? share : parts.map(p => p.made);
-  return pathShortfall(ctx, sb, parts.map(p => p.drops), wants, !route.sorted, routeMade(sb, route));
+  const total = routeMade(sb, route);
+  const belts = parts.map(p => p.drops);
+  const key = `${JSON.stringify(belts)}|${wants.join(',')}|${!route.sorted}|${total}|${sb.count}|${sb.headroom}|${ctx.env.laneCapacity}`;
+  let short = pathShorts.get(key);
+  if (short === undefined) {
+    if (pathShorts.size >= PATH_SHORTS) pathShorts.clear();
+    pathShorts.set(key, short = pathShortfall(ctx, sb, belts, wants, !route.sorted, total));
+  }
+  return short;
 }
 
 // What a Sub-Block's belts cannot deliver of its output (Path Flow): every machine at its full
@@ -963,13 +993,8 @@ const areaOf = core => core.w * core.h;
 function* variants(shape, links, sb, rng, draws = RANDOM_VARIANTS, room = null, lengths = [], lean = false, only = false) {
   const rotations = rotationsFor(shape, links);
   // A plain variant draws no random numbers: asked again (row caps alike, the same rows asked
-  // twice), it is the one made before, not made again.
-  const plainMade = new Map();
-  const plainVariant = opts => {
-    const k = JSON.stringify(opts);
-    if (!plainMade.has(k)) plainMade.set(k, stackVariant(shape, opts, rng));
-    return plainMade.get(k);
-  };
+  // twice, a design alike before), it is the one made before, not made again (stackVariant).
+  const plainVariant = opts => stackVariant(shape, opts, rng);
   // Rows as long as asked (a part of a Sub-Block in Bands: as many as its gap takes) first.
   for (const rowLength of lengths) {
     for (const { rotation, mirror } of rotations) {
@@ -1425,7 +1450,39 @@ function pairUp(belts) {
 // column: 'outside', one pipe row per fluid side by side, the pair's belts outside it (shared with
 // the next pair's row); 'inside', the pipe rows nearest the machines either side and the pair's
 // shared belts between them.
-export function stackVariant(shape, { rotation, mirror = false, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null, drop = false, between = /** @type {false | 'outside' | 'inside'} */ (false) }, rng) {
+// (A plain variant draws no random numbers: the same shape and options make the same variant.
+// Each made once in the process, by its shape and options, and taken again: Maximize designs a
+// Sub-Block of the same Count again and again, and a design asks for the same variant several
+// times. Kept by building, the last PLAIN_SHAPES shapes. Variants are read, never changed.)
+export function stackVariant(shape, opts, rng) {
+  if (!opts.plain) return makeStack(shape, opts, rng);
+  const made = plainMade(shape);
+  const k = JSON.stringify(opts);
+  let variant = made.get(k);
+  if (variant === undefined) made.set(k, variant = makeStack(shape, opts, rng));
+  return variant;
+}
+
+const PLAIN_SHAPES = 60;
+const plainShapes = new WeakMap();
+const plainOf = new WeakMap();
+// The plain variants made for a shape alike this one (by everything stackVariant reads of it).
+function plainMade(shape) {
+  let made = plainOf.get(shape);
+  if (made) return made;
+  if (!plainShapes.has(shape.building)) plainShapes.set(shape.building, new Map());
+  const kept = plainShapes.get(shape.building);
+  const k = JSON.stringify([shape.sb, shape.links, shape.belts, shape.depths, shape.lane]);
+  made = kept.get(k);
+  if (made) kept.delete(k);
+  else made = new Map();
+  kept.set(k, made);
+  if (kept.size > PLAIN_SHAPES) kept.delete(kept.keys().next().value);
+  plainOf.set(shape, made);
+  return made;
+}
+
+function makeStack(shape, { rotation, mirror = false, rowLength, flip = false, plain = false, pipes = false, merge = false, middle: height = null, shift = null, outputFirst = false, dual = /** @type {boolean | 'shared'} */ (false), deep = false, gap: wide = null, drop = false, between = /** @type {false | 'outside' | 'inside'} */ (false) }, rng) {
   const { sb, depths } = shape;
   const belts = merge ? pairUp(shape.belts) : shape.belts;
   const rows = Math.ceil(sb.count / rowLength);
@@ -1459,9 +1516,10 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
     : null;
   const bandHeight = band => (band === 0 || band === rows ? 4 : middles?.[band] ?? middle);
   const used = new Map();
-  // Belts each machine row already reaches through each of its faces (row|band): a face's
+  // Belts each machine row already reaches through each of its faces (row * 1024 + band): a face's
   // inserters share one row of tiles, so a row's belts spread over both its faces.
   const faces = new Map();
+  // Band rows taken (band * 1024 + row).
   const taken = new Set();
   // Where a belt serving `serves` may run: [band, row] options, nearest first.
   const options = serves => {
@@ -1476,15 +1534,18 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
     const bottom = r === rows - 1 ? depths.map(d => [rows, d]) : [...Array(bandHeight(r + 1)).keys()].map(j => [r + 1, j + 1]).filter(([, j]) => ok(j));
     const depth = ([band, j]) => (band === r && band !== 0 ? bandHeight(band) + 1 - j : j);
     const load = ([band]) => (used.get(band) ?? 0) / bandHeight(band);
-    const face = ([band]) => faces.get(`${r}|${band}`) ?? 0;
+    const face = ([band]) => faces.get(r * 1024 + band) ?? 0;
     // A belt only one row needs takes the face of its row with fewer belts, then a band row only
     // one row reaches, leaving the rows both reach to shared belts.
-    return [...top, ...bottom].sort((a, b) => face(a) - face(b) || shareable(a) - shareable(b) || load(a) - load(b) || depth(a) - depth(b));
+    // (Each option's measures taken once, not at every comparison: the same order.)
+    const all = [...top, ...bottom];
+    const f = all.map(face), s = all.map(shareable), l = all.map(load), d = all.map(depth);
+    return all.map((o, i) => i).sort((a, b) => f[a] - f[b] || s[a] - s[b] || l[a] - l[b] || d[a] - d[b]).map(i => all[i]);
   };
   const shareable = ([band, j]) => (band > 0 && band < rows && ok(j) && ok(bandHeight(band) + 1 - j) ? 1 : 0);
   // Rows grouped for one belt: pairs sharing a band, the odd row alone — beside drop belts, only
   // where the band has a row both reach left.
-  const pairable = band => !drop || [...Array(bandHeight(band)).keys()].some(k => ok(k + 1) && ok(bandHeight(band) - k) && !taken.has(`${band},${k + 1}`));
+  const pairable = band => !drop || [...Array(bandHeight(band)).keys()].some(k => ok(k + 1) && ok(bandHeight(band) - k) && !taken.has(band * 1024 + k + 1));
   const groupsOf = (from, to, offset) => {
     const groups = [];
     for (let r = from; r <= to;) {
@@ -1522,9 +1583,9 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
     if (out.parts && !cuts) return null;
     let part = 0;
     lines.forEach((l, k) => {
-      taken.add(`${l.band},${l.row}`);
+      taken.add(l.band * 1024 + l.row);
       used.set(l.band, (used.get(l.band) ?? 0) + 1);
-      for (const r of l.serves) faces.set(`${r}|${l.band}`, (faces.get(`${r}|${l.band}`) ?? 0) + 1);
+      for (const r of l.serves) faces.set(r * 1024 + l.band, (faces.get(r * 1024 + l.band) ?? 0) + 1);
       dropped.push({ routeIds: out.routeIds, part, serves: l.serves, band: l.band, row: l.row });
       if (cuts ? cuts.includes(k) : out.splittable) part++;
     });
@@ -1579,10 +1640,10 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
         const fromPorts = outer ? [5, 7, 6, 8] : between === 'inside' ? ends : side === 'bottom' ? [...Array(h).keys()].map(j => j + 1) : [...Array(h).keys()].map(j => h - j);
         // Pipes of two fluids side by side would join, so pipe rows keep a row between them (but
         // between rows, where each dives under the other's connections).
-        const row = fromPorts.filter(j => !taken.has(`${band},${j}`) && (between || !pipeRows.some(p => p.band === band && Math.abs(p.row - j) === 1)))
+        const row = fromPorts.filter(j => !taken.has(band * 1024 + j) && (between || !pipeRows.some(p => p.band === band && Math.abs(p.row - j) === 1)))
           .sort((a, b) => (between === 'inside' ? 0 : shareable([band, a]) - shareable([band, b])))[0];
         if (row === undefined) continue;
-        taken.add(`${band},${row}`);
+        taken.add(band * 1024 + row);
         used.set(band, (used.get(band) ?? 0) + 1);
         pipeRows.push({ routeId, band, row });
       }
@@ -1594,16 +1655,16 @@ export function stackVariant(shape, { rotation, mirror = false, rowLength, flip 
   const placed = [];
   const order = (plain ? wanted : shuffle(wanted, rng)).sort((a, b) => b.serves.length - a.serves.length);
   for (const w of order) {
-    const free = options(w.serves).filter(([band, j]) => !taken.has(`${band},${j}`) && (w.band === undefined || band === w.band));
+    const free = options(w.serves).filter(([band, j]) => !taken.has(band * 1024 + j) && (w.band === undefined || band === w.band));
     if (!free.length) return null;
     // Half rows of a deep Two-Way Output take straight inserters (depth 2) where they can: their
     // belt row runs clear of the inserter row, straight past its drops.
     const depthOf = ([band, j]) => (band === w.serves[0] && band !== 0 ? bandHeight(band) + 1 - j : j);
     if (w.depth) free.sort((a, b) => Math.abs(depthOf(a) - w.depth) - Math.abs(depthOf(b) - w.depth));
     const [band, row] = plain || rng() < 0.7 ? free[0] : choose(free, rng);
-    taken.add(`${band},${row}`);
+    taken.add(band * 1024 + row);
     used.set(band, (used.get(band) ?? 0) + 1);
-    for (const r of w.serves) faces.set(`${r}|${band}`, (faces.get(`${r}|${band}`) ?? 0) + 1);
+    for (const r of w.serves) faces.set(r * 1024 + band, (faces.get(r * 1024 + band) ?? 0) + 1);
     // (Written out, not spread: a design draws thousands of variants. Its keys as `wanted` has
     // them, less band and depth.)
     placed.push('load' in w ? { routeIds: w.routeIds, part: w.part, serves: w.serves, load: w.load, band, row } : { routeIds: w.routeIds, part: w.part, serves: w.serves, band, row });

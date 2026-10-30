@@ -61,6 +61,25 @@ test('a head-on output fills both lanes even when one inserter could move it all
   assert.ok(maxFlow(head.drops, 600, ctx.env.laneCapacity) >= 600 - 1e-9);
 });
 
+// A core alike one routed before (a copy from another worker, its design's own pathShort) with the
+// same options is taken as routed: the same module, an object of its own, its core the caller's.
+test('a core routed again is taken as routed before', () => {
+  const setup = smallParts({ ...logistics, handSize: 3 });
+  const { ctx, sb, links } = setup;
+  const core = buildCore(sb, pyCatalog.buildings[sb.building], links, allSides(setup), ctx.env);
+  const options = () => moduleOptions(ctx, links, { w: 1, e: 1, n: 0, s: 0 });
+  const first = routeModule(core, options());
+  const again = routeModule({ ...structuredClone(core), pathShort: 5 }, options());
+  assert.notEqual(again, first);
+  assert.deepEqual({ ...again, core: null }, { ...first, core: null });
+  assert.deepEqual({ ...again.core, pathShort: undefined }, { ...first.core, pathShort: undefined });
+  assert.equal(again.core.pathShort, 5);
+  assert.equal(again.entities, first.entities);
+  // Other options: routed anew.
+  const wider = routeModule(core, moduleOptions(ctx, links, { w: 2, e: 2, n: 1, s: 1 }));
+  assert.notEqual(wider.entities, first.entities);
+});
+
 test('a routed module runs every belt from its west edge to its east edge, and a copy trims what it needs not', () => {
   const setup = smallParts({ ...logistics, handSize: 1 });
   const { ctx, sb, links } = setup;

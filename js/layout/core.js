@@ -858,7 +858,15 @@ function onTwoLanes(rates, lane) {
 const placedBefore = new Map();
 function placeInserters(slots, passRows, period, options) {
   const { pitch, cyclic, poleY, machineColumns } = options;
-  const rows = [...new Set([...slots.flatMap(s => [s.insY, s.beltY]), ...passRows.map(p => p.y), ...(poleY === null ? [] : [poleY])])].sort((a, b) => a - b);
+  // (The band's rows gathered by hand: a few, asked for thousands of bands.)
+  const rows = [];
+  for (const s of slots) {
+    if (!rows.includes(s.insY)) rows.push(s.insY);
+    if (!rows.includes(s.beltY)) rows.push(s.beltY);
+  }
+  for (const p of passRows) if (!rows.includes(p.y)) rows.push(p.y);
+  if (poleY !== null && !rows.includes(poleY)) rows.push(poleY);
+  rows.sort((a, b) => a - b);
   const y0 = rows[0] ?? 0;
   // (Joined by hand, not JSON.stringify: a design asks for thousands of bands.)
   let band = `${pitch},${cyclic},${poleY === null ? null : poleY - y0},${machineColumns}`;
@@ -898,7 +906,7 @@ function placeInserters(slots, passRows, period, options) {
       period.set(column + side, s.beltY, { type: 'waypoint', belt: s.id });
     }
   });
-  return new Map(sorted.map((s, i) => [s, known.chosen[i].map(c => ({ ...c }))]));
+  return new Map(sorted.map((s, i) => [s, known.chosen[i].map(({ column, side, index }) => ({ column, side, index }))]));
 }
 
 // placeInserters' search: the slots in the order they are placed (row-2 inserters first, then
@@ -915,7 +923,10 @@ function searchInserters(sorted, passRows, period, { pitch, cyclic, poleY, machi
     if (v?.type === 'unused') return pipeOf.has(y);
     return v !== undefined && v.type !== 'waypoint' && v.type !== 'keep';
   };
-  const taken = (c, y) => at(c, y) !== undefined && at(c, y).type !== 'unused';
+  const taken = (c, y) => {
+    const v = at(c, y);
+    return v !== undefined && v.type !== 'unused';
+  };
   if (poleY !== null) {
     const all = [...machineColumns, ...[...Array(pitch).keys()].filter(c => !machineColumns.includes(c))];
     const c = all.find(c => !taken(c, poleY));
@@ -937,7 +948,11 @@ function searchInserters(sorted, passRows, period, { pitch, cyclic, poleY, machi
     return true;
   };
   const reachOf = new Map(passRows.map(p => [p.y, p.reach]));
-  const stillOpen = y => !reachOf.has(y) || (longestRun(y) < reachOf.get(y) && !(cyclic && longestRun(y) >= pitch));
+  const stillOpen = y => {
+    if (!reachOf.has(y)) return true;
+    const longest = longestRun(y);
+    return longest < reachOf.get(y) && !(cyclic && longest >= pitch);
+  };
 
   const targets = sorted.map(s => s.needed);
   // No more inserters than a row has free columns: trim the busiest belts on an overfull row
