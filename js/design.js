@@ -137,15 +137,15 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     // Whether the variant builds a core that starves nothing (variants() asks, ADR 0058).
     // (A variant yielded again, the same object, keeps its key.)
     const keys = new WeakMap();
+    const kept = keptCores(ctx, sb, links);
     const attempt = variant => {
       if (!variant) return false;
       let key = keys.get(variant);
       if (key === undefined) keys.set(variant, key = JSON.stringify(variant));
       if (!built.has(key)) {
         try {
-          const core = buildCore(sb, building, links, variant, ctx.env);
+          const { core, signature } = kept(variant, key);
           core.pathShort = corePathShort(ctx, sb, core, whole);
-          const signature = signatureOf(core);
           if (!cores.has(signature)) cores.set(signature, { variant, core });
           built.set(key, { clean: trouble(core) <= 1e-6 });
         } catch (e) {
@@ -229,6 +229,44 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     if (d && d.trouble < candidates[0].design.trouble - 1e-6) candidates.unshift(...candidates.splice(k, 1));
   }
   return candidates.filter(c => !c.failed);
+}
+
+// Cores built before in this process, by everything buildCore reads (the Sub-Block, its links
+// and their routes, the logistics' env, the variant), the last CORES_KEPT: Maximize designs a
+// Sub-Block of the same Count again and again (its tries, the Precheck and the design after it,
+// Bands, Annexes), most of its variants the plain ones drawing no random numbers. Each taken as a
+// copy of the core built (what the caller adds to it is its own), with its signature; a variant
+// that failed fails again. Kept by catalog: the building is the catalog's.
+const CORES_KEPT = 2000;
+const coresKept = new WeakMap();
+function keptCores(ctx, sb, links) {
+  if (!coresKept.has(ctx.catalog)) coresKept.set(ctx.catalog, new Map());
+  const kept = coresKept.get(ctx.catalog);
+  const building = ctx.catalog.buildings[sb.building];
+  const ids = [...links.inputs, links.output, ...links.apart, ...links.fluids.map(f => f.routeId)];
+  const { routes, ...env } = ctx.env;
+  let context = null;
+  return (variant, variantKey) => {
+    context ??= JSON.stringify([sb, links, ids.map(id => (id === null ? null : routes[id])), env]);
+    const key = `${context}\n${variantKey}`;
+    let hit = kept.get(key);
+    if (hit === undefined) {
+      try {
+        const core = buildCore(sb, building, links, variant, ctx.env);
+        hit = { core, signature: signatureOf(core) };
+      } catch (e) {
+        if (!(e instanceof LayoutError)) throw e;
+        hit = { error: e.message };
+      }
+      kept.set(key, hit);
+      if (kept.size > CORES_KEPT) kept.delete(kept.keys().next().value);
+    } else {
+      kept.delete(key);
+      kept.set(key, hit);
+    }
+    if (hit.error !== undefined) throw new LayoutError(hit.error);
+    return { core: { ...hit.core }, signature: hit.signature };
+  };
 }
 
 // What makes two cores alike: their size, where each entity stands and faces, their belt rows
@@ -527,6 +565,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   // (A variant like one built before, field for field, builds the same core or fails the same
   // way: built once, the core taken again.)
   const built = new Map();
+  const kept = keptCores(ctx, sb, links);
   const attempt = variant => {
     if (!variant) return;
     const key = JSON.stringify(variant);
@@ -536,7 +575,7 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
       return;
     }
     try {
-      const core = buildCore(sb, building, links, variant, ctx.env);
+      const { core } = kept(variant, key);
       core.pathShort = corePathShort(ctx, sb, core, false, wants);
       found.push({ variant, core });
       built.set(key, core);

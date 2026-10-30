@@ -860,11 +860,19 @@ function placeInserters(slots, passRows, period, options) {
   const { pitch, cyclic, poleY, machineColumns } = options;
   const rows = [...new Set([...slots.flatMap(s => [s.insY, s.beltY]), ...passRows.map(p => p.y), ...(poleY === null ? [] : [poleY])])].sort((a, b) => a - b);
   const y0 = rows[0] ?? 0;
-  const tile = v => (v === undefined ? '' : `${v.type}:${v.route ?? ''}:${v.belt ?? ''}`);
-  const band = JSON.stringify([pitch, cyclic, poleY === null ? null : poleY - y0, machineColumns,
-    slots.map(s => [s.depth, s.insY - y0, s.beltY - y0, s.columns, s.needed, s.id]),
-    passRows.map(p => [p.y - y0, p.reach, p.route]),
-    rows.map(y => [y - y0, ...Array.from({ length: pitch }, (_, c) => tile(period.get(c, y)))])]);
+  // (Joined by hand, not JSON.stringify: a design asks for thousands of bands.)
+  let band = `${pitch},${cyclic},${poleY === null ? null : poleY - y0},${machineColumns}`;
+  for (const s of slots) band += `;${s.depth},${s.insY - y0},${s.beltY - y0},${s.columns}/${s.needed},${s.id}`;
+  band += '|';
+  for (const p of passRows) band += `;${p.y - y0},${p.reach},${p.route}`;
+  band += '|';
+  for (const y of rows) {
+    band += `;${y - y0}`;
+    for (let c = 0; c < pitch; c++) {
+      const v = period.get(c, y);
+      band += v === undefined ? ',' : `,${v.type}:${v.route ?? ''}:${v.belt ?? ''}`;
+    }
+  }
   // Row-2 inserters first (the row-1 belt has to dive under them), then nearest belts first.
   const sorted = [...slots].sort((a, b) => REACH[b.depth].row - REACH[a.depth].row || a.depth - b.depth);
   let known = placedBefore.get(band);
