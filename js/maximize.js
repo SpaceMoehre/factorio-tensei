@@ -131,6 +131,11 @@ export function* maximize(goals, catalog, logistics, options) {
     yield { type: 'foretell', ...plan.foretold() };
     yield* inBands(plan.foretold().machines);
   }
+  // Bands gone first and fitting FILL more than the Foretelling foretold: the search tries nothing
+  // above it. Its Placement round the Fixtures packs looser than Bands' Parts in their Slots (Py
+  // vrauks: 55 paddocks, Bands 78; Py trits: 18 reefs, Bands 27, ADR 0025, ADR 0073), and its
+  // tries above them found no room after 3 to 4 minutes (vrauks), more than a minute (trits).
+  const past = banded && best !== null && best.machines >= told + FILL;
   // Tries made in turn (`next()`: { n, extra (attempt's options), say (an event first) }, or null
   // at the end), up to `width` under way at once: each outcome taken in their order (`take`, a
   // generator: false to end them, those still under way stopped, ADR 0060). One at a time, made
@@ -312,7 +317,7 @@ export function* maximize(goals, catalog, logistics, options) {
       yield* foretelling();
       // (An Annex's first try: its least, one of the first Goal's machines. None fitting for want
       // of room, no more is tried.)
-      const n = only ? null : probing ?? plan.next();
+      const n = only || past ? null : probing ?? plan.next();
       if (n === null) break;
       yield trying(n);
       const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true });
