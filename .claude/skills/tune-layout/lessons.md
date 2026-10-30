@@ -80,6 +80,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | A fuel's Burnt Result (Py's ash) a byproduct of the step burning it, one per item burnt (chain.js `productsFor`, plan.js) | Py coke 116², page: 2520 → 2632.5/min, the BOFs' ash by train (before: left in them; the game stops them) | 0076 |
 | Hot paths written out: no object spreads in the router's moves or buildCore, a tile's own checks once a step, placement memos keyed by small integers (same layouts) | Fast tier 3312 → 2097 s side by side (hot air 394 → 216 s, trits 865 → 501 s), every layout the same | 0078 |
 | Routing and placement for the hot loop: router states of one shape, pieces only for the leg found, a pipe tree's distance grown, tile sets with masks, snapshots without inside tiles, clashes by integral image, lands by typed array (same layouts) | Fast tier 2232 → 1658 s side by side after 0078 (hot air 163 → 87 s), every layout the same | 0079 |
+| Designing without work done twice: plain variants taken as made, repeated modules' cores once, cores kept between designs (last 2000, keyed by all buildCore reads, copies handed out), buildCore without string keys (same layouts) | Fast tier 1289 → 1095 s (nexelit 131 → 79 s); molybdenum oxide on the page 799.99/min either way, best at 1487 → 579 s vs before 0078 | 0080 |
 
 ## What failed, was reverted, or must not be done
 

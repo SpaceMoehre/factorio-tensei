@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v66: Designing without work done twice (implemented)
+
+The same layouts in less time: a plain variant asked again taken as made, a repeated module's core built once, cores kept between designs (the last 2000, by everything a core is built from), `buildCore` without string keys or scans done again. The fast tier, every layout the same: 1289 → 1095 s (Py nexelit 131 → 79 s, silicon 254 → 190 s); on the page, Py molybdenum oxide among roboports the same 799.99/min, best at 1487 → 579 s against the code before v64 (ADR 0080).
+
 ## v65: Routing and placement written for the hot loop (implemented)
 
 The same layouts in less time again: the router's search states of one shape, pieces made only for the leg found, a pipe tree's distance field grown rather than made afresh, tiles asked by coordinates rather than keys, snapshots copying only tiles outside the area; placement's clashes summed over full masks and where a Sub-Block lands read from a typed array. The fast tier, every layout the same: 2232 → 1658 s (Py hot air 163 → 87 s, perylene 337 → 226 s) (ADR 0079).
