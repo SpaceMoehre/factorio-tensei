@@ -126,7 +126,10 @@ export function* maximize(goals, catalog, logistics, options) {
   // (`starving: 'only'`: no layout without Starvation is looked for, only those that may starve:
   // the last Annex, ADR 0057.)
   const only = options.starving === 'only';
-  if (!only && top >= plan.foretold().machines + FILL) {
+  // (What the Foretelling foretells before any try: Bands goes first where its parts hold FILL
+  // more.)
+  const foretold0 = plan.foretold().machines;
+  if (!only && top >= foretold0 + FILL) {
     told = plan.foretold().machines;
     yield { type: 'foretell', ...plan.foretold() };
     yield* inBands(plan.foretold().machines);
@@ -135,7 +138,7 @@ export function* maximize(goals, catalog, logistics, options) {
   // above it. Its Placement round the Fixtures packs looser than Bands' Parts in their Slots (Py
   // vrauks: 55 paddocks, Bands 78; Py trits: 18 reefs, Bands 27, ADR 0025, ADR 0073), and its
   // tries above them found no room after 3 to 4 minutes (vrauks), more than a minute (trits).
-  const past = banded && best !== null && best.machines >= told + FILL;
+  let past = banded && best !== null && best.machines >= told + FILL;
   // Tries made in turn (`next()`: { n, extra (attempt's options), say (an event first) }, or null
   // at the end), up to `width` under way at once: each outcome taken in their order (`take`, a
   // generator: false to end them, those still under way stopped, ADR 0060). One at a time, made
@@ -275,6 +278,20 @@ export function* maximize(goals, catalog, logistics, options) {
       }
       if (id === topId) {
         [top, topId] = [outcome.top, null];
+        // Bands' parts holding FILL more than foretold before any try: Bands now, above the best
+        // so far, as one at a time goes first (the tries under way go on meanwhile); fitting FILL
+        // more than foretold, the search tries nothing above it (`past`).
+        if (!only && top >= foretold0 + FILL && top > (best?.machines ?? 0)) {
+          yield* inBands(Math.max(foretold0, best?.machines ?? 0));
+          past = bestN === null && best !== null && best.machines >= foretold0 + FILL;
+          if (past) break;
+          // (Tries under way at no more machines than it fit tell nothing more.)
+          for (const [k, g] of going) {
+            if (g.n > plan.lo) continue;
+            going.delete(k);
+            yield { type: 'cancel', id: k };
+          }
+        }
         continue;
       }
       const { n } = going.get(id);

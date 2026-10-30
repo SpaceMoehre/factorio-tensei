@@ -606,6 +606,32 @@ test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 7
   assert.equal(simulate(block).starvation.length, 0);
 });
 
+// With tries at once, Bands' top is worked out in a worker beside the first tries; once it says
+// its parts hold FILL more than foretold, Bands goes then, as one at a time it goes first, and
+// fitting so many, no try of the search is begun after it.
+test('Maximize with tries at once among Fixture rows: Bands once its top is known, 78 vrauks paddocks, no search try after', async () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
+  const site = siteOf(readCityBlock(blueprint, shipped), 4);
+  const settings = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
+  const selections = {
+    vrauks: { recipe: 'vrauks-1', building: 'vrauks-paddock-mk01', modules: [{ name: 'vrauks-mk02', count: 10 }] },
+    cocoon: { recipe: 'vrauks-cocoon-1-no-water', building: 'rc-mk01', modules: [{ name: 'vrauks-mk02', count: 2 }] },
+    saps: { recipe: 'sap-01', building: 'sap-extractor-mk01', modules: [{ name: 'sap-tree-mk02', count: 2 }] },
+  };
+  const started = [];
+  // (Bands' top first: the pool answers in the order the jobs began.)
+  const pool = tryPool(() => ({ run: job => { if (!job.top) started.push(job.n); return Promise.resolve(runTry(job, shipped, settings)); }, stop() {} }));
+  const events = drive(maximize([{ item: 'vrauks', rate: 450 }], shipped, settings, { made: ['water-barrel', 'cocoon', 'saps'], selections, site, budgetMs: 120000, maxCandidates: 1, annexes: false, starving: false, parallel: 2 }), pool);
+  const found = [];
+  let next = await events.next();
+  for (; !next.done; next = await events.next()) if (/** @type {any} */ (next.value).type === 'best') found.push(next.value);
+  assert.equal(found.at(-1).machines, 78);
+  // (Only the two begun beside the top's worker before it came.)
+  assert.equal(started.length, 2, `search tries begun: ${started}`);
+  assert.equal(next.value.machines, 78);
+});
+
 // Py vrauks-2, its incubators by vrauks-cocoon-2: paddocks and incubators each take five items
 // (saps and water barrels among them) and give back the empty barrels. In Bands the incubators
 // stand in Parts of two rows (a design of two fits a tall Slot, a pole kept a tile in the bands
