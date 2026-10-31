@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { straightenBelts, mergeByproducts } from '../js/layout/compact.js';
+import { straightenBelts, mergeByproducts, tidyBelts } from '../js/layout/compact.js';
 import { endsAtEastEdge, routeChain } from '../js/layout/validity.js';
 
 const N = 0, E = 4, S = 8;
@@ -31,6 +31,21 @@ test('a belt dives under what still stands, and keeps its way past a tile an ins
   assert.deepEqual(under.routes[0].pieces.map(p => `${p.kind[0]}${p.x},${p.y}`), ['b0,1', 'b1,1', 'u2,1', 'u5,1', 'b6,1']);
   const inserter = { name: 'inserter', kind: 'inserter', x: 3, y: 2, w: 1, h: 1, direction: 0, vectors: { pickup: { x: -1, y: 0 }, drop: { x: 1, y: 0 } } };
   assert.deepEqual(shape(straightenBelts(blockOf(detour(), inserter), catalog, logistics)), shape(blockOf(detour())));
+});
+
+// Two rows down in two steps of one where one step of two does: the same tiles, two turns more.
+// Routing weighs a turn a fifth of a tile, so finishing keeps it; the layout shown weighs one a
+// tile (ADR 0087): two turns, in a copy.
+test('a belt stepping down twice where once does turns twice in the layout shown', () => {
+  const stairs = [belt(0, 0, E), belt(1, 0, S), belt(1, 1, E), belt(2, 1, S), belt(2, 2, E), belt(3, 2, E), belt(4, 2, E)];
+  const turns = block => block.routes[0].pieces.filter((p, i, all) => i > 0 && p.travel !== all[i - 1].travel).length;
+  const block = blockOf(stairs);
+  assert.equal(turns(straightenBelts(blockOf([...stairs.map(p => ({ ...p }))]), catalog, logistics)), 4);
+  const shown = tidyBelts(block, catalog, logistics);
+  assert.equal(turns(shown), 2);
+  assert.equal(shown.entities.length, 7);
+  assert.equal(turns(block), 4, 'the block laid out is kept');
+  assert.equal(tidyBelts(shown, catalog, logistics), shown, 'nothing more to straighten: the block itself');
 });
 
 // Two runs of producers each sorting their byproduct out, a filter splitter at the west edge,

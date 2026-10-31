@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v72: The last layout straightened (implemented)
+
+Once Maximize ends, its last layout's belts are straightened once more with a turn weighing a tile, as Compactness weighs it (routing weighs a fifth of one), and shown at the same rate where the block stays valid and starves no more: belts stepping out of their row and back, or down twice where once does, straighten or dive. Only the last layout: an Annex is found beside a layout as it was laid out (ADR 0085). Every suite rate the same; Py trits 123 → 89 turns, 42 → 21 jogs, 227 belts fewer; perylene 48 → 39 jogs; small parts 2 62 → 55 (ADR 0087).
+
 ## v71: A byproduct's own belt snakes by its own rate (implemented)
 
 A stack of copies lets a byproduct on a belt of its own (One Item a Belt) snake through its copies by what that belt carries, the byproduct alone, not all its machines make. Py molybdenum oxide on the page: the same 799.99/min, its stone 12 belts across the City Block (2156 tiles) → 2 (305 tiles), best at 741 → 649 s; Py rayon in the suite 487.5 → 496.87/min (ADR 0086).

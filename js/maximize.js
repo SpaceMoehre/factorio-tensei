@@ -7,6 +7,7 @@ import { annexSite, annexed } from './annex.js';
 import { validateBlock } from './layout/validity.js';
 import { simulate, throughput } from './sim.js';
 import { scoreOf, riding } from './layout/score.js';
+import { tidyBelts } from './layout/compact.js';
 
 // Maximize (CONTEXT.md): the highest rate of the Goals whose Compound Block fits the City Block
 // without Starvation, its Recipe Selections, modules and the items made here as chosen. The
@@ -1157,4 +1158,16 @@ function crowded(site) {
 function overlap(a, b) {
   const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x), h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
   return w > 0 && h > 0 ? w * h : 0;
+}
+
+// The layout Maximize ends with, its belts straightened as Compactness weighs turns (compact.js
+// `tidyBelts`, ADR 0087). Only that one: an Annex is found beside a layout as it was laid out,
+// and a tidier layout before it changes the room it finds (ADR 0085). Where the straightened
+// block is not valid, or starves or delivers less of the first Goal, the block as it was.
+export function tidied(block, catalog, logistics, item) {
+  const out = tidyBelts(block, catalog, logistics);
+  if (out === block || validateBlock(out, catalog, logistics).length) return block;
+  const [was, now] = [block, out].map(b => simulate(b).starvation.length);
+  if (now > was || throughput(out).delivered(item) < throughput(block).delivered(item) - 1e-6) return block;
+  return out;
 }

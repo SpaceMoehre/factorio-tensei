@@ -41,8 +41,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "110x110",
-        "entities": 3515,
-        "hash": "5f908e8bbf3f"
+        "entities": 3272,
+        "hash": "3e0eda2df7cb"
       }
     },
     {
@@ -64,7 +64,7 @@
         "riding": 0,
         "bounds": "110x110",
         "entities": 1240,
-        "hash": "7fe955e49618"
+        "hash": "f146d6903cc7"
       }
     },
     {
@@ -85,8 +85,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "110x104",
-        "entities": 1536,
-        "hash": "528cb4147049"
+        "entities": 1547,
+        "hash": "a85c10d27379"
       }
     },
     {
@@ -107,8 +107,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "110x107",
-        "entities": 2086,
-        "hash": "baab00ec5b92"
+        "entities": 2091,
+        "hash": "bbbc128ee430"
       }
     },
     {
@@ -129,8 +129,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "110x109",
-        "entities": 2694,
-        "hash": "0196b0511f64"
+        "entities": 2687,
+        "hash": "2498408c4d2d"
       }
     },
     {
@@ -173,8 +173,8 @@
         "starving": 0,
         "riding": 10,
         "bounds": "228x228",
-        "entities": 8691,
-        "hash": "280353532d08"
+        "entities": 8694,
+        "hash": "03d55aff0415"
       }
     },
     {
@@ -195,8 +195,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "116x115",
-        "entities": 2389,
-        "hash": "58858838d973"
+        "entities": 2373,
+        "hash": "bf8034ffb8b4"
       }
     },
     {
@@ -217,8 +217,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "110x110",
-        "entities": 2624,
-        "hash": "ee56bf21fc88"
+        "entities": 2629,
+        "hash": "d8604406aa6e"
       }
     },
     {
@@ -239,8 +239,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "108x102",
-        "entities": 2475,
-        "hash": "8765fa962ab7"
+        "entities": 2463,
+        "hash": "3b1fbfd3fc49"
       }
     },
     {
@@ -260,9 +260,9 @@
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "228x222",
-        "entities": 8300,
-        "hash": "e8427fc36c0a"
+        "bounds": "228x221",
+        "entities": 7706,
+        "hash": "9e1ce1c01dac"
       }
     },
     {
@@ -283,8 +283,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "228x228",
-        "entities": 7486,
-        "hash": "0d9d5422eadd"
+        "entities": 7500,
+        "hash": "3d58c1c1ec3c"
       }
     },
     {
@@ -305,8 +305,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "228x202",
-        "entities": 6779,
-        "hash": "b150889f59dd"
+        "entities": 6763,
+        "hash": "f64775b844c1"
       }
     },
     {
@@ -342,8 +342,8 @@
         "starving": 0,
         "riding": 0,
         "bounds": "107x110",
-        "entities": 3816,
-        "hash": "211127ce9168"
+        "entities": 3815,
+        "hash": "5de9dc53ad6f"
       }
     }
   ]
