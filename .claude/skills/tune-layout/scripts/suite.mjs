@@ -3,12 +3,15 @@
 // gains on the setup it was made for and loses on none of the others is general; one that loses
 // somewhere needs a gate (SKILL.md step 5).
 //
-//   node suite.mjs [--tier fast|full] [--only a,b] [--parallel N] [--root DIR] [--record] [--out FILE]
+//   node suite.mjs [--tier fast|full] [--only a,b] [--parallel N] [--root DIR] [--seed N] [--record] [--out FILE]
 //
 // --tier       fast (default): the setups marked fast, a few minutes each; full: every setup
 // --only       these setups (by name), whatever their tier
 // --parallel   setups at once, each a process of its own (default: half the cores)
 // --root       the repo to run (another worktree), default this one
+// --seed       the searches' random numbers (default 1, the seed recorded): with another, only the
+//              results, nothing to compare them with; two roots' --out files go to ratecmp.mjs
+//              (at K candidates a try one machine more or less is often the seed's, ADR 0087)
 // --record     write each result into suite.json as the one to compare with from now on
 // --out        also write the results as JSON there
 //
@@ -36,11 +39,16 @@ if (!chosen.length) {
 }
 const width = Math.max(1, Number(opt('parallel', Math.floor(availableParallelism() / 2))));
 const root = resolve(opt('root', resolve(here, '../../../..')));
+const seed = Number(opt('seed', 1));
+if (seed !== 1 && args.includes('--record')) {
+  console.error('--record only with seed 1, the seed the results are recorded with');
+  process.exit(2);
+}
 
 // One setup in a process of its own, killed past its `timeout` seconds: its RESULT, else { error }.
 const runOne = s => new Promise(done => {
   // (suite-one's watchdog kills the run past the setup's timeout, TIMEOUT; this, should it hang.)
-  const child = spawn(process.execPath, [resolve(here, 'suite-one.mjs'), resolve(here, '../setups', s.file), String(s.K ?? 20), ...(s.most ? [String(s.most)] : [])], { env: { ...process.env, ROOT: root, TIMEOUT: String(s.timeout ?? 600) } });
+  const child = spawn(process.execPath, [resolve(here, 'suite-one.mjs'), resolve(here, '../setups', s.file), String(s.K ?? 20), ...(s.most ? [String(s.most)] : [])], { env: { ...process.env, ROOT: root, TIMEOUT: String(s.timeout ?? 600), SEED: String(seed) } });
   let out = '', err = '';
   child.stdout.on('data', d => (out += d));
   child.stderr.on('data', d => (err += d));
@@ -69,9 +77,10 @@ await Promise.all(Array.from({ length: Math.min(width, queue.length) }, async ()
 const amount = r => r?.delivered ?? r?.rate ?? 0;
 let losses = 0;
 const rows = chosen.map(s => {
-  const now = results.get(s.name), was = s.result;
+  const now = results.get(s.name), was = seed === 1 ? s.result : undefined;
   let verdict;
   if (now.error) verdict = was?.error ? 'error, as recorded' : 'ERROR';
+  else if (seed !== 1) verdict = `seed ${seed}`;
   else if (!was) verdict = 'new';
   else if (now.hash && now.hash === was.hash) verdict = 'same layout';
   else if ((was.valid !== false && now.valid === false) || (now.starving > 1e-6 && !(was.starving > 1e-6))) verdict = 'WORSE (invalid or starving)';

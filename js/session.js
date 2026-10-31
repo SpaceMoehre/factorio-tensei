@@ -40,9 +40,10 @@ export function foretoldShort({ goals, choices, logistics }, site, catalog) {
 // setup: setupOf's { goals, choices, logistics, budget (seconds), city }; site: the City Block's
 // (city.js siteOf), or null; runner: where the jobs run (runners.js). options: { width (the most
 // tries a Maximize runs at once), maxCandidates (each search's and try's, the budget then no limit:
-// a run laid out the same every time), strategies (a build's, STRATEGIES by default), maximize
-// (more of a Maximize's options: { most, annexes, bands, giving, starving }), upTo (filling the
-// City Block up to the Goals' rates), now }.
+// a run laid out the same every time), seed (the searches' random numbers, 1 by default: the
+// regression suite lays out with others to tell what a change does from what its seed does),
+// strategies (a build's, STRATEGIES by default), maximize (more of a Maximize's options: { most,
+// annexes, bands, giving, starving }), upTo (filling the City Block up to the Goals' rates), now }.
 // Returns { events, stop() } — events (async), in turn:
 //   { type: 'start', maximize, upTo, job (what the moves lay the block out again from: { entries,
 //     logistics, seed, site }) } — again where a build finding no layout fills up to the Goals;
@@ -55,7 +56,7 @@ export function foretoldShort({ goals, choices, logistics }, site, catalog) {
 //     found (a Maximize's highest that did: { rate, machines, goals, delivered }, or null) }.
 // stop() ends every worker; no event comes after.
 export function buildSession(setup, site, catalog, runner, options = {}) {
-  const { width = 1, maxCandidates = Infinity, now = () => Date.now() } = options;
+  const { width = 1, maxCandidates = Infinity, seed = 1, now = () => Date.now() } = options;
   const live = new Set();
   let stopped = false;
   const worker = () => {
@@ -76,7 +77,7 @@ export function buildSession(setup, site, catalog, runner, options = {}) {
     const started = now();
     const chain = expandChain(goals, catalog, { ...choices, logistics });
     // (Parted by Consumer before designing, as the search parts them: each Sub-Block by its index.)
-    const job = { entries: partByConsumer(chain.entries, catalog, logistics), logistics, seed: 1, site, ...(maxCandidates < Infinity ? { maxCandidates } : {}) };
+    const job = { entries: partByConsumer(chain.entries, catalog, logistics), logistics, seed, site, ...(maxCandidates < Infinity ? { maxCandidates } : {}) };
     yield { type: 'start', maximize, upTo, job };
     let designs = null;
     if (!maximize) {

@@ -6,6 +6,7 @@
 //
 //   node suite-one.mjs <setup.json> [K] [most]      ROOT=<repo> for another worktree
 //   TIMEOUT=<seconds>: killed past that (default 10800, 0 for none), exit 124
+//   SEED=<n>: the searches' random numbers (default 1, as the page)
 import './watchdog.mjs?seconds=10800';
 import { createHash } from 'node:crypto';
 import { writeFileSync } from 'node:fs';
@@ -25,7 +26,7 @@ let block = null, rate = null, machines = null, tries = 0, failure = null;
 // As the page builds (session.js), every job in this process, one after another (Maximize's
 // tries one at a time): in a City Block with Maximize on, the highest rate that fits; a build
 // each Sub-Block designed on its own, then every strategy from those designs, K candidates each.
-const session = buildSession({ goals, choices, logistics, budget: Infinity, city }, site, catalog, inlineRunner(catalog), { width: 1, maxCandidates: Number(K), ...(most ? { maximize: { most: Number(most) } } : {}) });
+const session = buildSession({ goals, choices, logistics, budget: Infinity, city }, site, catalog, inlineRunner(catalog), { width: 1, maxCandidates: Number(K), seed: Number(process.env.SEED ?? 1), ...(most ? { maximize: { most: Number(most) } } : {}) });
 let maximizing = false;
 for await (const v of session.events) {
   if (v.type === 'start') maximizing = v.maximize;

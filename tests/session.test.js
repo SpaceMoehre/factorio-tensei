@@ -47,6 +47,13 @@ test('a build is laid out the same every time with a candidate count; the best i
   assert.ok(!better(alone.score, a.score), 'no worse than the search strategy alone');
 });
 
+// The suite lays out with other seeds to tell what a change does from what its seed does (ADR 0087).
+test('a build laid out with another seed hands it to every job; with none, seed 1', async () => {
+  const [plain, other] = await Promise.all([{}, { seed: 7 }].map(o => eventsOf(buildSession(setup(), null, catalog, inlineRunner(catalog), { maxCandidates: 2, ...o }))));
+  assert.equal(plain[0].job.seed, 1);
+  assert.equal(other[0].job.seed, 7);
+});
+
 test('in a City Block with Maximize on: no designing first; every fit shown with its rate, the highest told at the end', async () => {
   const events = await eventsOf(buildSession(setup({ on: true, maximize: true }), site(), catalog, inlineRunner(catalog), { maxCandidates: 4, maximize: { most: 2, annexes: false } }));
   assert.equal(events[0].type, 'start');
