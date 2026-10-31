@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v70: The Precheck and an Annex's own fluid only where they tell (implemented)
+
+Maximize designs the Side Output's Sub-Blocks first (the Precheck) only once a try's designs starved, and an Annex whose room draws a fluid from a built pipe makes that fluid itself only where a try failed drawing it. Every suite setup makes what it made; the same layouts 2961 → 2621 s (Py coke 474 → 316 s); Py molybdenum oxide on the page done at 563 → 470 s (ADR 0084).
+
 ## v69: An early Annex's tries on the workers (implemented)
 
 With tries at once, an Annex begun beside the last try for more machines hands its tries to the workers even when one is left for it, rather than running them in turn in the thread driving Maximize while that try's outcome waits; once the tries end it takes every worker. Py titanium plate on the page, 2 at once, an hour: 16 machines (5976.56/min) before this session's speed-ups, 24 (8859.37/min) after, where master had shown 13 with its Annex's layouts held back (ADR 0083).
