@@ -84,7 +84,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | No search above a Bands fit (FILL above foretold); Bands as soon as its top is known with tries at once | Vrauks page 2 at once: 78 paddocks at 503 → 55 s; trits 175 → 133 s; same rates, suite same layouts | 0081 |
 | Modules routed once (by content, not object: most repeats are copies), plain stacks once, Path Flows once (same layouts) | Fast tier 773 → 741 s (nexelit 68 → 56 s); titanium plate +104 MB peak | 0082 |
 | An early Annex's tries on the workers even one at a time (`pooled`), as many as the workers it leaves, asked anew | Titanium plate page, 2 at once, 1 h: 16 → 24 machines (pre-session vs after); master had shown 13 | 0083 |
-| The Precheck only once a try starved; an Annex makes a drawn fluid itself only where drawing it failed | Full tier same rates, same layouts 2961 → 2621 s (coke 474 → 316 s); molybdenum oxide page done 563 → 470 s | 0084 |
+| An Annex makes a drawn fluid itself only where drawing it failed | Full tier same rates, same layouts 2961 → 2621 s with the Precheck change (coke 474 → 316 s) | 0084 |
 
 ## What failed, was reverted, or must not be done
 
@@ -179,6 +179,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A faster try reaching a path the slower one never did** (0083). Faster designing fit titanium plate's 13 in time, which left one worker for the early Annex; Maximize at width 1 runs its tries in turn where it runs, so the Annex ran there to its end, its layouts held back, the outcome of the try under way waiting: 13 shown in the hour, against 20 before. A page-like A/B of a speed-up runs the setup with tries at once too, and a width that can come out 1 under a caller with workers must still use them.
 - **Modules routed with no row above or below the core first** (0085). It took the jogs out of a fluid module's belts (hot air's molten salt: 20 turns → 0), but four fast-tier setups lost a Count (coalbed gas, perylene, vrauks, small parts 2) and silicon gained: another module routing changes which designs pair and every try after. Gated to where the module came out smaller, perylene still lost and little else changed. A tidier module is not a better design for the search; tidy the finished block, where the try's outcome is already decided.
 - **A tidier finished block, then Annexes beside it** (0085). Straightening with turns weighed as Compactness weighs them changed no suite rate, yet on the page Py small parts 2's Annex beside the straightened first layout fit 2 machines, not 3 (1799.98 → 1619.98/min, twice side by side): the belts it took out stood elsewhere, and the room left changed shape. Anything that changes the first layout's tiles changes what its Annexes find; check a finishing change on the page with Annexes, not only in the suite.
+- **The Precheck skipped, and with it the time it gave the candidates** (0084). A try's candidates get twice as long as its designing took, the Precheck counted in; skipped until a try starved, molybdenum oxide's 10 s tries were cut short and its first try at 4 found nothing on the page once in two (3 furnaces, not 4). Lesson 0059 again: work cut from what a budget is timed off shortens the budget.
 
 ## Rules every change keeps
 

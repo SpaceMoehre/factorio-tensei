@@ -1,8 +1,10 @@
 ---
-status: accepted — refines ADR 0032 and ADR 0053
+status: accepted in part (an Annex's own fluid); the Precheck's half reverted — refines ADR 0032
 ---
 
 # The Precheck and an Annex's own fluid only where they can tell
+
+The Precheck's half is reverted. A try's candidates get twice as long as its designing took (search.js `LAYING`, ADR 0059), and that time counts the Precheck: skipping it cut Py molybdenum oxide's 10 s tries short, and on the page (one try at a time, under load) its first try at 4 furnaces found no layout and Maximize stopped at 3 (599.99/min) where the code before made 4 (799.99) in every run; side by side at lower load both made 4. What follows is what was measured; only the Annex's half stands.
 
 The user's rule: the same output in less time. Layouts may differ; no setup may make less.
 
