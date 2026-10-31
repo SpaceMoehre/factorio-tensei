@@ -75,7 +75,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 73.4,
+        "secs": 96.1,
         "tries": 11,
         "rate": 555,
         "machines": 5,
@@ -84,9 +84,9 @@
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "110x104",
-        "entities": 1547,
-        "hash": "a85c10d27379"
+        "bounds": "110x103",
+        "entities": 1798,
+        "hash": "6a71c5a423f7"
       }
     },
     {
@@ -207,18 +207,18 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 143.6,
-        "tries": 11,
-        "rate": 1800,
-        "machines": 5,
+        "secs": 245.1,
+        "tries": 12,
+        "rate": 2520,
+        "machines": 7,
         "failure": null,
-        "delivered": 1800,
+        "delivered": 2520,
         "valid": true,
         "starving": 0,
-        "riding": 0,
+        "riding": 2,
         "bounds": "110x110",
-        "entities": 2629,
-        "hash": "d8604406aa6e"
+        "entities": 3076,
+        "hash": "53817eada0c5"
       }
     },
     {
@@ -251,18 +251,18 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 331.7,
+        "secs": 641.6,
         "tries": 10,
-        "rate": 799.99,
-        "machines": 4,
+        "rate": 999.98,
+        "machines": 5,
         "failure": null,
-        "delivered": 799.99,
+        "delivered": 999.98,
         "valid": true,
         "starving": 0,
         "riding": 0,
         "bounds": "228x221",
-        "entities": 7706,
-        "hash": "9e1ce1c01dac"
+        "entities": 9795,
+        "hash": "1006e2758524"
       }
     },
     {

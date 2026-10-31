@@ -11,6 +11,8 @@ import { planner, attempt, maximize } from '../js/maximize.js';
 import { siteOf } from '../js/city.js';
 import { annexSite, annexed } from '../js/annex.js';
 import { simulate } from '../js/sim.js';
+import { search } from '../js/search.js';
+import { noFluidMixing } from '../js/layout/validity.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 };
@@ -118,6 +120,28 @@ test('Maximize in an Annex\'s room tells whether a try failed drawing its fluid 
   const small = run({ ...siteOf({ area: { x: 0, y: 0, w: 14, h: 14 }, fixtures: [] }, 1), annex: true, draws });
   assert.equal(small.machines, 0);
   assert.ok(!small.drawFailed, small.failure?.message);
+});
+
+// A moss farm in an Annex's room, its muddy sludge's pipe at its module's edge: a pipe of water
+// built before on the tile beside it would join the two (the module is routed apart from what
+// stands in the room). That layout fails; the one found mixes nothing (ADR 0088).
+test('An Annex\'s copy pipe never joins a pipe of another fluid built before beside it', () => {
+  const entries = moss(30);
+  const room = fixtures => ({ ...siteOf({ area: { x: 0, y: 0, w: 60, h: 40 }, fixtures: [] }, 1), annex: true, draws: {}, ...(fixtures ? { fixtures } : {}) });
+  const first = site => {
+    for (const step of search(entries, shipped, logistics, { seed: 1, site, maxCandidates: 30, perfect: true })) return step.block;
+    return null;
+  };
+  const plain = first(room());
+  const taken = new Set(plain.entities.flatMap(e => Array.from({ length: e.w * e.h }, (_, k) => `${e.x + (k % e.w)},${e.y + Math.floor(k / e.w)}`)));
+  const beside = plain.entities.filter(e => e.kind === 'pipe' && e.copy !== undefined)
+    .flatMap(p => [[1, 0], [-1, 0], [0, 1], [0, -1]].map(([dx, dy]) => ({ x: p.x + dx, y: p.y + dy, fluid: p.fluid })))
+    .find(t => !taken.has(`${t.x},${t.y}`) && t.x > 1 && t.y > 1);
+  assert.ok(beside, 'a free tile beside a copy\'s pipe');
+  const built = { name: 'niobium-pipe', kind: 'pipe', route: 'built0', fluid: beside.fluid === 'water' ? 'carbon-dioxide' : 'water', x: beside.x, y: beside.y, w: 1, h: 1, direction: 0 };
+  const found = first(room([...room().fixtures, built]));
+  assert.ok(found);
+  assert.deepEqual(noFluidMixing({ ...found, entities: [...found.entities, built] }, shipped, logistics), []);
 });
 
 // With its carbon dioxide, muddy sludge and soil made here, the moss stops at 135 farms in 116 x

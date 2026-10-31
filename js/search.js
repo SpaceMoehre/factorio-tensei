@@ -73,7 +73,10 @@ export function* search(entries, catalog, logistics, options = {}) {
   // starve), from structured variants only and with a random source of their own (designs as the
   // search's own are left as they were); one that starves ends the search before the rest are
   // designed. (One no structured variant routes is left to its own designing, random draws and
-  // all, ADR 0053: Py anthraquinone's vanadium-pulp-3-void.)
+  // all, ADR 0053: Py anthraquinone's vanadium-pulp-3-void.) In an Annex's room it ends nothing:
+  // its designs come from random draws too, and Py molybdenum oxide's Annex of 1, its milling
+  // ending every try here, fit without Starvation designed so (ADR 0088). It is still made there,
+  // for the time the candidates get (twice as long as designing took, ADR 0059 and 0084).
   // In a City Block, a design without Starvation that fits inside it (routed if it must be: not one
   // whose core alone is too big, or that starves before it is routed).
   const fitting = c => !(c.estimate.trouble > 1e-6 || (c.estimate.w !== undefined && !within(site, c.estimate)))
@@ -92,7 +95,7 @@ export function* search(entries, catalog, logistics, options = {}) {
           continue;
         }
         const least = designOf(checked[0])?.trouble ?? 0;
-        if (least > 1e-6) return { early: { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) } };
+        if (least > 1e-6 && !site?.annex) return { early: { tried: 0, failure: new Error(`${ctx.plan[i].recipe}: every design starves (${Math.round(least)}/min short)`), starves: true, short: shortOf(i, least) } };
       }
     }
     const designs = [];

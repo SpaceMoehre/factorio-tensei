@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v73: Annexes that fit, kept (implemented)
+
+An Annex whose try the Precheck ended (its structured designs starving where the search's own do not) is tried as designed; a copy whose pipe, routed with its module apart from the room, would join a pipe built before of another fluid fails as placed, so the search goes on to one that does not. Suite: Py molybdenum oxide 799.99 → 999.98/min (an Annex of 1), coke 1800 → 2520 (5 → 7 towers), the 14 others the same layouts; molybdenum oxide on the page 799.99 → 999.98 (ADR 0088).
+
 ## v72: The last layout straightened (implemented)
 
 Once Maximize ends, its last layout's belts are straightened once more with a turn weighing a tile, as Compactness weighs it (routing weighs a fifth of one), and shown at the same rate where the block stays valid and starves no more: belts stepping out of their row and back, or down twice where once does, straighten or dive. Only the last layout: an Annex is found beside a layout as it was laid out (ADR 0085). Every suite rate the same; Py trits 123 → 89 turns, 42 → 21 jogs, 227 belts fewer; perylene 48 → 39 jogs; small parts 2 62 → 55 (ADR 0087).
