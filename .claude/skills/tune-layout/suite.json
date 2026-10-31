@@ -9,7 +9,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 11.6,
+        "secs": 4.9,
         "tries": 120,
         "rate": 600,
         "machines": null,
@@ -31,8 +31,8 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 538.5,
-        "tries": 5,
+        "secs": 56.3,
+        "tries": 2,
         "rate": 6.94,
         "machines": 27,
         "failure": null,
@@ -53,7 +53,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 204.3,
+        "secs": 29.3,
         "tries": 6,
         "rate": 8437.5,
         "machines": 1,
@@ -75,8 +75,8 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 370.9,
-        "tries": 14,
+        "secs": 73.4,
+        "tries": 11,
         "rate": 555,
         "machines": 5,
         "failure": null,
@@ -97,8 +97,8 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 279.2,
-        "tries": 8,
+        "secs": 53.6,
+        "tries": 7,
         "rate": 9000,
         "machines": 3,
         "failure": null,
@@ -119,8 +119,8 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 403.6,
-        "tries": 13,
+        "secs": 70.2,
+        "tries": 12,
         "rate": 3300,
         "machines": 11,
         "failure": null,
@@ -141,7 +141,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 24.7,
+        "secs": 9.3,
         "tries": 9,
         "rate": 6000,
         "machines": 10,
@@ -163,8 +163,8 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 699.3,
-        "tries": 5,
+        "secs": 33,
+        "tries": 2,
         "rate": 55.84,
         "machines": 78,
         "failure": null,
@@ -185,7 +185,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 236,
+        "secs": 33.2,
         "tries": 6,
         "rate": 900,
         "machines": 50,
@@ -207,8 +207,8 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 512.5,
-        "tries": 14,
+        "secs": 143.6,
+        "tries": 11,
         "rate": 1800,
         "machines": 5,
         "failure": null,
@@ -229,18 +229,18 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 1100.5,
-        "tries": 12,
-        "rate": 487.5,
+        "secs": 101.4,
+        "tries": 13,
+        "rate": 496.87,
         "machines": 10,
         "failure": null,
-        "delivered": 487.5,
+        "delivered": 496.87,
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "108x105",
-        "entities": 2520,
-        "hash": "ffd71bd8b32b"
+        "bounds": "108x102",
+        "entities": 2475,
+        "hash": "8765fa962ab7"
       }
     },
     {
@@ -251,18 +251,18 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 2308.3,
-        "tries": 12,
-        "rate": 999.98,
-        "machines": 5,
+        "secs": 331.7,
+        "tries": 10,
+        "rate": 799.99,
+        "machines": 4,
         "failure": null,
-        "delivered": 999.98,
+        "delivered": 799.99,
         "valid": true,
         "starving": 0,
-        "riding": 1,
-        "bounds": "228x228",
-        "entities": 10411,
-        "hash": "1cff0a95a017"
+        "riding": 0,
+        "bounds": "228x222",
+        "entities": 8300,
+        "hash": "e8427fc36c0a"
       }
     },
     {
@@ -273,7 +273,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 1220.3,
+        "secs": 258.9,
         "tries": 41,
         "rate": 400,
         "machines": 125,
@@ -295,8 +295,8 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 1454.1,
-        "tries": 23,
+        "secs": 229.1,
+        "tries": 22,
         "rate": 4992.18,
         "machines": 14,
         "failure": null,
@@ -317,7 +317,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 300.2,
+        "secs": 88.3,
         "tries": 20,
         "rate": null,
         "machines": null,
@@ -332,7 +332,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 182.1,
+        "secs": 40.5,
         "tries": 11,
         "rate": 1619.98,
         "machines": 9,
