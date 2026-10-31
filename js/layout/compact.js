@@ -539,6 +539,9 @@ export function exportBelts(block, catalog, logistics) {
 // block, from the same tile and heading to the same tile and heading, and kept where they cost
 // less (tiles, turns, tunnels as the router counts them). Belts and tunnels keep both lanes as
 // they are, and nothing new is fed or reached. Changes the block in place.
+// (A turn weighs a tile here, not a fifth of one as while routing: a belt stepping out of its row
+// round two inserters and back, three turns and three belts more, loses to the tunnel under them.)
+const TIDY_TURN = 1;
 export function straightenBelts(block, catalog, logistics) {
   const belted = beltGrid(block, catalog, logistics);
   if (!belted) return block;
@@ -567,20 +570,20 @@ export function straightenBelts(block, catalog, logistics) {
       const [gx, gy] = (last.out ?? '').split(',').map(Number);
       if (!Number.isFinite(gx)) return 0;
       const goal = { x: gx, y: gy, a: last.travel };
-      const was = legCost(old, start.a);
+      const was = legCost(old, start.a, TIDY_TURN);
       // (Nothing shorter is possible: leave it.)
-      if (was - (Math.abs(gx - start.x) + Math.abs(gy - start.y) + (start.a === goal.a ? 0 : 0.2)) < 1) return 0;
+      if (was - (Math.abs(gx - start.x) + Math.abs(gy - start.y) + (start.a === goal.a ? 0 : TIDY_TURN)) < 1) return 0;
       const tunnels = old.filter(p => partner.has(p)).map(p => [p, partner.get(p)]);
       for (const [p, q] of tunnels) dropTunnel(p, q);
       const before = grid.snapshot();
       for (const p of old) unplace(p);
       let leg = null;
       try {
-        leg = routeLink(grid, { id: route.id, starts: [start], goal, keepOff: reached, most: 4000 }, names);
+        leg = routeLink(grid, { id: route.id, starts: [start], goal, keepOff: reached, most: 4000, turn: TIDY_TURN }, names);
       } catch (err) {
         if (!(err instanceof RoutingError)) throw err;
       }
-      if (leg && leg.length && legCost(leg, start.a) < was - 0.5) {
+      if (leg && leg.length && legCost(leg, start.a, TIDY_TURN) < was - 0.5) {
         leg.forEach((p, i) => { if (p.underground === 'input') partner.set(p, leg[i + 1]); });
         pieces.splice(s + 1, old.length, ...leg);
         for (const p of old) removed.add(p);

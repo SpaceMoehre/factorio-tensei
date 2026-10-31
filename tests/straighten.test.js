@@ -33,6 +33,16 @@ test('a belt dives under what still stands, and keeps its way past a tile an ins
   assert.deepEqual(shape(straightenBelts(blockOf(detour(), inserter), catalog, logistics)), shape(blockOf(detour())));
 });
 
+// Two rows down in two steps of one where one step of two does: the same tiles, two turns more.
+// Turns weigh a tile each here (a fifth of one while routing): straightened, two turns.
+test('a belt stepping down twice where once does turns twice', () => {
+  const stairs = [belt(0, 0, E), belt(1, 0, S), belt(1, 1, E), belt(2, 1, S), belt(2, 2, E), belt(3, 2, E), belt(4, 2, E)];
+  const block = straightenBelts(blockOf(stairs), catalog, logistics);
+  const turns = block.routes[0].pieces.filter((p, i, all) => i > 0 && p.travel !== all[i - 1].travel).length;
+  assert.equal(turns, 2);
+  assert.equal(block.entities.length, 7);
+});
+
 // Two runs of producers each sorting their byproduct out, a filter splitter at the west edge,
 // on to the east edge on a belt each, 300 a minute (150 a lane): one goes on with the other.
 test('a byproduct belt merges with another carrying it, through a splitter beside it', () => {

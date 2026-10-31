@@ -16,14 +16,14 @@ const EXPANSIONS_PER_STEP = 100;
 const JOIN_STATES = 4000;
 
 // What a leg of pieces costs, as the router counts it: a tile each, a turn (from `heading`, then
-// each piece's travel) TURN_COST more, a tunnel its length and TUNNEL_COST (an underground's
-// input followed by its output).
-export function legCost(pieces, heading) {
+// each piece's travel) TURN_COST more (or `turn`), a tunnel its length and TUNNEL_COST (an
+// underground's input followed by its output).
+export function legCost(pieces, heading, turn = TURN_COST) {
   let c = 0;
   pieces.forEach((p, i) => {
     const q = pieces[i + 1];
     if (p.underground === 'input' && q) c += Math.abs(q.x - p.x) + Math.abs(q.y - p.y) + 1 + TUNNEL_COST;
-    else if (p.underground !== 'output') c += 1 + (p.travel === heading ? 0 : TURN_COST);
+    else if (p.underground !== 'output') c += 1 + (p.travel === heading ? 0 : turn);
     heading = p.travel;
   });
   return c;
@@ -163,7 +163,7 @@ function edgeGoal(grid, side) {
 // for its route's other links, where they meet their copies: it does not take them), most (the
 // most states it explores: a leg that may be tried elsewhere gives up sooner), joins (with an
 // edge goal: `x,y,a` keys of another belt's tiles it may end against instead, heading a into
-// its side: side-loading onto it) }
+// its side: side-loading onto it), turn (what a turn costs: TURN_COST by default) }
 // Returns the leg's pieces; `joined`, set on them, the join key it ended at.
 export function routeLink(grid, spec, names) {
   const pieces = [];
@@ -757,6 +757,8 @@ function beltMoves(grid, spec, names, pending, target) {
   };
   // (Most links hold no tiles for their route's others: no key made then.)
   const held = (x, y) => among(pending, x, y);
+  // (A turn's cost: the spec's, where it weighs turns as the finished block does, else TURN_COST.)
+  const turn = spec.turn ?? TURN_COST;
   return Object.assign(node => {
     const options = [];
     if (held(node.x, node.y)) return options;
@@ -766,7 +768,7 @@ function beltMoves(grid, spec, names, pending, target) {
     for (const d of straightOn ? STRAIGHT[node.a] : directions(node.a)) {
       const nx = node.x + DX[d], ny = node.y + DY[d];
       if (!beltOutputAllowed(grid, spec, nx, ny) && !spec.joins?.has(`${nx},${ny},${d}`)) continue;
-      options.push(state(nx, ny, d, false, 1 + (d === node.a ? 0 : TURN_COST), LAYS_PIECE, node.x, node.y, null));
+      options.push(state(nx, ny, d, false, 1 + (d === node.a ? 0 : turn), LAYS_PIECE, node.x, node.y, null));
     }
     const d = node.a;
     // A tunnel may not pass under a later waypoint of its own route, nor surface on one.
