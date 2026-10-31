@@ -724,7 +724,8 @@ function chainedRoutes(ctx, index, module, copies, share = false) {
       continue;
     }
     if (route.source === index) {
-      const perMachine = sb.outputs.filter(o => o.type === 'item').reduce((sum, o) => sum + o.rate, 0) / sb.count;
+      // (What its belt carries: the one product of a belt of its own, ADR 0066.)
+      const perMachine = routeMade(sb, route) / sb.count;
       const drops = Array.from({ length: copies }, () => part.drops).flat();
       // An output only the train takes snakes through runs of copies where two copies' share
       // fits one belt (the copy routed the other way round fills the other lane, where this

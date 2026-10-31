@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v71: A byproduct's own belt snakes by its own rate (implemented)
+
+A stack of copies lets a byproduct on a belt of its own (One Item a Belt) snake through its copies by what that belt carries, the byproduct alone, not all its machines make. Py molybdenum oxide on the page: the same 799.99/min, its stone 12 belts across the City Block (2156 tiles) → 2 (305 tiles), best at 741 → 649 s; Py rayon in the suite 487.5 → 496.87/min (ADR 0086).
+
 ## v70: An Annex's own fluid only where drawing it failed (implemented)
 
 An Annex whose room draws a fluid from a built pipe makes that fluid itself only where a try failed drawing it (the Precheck only after a starved try was tried too, and reverted: it shortened the tries' candidates). Every suite setup makes what it made; the same layouts 2961 → 2621 s (Py coke 474 → 316 s); Py molybdenum oxide on the page done at 563 → 470 s (ADR 0084).

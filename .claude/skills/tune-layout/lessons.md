@@ -85,6 +85,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Modules routed once (by content, not object: most repeats are copies), plain stacks once, Path Flows once (same layouts) | Fast tier 773 → 741 s (nexelit 68 → 56 s); titanium plate +104 MB peak | 0082 |
 | An early Annex's tries on the workers even one at a time (`pooled`), as many as the workers it leaves, asked anew | Titanium plate page, 2 at once, 1 h: 16 → 24 machines (pre-session vs after); master had shown 13 | 0083 |
 | An Annex makes a drawn fluid itself only where drawing it failed | Full tier same rates, same layouts 2961 → 2621 s with the Precheck change (coke 474 → 316 s) | 0084 |
+| A byproduct's own belt snaking through copies by its own rate, not all its machines make | Molybdenum oxide page: stone 12 belts (2156 tiles) → 2 (305), same 799.99/min; rayon 487.5 → 496.87 | 0086 |
 
 ## What failed, was reverted, or must not be done
 

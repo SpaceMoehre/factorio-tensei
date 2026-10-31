@@ -171,3 +171,24 @@ test('One Item a Belt: each product its own belt, the BOFs taking coal off two p
   const out = JSON.parse(json).blueprint.entities.filter(e => e.filters);
   assert.ok(out.length && out.every(e => e.use_filters && e.filters.length === 1));
 });
+
+// A byproduct on a belt of its own (One Item a Belt) snakes through a stack of copies where two
+// copies' share of it fits one belt: by what that belt carries, the byproduct alone, not all its
+// machines make. Py's jaw crushers make 60 stone a minute each beside 150 crushed molybdenite;
+// counted as 210 a machine, every copy had a stone belt of its own to the train (molybdenum
+// oxide among roboports: 12 belts of 120 a minute across the City Block).
+test('One Item a Belt: a byproduct\'s own belt snakes through the copies by its own rate', async () => {
+  const { context, designStep, designOf, random } = await import('../js/design.js');
+  const py = { ...base, belt: 'transport-belt', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', fuel: 'coal', liquidFuel: 'natural-gas', rightAngle: true, handSize: 1 };
+  const { entries } = expandChain([{ item: 'molybdenite-dust', rate: 3600 }], shipped, { made: ['crushed-molybdenite'], logistics: py });
+  const ctx = context(entries, shipped, py);
+  const crushers = ctx.plan.findIndex(sb => sb.item === 'crushed-molybdenite');
+  const stone = ctx.routes.find(r => r.kind === 'belt' && r.source === crushers && r.product === 'stone');
+  assert.ok(stone, 'stone on a belt of its own');
+  const stacks = designStep(ctx, crushers, random(1)).map(designOf).filter(d => d && d.kinds[0].count > 1);
+  const snakes = d => {
+    const k = d.kinds[0], part = k.module.parts.find(p => p.routeIds.includes(stone.id));
+    return Boolean(k.reverse) && k.reverse.parts.find(q => q.key === part.key).dir !== part.dir;
+  };
+  assert.ok(stacks.some(snakes), 'no stack of copies whose stone belt snakes through them');
+});
