@@ -88,6 +88,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | A byproduct's own belt snaking through copies by its own rate, not all its machines make | Molybdenum oxide page: stone 12 belts (2156 tiles) → 2 (305), same 799.99/min; rayon 487.5 → 496.87 | 0086 |
 | The last layout's belts straightened once Maximize ends, a turn weighing a tile (nothing laid out beside it after) | Every rate the same; trits turns 123 → 89, jogs 42 → 21, belts 2573 → 2346; perylene jogs 48 → 39; small parts 2 62 → 55 | 0087 |
 | Annexes that fit kept: no Precheck verdict in an Annex's room (still made, for its time); a copy's pipe joining a built pipe of another fluid fails the layout as placed | Suite: molybdenum oxide 799.99 → 999.98 (4 + 1), coke 1800 → 2520 (5 → 7); molybdenum oxide page 799.99 → 999.98 | 0088 |
+| An Annex's try that found no room made again turning (a Sub-Block that finds no room tried turned a quarter); a copy's pipe beside a built one of its fluid in another network fails as placed | Suite: silicon 555 → 675 (5 → 6, its second Annex's soil extractors turned into a strip); page the same 795, 49 s more | 0089 |
 
 ## What failed, was reverted, or must not be done
 
@@ -192,6 +193,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Room left empty at the end, unexplained** (0088). The largest empty rectangles of each finished layout (97 × 22 in molybdenum oxide, 87 × 21 in silicon) said an Annex should fit. Trying one there as Maximize does, then the search's every candidate, then the Annex joined and checked, found two causes no suite rate had shown: a check ending the try before any candidate (the Precheck), and a layout found but dropped when joined (a module's pipe beside a built pipe of another fluid). When an Annex try fails, look at what it found and threw away, not only at its failure message.
 
 - **An Annex's belt to the train joining the first layout's belt of its item** (after 0088). Py titanium plate's second Annex fails mostly on its iron oxide (a few a minute, a belt of its own in each layout) finding no way to the east edge; offered every free tile beside the built iron oxide belts (80 of them) to side-load onto, it reached none either: its producers stand in a pocket the first layout walls off. Neither the edge nor the built belts are within reach there; the failure counts did not move.
+
+- **A new search option in every try of a phase** (0089's first form). Turning a Sub-Block that finds no room in every Annex try changed which Annex fit where one fit already: Py rayon's 10 → 9 machines, coke 7 → 5, silicon 5 → 6. Made only after a try found no room, every Annex that fit fits as before and silicon keeps its gain. A fallback that runs only on failure cannot cost a fit; one that runs always moves every path.
 
 ## Rules every change keeps
 

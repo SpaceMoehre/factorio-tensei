@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v74: An Annex turns what finds no room (implemented)
+
+An Annex's try that found no room is made again with its Sub-Blocks turned a quarter where they find no room (the room left between what stands runs in strips); a copy's pipe beside a built pipe of its own fluid in another network fails as placed. Suite: Py silicon 555 → 675/min (its second Annex's soil extractors turned), the 15 others the same layouts; on the page silicon makes the same 795/min either way (ADR 0089).
+
 ## v73: Annexes that fit, kept (implemented)
 
 An Annex whose try the Precheck ended (its structured designs starving where the search's own do not) is tried as designed; a copy whose pipe, routed with its module apart from the room, would join a pipe built before of another fluid fails as placed, so the search goes on to one that does not. Suite: Py molybdenum oxide 799.99 → 999.98/min (an Annex of 1), coke 1800 → 2520 (5 → 7 towers), the 14 others the same layouts; molybdenum oxide on the page 799.99 → 999.98 (ADR 0088).

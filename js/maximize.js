@@ -684,7 +684,14 @@ export function extensionOf(annex, goals, made = []) {
 /** @param {any} plan @param {number} n @param {any} options */
 export function attempt(plan, n, options) {
   const list = plan.goalsFor(n);
-  const first = once(plan, list, {}, options);
+  let first = once(plan, list, {}, options);
+  // In an Annex's room, a try that found no room (not out of time, nor starving) once more with its
+  // Sub-Blocks turned a quarter where they find no room: the room left runs in strips (ADR 0089).
+  // Only then: an Annex that fits as it is laid out as before.
+  if (options.site?.annex && !first.block && !first.timedOut && !first.starves && !options.starving) {
+    const again = once(plan, list, {}, { ...options, turning: true });
+    first = again.block ? { ...again, tried: first.tried + again.tried } : { ...first, tried: first.tried + again.tried };
+  }
   // Spare machines (ADR 0048): where a Sub-Block's every design starves, or its belts alone starve
   // the layouts passed over, by no more than a few of its machines make (its belts each bring less
   // than the runs of consumers they feed take: 30 soil extractors on 5 belts of 720 a minute for
@@ -716,7 +723,7 @@ export function attempt(plan, n, options) {
 const SPARE = 2;
 
 // One try at the Goals `list` (attempt), with `spare` more of some steps' items.
-function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false, starving = false }) {
+function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false, starving = false, turning = false }) {
   let designed = null, entries;
   try {
     ({ entries } = plan.chainOf(list, spare));
@@ -731,7 +738,7 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
   const clock = () => (now() > until ? Infinity : now());
   try {
     const run = search(entries, plan.catalog, plan.logistics, {
-      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: !starving, settled: starving, precheck: precheck && !starving, designed: d => { designed = d; },
+      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: !starving, settled: starving, precheck: precheck && !starving, turning, designed: d => { designed = d; },
       ...(giving ? { giving: list[0].item } : {}),
     });
     // (Starving: of the layouts found, the one that delivers most of the first Goal, ADR 0057.)

@@ -145,12 +145,13 @@ export function compose(ctx, prepared, positions, layout) {
     for (const t of site?.tunnels ?? []) grid.addTunnel(t.name, t.a, t.b);
     for (const [x, y] of site?.pipeBlocked ?? []) grid.pipeBlocked.add(key(x, y));
     // (An Annex's City Block: the pipes the layout before it built. A copy's pipe, routed with its
-    // module apart from them, may stand beside one at its edge: one of another fluid it would join
-    // fails the layout here, as validity.js would fail the two together, ADR 0088.)
+    // module apart from them, may stand beside one at its edge: one it would join, of another
+    // fluid or of its own in another network, fails the layout here, as validity.js would fail the
+    // two together, ADR 0088.)
     const built = new Map((site?.fixtures ?? []).filter(f => f.kind === 'pipe' || f.kind === 'pipe-to-ground').map(f => [key(f.x, f.y), f]));
-    const joinsBuilt = (p, fluid) => [N, E, S, W].some(d => {
+    const joinsBuilt = (p, fluid, id) => [N, E, S, W].some(d => {
       const b = built.get(key(p.x + VEC[d][0], p.y + VEC[d][1]));
-      return b && b.fluid !== fluid && (p.kind === 'pipe' || p.direction === d) && (b.kind === 'pipe' || b.direction === opposite(d));
+      return b && (b.fluid !== fluid || b.network === undefined || networks.get(id) !== b.network) && (p.kind === 'pipe' || p.direction === d) && (b.kind === 'pipe' || b.direction === opposite(d));
     });
     // Copies may stand in each other's empty corners (a refined placement), never on each other.
     const put = e => {
@@ -186,7 +187,7 @@ export function compose(ctx, prepared, positions, layout) {
         const id = pipeRouteOf(routes, f.routeId);
         const abs = f.pieces.map(p => ({ ...move(p), route: id, copy: n }));
         for (const p of abs) {
-          if (built.size && joinsBuilt(p, f.fluid)) throw new RoutingError(`${f.fluid} at ${p.x},${p.y} joins a pipe built before of another fluid`);
+          if (built.size && joinsBuilt(p, f.fluid, id)) throw new RoutingError(`${f.fluid} at ${p.x},${p.y} joins a pipe built before of another fluid or network`);
           put(p);
         }
         addTunnels(grid, abs, pipes.underground);

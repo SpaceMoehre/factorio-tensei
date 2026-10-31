@@ -144,6 +144,22 @@ test('An Annex\'s copy pipe never joins a pipe of another fluid built before bes
   assert.deepEqual(noFluidMixing({ ...found, entities: [...found.entities, built] }, shipped, logistics), []);
 });
 
+// Room an Annex finds runs in strips between what stands: an Annex's try that found no room is
+// made again turning (maximize.js attempt), where a Sub-Block that finds no room is tried again
+// turned a quarter; a search not turning tries none turned (ADR 0089).
+test('Turning, a Sub-Block that finds no room is tried again turned a quarter; not turning, never', () => {
+  const entries = moss(120);
+  const turnedTries = annex => {
+    const site = { ...siteOf({ area: { x: 0, y: 0, w: 22, h: 70 }, fixtures: [] }, 1), ...(annex ? { annex: true, draws: {} } : {}) };
+    let turned = 0;
+    const run = search(entries, shipped, logistics, { seed: 1, site, maxCandidates: 40, perfect: true, turning: annex, trace: c => { if (c.turns) turned++; } });
+    for (let step = run.next(); !step.done; step = run.next());
+    return turned;
+  };
+  assert.ok(turnedTries(true) > 0);
+  assert.equal(turnedTries(false), 0);
+});
+
 // With its carbon dioxide, muddy sludge and soil made here, the moss stops at 135 farms in 116 x
 // 116 (its stack 84 x 75, the rest below it), a strip of 80 x 30 left empty: an Annex of 18 farms
 // and their own muddy sludge and soil stands in it, routed round the first layout, its carbon

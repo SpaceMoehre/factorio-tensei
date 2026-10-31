@@ -7,6 +7,7 @@ import { starvationOf, better } from './layout/score.js';
 import { simulate } from './sim.js';
 import { editOf } from './layout/edit.js';
 import { partByConsumer } from './plan.js';
+import { turnDesign } from './layout/turn.js';
 
 // Anytime layout search, bottom-up (ADR 0005). First every Sub-Block is designed on its own,
 // from the leaves of the Production Chain up to the Goals: candidate layouts of its machines and
@@ -35,7 +36,8 @@ import { partByConsumer } from './plan.js';
 //            elsewhere, and the layout runs at the rate of those left: Giving Way), settled (not
 //            perfect, but bounded as a perfect search is: it gives up `patience` candidates after
 //            the structured ones, and its Placement and routing end with its time: Maximize's
-//            tries that may starve, ADR 0057) }
+//            tries that may starve, ADR 0057), turning (a Sub-Block that finds no room is tried
+//            again turned a quarter, ADR 0089) }
 // Yields { block, score, tried, placed (the area its Sub-Blocks' boxes span) }; returns { tried,
 // failure, timedOut (it stopped for want of time, not of candidates), short (where a Sub-Block's
 // every design starves: { item, rate (what its least starving design starves), each (what one of
@@ -302,10 +304,11 @@ export function* search(entries, catalog, logistics, options = {}) {
     const as = JSON.stringify(candidate.layers ? { ...candidate, weight: 0, lift: 0, order: 0, at: 0 } : candidate);
     if (seen.has(as)) continue;
     seen.add(as);
-    const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}`;
+    const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}|${JSON.stringify(candidate.turns ?? {})}`;
     if (!prepared.has(k)) {
-      // Each Sub-Block's chosen design, routed now if this is the first time it is tried.
-      const chosen = perfect && starves(candidate) ? [null] : candidate.choice.map((c, i) => designFor(candidate, i));
+      // Each Sub-Block's chosen design, routed now if this is the first time it is tried (turned
+      // as the candidate turns it).
+      const chosen = perfect && starves(candidate) ? [null] : candidate.choice.map((c, i) => turnDesign(designFor(candidate, i), candidate.turns?.[i] ?? 0));
       let ready = null;
       try {
         if (chosen.every(Boolean) && !(perfect && chosen.some(d => d.trouble > 1e-6))) {
@@ -366,6 +369,14 @@ export function* search(entries, catalog, logistics, options = {}) {
       if (candidate.ahead?.includes(i)) return;
       retry({ ...candidate, ahead: [...(candidate.ahead ?? []), i] });
     };
+    // Turning (an Annex's try once more, after one that found no layout, ADR 0089): a Sub-Block
+    // that finds no room, the same candidate next with it turned a quarter (the room the layout
+    // before it leaves runs in strips, often taller than wide: Py silicon's soil extractors, 31 ×
+    // 18 where 22 × 75 stands free).
+    const turned = i => {
+      if (!options.turning || candidate.turns?.[i]) return;
+      retry({ ...candidate, turns: { ...candidate.turns, [i]: 1 } });
+    };
     let work = ready, used = null, positions = null;
     // A failure's hints acted on: the next candidates try what it suggests. (`composed`: the block
     // as routed, where finishing it failed.)
@@ -377,6 +388,7 @@ export function* search(entries, catalog, logistics, options = {}) {
       else if (hint.unplaced !== undefined) {
         inTwo(hint.unplaced);
         placeFirst(hint.unplaced);
+        turned(hint.unplaced);
       }
       solidly();
       failure = error;
