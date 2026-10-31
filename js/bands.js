@@ -1,0 +1,618 @@
+// Bands (ADR 0025): in a City Block whose Fixtures stand in rows across it (a grid of roboports
+// and poles), the Production Chain in parts, each a row or two of machines in a gap between the
+// Fixtures' rows. The City Block is taken whole or cut at one of its Fixture columns (whichever
+// packs), each range into Slots: the runs of rows no Fixture stands in across it. Each Sub-Block
+// with machines enough to fill a row of one is split into parts, a part to a Slot: the Sub-Blocks
+// whose rows are tallest first (only the tallest gaps take them), the Goals last, filling what is
+// left. A part that takes an item from a Sub-Block in parts takes it from the nearest part with
+// room for it. Small Sub-Blocks stand where Placement finds room. The parts are designed, placed
+// in their Slots, linked and checked like any layout.
+
+import { planSubBlocks } from './plan.js';
+import { context, designStep, designOf, random } from './design.js';
+import { prepare, RoutingError } from './layout/compose.js';
+import { layOut } from './layout/lay.js';
+import { placeBlocks } from './layout/place.js';
+import { LayoutError } from './layout/core.js';
+import { simulate } from './sim.js';
+
+// Room kept beside the parts: at the west edge for the belts coming in, at the east edge for
+// those going out, and west of a Fixture column the City Block is cut at, for the links crossing
+// between ranges.
+const WEST = 4, EAST = 3, CORRIDOR = 16;
+// Room kept east of a Fixture column the City Block is cut at: where links come into the parts.
+const OFFSET = 2;
+// The corridor's columns left where a Slot west of it lends the rest to the Goal's part in it.
+const NARROW = 7;
+// A part's rows: a machine's depth and the belts and inserters of the band beside it.
+const BAND = 6;
+// How many machines a producer's parts hold, for those its consumers need (a consumer part takes
+// all it needs from one part: whole parts do not divide evenly), tried in turn.
+const SPARES = [1.15, 1.05, 1];
+// How far a part's design may reach past its Slot's width, into the room kept beside it (not at
+// the east edge, where its belts leave).
+const SPILL = 4;
+// Random variants tried for a part of several rows.
+const DRAWS = 60;
+// Rows between a part and a Sub-Block standing in the rows its Slot has to spare.
+const GAP = 2;
+// Ways to choose the producer parts each consumer part takes from, tried in turn; and how many
+// choices the search for them looks at.
+const TRIES = 3, VISITS = 200000;
+// The Slots tried in turn for a producer's first part, and how many ways of them all at most.
+const BRANCHES = 4, PACKS = 64;
+// Columns between the two parts a Slot holds where a Goal's part is split in two.
+const HALVES = 2;
+
+// The rows Fixtures stand in between columns x0 and x1 (and `side` columns either side: where a
+// part's belts meet their links).
+function blockedRows(site, x0, x1, side = 1) {
+  const rows = new Set();
+  for (const f of site.fixtures) {
+    if (f.x + f.w - 1 < x0 - side || f.x > x1 + side) continue;
+    for (let y = f.y; y < f.y + f.h; y++) rows.add(y);
+  }
+  return rows;
+}
+
+// The runs of rows no Fixture stands in between columns x0 and x1: { y, h }.
+export function gapsOf(site, x0, x1) {
+  const { inner } = site;
+  const blocked = blockedRows(site, x0, x1);
+  const out = [];
+  let start = null;
+  for (let y = inner.y; y <= inner.y + inner.h; y++) {
+    const free = y < inner.y + inner.h && !blocked.has(y);
+    if (free && start === null) start = y;
+    if (!free && start !== null) {
+      out.push({ y: start, h: y - start });
+      start = null;
+    }
+  }
+  return out;
+}
+
+// The ways to cut a City Block into Slots: its inner width whole, or cut at one Fixture column
+// (a run of columns Fixtures stand in) at least `least` columns from either edge; those holding
+// most rows of machines `pitch` wide in rows `rowH` tall first. Each Slot: { x, w, y, h, range,
+// spill, lend (the corridor's columns east of it it may lend a part: see NARROW) }.
+export function slotsOf(site, pitch, rowH, least = 3 * pitch) {
+  const { inner } = site;
+  const columns = [];
+  for (let x = inner.x; x < inner.x + inner.w; x++) {
+    const n = blockedRows(site, x, x, 0).size;
+    if (!n) continue;
+    const last = columns.at(-1);
+    if (last && last.x1 === x - 1) Object.assign(last, { x1: x, rows: Math.max(last.rows, n) });
+    else columns.push({ x0: x, x1: x, rows: n });
+  }
+  const slotsFor = ranges => ranges.flatMap((r, k) => {
+    // (The links crossing between ranges run west of the Fixture column cut at.)
+    const x = r.x0 + (k === 0 ? WEST : OFFSET), end = r.x1 - (k === ranges.length - 1 ? EAST : CORRIDOR);
+    if (end - x < pitch) return [];
+    const last = k === ranges.length - 1;
+    return gapsOf(site, x, end).map(g => ({ x, w: end - x + 1, ...g, range: k, spill: last ? 0 : SPILL, lend: last ? 0 : CORRIDOR - NARROW }));
+  });
+  const worth = slots => slots.reduce((sum, s) => sum + Math.floor(s.h / rowH) * Math.floor((s.w - 2) / pitch), 0);
+  const ways = [slotsFor([{ x0: inner.x, x1: inner.x + inner.w - 1 }])];
+  for (const c of columns) {
+    if (c.x0 - inner.x < least || inner.x + inner.w - c.x1 < least) continue;
+    ways.push(slotsFor([{ x0: inner.x, x1: c.x0 - 1 }, { x0: c.x1 + 1, x1: inner.x + inner.w - 1 }]));
+  }
+  return ways.filter(w => w.length).sort((a, b) => worth(b) - worth(a));
+}
+
+// Machines `building` stands in a Slot: rows of as many as its width takes, as many rows as its
+// height does (two at most: three do not fit the gaps a third row would need; one where no
+// design of two fits, `most`), or none.
+function capacity(slot, building, most = 2) {
+  const pitch = Math.min(building.size.w, building.size.h), depth = Math.max(building.size.w, building.size.h);
+  let rows = 0;
+  while (rows < most && slot.h >= (rows + 1) * (depth + BAND) - rows) rows++;
+  // (A row takes a column either side of its machines, several rows one more.)
+  const perRow = Math.floor((slot.w + slot.spill - Math.min(rows, 2) - 1) / pitch);
+  return { perRow, rows, machines: perRow * rows };
+}
+
+// A layout in Bands for the chain's entries, or null (no Fixtures, or no Sub-Block worth parts):
+// { block } once one is linked, checked and starves nothing; { failure } where it does not. With
+// `pack`, only whether its parts fit the gaps: { packed: true } or { failure }.
+// options: { seed, pack, until (true once out of time: no more layouts are tried, and the one
+// being linked gives up) }
+/** @param {any} entries @param {any} catalog @param {any} logistics @param {any} site @param {{ seed?: number, pack?: boolean, until?: () => boolean }} [options] */
+export function bands(entries, catalog, logistics, site, { seed = 1, pack = false, until = () => false } = {}) {
+  // (The failure told is the one that got furthest.)
+  let last = null;
+  // Producers' Parts with less to spare where more would leave the Goal too little room; small
+  // machines first kept out of the Parts (in the rows a part's Slot has to spare, else a narrow
+  // column beside the Parts), the gaps they would take left to the Goal, else in Parts of their
+  // own. (Tries that pack as one before them are not tried again.)
+  const seen = new Set();
+  for (const small of [false, true]) {
+    for (const spare of SPARES) {
+      if (until()) return last ?? { failure: new RoutingError('out of time') };
+      const out = banded(entries, catalog, logistics, site, { seed, pack, spare, small, seen, until });
+      if (out?.block || out?.packed || !out) return out;
+      if (out.failure && (out.built ?? 0) >= (last?.built ?? 0)) last = out;
+    }
+  }
+  return last;
+}
+
+function banded(entries, catalog, logistics, site, { seed, pack, spare, small, seen, until }) {
+  // (Not with fluids fed back through valves, ADR 0062: Maximize gives Bands its chain without.)
+  // (Nor with a Byproduct Use of a solid: a Sub-Block's parts give their solid byproducts to none,
+  // so Recycled Byproducts come by train. A fluid's Use takes it from the first part of its
+  // source, the other parts' pipes and its other sources' joining that one's: `taking`, each such
+  // Use's source by item, ADR 0073.)
+  if (!site?.fixtures.length || entries.some(e => e.goal.topUp)) return null;
+  const whole = planSubBlocks(entries, catalog, logistics);
+  if (entries.some((e, i) => e.use && whole[i].inputs.find(x => x.name === e.use.item)?.type !== 'fluid')) return null;
+  const taking = new Map(entries.flatMap(e => (e.use && e.goal.from ? [[e.goal.item, e.goal.from]] : [])));
+  entries = entries.map(e => (e.goal.from ? { ...e, goal: Object.fromEntries(Object.entries(e.goal).filter(([k]) => k !== 'from')) } : e));
+  const plan = planSubBlocks(entries, catalog, logistics);
+  const goal = plan.findIndex(sb => sb.item === entries[0].goal.item);
+  const lead = catalog.buildings[plan[goal].building];
+  // (The failure told is the one that got furthest: a layout that did not route over parts that
+  // fit no gaps.)
+  let failure = null, furthest = -1, repeat = false;
+  for (const slots of slotsOf(site, Math.min(lead.size.w, lead.size.h), Math.max(lead.size.w, lead.size.h) + BAND)) {
+    // (Where the Goal's parts do not fit, Slots lending it the corridor: one more each try.)
+    for (let lend = 0; lend <= slots.filter(s => s.lend).length; lend++) {
+      if (until()) break;
+      const out = inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small, seen, lend, until, taking);
+      if (out?.block || out?.packed) return out;
+      repeat ||= !!out?.repeat;
+      if (out?.failure && (out.built ?? 0) > furthest) [failure, furthest] = [out.failure, out.built ?? 0];
+      if (!out?.short) break;
+    }
+  }
+  return failure ? { failure, built: furthest } : repeat ? {} : null;
+}
+
+// The chain in parts in these Slots: { block }, { failure } (with `short` where the Goal's parts
+// fit none of them), { repeat } (its parts as a try before them packed) or null (no Sub-Block worth
+// parts).
+function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pack, spare, small, seen, lend = 0, until = () => false, taking = new Map()) {
+  slots = [...slots];
+  const building = i => catalog.buildings[plan[i].building];
+  const area = i => plan[i].count * building(i).size.w * building(i).size.h;
+  const depth = i => Math.max(building(i).size.w, building(i).size.h);
+  // (Parts of two rows only where a design of two fits the Slot.)
+  const capacityOf = (slot, i) => {
+    const c = capacity(slot, building(i));
+    return c.rows < 2 || twoRowsFit(entries, plan, catalog, logistics, site, seed, i, slot, c.perRow) ? c : capacity(slot, building(i), 1);
+  };
+  // The Sub-Blocks in parts: those whose machines fill a row of a Slot (unless `small` is false:
+  // then not those whose machines are under half as deep as the Goal's); the rest stand where
+  // Placement finds room.
+  const fills = i => plan[i].count > 2 && slots.some(s => capacity(s, building(i)).perRow >= Math.min(plan[i].count, 3));
+  const split = plan.map((_, i) => fills(i) && (small || i === goal || 2 * depth(i) >= depth(goal)));
+  if (!split[goal]) return null;
+  // Most constrained first: the tallest rows, the Goals last.
+  const order = plan.map((_, i) => i).filter(i => split[i] && i !== goal)
+    .sort((a, b) => Math.max(building(b).size.w, building(b).size.h) - Math.max(building(a).size.w, building(a).size.h) || area(b) - area(a));
+  order.push(goal);
+  // Each Sub-Block's parts in turn: a producer's first in each of the Slots that take the most of
+  // it in turn (BRANCHES at most), the Goal's then where they fit; the first way they all fit.
+  /** @type {{ slots: any[], parts: any[] } | null} */
+  let found = null;
+  /** @type {any} */
+  let short = null, visits = 0;
+  const fill = (o, slots, free, parts) => {
+    if (found || ++visits > PACKS) return;
+    if (o === order.length) {
+      found = { slots, parts };
+      return;
+    }
+    const i = order[o];
+    // (A producer's parts with a little to spare: each consumer part takes from one.)
+    const want = i === goal ? plan[i].count : Math.ceil(plan[i].count * spare);
+    // The Goal's, in the `lend` lowest Slots west of a corridor left, also in its columns but
+    // NARROW (a row of paddocks one longer): the lowest, the fewest links run down it past them.
+    const lent = new Set(i === goal ? [...free].filter(k => slots[k].lend).sort((a, b) => slots[b].y - slots[a].y).slice(0, lend) : []);
+    const slotOf = (all, k) => (lent.has(k) ? { ...all[k], w: all[k].w + all[k].lend } : all[k]);
+    // The Slots that take the most of it (and waste least), until it is placed. (A Slot that takes
+    // two rows by its height where no design of two fits takes two Parts of one row, one above the
+    // other, where each half takes a row: halves.)
+    const halves = (slot, c) => {
+      const top = Math.floor(slot.h / 2);
+      return c.rows === 1 && capacity(slot, building(i)).rows === 2 && top >= depth(i) + BAND + 1
+        ? [{ ...slot, h: top }, { ...slot, y: slot.y + top, h: slot.h - top }] : null;
+    };
+    const ranked = (all, open, left) => [...open].flatMap(k => {
+      const c = capacityOf(slotOf(all, k), i);
+      if (!c.machines) return [];
+      const stack = halves(slotOf(all, k), c);
+      const take = Math.min(left, stack ? 2 * c.perRow : c.machines);
+      return [{ k, take, waste: slotOf(all, k).w * slotOf(all, k).h - take * building(i).size.w * building(i).size.h, c, stack }];
+    }).sort((a, b) => b.take - a.take || a.waste - b.waste);
+    // Its parts, the first in the `first`th of those Slots, the rest each in the best: the state
+    // after, or null.
+    const placed = first => {
+      const all = [...slots], open = new Set(free), out = [...parts];
+      let left = want;
+      for (let n = 0; left > 0; n++) {
+        const best = ranked(all, open, left)[n ? 0 : first];
+        if (!best) return null;
+        open.delete(best.k);
+        const slot = slotOf(all, best.k);
+        let { take, c } = best;
+        // A producer all of whose machines one part takes, in a Slot holding more: the rest of the
+        // Slot a Slot of its own, below it (the two parts sharing the gap one above the other) or
+        // east of it (in one row or two), whichever holds the most of the Goal's machines. Its
+        // machines whole, none to spare: every part taking from it takes from this one. (A
+        // producer in several parts keeps its spare: whole parts divide among their consumers.)
+        let put = slot, row = false;
+        const whole = Math.ceil(plan[i].count - 1e-9);
+        if (i !== goal && !best.stack && !n && whole <= take && take < c.machines) {
+          const pitch = Math.min(building(i).size.w, building(i).size.h);
+          const ways = [];
+          if (c.rows === 2 && whole <= c.perRow) ways.push({ rows: 1, rest: { ...slot, y: slot.y + depth(i) + BAND, h: slot.h - depth(i) - BAND, lend: 0 }, below: true });
+          for (let rows = c.rows; rows >= 1; rows--) {
+            const w = Math.ceil(whole / rows) * pitch + 2 + SPILL;
+            if (slot.w - w - HALVES > 2 * BAND) ways.push({ rows, w, rest: { ...slot, x: slot.x + w + HALVES, w: slot.w - w - HALVES } });
+          }
+          const holds = way => capacity(way.rest, building(goal)).machines;
+          const way = ways.filter(x => holds(x) > 0).sort((a, b) => holds(b) - holds(a))[0];
+          if (way) {
+            take = whole;
+            row = true;
+            c = { ...c, rows: way.rows, perRow: Math.ceil(take / way.rows), machines: take };
+            const share = way.below ? { y: slot.y, h: slot.h } : undefined;
+            put = all[best.k] = way.below ? { ...slot, share } : { ...slot, w: way.w, spill: 0, lend: 0 };
+            all.push(way.below ? { ...way.rest, share } : way.rest);
+            open.add(all.length - 1);
+          }
+        }
+        // A producer's part fills its gap: the machines spare cost no room, and its consumers'
+        // parts then find one with room for them.
+        for (const at of best.stack ?? [put]) {
+          if (left <= 0) break;
+          const machines = i === goal ? Math.min(left, best.stack ? c.perRow : take) : c.machines;
+          out.push({ step: i, slot: at, machines, perRow: Math.min(c.perRow, machines) });
+          left = row ? 0 : left - machines;
+        }
+      }
+      return { all, open, out };
+    };
+    for (let first = 0; first < (i === goal ? 1 : BRANCHES) && !found; first++) {
+      const next = placed(first);
+      if (next) fill(o + 1, next.all, next.open, next.out);
+      else if (!first) {
+        if (!short || i === goal) short = { failure: new RoutingError(`${plan[i].item}: its parts fit no gaps between the Fixtures`), short: i === goal };
+        return;
+      }
+    }
+  };
+  fill(0, slots, new Set(slots.map((_, k) => k)), []);
+  if (!found) return short ?? { failure: new RoutingError('the parts fit no gaps between the Fixtures') };
+  slots = found.slots;
+  const parts = found.parts;
+  // A Sub-Block left out of the Parts stands where Placement finds room: in a Slot no part took,
+  // or in the rows a part's Slot has to spare. One whose machines those hold too few of in rows
+  // (packed close: a design's belts come on top) finds none (Py trits-pup's 22-tile rcs left out
+  // where the Slots are narrow; Py vrauks' 34 sap extractors fit two rows in 18).
+  const meets = (a, b) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  const rooms = [...slots.filter(slot => !parts.some(p => meets(p.slot, slot))),
+    ...parts.map(p => ({ w: p.slot.w, h: p.slot.h - Math.ceil(p.machines / p.perRow) * (depth(p.step) + BAND) }))];
+  const holds = (i, room) => Math.floor(room.w / Math.min(building(i).size.w, building(i).size.h)) * Math.max(0, Math.floor(room.h / (depth(i) + GAP)));
+  const left = plan.map((_, i) => i).find(i => !split[i] && !rooms.some(room => holds(i, room) >= Math.ceil(plan[i].count - 1e-9)));
+  if (left !== undefined) return { failure: new RoutingError(`no room for ${plan[left].item} in the city block`), short: false };
+  // Each Sub-Block's parts in the order they stand, range by range, top to bottom (west to east
+  // in one Slot): a belt chaining several runs on to the next gap down.
+  parts.sort((a, b) => a.step - b.step || a.slot.range - b.slot.range || a.slot.y - b.slot.y || a.slot.x - b.slot.x);
+  // Each part of a consumer takes each item a producer makes in parts from one of its parts, with
+  // room for all it takes (what the part's machines make); of the ways to choose, those whose
+  // links are shortest first, tried in turn where one does not route.
+  let choices = assignments(parts, plan, split, goal);
+  // Where they do not (whole parts divide unevenly), a Goal's part of one row split in two side by
+  // side in its Slot, each taking from a producer part of its own: the first as wide as its
+  // machines and a column either side, the second in the rest (76 paddocks in Parts of 16, four of
+  // 8 and four of 7 divide among three incubator Parts of 27.6 paddocks' worth once a 7 is a 4 and
+  // a 3: 16 + 8 + 3, 8 + 8 + 7 + 4 and 8 + 7 + 7).
+  const pitch = Math.min(building(goal).size.w, building(goal).size.h);
+  for (const p of parts.filter(p => p.step === goal && p.machines > 1 && p.machines === p.perRow)) {
+    for (let a = Math.ceil(p.machines / 2); a < p.machines && !choices.length; a++) {
+      const w = a * pitch + 2, second = { ...p.slot, x: p.slot.x + w + HALVES, w: p.slot.w - w - HALVES };
+      if (capacity(second, building(goal)).perRow < p.machines - a) continue;
+      const halves = [{ ...p, slot: { ...p.slot, w, spill: 0 }, machines: a, perRow: a }, { ...p, slot: second, machines: p.machines - a, perRow: p.machines - a }];
+      const tried = parts.flatMap(q => (q === p ? halves : [q]));
+      choices = assignments(tried, plan, split, goal);
+      if (choices.length) parts.splice(0, parts.length, ...tried);
+    }
+    if (choices.length) break;
+  }
+  if (!choices.length) return { failure: new RoutingError('the parts made do not divide among the parts taking them') };
+  if (pack) return { packed: true };
+  // (Packed as a try before it, with less to spare: the same layout.)
+  const key = JSON.stringify([small, parts.map(p => [p.step, p.slot.x, p.slot.y, p.slot.w, p.machines])]);
+  if (seen.has(key)) return { repeat: true };
+  seen.add(key);
+  let failure = null, furthest = -1, byTrain = null;
+  for (const { fed, from } of choices) {
+    if (until()) break;
+    const out = laid(fed, from);
+    // (One whose Recipe Loop comes by train, its tap off the producer's belt finding no way, only
+    // where no other way of taking from the parts closes it: as the search ranks it, ADR 0073.)
+    if (out.block && out.block.routes.some(r => r.loop && r.fedBy === undefined)) {
+      byTrain ??= out;
+      continue;
+    }
+    if (out.block) return out;
+    if ((out.built ?? 0) > furthest) [failure, furthest] = [out.failure, out.built ?? 0];
+    // (A Sub-Block standing where Placement finds room found none: other producer parts for the
+    // same parts make none.)
+    if (/^no room for .* in the city block/.test(out.failure?.message ?? '')) break;
+  }
+  return byTrain ?? { failure, built: furthest };
+
+  function laid(fed, from) {
+    // The entries: the parts first (a producer part making what its consumers take, with as many
+    // machines as its Slot was given), then the Sub-Blocks not in parts.
+    const byStep = new Map(entries.map(e => [e.goal.item, e]));
+    const index = new Map(parts.map((p, n) => [p, n]));
+    const rest = plan.map((_, i) => i).filter(i => !split[i]);
+    const out = parts.map((p, n) => {
+      const base = byStep.get(plan[p.step].item);
+      const share = p.step === goal ? p.machines / plan[p.step].count : fed.get(p) / plan[p.step].rate;
+      return {
+        ...base,
+        goal: {
+          ...base.goal, rate: base.goal.rate * share, part: true,
+          ...(p.step === goal ? {} : { machines: p.machines }),
+          from: Object.fromEntries(Object.entries(from.get(p)).map(([item, q]) => [item, index.get(q)])),
+        },
+      };
+    });
+    for (const i of rest) out.push(byStep.get(plan[i].item));
+    // (Entries by Sub-Block: a Sub-Block in parts by its first part. A Byproduct Use's fluid
+    // comes from that part's pipe, its other parts' and the other sources' joining it, as a
+    // General Use's sources join the one it takes it from.)
+    const at = j => (split[j] ? parts.findIndex(p => p.step === j) : parts.length + rest.indexOf(j));
+    const stepOf = n => (n < parts.length ? parts[n].step : rest[n - parts.length]);
+    const remap = joins => Object.fromEntries(Object.entries(joins).map(([item, j]) => [item, at(j)]));
+    out.forEach((e, n) => {
+      const goal = { ...e.goal };
+      if (goal.joins) goal.joins = remap(goal.joins);
+      const taken = taking.get(plan[stepOf(n)].item);
+      if (taken && !goal.part) goal.from = remap(taken);
+      for (const [item, j] of [...taking.values()].flatMap(t => Object.entries(t))) {
+        if (stepOf(n) === j && n !== at(j)) goal.joins = { ...goal.joins, [item]: at(j) };
+      }
+      for (const [item, j] of Object.entries(goal.joins ?? {})) if (j === n) delete goal.joins[item];
+      out[n] = { ...e, goal };
+    });
+    let ctx;
+    try {
+      ctx = context(out, catalog, logistics, site);
+    } catch (e) {
+      return { failure: e };
+    }
+    // Each part's design: its rows as long as its Slot was given, else a row shorter; and fitting it.
+    const rng = random(seed);
+    const designs = [];
+    const wide = d => Math.max(...d.kinds.map(k => k.module.area.w));
+    const tall = d => d.kinds.reduce((sum, k) => sum + k.count * k.module.area.h, 0);
+    // (Sub-Blocks kept out of the Parts standing in the rows a part's Slot has to spare: which part.)
+    const beside = new Map();
+    for (let n = 0; n < ctx.plan.length; n++) {
+      let list;
+      try {
+        // (Parts of several rows also from random variants: one a column narrower may fit.)
+        const rows = parts[n] ? Math.ceil(parts[n].machines / parts[n].perRow) : 1;
+        // (A Sub-Block kept out of the Parts also in columns one or two machines wide.)
+        const lengths = parts[n] ? [parts[n].perRow, parts[n].perRow - 1].filter(k => k > 0) : small ? [] : [1, 2];
+        list = designStep(ctx, n, rng, { draws: rows > 1 ? DRAWS : 0, lengths });
+      } catch (e) {
+        if (!(e instanceof LayoutError)) throw e;
+        return { failure: e };
+      }
+      const p = parts[n];
+      let design = null;
+      if (!p && !small && fills(rest[n - parts.length])) {
+        // (A Sub-Block kept out of the Parts: in the rows a part's Slot has to spare, below the
+        // part, in its flattest design that fits them; else its narrowest, a column beside them.)
+        const fitting = list.map(designOf).filter(Boolean);
+        const spare = k => parts[k].slot.h - tall(designs[k]) - GAP;
+        for (const k of parts.map((_, k) => k).filter(k => ![...beside.values()].includes(k)).sort((a, b) => spare(b) - spare(a))) {
+          design = fitting.filter(d => tall(d) <= spare(k) && wide(d) <= parts[k].slot.w).sort((a, b) => tall(a) - tall(b) || wide(a) - wide(b))[0] ?? null;
+          if (design) {
+            beside.set(n, k);
+            break;
+          }
+        }
+      }
+      if (!p && !design) design = small ? list.map(designOf).find(Boolean) : list.map(designOf).filter(Boolean).sort((a, b) => wide(a) - wide(b))[0];
+      else if (p) {
+        for (const length of [p.perRow, p.perRow - 1]) {
+          // (The narrowest that fits, room either side of it for the links: by their cores' widths,
+          // each routed in turn until one fits.)
+          const fits = d => d && d.trouble <= 1e-6 && d.kinds.every(k => k.module.area.w <= p.slot.w + p.slot.spill && k.module.area.h <= (p.slot.share ? p.slot.share.h - GAP : p.slot.h));
+          const chosen = list.filter(c => c.spec?.variant && !c.spec.copies && c.spec.variant.rowLength === length)
+            .sort((a, b) => a.estimate.w - b.estimate.w).find(c => fits(designOf(c)));
+          design = chosen ? designOf(chosen) : null;
+          if (design) break;
+        }
+      }
+      if (!design) return { failure: new RoutingError(`${ctx.plan[n].item}: no design fits its gap between the Fixtures`), built: 1 };
+      designs.push(design);
+    }
+    // (Two parts sharing a gap: both in it.)
+    for (const n of parts.keys()) {
+      const { share } = parts[n].slot;
+      const other = share ? parts.findIndex((q, k) => k > n && q.slot.share === share) : -1;
+      if (other >= 0 && tall(designs[n]) + GAP + tall(designs[other]) > share.h) return { failure: new RoutingError(`${ctx.plan[n].item}: no design fits its gap between the Fixtures`), built: 1 };
+    }
+    // The layouts tried in turn, the fewest belts from the west edge first: the Side Inputs' lines
+    // laid first, each producers' line that then finds no way chained instead, one by one (one
+    // belt through its producers and consumers), else all of them; then the Side Inputs' lines
+    // past three parts at most; then laid after the producers' (theirs Fan-outs again); then each
+    // part's Side Input from the west edge on its own.
+    // The candidate prepared and placed with these routes chained through their consumers.
+    // (Whether the producers' lines fanned out, as preparing them tells: there are lines to chain.)
+    const rechain = chained => {
+      const chainedCtx = /** @type {any} */ ({ ...ctx, chained });
+      const ready = prepare(chainedCtx, designs);
+      if (chainedCtx.fannedOut) ctx.fannedOut = true;
+      // Each part in the middle of its gap (room above and below it for links along the gap),
+      // against its east end: its belts leave into the corridor east of it, or to the east edge.
+      const at = Object.fromEntries(parts.map((p, n) => {
+        const w = wide(designs[n]), h = tall(designs[n]);
+        return [n, { x: p.slot.x + Math.max(0, p.slot.w - w), y: p.slot.y + Math.max(0, Math.floor((p.slot.h - h) / 2)) }];
+      }));
+      // (Two parts sharing a gap: one above the other, the two in the middle.)
+      for (const n of parts.keys()) {
+        const { share } = parts[n].slot;
+        const other = share ? parts.findIndex((q, k) => k > n && q.slot.share === share) : -1;
+        if (other < 0) continue;
+        const [upper, lower] = parts[n].slot.y <= parts[other].slot.y ? [n, other] : [other, n];
+        at[upper].y = share.y + Math.max(0, Math.floor((share.h - tall(designs[upper]) - GAP - tall(designs[lower])) / 2));
+        at[lower].y = at[upper].y + tall(designs[upper]) + GAP;
+      }
+      // (A Sub-Block in the rows a part's Slot has to spare: below it, the two in the middle.)
+      for (const [n, k] of beside) {
+        const { slot } = parts[k], h = tall(designs[k]) + GAP + tall(designs[n]);
+        at[k].y = slot.y + Math.max(0, Math.floor((slot.h - h) / 2));
+        at[n] = { x: slot.x + Math.max(0, slot.w - wide(designs[n])), y: at[k].y + tall(designs[k]) + GAP };
+      }
+      // (A small Sub-Block taking no Slot whose item only Parts take, its line past them all: at the
+      // top of the corridor west of the Fixture column cut at, the line running down it. Chained,
+      // where Placement finds room.)
+      const corridor = parts.map(p => p.slot).find(slot => slot.lend);
+      if (corridor) {
+        const top = Math.min(...slots.map(slot => slot.y));
+        let y = top;
+        for (let n = parts.length; n < ctx.plan.length; n++) {
+          if (at[n] || beside.has(n)) continue;
+          const takers = ctx.plan.map((sb, c) => c).filter(c => ctx.plan[c].inputs.some(x => x.name === ctx.plan[n].item));
+          if (!takers.length || !takers.every(c => ctx.plan[c].part)) continue;
+          const out = ctx.routes.find(r => r.kind === 'belt' && r.source === n);
+          if (chained === 'all' || (out && chained.has(out.id))) continue;
+          at[n] = { x: corridor.x + corridor.w + 1, y };
+          y += tall(designs[n]) + GAP;
+        }
+      }
+      // (Those with a spot first: one placed where Placement finds room may take another's.)
+      return { ready, positions: placeBlocks(chainedCtx, ready, { corridor: 2, gap: 1, weight: 4, at, stay: true, ahead: Object.keys(at).map(Number) }) };
+    };
+    // (Each where it changes anything: where there are producers' lines to chain, Side Inputs'
+    // lines to lay later, or across parts to shorten or leave.)
+    const ladder = [
+      { use: { chains: true }, chained: 'all', chains: false, when: () => Boolean(ctx.fannedOut) },
+      { use: { short: true }, when: why => why.across },
+      { use: { fansLast: true }, chains: false, when: why => why.fans },
+      { use: { alone: true }, when: why => why.across },
+    ];
+    let laid;
+    try {
+      laid = layOut(ctx, rechain, { layout: { margin: { w: 0, e: 0, n: 1, s: 1 }, until }, ladder, judge: 'last', score: false });
+    } catch (e) {
+      if (!(e instanceof LayoutError)) throw e;
+      return { failure: e, built: 2 };
+    }
+    if (laid.failure) return { failure: laid.failure.error, built: laid.failure.stage === 'valid' ? 3 : 2 };
+    const starving = simulate(laid.block).starvation.reduce((sum, s) => sum + s.demand - s.available, 0);
+    if (starving > 1e-6) return { failure: new Error(`the layout starves ${Math.round(starving * 1000) / 1000}/min`), built: 3 };
+    return { block: laid.block };
+  }
+}
+
+// Whether Sub-Block i's machines stand two rows to a Part in a Slot (a row of perRow each): some
+// design of two rows as long (or one shorter) routes without starving and fits the Slot, among
+// those a Part of them gets (its belts as a Part's; random variants too). The designs' sizes are
+// cached by what decides them: the recipe and machine, what it takes and makes, its Count and the
+// row; each Slot is checked against them. (A Part's belts visiting both bands outside its rows
+// run round them: with many, the design outgrows the Slot, Py vrauks-2 paddocks two rows of eight
+// 112 wide.)
+// (By catalog; the City Block's inner size and Fixtures, and the seed, decide the designs too: a
+// process laying out several City Blocks, as a run of the regression suite in-process may, keeps
+// each one's apart.)
+const twoRowsOf = new WeakMap();
+function twoRowsFit(entries, plan, catalog, logistics, site, seed, i, slot, perRow) {
+  if (!twoRowsOf.has(catalog)) twoRowsOf.set(catalog, new Map());
+  const twoRows = twoRowsOf.get(catalog);
+  const sb = plan[i];
+  const machines = Math.min(sb.count, 2 * perRow);
+  const key = JSON.stringify([sb.recipe, sb.building, sb.modules, sb.inputs.map(x => x.name), sb.outputs.map(x => x.name), sb.count, perRow, logistics, seed, site?.inner.w, site?.inner.h, site?.fixtures.length]);
+  if (!twoRows.has(key)) {
+    // The Sub-Block as a Part of that many machines, the rest whole.
+    const probe = entries.map(e => (e.goal.item !== sb.item ? e : { ...e, goal: { ...e.goal, rate: e.goal.rate * machines / sb.count, part: true, machines } }));
+    let left = [];
+    try {
+      const ctx = context(probe, catalog, logistics, site);
+      const lengths = [perRow, perRow - 1].filter(k => k > 0);
+      left = designStep(ctx, i, random(seed), { draws: DRAWS, lengths, only: true })
+        .filter(c => c.spec?.variant && !c.spec.copies && lengths.includes(c.spec.variant.rowLength));
+    } catch (e) {
+      if (!(e instanceof LayoutError || e instanceof RoutingError)) throw e;
+    }
+    twoRows.set(key, { left, sizes: [] });
+  }
+  // (Routed one by one until one fits: Bands' top asks of many Slots alike, and routing every
+  // design took Py molybdenum oxide's Maximize a minute or more before its first try.)
+  const known = twoRows.get(key);
+  const fits = areas => areas.every(a => a.w <= slot.w + slot.spill && a.h <= slot.h);
+  if (known.sizes.some(fits)) return true;
+  while (known.left.length) {
+    const d = designOf(known.left.shift());
+    if (!d || d.trouble > 1e-6) continue;
+    known.sizes.push(d.kinds.map(k => k.module.area));
+    if (fits(known.sizes.at(-1))) return true;
+  }
+  return false;
+}
+
+// The ways each consumer part may take each item made in parts from one producer part with room
+// for all its parts take, at most TRIES, those whose links are shortest first (from Slot to Slot,
+// centre to centre): [{ fed (a producer part's load), from (a consumer part's producer part by
+// item) }]. Every producer part feeds some consumer part. (Each the nearest with room leaves too
+// little room in any one part where whole parts divide unevenly: 75 vrauks paddocks in parts of
+// 16, 8, 8, 8, 8, 7, 7, 7 and 6 fit three incubator parts of 27.6 paddocks' worth only as
+// 16 + 8, 8 + 8 + 8 and 7 + 7 + 7 + 6.)
+function assignments(parts, plan, split, goal) {
+  const center = p => ({ x: p.slot.x + p.slot.w / 2, y: p.slot.y + p.slot.h / 2 });
+  const distance = (a, b) => Math.abs(center(a).x - center(b).x) + Math.abs(center(a).y - center(b).y);
+  const takes = parts.flatMap(consumer => {
+    const sb = plan[consumer.step];
+    return sb.inputs.filter(x => x.type === 'item').flatMap(input => {
+      const producer = plan.findIndex(p => p.item === input.name);
+      if (producer < 0 || !split[producer] || sb.byTrain?.includes(input.name)) return [];
+      const options = parts.filter(p => p.step === producer).sort((a, b) => distance(consumer, a) - distance(consumer, b));
+      return [{ consumer, item: input.name, need: input.rate * consumer.machines / sb.count, options }];
+    });
+  }).sort((a, b) => b.need - a.need);
+  const room = new Map(parts.map(p => [p, p.machines * plan[p.step].rate / plan[p.step].count * (plan[p.step].headroom ?? 1)]));
+  const fed = new Map(parts.map(p => [p, 0]));
+  // (The shortest the links left could be: a bound for the search.)
+  const least = takes.map(t => (t.options.length ? distance(t.consumer, t.options[0]) : Infinity));
+  const bound = least.map((_, k) => least.slice(k).reduce((sum, d) => sum + d, 0));
+  bound.push(0);
+  const found = [], chosen = [];
+  let visits = 0;
+  const search = (k, cost) => {
+    if (++visits > VISITS || (found.length === TRIES && cost + bound[k] >= found.at(-1).cost)) return;
+    if (k === takes.length) {
+      // (A part no consumer takes from is no part.)
+      if (parts.some(p => p.step !== goal && !(fed.get(p) > 0))) return;
+      found.push({ cost, choice: [...chosen], loads: new Map(fed) });
+      found.sort((a, b) => a.cost - b.cost).splice(TRIES);
+      return;
+    }
+    const t = takes[k];
+    for (const p of t.options) {
+      if (fed.get(p) + t.need > room.get(p) + 1e-6) continue;
+      fed.set(p, fed.get(p) + t.need);
+      chosen.push(p);
+      search(k + 1, cost + distance(t.consumer, p));
+      chosen.pop();
+      fed.set(p, fed.get(p) - t.need);
+    }
+  };
+  search(0, 0);
+  return found.map(({ choice, loads }) => {
+    const from = new Map(parts.map(p => [p, {}]));
+    takes.forEach((t, k) => (from.get(t.consumer)[t.item] = choice[k]));
+    return { fed: loads, from };
+  });
+}
