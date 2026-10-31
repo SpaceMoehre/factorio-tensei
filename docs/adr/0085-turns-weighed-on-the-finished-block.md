@@ -30,6 +30,9 @@ Tried and dropped (the user's wiggle, in the modules themselves):
 
 - **Modules routed with no row above or below the core first** (design.js `margins`, roomy at the sides only): Py hot air's molten salt module 20 turns and 10 jogs → none (its belt `Uiu^ii>` under a row `>>>v` became `UiuUiiu`), but four fast-tier setups lost a Count (coalbed gas 10 → 9, perylene 11 → 9, vrauks 78 → 75, small parts 2 9 → 8), silicon gained (5 → 7). Kept only where the module came out smaller: perylene still lost (11 → 10) and almost nothing else changed.
 
+- **Module belts routed with a turn weighing a tile** (module.js, router.js `routeBelt` `turn`): the molten salt module's jogs gone the same way, and side by side in the suite coke 1800 → 2160/min, anthraquinone 9000 → 9937.5, rayon 487.5 → 496.87, small parts 2 1619.98 → 1799.98, on the page perylene 2793.75 → 3093.75; but titanium plate 4992.18 → 867.18/min in the suite (14 → 3 casting units: its try at 5 found no layout) and on the page, 2 at once for an hour, 24 → 19.
+- **The producer standing east of its consumer turned half round** (small parts 2's belts, 7 machines east of the small parts, its link 200 tiles for a gap of 1; edit.js `turnCopies` on the first layout): Compactness 7213 → 7720, links 1142 → 1482 tiles; its rubber then came round from the west edge instead.
+
 Tests: a belt stepping down twice where once does turns twice (straighten.test.js).
 
 Still: a belt that turns on a tile an inserter takes from keeps that turn (its anchors stay as they are): the jog round two inserters in a module (`^ii>` under `>>>v`) is decided when the module is routed.
