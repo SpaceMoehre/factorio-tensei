@@ -85,10 +85,6 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
-## v70: Turns weighed on the finished block (implemented)
-
-Once a block is routed, each belt's stretches between the tiles inserters take from are routed again with a turn weighing a tile, as Compactness weighs turns, not a fifth of one as while routing: a belt stepping aside twice where once does, or round where a tunnel goes under, straightens. Every suite setup makes what it made; Py anthraquinone 81 → 71 turns (29 → 20 jogs), small parts 2 311 → 295 and 58 belts fewer (ADR 0085).
-
 ## v69: An early Annex's tries on the workers (implemented)
 
 With tries at once, an Annex begun beside the last try for more machines hands its tries to the workers even when one is left for it, rather than running them in turn in the thread driving Maximize while that try's outcome waits; once the tries end it takes every worker. Py titanium plate on the page, 2 at once, an hour: 16 machines (5976.56/min) before this session's speed-ups, 24 (8859.37/min) after, where master had shown 13 with its Annex's layouts held back (ADR 0083).

@@ -1,8 +1,10 @@
 ---
-status: accepted — refines ADR 0051
+status: reverted — it cost Py small parts 2 a machine on the page
 ---
 
 # Turns weighed on the finished block as Compactness weighs them
+
+Reverted. On the page (`run.mjs`, one try at a time, twice side by side), Py small parts 2 made 1799.98/min (7 and an Annex of 3) before and 1619.98 (7 and an Annex of 2) with it: the first layout's straightened belts stand on other tiles, and its Annex found room for one machine fewer. The suite, which lays out with K candidates a try, showed every rate the same. What follows is what was tried and measured.
 
 The user's rule: find what is unnecessary in the layouts and take it out; "belts wiggle around … where underground belts would do".
 
