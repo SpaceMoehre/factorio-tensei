@@ -4,6 +4,7 @@ import { machineEffect, moduleOptions } from './modules.js';
 import { burnerFuel, fuelsFor } from './plan.js';
 import { useNames, displayName } from './names.js';
 import { encodeBlueprint } from './blueprint.js';
+import { balanceBlock, balancerWidth } from './balancer.js';
 import { clocksOf, clockLabel } from './clocks.js';
 import { circuitPairs } from './layout/wires.js';
 import { createMap, turnsSideways } from './render.js';
@@ -300,7 +301,11 @@ function goalRow(goal, i) {
   const remove = el('button', { type: 'button', className: 'icon', textContent: '×', title: 'Remove goal', ariaLabel: `Remove ${label(goal.item)}` });
   rate.addEventListener('change', () => { goal.rate = Number(rate.value); renderChain(); save(); });
   remove.addEventListener('click', () => { state.goals.splice(i, 1); renderGoals(); save(); });
-  return el('div', { className: 'goal' }, item, el('span', { className: 'rate-in' }, rate, el('span', { textContent: '/min' })), remove);
+  // A belt balancer for the Goal's item: every belt of it leaving goes into one, the fewest belts come out (ADR 0092).
+  const balance = el('input', { type: 'checkbox', checked: Boolean(goal.balance), ariaLabel: `Belt balancer for ${label(goal.item)}` });
+  balance.addEventListener('change', () => { goal.balance = balance.checked; save(); if (best) show(best.block, best.tried, best.found, best.score); });
+  const balancing = el('label', { className: 'balance', title: 'All belts of this item leaving go into a belt balancer; as few belts as carry the rate come out. Needs One item a belt.' }, balance, el('span', { textContent: 'balancer' }));
+  return el('div', { className: 'goal' }, item, el('span', { className: 'rate-in' }, rate, el('span', { textContent: '/min' })), balancing, remove);
 }
 
 // The Production Chain: every step with its rate, machines, recipe and building, and what comes
@@ -777,10 +782,37 @@ function renderCity() {
   refreshLibrary();
 }
 
+// The tiles east of the block kept for the belt balancers of the Goals that ask for one (ADR 0092):
+// the widest, laid out for as many belts in as out.
+function balancerEast() {
+  let east = 0;
+  for (const g of state.goals) if (g.balance && g.item && g.rate > 0) east = Math.max(east, balancerWidth(g.rate, catalog, state.logistics.belt));
+  return east ? east + 1 : 0;
+}
+
+// The block as shown: with the belt balancers the Goals ask for built east of it. The note says
+// why one is not built.
+const balanced = new WeakMap();
+function withBalancers(block) {
+  const wanted = state.goals.filter(g => g.balance && g.item).map(g => g.item).join();
+  if (balanced.get(block)?.wanted !== wanted) {
+    let shown = block;
+    const notes = [];
+    for (const g of state.goals) {
+      if (!g.balance || !g.item) continue;
+      const { block: next, note } = balanceBlock(shown, catalog, g.item);
+      shown = next;
+      if (note) notes.push(note);
+    }
+    balanced.set(block, { shown, notes, wanted });
+  }
+  return balanced.get(block);
+}
+
 // The City Block's Site (from its blueprint, else its size), or why there is none.
 function citySite() {
   try {
-    return siteOf(city && !city.error ? city : { area: { x: 0, y: 0, w: state.city.w, h: state.city.h }, fixtures: [] }, state.city.buffer);
+    return siteOf(city && !city.error ? city : { area: { x: 0, y: 0, w: state.city.w, h: state.city.h }, fixtures: [] }, state.city.buffer, balancerEast());
   } catch (e) {
     return { error: e.message };
   }
@@ -910,9 +942,10 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
   closeMenu();
   $('empty').hidden = true;
   const circuit = state.logistics.circuit;
-  map = createMap($('map'), block, {
+  const { shown } = withBalancers(block);
+  map = createMap($('map'), shown, {
     starving, onHover: describe, onSelect: inspect, icon: name => (catalog.icons[name] ? `sprites/${catalog.icons[name]}` : null),
-    circuit: circuit === 'none' ? null : { colors: circuit === 'both' ? ['red', 'green'] : [circuit], pairs: circuitPairs(block.entities, catalog, block.site?.fixtures ?? []) },
+    circuit: circuit === 'none' ? null : { colors: circuit === 'both' ? ['red', 'green'] : [circuit], pairs: circuitPairs(shown.entities, catalog, block.site?.fixtures ?? []) },
     onMove: block.edit ? moveSubBlock : null, onContext: block.edit ? openMenu : null, view,
   });
   if (selected) {
@@ -1152,7 +1185,7 @@ function where(dx, dy) {
 // The shown block's blueprint, with its Circuit Wires and the signals its inserters' clocks take.
 async function writeBlueprint(block) {
   const mine = ++encoding;
-  const { string, json } = await encodeBlueprint(block, catalog, built?.blueprint ?? null, { circuit: state.logistics.circuit, signals: state.clocks, handSize: handOf() });
+  const { string, json } = await encodeBlueprint(withBalancers(block).shown, catalog, built?.blueprint ?? null, { circuit: state.logistics.circuit, signals: state.clocks, handSize: handOf() });
   if (mine !== encoding || best?.block !== block) return;
   $('bp-string').value = string;
   $('bp-json').value = JSON.stringify(JSON.parse(json), null, 2);
@@ -1316,7 +1349,8 @@ function applyRate() {
 function report(block, starvation, prefix) {
   const machines = block.entities.filter(e => e.kind === 'building').length;
   const size = `${machines} machines, ${block.bounds.w}×${block.bounds.h} tiles.`;
-  const head = prefix ? `${prefix} Best: ${size}` : size;
+  const notes = withBalancers(block).notes.map(n => `\n${n}`).join('');
+  const head = (prefix ? `${prefix} Best: ${size}` : size) + notes;
   if (starvation.length) {
     const who = s => (s.subBlock === null ? 'Side Output' : block.subBlocks[s.subBlock].item);
     const why = s => (s.cause === 'inserters' ? ' (inserters too slow)' : '');

@@ -125,7 +125,7 @@ function markers(block, merges = []) {
   for (const route of block.routes ?? []) {
     const side = route.source === 'side-input' ? -1 : route.sink === 'side-output' ? 1 : 0;
     // A Fan-out's belts come in on its belts from the west edge, each with what it brings.
-    if (!side || !route.pieces.length || route.fedBy !== undefined) continue;
+    if (!side || !route.pieces.length || route.fedBy !== undefined || route.balanced) continue;
     const end = route.pieces.reduce((best, p) => (p.x * side > best.x * side ? p : best));
     let x = end.x + side;
     while (taken.has(`${x},${end.y}`)) x += side;
@@ -138,6 +138,17 @@ function markers(block, merges = []) {
       // (A merged belt's items each on the belt coming in north and south of it.)
       text: (route.brings ?? route.items).map((i, k) => `${merged.has(route.id) ? (k ? '↓ ' : '↑ ') : ''}${i.item} ${Math.round(i.rate)}/min`).join(merged.has(route.id) ? ' · ' : ' + '),
     });
+  }
+  // A belt balancer's out belts, each carrying its share (ADR 0092).
+  const bal = block.balancer;
+  if (bal) {
+    for (const o of bal.outputs) {
+      let x = o.x + 1;
+      while (taken.has(`${x},${o.y}`)) x++;
+      if (area && x >= area.x + area.w) continue;
+      taken.add(`${x},${o.y}`);
+      out.push({ name: 'display-panel', kind: 'marker', x, y: o.y, w: 1, h: 1, icon: { type: 'item', name: bal.item }, text: `${bal.item} ${Math.round(bal.rate / bal.m)}/min` });
+    }
   }
   return out;
 }

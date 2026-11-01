@@ -91,6 +91,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | An Annex's try that found no room made again turning (a Sub-Block that finds no room tried turned a quarter); a copy's pipe beside a built one of its fluid in another network fails as placed | Suite: silicon 555 → 675 (5 → 6, its second Annex's soil extractors turned into a strip); page the same 795, 49 s more | 0089 |
 | The lowest Count above the total that found no layout tried again with seeds + 1 to + 5 (after the Annexes; Annexes redone beside a fit) | Py hot air seed 1: 8437.5 → 18000/min; seeds 2, 3: anthraquinone, perylene, silicon up, none down; 15 others the same | 0090 |
 | A Count that finds no layout in Bands tried again with seeds + 1 and + 2 | Py vrauks seeds 2, 3: 37.93, 43.66 → 52.97/min (seed 1 55.84 the same); five seeds no more | 0091 |
+| A belt balancer for a Goal's item (js/balancer.js: bitonic splitter network, channels of tracks with undergrounds, spare rows for swaps; room kept east; checked by tracing the belts) | Py small parts, 3 belts in 2 out, 23 × 4 tiles; 4-3 23, 8-5 55 columns wide (0092) |
 
 ## What failed, was reverted, or must not be done
 
