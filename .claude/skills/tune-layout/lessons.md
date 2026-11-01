@@ -89,7 +89,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | The last layout's belts straightened once Maximize ends, a turn weighing a tile (nothing laid out beside it after) | Every rate the same; trits turns 123 → 89, jogs 42 → 21, belts 2573 → 2346; perylene jogs 48 → 39; small parts 2 62 → 55 | 0087 |
 | Annexes that fit kept: no Precheck verdict in an Annex's room (still made, for its time); a copy's pipe joining a built pipe of another fluid fails the layout as placed | Suite: molybdenum oxide 799.99 → 999.98 (4 + 1), coke 1800 → 2520 (5 → 7); molybdenum oxide page 799.99 → 999.98 | 0088 |
 | An Annex's try that found no room made again turning (a Sub-Block that finds no room tried turned a quarter); a copy's pipe beside a built one of its fluid in another network fails as placed | Suite: silicon 555 → 675 (5 → 6, its second Annex's soil extractors turned into a strip); page the same 795, 49 s more | 0089 |
-| The lowest Count above the total that found no layout tried again with seeds + 1 and + 2 (after the Annexes; Annexes redone beside a fit) | Py hot air seed 1: 8437.5 → 18000/min; seeds 2, 3: anthraquinone, perylene, silicon up, none down; 15 others the same | 0090 |
+| The lowest Count above the total that found no layout tried again with seeds + 1 to + 5 (after the Annexes; Annexes redone beside a fit) | Py hot air seed 1: 8437.5 → 18000/min; seeds 2, 3: anthraquinone, perylene, silicon up, none down; 15 others the same | 0090 |
 
 ## What failed, was reverted, or must not be done
 

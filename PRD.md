@@ -87,7 +87,7 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 
 ## v75: Another seed above the total (implemented)
 
-After the Annexes, the lowest Count above everything found that found no layout is tried again with two other seeds (no byproduct riding alone), the Annexes laid out beside a fit again; not in an Annex's room. Suite (seed 1): Py hot air 8437.5 → 18000/min, the 15 others the same layouts; seeds 2 and 3: gains in anthraquinone, perylene and silicon, no loss. ADR 0090.
+After the Annexes, the lowest Count above everything found that found no layout is tried again with five other seeds (no byproduct riding alone), the Annexes laid out beside a fit again; not in an Annex's room. Suite (seed 1): Py hot air 8437.5 → 18000/min and anthraquinone 9000 → 9937.5, the 14 others the same layouts; seeds 2 and 3: gains in anthraquinone, perylene and silicon, no loss. ADR 0090.
 
 ## v74: An Annex turns what finds no room (implemented)
 

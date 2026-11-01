@@ -1183,7 +1183,7 @@ const STARVING_MISSES = 2;
 const FILL = 10;
 const LEAST = 1 / 4;
 // Seeds a number above the best that found no layout is tried again with (ADR 0090).
-const RESEEDS = 2;
+const RESEEDS = 5;
 // (Filling's fewest, at least: what fits over FINEST.)
 const FINEST = 10;
 
