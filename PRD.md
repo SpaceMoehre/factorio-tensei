@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v75: Another seed above the total (implemented)
+
+After the Annexes, the lowest Count above everything found that found no layout is tried again with two other seeds (no byproduct riding alone), the Annexes laid out beside a fit again; not in an Annex's room. Suite (seed 1): Py hot air 8437.5 → 18000/min, the 15 others the same layouts; seeds 2 and 3: gains in anthraquinone, perylene and silicon, no loss. ADR 0090.
+
 ## v74: An Annex turns what finds no room (implemented)
 
 An Annex's try that found no room is made again with its Sub-Blocks turned a quarter where they find no room (the room left between what stands runs in strips); a copy's pipe beside a built pipe of its own fluid in another network fails as placed. Suite: Py silicon 555 → 675/min (its second Annex's soil extractors turned), the 15 others the same layouts; on the page silicon makes the same 795/min either way (ADR 0089).

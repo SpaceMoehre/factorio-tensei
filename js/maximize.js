@@ -513,7 +513,7 @@ export function* maximize(goals, catalog, logistics, options) {
     const alone = { ...site, draws: Object.fromEntries(Object.entries(site.draws).filter(([, d]) => !d.only)) };
     let found = null;
     for (const room of Object.values(site.draws).some(d => d.only) ? [site, alone] : [site]) {
-      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, least: 1, most: cap, giving: false, starving: starving ? 'only' : false, parallel, pooled: width > 1 });
+      const run = maximize(goals, catalog, logistics, { ...options, site: room, annexes: false, bands: false, upTo: false, probe: true, reseed: false, least: 1, most: cap, giving: false, starving: starving ? 'only' : false, parallel, pooled: width > 1 });
       let step, reply;
       for (step = run.next(); !step.done; step = run.next(reply)) {
         const v = step.value;
@@ -612,6 +612,34 @@ export function* maximize(goals, catalog, logistics, options) {
   let last = bestBlock;
   if (early) ({ best, last } = early);
   else if (best) ({ best, last } = yield* annexPhase(() => width, stages));
+  // Another seed (ADR 0090): the lowest number above everything found (the Annexes too) that found no
+  // layout is tried again with other seeds (fresh designs and mutations; at 20 candidates a try
+  // the same code made Py hot air 1 machine with one seed and 2 with another), RESEEDS at most,
+  // at once where tries are. One that fits more than everything so far is the best, the Annexes
+  // beside it laid out again, and the next miss above it tried the same. Only above the total:
+  // a first layout of the same machines packs another way and may leave an Annex less room (Py
+  // coalbed gas seed 2: 9 and two Annexes of 1 against 10 alone), so this cannot lose a fit,
+  // only the time of its tries. Not in an Annex's room (its caller's tries are long enough).
+  if (options.reseed !== false && !only && probing === null && best && bestN !== null && options.starving !== 'only') {
+    const seed = options.seed ?? 1;
+    for (let again = true; again;) {
+      again = false;
+      const above = misses.filter(m => !m.starves && m.count > best.count && m.count <= most).map(m => m.count);
+      if (!above.length) break;
+      const n = Math.min(...above);
+      let k = 0;
+      yield* inTurn(() => (k < RESEEDS ? { n, extra: { seed: seed + ++k, unsorted: true, precheck: n > plan.designable }, say: trying(n) } : null), function* (m, out) {
+        tried += out.tried;
+        noted(out);
+        // (Not one with a byproduct riding on alone: the sorting phase kept fewer machines without.)
+        if (!out.block || (out.score.riding > 0 && riding(out.block).some(r => r.items.length === 1))) return true;
+        yield* took(m, out);
+        [again, giving] = [true, false];
+        return false;
+      });
+      if (again) ({ best, last } = yield* annexPhase(() => width, [{ n: bestN, giving, extra: {}, alone: bestBlock, base: null, block: bestBlock }]));
+    }
+  }
   // The Annexes beside the best (its `staged` layouts, for Extensions), `widthNow()` tries at
   // once: { best, last }. The layout with most machines may leave its Annexes little room
   // (machines the same in number stand many ways: Py kicalk's 66 left room foretold to hold 4
@@ -1154,6 +1182,8 @@ const STARVING_MISSES = 2;
 // Filling: how many machines more than the highest that fit it first tries, and the fewest.
 const FILL = 10;
 const LEAST = 1 / 4;
+// Seeds a number above the best that found no layout is tried again with (ADR 0090).
+const RESEEDS = 2;
 // (Filling's fewest, at least: what fits over FINEST.)
 const FINEST = 10;
 

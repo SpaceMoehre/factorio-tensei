@@ -89,6 +89,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | The last layout's belts straightened once Maximize ends, a turn weighing a tile (nothing laid out beside it after) | Every rate the same; trits turns 123 → 89, jogs 42 → 21, belts 2573 → 2346; perylene jogs 48 → 39; small parts 2 62 → 55 | 0087 |
 | Annexes that fit kept: no Precheck verdict in an Annex's room (still made, for its time); a copy's pipe joining a built pipe of another fluid fails the layout as placed | Suite: molybdenum oxide 799.99 → 999.98 (4 + 1), coke 1800 → 2520 (5 → 7); molybdenum oxide page 799.99 → 999.98 | 0088 |
 | An Annex's try that found no room made again turning (a Sub-Block that finds no room tried turned a quarter); a copy's pipe beside a built one of its fluid in another network fails as placed | Suite: silicon 555 → 675 (5 → 6, its second Annex's soil extractors turned into a strip); page the same 795, 49 s more | 0089 |
+| The lowest Count above the total that found no layout tried again with seeds + 1 and + 2 (after the Annexes; Annexes redone beside a fit) | Py hot air seed 1: 8437.5 → 18000/min; seeds 2, 3: anthraquinone, perylene, silicon up, none down; 15 others the same | 0090 |
 
 ## What failed, was reverted, or must not be done
 
@@ -195,6 +196,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **An Annex's belt to the train joining the first layout's belt of its item** (after 0088). Py titanium plate's second Annex fails mostly on its iron oxide (a few a minute, a belt of its own in each layout) finding no way to the east edge; offered every free tile beside the built iron oxide belts (80 of them) to side-load onto, it reached none either: its producers stand in a pocket the first layout walls off. Neither the edge nor the built belts are within reach there; the failure counts did not move.
 
 - **A new search option in every try of a phase** (0089's first form). Turning a Sub-Block that finds no room in every Annex try changed which Annex fit where one fit already: Py rayon's 10 → 9 machines, coke 7 → 5, silicon 5 → 6. Made only after a try found no room, every Annex that fit fits as before and silicon keeps its gain. A fallback that runs only on failure cannot cost a fit; one that runs always moves every path.
+
+- **Reseeding the lowest miss right after the climb** (0090's first forms). A fit of the same machines as the sorted-out best, packed another way, left the Annexes less room: coke 2520 → 1912.5 (4 sorted machines + a starving Annex of 3, against 6 with a byproduct riding alone) and coalbed gas seed 2 6600 → 6000 (9 and two Annexes of 1 against 10). Kept: only above the total found with the Annexes, no fit with a byproduct riding alone.
 
 ## Rules every change keeps
 

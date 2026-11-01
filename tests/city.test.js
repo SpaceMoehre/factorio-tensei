@@ -233,6 +233,26 @@ test('in a City Block, where a Sub-Block finds no room, the ones placed before i
   assert.ok(boxes[cable].x + boxes[cable].w <= boxes[circuits].x, JSON.stringify(boxes));
 });
 
+// The lowest number above the best that found no layout is tried again with other seeds once the
+// climb ended (maximize.js, ADR 0090), RESEEDS (2) at most; not in an Annex's room (reseed: false).
+test('Maximize tries the lowest miss above the best again with other seeds, not where reseed is off', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 40, h: 30 }, fixtures: [{ name: 'roboport', kind: 'fixture', number: 1, x: 18, y: 13, w: 4, h: 4 }] }, 1);
+  const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
+  const triesAtMiss = reseed => {
+    const run = maximize([{ item: 'electronic-circuit', rate: 60 }], catalog, logistics, { made: ['copper-cable'], selections, site, maxCandidates: 12, budgetMs: 120000, annexes: false, bands: false, ...(reseed ? {} : { reseed: false }) });
+    const tries = [];
+    let best = 0;
+    for (let step = run.next(); !step.done; step = run.next()) {
+      const v = /** @type {any} */ (step.value);
+      if (v.type === 'try' && !v.starving && !v.giving) tries.push(v.rate);
+      if (v.type === 'best') best = Math.max(best, v.rate);
+    }
+    const miss = Math.min(...tries.filter(r => r > best));
+    return tries.filter(r => r === miss).length;
+  };
+  assert.equal(triesAtMiss(true), triesAtMiss(false) + 2);
+});
+
 test('nothing fits a city block too small for the machines', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 12, h: 8 }, fixtures: [] }, 0);
   assert.equal(inBlock([asm2('electronic-circuit', 300), asm2('copper-cable', 900)], site, 4), null);
