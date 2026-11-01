@@ -136,3 +136,32 @@ test('balanceBlock: a pipe leaving between the belts goes on under the balancer\
   const tiles = out.entities.filter(e => e.balancer).map(e => `${e.x},${e.y}`);
   assert.equal(new Set(tiles).size, tiles.length, 'no two on one tile');
 });
+
+test('reserveFor: room kept off the inner area only where a goal asks for a balancer and more than one belt carries it', async () => {
+  const { reserveFor } = await import('../js/balancer.js');
+  const site = { area: { x: 0, y: 0, w: 200, h: 100 }, inner: { x: 4, y: 4, w: 192, h: 92 }, buffer: 4, fixtures: [] };
+  const out = [{ item: 'iron-plate', rate: 2400 }];
+  assert.equal(reserveFor(site, out, { belt: 'transport-belt' }, catalog), site, 'not asked');
+  assert.equal(reserveFor(site, [{ item: 'iron-plate', rate: 500 }], { belt: 'transport-belt', balance: ['iron-plate'] }, catalog), site, 'one belt');
+  const kept = reserveFor(site, out, { belt: 'transport-belt', balance: ['iron-plate'] }, catalog);
+  assert.ok(kept.east > 5);
+  assert.equal(kept.inner.w + kept.east, site.inner.w);
+  assert.equal(site.inner.w, 192, 'the site is left as it was');
+});
+
+test('balanceBlock in a City Block: inside the inner area and its kept room, the bounds take it in, the other belts go on to its edge', () => {
+  const block = blockOf([10, 20, 30, 40]);
+  const other = { id: 7, kind: 'belt', source: 0, sink: 'side-output', items: [{ item: 'stone', rate: 10 }], pieces: [{ name: 'transport-belt', kind: 'belt', x: 9, y: 55, w: 1, h: 1, direction: 4, travel: 4 }] };
+  block.routes.push(other);
+  block.entities.push(...other.pieces);
+  block.site = { area: { x: 0, y: 0, w: 120, h: 70 }, inner: { x: 0, y: 0, w: 10, h: 70 }, buffer: 0, east: 60, fixtures: [] };
+  const { block: out, failed } = balanceBlock(block, catalog, 'iron-plate');
+  assert.ok(!failed);
+  const x1 = out.bounds.x + out.bounds.w - 1;
+  assert.ok(x1 <= 10 + 60 - 1, 'inside the room kept');
+  assert.ok(out.entities.every(e => e.x + e.w <= 70 && e.y + e.h <= 70), 'nothing in the buffer');
+  const stone = out.routes.find(r => r.id === 7);
+  assert.equal(stone.pieces.at(-1).x, x1, 'the other belt reaches the new edge');
+  const tight = { ...block, site: { ...block.site, east: 5 } };
+  assert.equal(balanceBlock(tight, catalog, 'iron-plate').failed, true, 'no room: no balancer, and it says so');
+});

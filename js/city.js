@@ -124,11 +124,10 @@ export function footprintOf(name, catalog) {
 // What the layout search builds in: the City Block's area, the area inside its Buffer (where the
 // Compound Block stands, its Side Input entering on the west edge and Side Output leaving on the
 // east edge), and its Fixtures.
-// `east` more tiles of the inner area's east side are kept free, for a belt balancer (ADR 0092).
-export function siteOf(city, buffer = 0, east = 0) {
+export function siteOf(city, buffer = 0) {
   const b = Math.max(0, Math.floor(buffer));
   const { area } = city;
-  const inner = { x: area.x + b, y: area.y + b, w: area.w - 2 * b - Math.max(0, Math.floor(east)), h: area.h - 2 * b };
+  const inner = { x: area.x + b, y: area.y + b, w: area.w - 2 * b, h: area.h - 2 * b };
   if (inner.w < 3 || inner.h < 3) throw new Error('the buffer leaves no room inside the city block');
   return { area: { ...area }, inner, buffer: b, fixtures: city.fixtures.map(f => ({ ...f })) };
 }

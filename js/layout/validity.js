@@ -306,7 +306,8 @@ export function powerNetwork(block, catalog, logistics) {
 export function insideSite(block) {
   const { site } = block;
   if (!site) return [];
-  const { inner } = site;
+  // (The room kept for a belt balancer east of it is the factory's too, ADR 0092.)
+  const inner = { ...site.inner, w: site.inner.w + (block.balancer ? site.east ?? 0 : 0) };
   const problems = block.entities.filter(e => e.x < inner.x || e.y < inner.y || e.x + e.w > inner.x + inner.w || e.y + e.h > inner.y + inner.h)
     .map(e => `${e.name} at ${e.x},${e.y} lies outside the city block's buffer`);
   const fixed = new Map();
@@ -586,6 +587,8 @@ export function validateBlock(block, catalog, logistics) {
     // (A gatherer that found no way: none.)
     if (route.dropped) continue;
     if (!route.pieces.length) { problems.push(`route ${route.id} has no pieces`); continue; }
+    // (A belt balancer's belts and splitters are one network, checked as it was built, ADR 0092.)
+    if (route.balancer) continue;
     if (route.kind === 'pipe') {
       const machines = [...(typeof route.source === 'number' ? machinesOf(route.source) : []), ...route.consumers.flatMap(machinesOf)];
       problems.push(...pipeNetwork(block, route, catalog, logistics, machines));
@@ -596,7 +599,7 @@ export function validateBlock(block, catalog, logistics) {
     else if (route.fedBy !== undefined) problems.push(...fedBySplitter(block, route));
     else problems.push(...startsAtWestEdge(block, route));
     problems.push(...feedsEveryMachine(block, route, route.consumers.flatMap(i => servedBy(route, i)), catalog));
-    if (route.sink === 'side-output') problems.push(...endsAtEastEdge(block, route));
+    if (route.sink === 'side-output' && !route.balanced) problems.push(...endsAtEastEdge(block, route));
     else if (route.joins !== undefined) problems.push(...joinsFromSide(block, route));
   }
   // Together, the parts of a split route serve every machine row.

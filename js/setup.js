@@ -96,5 +96,8 @@ export function setupOf(saved, catalog) {
 export function setupFrom(state) {
   const { budget, ...logistics } = state.logistics;
   const { made, selections, uses, exports, voids } = state;
-  return { goals: state.goals.filter(g => g.item && g.rate > 0), choices: { made, selections, uses, exports, voids }, logistics, budget, city: state.city };
+  const goals = state.goals.filter(g => g.item && g.rate > 0);
+  // The Goals' items that ask for a belt balancer built into the factory (ADR 0092), with the rest of what lays it out.
+  const balance = goals.filter(g => g.balance).map(g => g.item);
+  return { goals, choices: { made, selections, uses, exports, voids }, logistics: balance.length ? { ...logistics, balance } : logistics, budget, city: state.city };
 }

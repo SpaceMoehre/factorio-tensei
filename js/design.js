@@ -3,6 +3,7 @@
 import { planSubBlocks, beltRate, laneRate } from './plan.js';
 import { buildFlows, taken } from './flows.js';
 import { buildRoutes, coreLinks } from './routes.js';
+import { reserveFor } from './balancer.js';
 import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides, dropOf, oriented, orientationKey } from './layout/core.js';
 import { N, S } from './layout/grid.js';
 import { routeModule, RoutingError, PowerError } from './layout/module.js';
@@ -69,7 +70,8 @@ export function context(entries, catalog, logistics, site = null) {
     // Items per swing: 1, more with inserter capacity research.
     handSize: Math.max(1, Math.floor(logistics.handSize ?? 1)),
   };
-  return { plan, flows, routes, catalog, logistics, env, site };
+  // (The room a belt balancer will stand in kept free east of the inner area, ADR 0092.)
+  return { plan, flows, routes, catalog, logistics, env, site: reserveFor(site, flows.sideOutput, logistics, catalog) };
 }
 
 // How much faster than the plan a Sub-Block's machines can run (its headroom, from the Count

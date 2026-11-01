@@ -28,4 +28,11 @@ Added after the first page run (Py titanium plate, 150 × 150, 12 belts of 360/m
 - The reserve (`balancerWidth`) is laid out for twice as many belts in as out, each half full: 13 columns for 1800/min, 29 for 2400, 67 for 4312.5, 134 for 7200.
 - The titanium layout (142 × 139, 12 belts) with room: 12 belts in, 5 out, 75 × 12 tiles, traced.
 
+Built into the factory, not into the Buffer (the user: "Do not incorporate the balancer in the buffer. Treat it as a subblock in the factory"):
+- The room is part of every try's area: `design.js context()` takes it off the inner area's east side (`balancer.js reserveFor`: the widest balancer for what the plan sends to the train of each asked item, and one column), so the search places the factory in what is left and every Count of Maximize is judged with it. Not the Buffer, and not after the layout.
+- `lay.js layOut` builds it into the finished layout (`balanceBlock`, inside the inner area and the room kept); a layout it does not fit in is no layout (stage `valid`). The block's bounds take it in; the other belts and pipes leaving are carried on to its east edge, so they still leave across the factory's edge (validity.js: `insideSite` counts the kept room, `balanced` routes and the balancer's own route are not chained or edge-checked).
+- `setup.js setupFrom` gives the asked items to the layout as `logistics.balance`. The map and the blueprint draw it as the rest of the block.
+- Only the first asked Goal's balancer is built into a block with several.
+- Py titanium plate, 150 × 150, buffer 4, 20 candidates a try: 2250/min (6 machines, 6 belts in, 3 out, 29 × 6 tiles) inside the inner area (141 × 133), against 3375 fitting without one: the room is part of the area.
+
 Still: the width (a hand-made 8-5 is far narrower; the channels' tracks and spare rows cost columns); the reserve counts as many belts in as out, so a block with more belts in needs the Buffer; only the east edge; a fluid or a mixed belt is not balanced. The load the evenness is checked at is the rate over the belts in.

@@ -10,6 +10,7 @@ import { compose, RoutingError, PowerError } from './compose.js';
 import { finishBlock, given } from './compact.js';
 import { validateBlock } from './validity.js';
 import { scoreOf } from './score.js';
+import { balanceBlock } from '../balancer.js';
 
 // What a routing failure tells a ladder's rungs: whether it had Fan-outs (fans), ran across
 // Sub-Blocks (across), left a pair of belts unbalanced for want of room for their splitter
@@ -111,6 +112,15 @@ export function layOut(ctx, rechain, policy = {}) {
   } catch (e) {
     if (!laidOut(e)) throw e;
     return { failure: { error: e, stage: 'finished', hint: hintOf(e) }, composed, room, chain };
+  }
+  // The Goals' belt balancers, built into the factory's east side (ADR 0092): a layout they do not
+  // fit in is no layout.
+  if (!unfinished && ctx.logistics.balance?.length) {
+    for (const item of ctx.logistics.balance) {
+      const built = balanceBlock(block, ctx.catalog, item);
+      if (built.failed) return { failure: { error: new Error(built.note), stage: 'valid', hint: {} }, room, chain };
+      block = built.block;
+    }
   }
   if (!unfinished) {
     const problems = validateBlock(block, ctx.catalog, ctx.logistics);
