@@ -98,3 +98,41 @@ test('the Side Input lists what comes by train, not what the block gathers of it
   assert.ok(!fromTrain({ source: 'side-input', items: [{ item: 'grade-3-ti' }], consumers: [], fedBy: 36, joins: 33 }), 'gathered off a belt');
   assert.ok(!fromTrain({ source: 4, items: [] }));
 });
+
+test('belts that are part filled are merged down by splitters first: 12 belts of 360/min into 5', () => {
+  const n = 12, m = 5;
+  const rates = Array(n).fill(0.4);
+  const design = designBalancer(n, m, { rates });
+  assert.equal(design.P, 8, 'a network of 8 lanes, not 16');
+  assert.equal(design.merges.length, 4);
+  const ends = Array.from({ length: n }, (_, k) => ({ x: 10, y: 20 + 3 * k }));
+  const laid = layBalancer(design, ends, [], names, open, { x1: 1000, y0: 0, y1: 150 });
+  assert.ok(laid, 'fits');
+  const trace = traceBalancer(laid.entities, ends, names.reach);
+  assert.deepEqual(trace.problems, []);
+  const out = flowOfTrace(trace, ends.map(() => 0.4));
+  assert.equal(out.size, m);
+  const got = [...out.values()].map(v => v / 1000);
+  assert.ok(Math.min(...got) > 0.8 * Math.max(...got), `out belts ${got.map(v => v.toFixed(2))}`);
+  assert.ok(got.reduce((a, b) => a + b, 0) > 0.98 * n * 0.4, 'nothing held back');
+});
+
+test('belts too full to merge keep their own lanes', () => {
+  assert.equal(designBalancer(4, 3, { rates: [0.7, 0.7, 0.7, 0.7] }).merges.length, 0);
+});
+
+test('balanceBlock: a pipe leaving between the belts goes on under the balancer\'s tracks', () => {
+  const block = blockOf([10, 20, 30, 40]);
+  const pipe = (x, y) => ({ name: 'pipe', kind: 'pipe', x, y, w: 1, h: 1, direction: 0, travel: 4, fluid: 'water', route: 9 });
+  const pieces = [pipe(7, 25), pipe(8, 25), pipe(9, 25)];
+  block.routes.push({ id: 9, kind: 'pipe', fluid: 'water', source: 0, sink: 'side-output', items: [{ item: 'water', rate: 100 }], pieces });
+  block.entities.push(...pieces);
+  const cat = { ...catalog, pipes: { ...(catalog.pipes ?? {}), 'pipe-to-ground': { name: 'pipe-to-ground', maxDistance: 10 } } };
+  const { block: out, note } = balanceBlock(block, cat, 'iron-plate');
+  assert.match(note, /4 belts in, 3 out/);
+  const row = out.entities.filter(e => e.balancer && e.y === 25 && e.route === 9);
+  assert.ok(row.length >= 2, 'the pipe carries on along its row');
+  assert.ok(row.every(e => e.kind === 'pipe' || e.kind === 'pipe-to-ground'));
+  const tiles = out.entities.filter(e => e.balancer).map(e => `${e.x},${e.y}`);
+  assert.equal(new Set(tiles).size, tiles.length, 'no two on one tile');
+});

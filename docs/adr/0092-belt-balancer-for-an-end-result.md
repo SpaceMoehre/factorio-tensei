@@ -22,4 +22,10 @@ What changed:
 | Py small parts 4 belts of 600/min in the 2400/min layout | 4-3, 23 × 4 tiles, traced: no belt side-loaded |
 | Width, 4-3 / 8-5 (yellow belts) | 23 / 55 columns |
 
+Added after the first page run (Py titanium plate, 150 × 150, 12 belts of 360/min leaving, 5 out):
+- Part-filled belts are merged by splitters first: a splitter with one output left without a belt joins two belts (a pair must fit a belt). 12 belts of 360/min merge to 8 lanes, then an 8-5 network, instead of 16 lanes (`designBalancer` `merges`, `rates`). A lane in no splitter of a stage goes on (`passes`).
+- What else leaves across the east edge is carried on past the input channel: belts under its tracks with undergrounds, pipes with their pipe-to-ground (`through`, `kind: 'pipe'`); a pipe row used to rule every place out. Only a belt or pipe whose last tile is on the edge counts.
+- The reserve (`balancerWidth`) is laid out for twice as many belts in as out, each half full: 13 columns for 1800/min, 29 for 2400, 67 for 4312.5, 134 for 7200.
+- The titanium layout (142 × 139, 12 belts) with room: 12 belts in, 5 out, 75 × 12 tiles, traced.
+
 Still: the width (a hand-made 8-5 is far narrower; the channels' tracks and spare rows cost columns); the reserve counts as many belts in as out, so a block with more belts in needs the Buffer; only the east edge; a fluid or a mixed belt is not balanced. The load the evenness is checked at is the rate over the belts in.
