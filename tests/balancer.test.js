@@ -88,3 +88,13 @@ test('balancerWidth: none for a belt, some for more; the blueprint holds the bal
   assert.ok(names2.has('splitter'));
   assert.ok(names2.has('display-panel'));
 });
+
+test('the Side Input lists what comes by train, not what the block gathers of its own (grade-3-ti, ti-rejects)', async () => {
+  const { fromTrain } = await import('../js/routes.js');
+  const input = { source: 'side-input', items: [{ item: 'ore-titanium' }], consumers: [1] };
+  assert.ok(fromTrain(input));
+  assert.ok(fromTrain({ ...input, fedBy: 3 }), 'a branch of a train belt');
+  assert.ok(!fromTrain({ ...input, loop: { from: 7 }, fedBy: 33 }), 'a loop');
+  assert.ok(!fromTrain({ source: 'side-input', items: [{ item: 'grade-3-ti' }], consumers: [], fedBy: 36, joins: 33 }), 'gathered off a belt');
+  assert.ok(!fromTrain({ source: 4, items: [] }));
+});

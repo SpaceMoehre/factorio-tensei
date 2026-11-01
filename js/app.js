@@ -5,6 +5,7 @@ import { burnerFuel, fuelsFor } from './plan.js';
 import { useNames, displayName } from './names.js';
 import { encodeBlueprint } from './blueprint.js';
 import { balanceBlock, balancerWidth } from './balancer.js';
+import { fromTrain } from './routes.js';
 import { clocksOf, clockLabel } from './clocks.js';
 import { circuitPairs } from './layout/wires.js';
 import { createMap, turnsSideways } from './render.js';
@@ -964,7 +965,7 @@ async function show(block, tried, found = null, rank = null, { view = null, sele
   $('area').hidden = false;
   report(block, starvation, session ? progress() : null);
   // A Recipe Loop's feedback fed in the block is no Side Input.
-  fillFlows($('side-input'), block.routes.filter(r => r.source === 'side-input' && !(r.loop && r.fedBy !== undefined)));
+  fillFlows($('side-input'), block.routes.filter(fromTrain));
   fillFlows($('side-output'), block.routes.filter(r => r.sink === 'side-output'), block);
   clocks = clocksOf(block, catalog, handOf());
   renderClocks();

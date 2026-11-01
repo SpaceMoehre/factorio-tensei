@@ -176,3 +176,9 @@ export function coreLinks(sb, i, routes) {
   };
 }
 
+
+// Whether a route brings something in from the train, as the page's Side Input lists them: not a
+// Recipe Loop's feedback, and not a belt gathering what the block makes itself (a Supplied Item
+// gathered off another belt, joining it again: fedBy with joins), which only has the Side Input's
+// own way of being drawn.
+export const fromTrain = r => r.source === 'side-input' && !(r.fedBy !== undefined && (r.loop || r.joins !== undefined));
