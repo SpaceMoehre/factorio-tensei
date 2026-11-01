@@ -2,37 +2,23 @@
 status: accepted
 ---
 
-# A belt balancer for an end result
+# A belt balancer for an end result, a Sub-Block of the factory
 
-The user's request: "Add an option to include a belt balancer for an end result. All resulting belts must carry only that item and then go into a belt balancer. Out comes the minimum amount of belts. For example 8 yellow belts carrying 4000 items per sec result in a 8-5 belt balancer."
+The user's request: "Add an option to include a belt balancer for an end result. All resulting belts must carry only that item and then go into a belt balancer. Out comes the minimum amount of belts. For example 8 yellow belts carrying 4000 items per sec result in a 8-5 belt balancer." Then: "Do not incorporate the balancer in the buffer. Treat it as a subblock in the factory", and "Your solution wastes a lot of space. Make it a real subblock. Maximizing space efficiently is the highest priority."
 
-The rule: a Goal may ask for a balancer (the Goal's "balancer" box). Every belt of its item leaving across the east edge, each carrying only that item (One Item a Belt on), goes into a balancer; as many belts come out as its rate fills, rounded up (`beltsFor`: 4000/min on yellow belts of 900/min, 5).
+The rule: a Goal's "balancer" box. The Goal's item then goes by Internal Path (as few belts as its machines' lanes carry, each with only that item) into a balancer, a Sub-Block the search places and links like any other; as many belts come out as the rate fills, rounded up (4000/min on yellow belts: 5). (The first form, built after the layout east of the block in room kept off the inner area, wasted most of its space and was dropped: a belt to the train for every machine, 55 columns of tracks, Annexes of its own.)
 
 What changed:
-- `js/balancer.js`, the network (`designBalancer`): a splitter network on P = the next power of two of lanes, the pairs of Batcher's bitonic merge (`stagesOf`), the n in belts on the first n inputs, the m out belts on the m outputs (of all the ways to choose them) that balance best under a fluid model of the belts with backpressure (`flowOf`, `evenness`: all in belts full, every other at half, alternately three quarters and a quarter); the other outputs have no belt, so their splitter side is blocked. A power of two balances evenly (2-2, 4-4, 8-8: 1.00); 8-5 at 0.90 of an even share, 4-3 at 0.75 at a load of 0.75: a network with no loop back splits in halves, so 3 belts cannot be exactly even.
-- `layBalancer`, the layout east of the block: lanes are rows; stage by stage the splitters stand in slots of two rows (`arrangement`: the order and the side of each chosen for the cheapest channel before it), and a channel (`channelOf`) takes each lane from its row to the next splitter's: along its row to a track, along the track, on east. A lane crossing another's track goes under it (an underground belt, a run no longer than its reach, else tracks are spread with two free columns every few, or two or three columns apart); two lanes swapping rows (a cycle that cannot be drawn) take a spare row beside the band. Belts of other items leaving through the input channel run straight on under its tracks; a pipe row there rules a place out. Tracks whose rows do not overlap share a column. Candidate places for the band are tried nearest the in belts first, each checked tile by tile against the block and the Fixtures.
-- `traceBalancer` and `flowOfTrace` follow the built belts as items move (underground to its exit, splitters, side-loading found) and run the same fluid model: the tests lay out 2-2, 4-4, 4-3, 3-2 and 8-5 and check no belt is fed from two tiles and every out belt carries its share.
-- `balanceBlock` builds it into a layout: the routes with only that item (more than one item on a belt, or the Output Side up or down: nothing built, and why), the n belts, m from their total, the balancer's belts a route of their own (`balancer: true`, no sink), the in routes marked `balanced` (their display panels moved to the out belts: blueprint.js `markers`, each out belt with its share). The layout itself is untouched; a note says what was built or why not.
-- `siteOf(city, buffer, east)` and app.js `balancerEast`: a Goal that asks keeps the width of its balancer (laid out for as many belts in as out, `balancerWidth`) free on the inner area's east side, so Maximize and the build leave room. More in belts than out may need the Buffer too.
-- app.js: the Goal's box, `withBalancers` (the layout shown and written to the blueprint with the balancers, the layout moves and reshapes work on without), the notes in the status.
+- `chain`/plan: `balancer.js withBalancers` adds an entry for each asked item taking it from the step making it (a Byproduct Use's way: `use`, `goal.from`, no producer of its own) and leaving by train what it gives back. The plan sees a building of one tile (`BALANCER`) and a recipe moving a belt's worth a second (`ensureBalancer` puts them into the catalog): its count is its out belts. session.js and maximize.js `chainOf` call it; `setup.js setupFrom` gives the asked items as `logistics.balance`.
+- design.js `designOnce` takes a balancer Sub-Block to `balancerCandidates`: one candidate, its network for as many in belts as the Internal Path has (`pathBelts`: as many as its producers' machines put on a belt, both lanes, no machines of its own to feed; `pathWants`: it wants all its belts bring; compose.js `wantOf` likewise).
+- `layout/balancecore.js balancerCore`: the Module, no machines: the network of balancer.js (`designBalancer`, `arrangement`, `layBalancer`) with its in belts on the rows its first splitters take them on and its belts, undergrounds and splitters as the core's entities, each in belt a Head-on part ending against its west side, each out belt a Head-on part starting at its east side (the Links' to lay), drops for the Path Flow of the belts to the train.
+- balancer.js: the network (Batcher's bitonic merge pairs on the next power of two of the out belts; belts merged down by splitters with one output left without a belt where a pair fits one, so 12 belts of 360/min become 8 lanes, an 8-5 network); the lanes laid in rows with channels of tracks, undergrounds under crossing tracks, a spare row for two lanes swapping; `traceBalancer`/`flowOfTrace` follow the built belts as items move (tests lay out 2-2 to 8-5 and 12-5, no belt side-loaded, every out belt its share).
+- maximize.js: no Annexes where a balancer takes the Goal's belts (an Annex is another chain, its belts its own).
+- validity.js: a balancer Sub-Block has no machines to count.
 
-| | |
-|---|---|
-| Py small parts at 1800/min (3 belts in, 2 out), the page, 100 × 100 city block | built, 23 × 4 tiles, 100% even at that load; 7 splitters in the blueprint |
-| Py small parts 4 belts of 600/min in the 2400/min layout | 4-3, 23 × 4 tiles, traced: no belt side-loaded |
-| Width, 4-3 / 8-5 (yellow belts) | 23 / 55 columns |
+| | Before (built after, east of the block) | After (a Sub-Block) |
+|---|---|---|
+| Py small parts at 3000/min goal, 100 × 100 city block, 20 candidates a try | | 2362/min (4 machines, balancer 3 in, 2 out) inside the block, 94 × 94 |
+| Py titanium plate, 12 belts of 360/min | 75 × 12 tiles east of a 142-wide block | 6 in belts (two machines a belt) |
 
-Added after the first page run (Py titanium plate, 150 × 150, 12 belts of 360/min leaving, 5 out):
-- Part-filled belts are merged by splitters first: a splitter with one output left without a belt joins two belts (a pair must fit a belt). 12 belts of 360/min merge to 8 lanes, then an 8-5 network, instead of 16 lanes (`designBalancer` `merges`, `rates`). A lane in no splitter of a stage goes on (`passes`).
-- What else leaves across the east edge is carried on past the input channel: belts under its tracks with undergrounds, pipes with their pipe-to-ground (`through`, `kind: 'pipe'`); a pipe row used to rule every place out. Only a belt or pipe whose last tile is on the edge counts.
-- The reserve (`balancerWidth`) is laid out for twice as many belts in as out, each half full: 13 columns for 1800/min, 29 for 2400, 67 for 4312.5, 134 for 7200.
-- The titanium layout (142 × 139, 12 belts) with room: 12 belts in, 5 out, 75 × 12 tiles, traced.
-
-Built into the factory, not into the Buffer (the user: "Do not incorporate the balancer in the buffer. Treat it as a subblock in the factory"):
-- The room is part of every try's area: `design.js context()` takes it off the inner area's east side (`balancer.js reserveFor`: the widest balancer for what the plan sends to the train of each asked item, and one column), so the search places the factory in what is left and every Count of Maximize is judged with it. Not the Buffer, and not after the layout.
-- `lay.js layOut` builds it into the finished layout (`balanceBlock`, inside the inner area and the room kept); a layout it does not fit in is no layout (stage `valid`). The block's bounds take it in; the other belts and pipes leaving are carried on to its east edge, so they still leave across the factory's edge (validity.js: `insideSite` counts the kept room, `balanced` routes and the balancer's own route are not chained or edge-checked).
-- `setup.js setupFrom` gives the asked items to the layout as `logistics.balance`. The map and the blueprint draw it as the rest of the block.
-- Only the first asked Goal's balancer is built into a block with several.
-- Py titanium plate, 150 × 150, buffer 4, 20 candidates a try: 2250/min (6 machines, 6 belts in, 3 out, 29 × 6 tiles) inside the inner area (141 × 133), against 3375 fitting without one: the room is part of the area.
-
-Still: the width (a hand-made 8-5 is far narrower; the channels' tracks and spare rows cost columns); the reserve counts as many belts in as out, so a block with more belts in needs the Buffer; only the east edge; a fluid or a mixed belt is not balanced. The load the evenness is checked at is the rate over the belts in.
+Still: an Annex (another chain) does not feed the balancer, so none run with it; one balancer a block; the network's width (19 columns for 3-3, more for others); the in belts' loads are taken as equal; only the east edge.

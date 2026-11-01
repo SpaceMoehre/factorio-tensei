@@ -6,6 +6,7 @@
 // them instead (upTo: a Maximize no higher than the Goals' own rates).
 import { expandChain } from './chain.js';
 import { partByConsumer } from './plan.js';
+import { withBalancers } from './balancer.js';
 import { planner } from './maximize.js';
 import { better } from './layout/score.js';
 
@@ -77,7 +78,7 @@ export function buildSession(setup, site, catalog, runner, options = {}) {
     const started = now();
     const chain = expandChain(goals, catalog, { ...choices, logistics });
     // (Parted by Consumer before designing, as the search parts them: each Sub-Block by its index.)
-    const job = { entries: partByConsumer(chain.entries, catalog, logistics), logistics, seed, site, ...(maxCandidates < Infinity ? { maxCandidates } : {}) };
+    const job = { entries: partByConsumer(withBalancers(chain.entries, catalog, logistics), catalog, logistics), logistics, seed, site, ...(maxCandidates < Infinity ? { maxCandidates } : {}) };
     yield { type: 'start', maximize, upTo, job };
     let designs = null;
     if (!maximize) {

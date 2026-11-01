@@ -85,9 +85,9 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
-## v77: A belt balancer for an end result (implemented)
+## v77: A belt balancer, a Sub-Block (implemented)
 
-A Goal's "balancer" box: every belt of its item leaving across the east edge with only that item goes into a splitter network (the bitonic merge's pairs, blocked outputs for the belts not needed) built east of the block, and as many belts come out as the rate fills (8 belts of 4000/min on yellow: 8-5). Room is kept free east of the inner area; laid out by channels of tracks with undergrounds, checked by tracing the built belts. ADR 0092.
+A Goal's "balancer" box: its item goes by Internal Path (as few belts as its producers' lanes carry) into a belt balancer Sub-Block (splitters, belts merged down first where part filled), as many belts coming out as the rate fills (8 belts of 4000/min on yellow: 8-5). The search places and links it like any Sub-Block; no Annexes with it. ADR 0092.
 
 ## v76: Bands tried with other seeds (implemented)
 

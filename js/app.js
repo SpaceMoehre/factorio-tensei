@@ -1321,7 +1321,9 @@ function applyRate() {
 function report(block, starvation, prefix) {
   const machines = block.entities.filter(e => e.kind === 'building').length;
   const size = `${machines} machines, ${block.bounds.w}×${block.bounds.h} tiles.`;
-  const notes = block.balancer ? `\n${block.balancer.note}` : '';
+  // A belt balancer's Sub-Block: its belts in and out (ADR 0092).
+  const bal = block.subBlocks.findIndex(sb => sb.balancer);
+  const notes = bal < 0 ? '' : `\nBelt balancer for ${block.subBlocks[bal].item}: ${block.routes.filter(r => r.kind === 'belt' && r.consumers.includes(bal)).length} belts in, ${block.subBlocks[bal].count} out.`;
   const head = (prefix ? `${prefix} Best: ${size}` : size) + notes;
   if (starvation.length) {
     const who = s => (s.subBlock === null ? 'Side Output' : block.subBlocks[s.subBlock].item);

@@ -4,6 +4,9 @@
 // outputs, the other outputs left blocked. The network is a list of stages; a stage a list of
 // [i, j] lane pairs, each one splitter taking the lanes i and j and giving them back.
 
+import { planSubBlocks } from './plan.js';
+import { buildFlows } from './flows.js';
+
 const pow2 = n => { let p = 1; while (p < n) p *= 2; return p; };
 
 // Batcher's bitonic merge sorter's pairs: stage by stage, lanes i < j each in one pair.
@@ -227,14 +230,11 @@ function planTracks(lanes, cs, reach, style) {
         const prev = tunnels.at(-1);
         if (prev && p - 1 <= prev[1]) prev[1] = q + 1; else tunnels.push([p - 1, q + 1]);
       }
-      const lim = l.reach ?? reach;
-      for (const [e, q] of tunnels) if (e < a || q > b || q - e > lim) return { ok: false, cycle: null };
+      for (const [e, q] of tunnels) if (e < a || q > b || q - e > reach) return { ok: false, cycle: null };
       for (let x = a; x <= b; x++) {
         const tun = tunnels.find(([e, q]) => x >= e && x <= q);
-        // (A pipe's tunnel: the above-ground connection of its entry faces west, its exit's east.)
-        const extra = l.kind === 'pipe' ? { fluid: l.fluid } : {};
-        if (!tun) pieces.push({ kind: l.kind ?? 'belt', x, y, direction: l.kind === 'pipe' ? 0 : DIRS.E, travel: DIRS.E, ...extra, ...(l.route !== undefined ? { route: l.route } : {}) });
-        else if (x === tun[0] || x === tun[1]) pieces.push({ kind: l.kind === 'pipe' ? 'pipe-to-ground' : 'underground-belt', underground: x === tun[0] ? 'input' : 'output', x, y, direction: l.kind === 'pipe' ? (x === tun[0] ? DIRS.W : DIRS.E) : DIRS.E, travel: DIRS.E, ...extra, ...(l.route !== undefined ? { route: l.route } : {}) });
+        if (!tun) pieces.push({ kind: 'belt', x, y, direction: DIRS.E });
+        else if (x === tun[0] || x === tun[1]) pieces.push({ kind: 'underground-belt', underground: x === tun[0] ? 'input' : 'output', x, y, direction: DIRS.E });
       }
     }
     for (const n of mine) {
@@ -249,7 +249,16 @@ function planTracks(lanes, cs, reach, style) {
 // of its splitters stands (a slot of two rows) and the rows its lanes enter and leave on. Stage 0
 // takes the in lanes in order; a later stage's splitters stand in the order of the rows their lanes
 // left the stage before on (their mean), the lane that was higher staying on top.
+const arranged = new WeakMap();
 export function arrangement(design, reach = 8) {
+  const kept = arranged.get(design);
+  if (kept?.reach === reach) return kept.value;
+  const value = arrange(design, reach);
+  arranged.set(design, { reach, value });
+  return value;
+}
+
+function arrange(design, reach) {
   const { L, stages, inLanes, merges } = design;
   const live = new Set(inLanes);
   const rows = Array(L).fill(null);
@@ -343,13 +352,12 @@ export function arrangement(design, reach = 8) {
   return { placed, P: Math.max(...placed.map(p => p.rowsUsed)), L };
 }
 
-// The balancer's entities, laid from the block's output belts: ends [{ x, y }] (the last tile of
-// each belt that goes in, facing east), through [{ x, y }] (other belts leaving across the same edge,
-// carried straight on past the balancer's input channel), names { belt, underground, splitter, reach },
-// free(x, y) (whether a tile is free to build on), limits { x1 (the last column to use), y0, y1 (the
-// rows it may use) }, pipes (rows of pipes leaving: never crossed by a track). Returns
-// { entities, x0, x1, y0, y1, outputs: [{ x, y }] } or null where it does not fit.
-export function layBalancer(design, ends, through, names, free, limits) {
+// The balancer's entities, laid from the belts that go in: ends [{ x, y }] (the last tile of each,
+// facing east; each is taken to a row of its lane by a track where it is not on it), names { belt,
+// underground, splitter, reach }, free(x, y) (whether a tile is free to build on), limits { y0, y1
+// (the rows it may use), top (the band's top row, where one only) }. Returns { entities, x0, x1,
+// y0, y1, outputs: [{ x, y }] } or null where it does not fit.
+export function layBalancer(design, ends, names, free, limits) {
   const { placed, P } = arrangement(design, names.reach);
   const L = design.L;
   const ins = ends.slice().sort((a, b) => a.y - b.y);
@@ -381,21 +389,18 @@ export function layBalancer(design, ends, through, names, free, limits) {
     const lo = limits.y0, hi = limits.y1 - P + 1;
     const mid = (ins[0].y + ins.at(-1).y) / 2 - P / 2;
     const tops = [];
-    for (let t = lo; t <= hi; t++) tops.push(t);
+    if (limits.top !== undefined) tops.push(limits.top);
+    else for (let t = lo; t <= hi; t++) tops.push(t);
     tops.sort((a, b) => Math.abs(a - mid) - Math.abs(b - mid) || a - b);
     for (const top of tops.slice(0, 80)) {
       // The input channel: each belt to the row its lane enters stage 0 on; the others straight.
       const lanes = ins.map((e, k) => ({ id: `in${k}`, from: e.y, to: top + first.enter[design.inLanes[k]], x0 }));
-      const span = [Math.min(top, ...ins.map(e => e.y)), Math.max(top + P - 1, ...ins.map(e => e.y))];
-      for (const t of through) if (t.y >= span[0] && t.y <= span[1]) lanes.push({ id: `through${t.y}`, from: t.y, to: t.y, x0: t.x + 1, kind: t.kind ?? 'belt', fluid: t.fluid, route: t.route, reach: t.kind === 'pipe' ? names.pipeReach : undefined });
-      // A through belt may not stand on the band's rows (the splitters and tracks lie there).
-      if (through.some(t => t.y >= top && t.y < top + P)) continue;
       const input = channelOf(lanes, x0, names.reach, style, spareRows(top));
       if (!input) continue;
       /** @type {any[]} */
       const entities = [];
       const add = (p, extra = {}) => entities.push({ w: 1, h: 1, travel: p.direction, balancer: true, ...p, ...extra });
-      const belt = p => ({ ...p, name: { 'underground-belt': names.underground, pipe: names.pipe, 'pipe-to-ground': names.pipeUnderground }[p.kind] ?? names.belt });
+      const belt = p => ({ ...p, name: p.kind === 'underground-belt' ? names.underground : names.belt });
       for (const p of input.pieces) add(belt(p));
       let x = x0 + input.width;
       const outputs = [];
@@ -420,14 +425,6 @@ export function layBalancer(design, ends, through, names, free, limits) {
         outputs.push({ x, y: top + y });
       }
       const x1 = x;
-      // What else leaves goes straight on to the same column, past the stages.
-      for (const t of through) {
-        // (Past the input channel where it crossed the tracks, else from the edge.)
-        for (let tx = t.y < span[0] || t.y > span[1] ? x0 : x0 + input.width; tx <= x1; tx++) {
-          add({ kind: t.kind ?? 'belt', x: tx, y: t.y, direction: t.kind === 'pipe' ? 0 : DIRS.E, travel: DIRS.E, name: t.kind === 'pipe' ? names.pipe : names.belt, ...(t.kind === 'pipe' ? { fluid: t.fluid } : {}), route: t.route });
-        }
-      }
-      if (x1 > limits.x1) continue;
       const seen = new Set();
       let fits = true;
       for (const e of entities) {
@@ -537,112 +534,48 @@ export function flowOfTrace(trace, ins, steps = 2000) {
   return total;
 }
 
-// ---------------------------------------------------------------------------------------------
-// In a block (ADR 0092).
-
-const designs = new Map();
-const designFor = (n, m, rates) => {
-  const key = `${m}:${rates.map(r => Math.round(r * 20)).join(',')}`;
-  if (!designs.has(key)) designs.set(key, designBalancer(n, m, { rates }));
-  return designs.get(key);
-};
-
-const namesOf = (catalog, belt) => {
+export const namesOf = (catalog, belt) => {
   const spec = catalog.belts[belt];
   return { belt, underground: spec.underground.name, splitter: spec.splitter ?? belt.replace(/transport-belt$/, 'splitter'), reach: spec.underground.maxDistance - 1 };
 };
 
 // The columns a balancer for `rate` of an item takes: laid out for twice as many belts in as out,
 // each half full (merged down by splitters first), 4 rows apart. 0 where one belt carries it.
-const widths = new Map();
-export function balancerWidth(rate, catalog, belt) {
-  const perBelt = catalog.belts[belt].itemsPerSecond * 60;
-  const m = beltsFor(rate, perBelt);
-  if (m < 2) return 0;
-  const key = `${belt}:${m}:${Math.round(rate / perBelt * 20)}`;
-  if (widths.has(key)) return widths.get(key);
-  const n = 2 * m;
-  const design = designFor(n, m, Array(n).fill(m / n * Math.min(1, rate / (m * perBelt))));
-  const ends = Array.from({ length: n }, (_, k) => ({ x: 0, y: 4 * k }));
-  const laid = layBalancer(design, ends, [], namesOf(catalog, belt), () => true, { x1: 1e6, y0: -1e3, y1: 1e3 });
-  const width = laid ? laid.x1 - laid.x0 + 1 : 0;
-  widths.set(key, width);
-  return width;
+// The balancer as the plan sees it (ADR 0092): a building of one tile and a recipe moving `item`, a
+// belt's worth a craft a second (so a balancer's count is its out belts). Put into the catalog,
+// once; its Sub-Block is the Goal's item taken from the step that makes it.
+export const BALANCER = 'belt-balancer';
+export const balancerRecipe = item => `${BALANCER}:${item}`;
+export function ensureBalancer(catalog, item, belt) {
+  const perSecond = catalog.belts?.[belt]?.itemsPerSecond ?? 15;
+  catalog.buildings[BALANCER] ??= { name: BALANCER, size: { w: 1, h: 1 }, craftingSpeed: 1, categories: [BALANCER], energy: 'none', energyUsage: 0, effectivity: 1, fluidBoxes: [], balancer: true };
+  const name = balancerRecipe(item);
+  const kept = catalog.recipes[name];
+  if (kept?.ingredients[0].amount === perSecond) return;
+  catalog.recipes[name] = { name, category: BALANCER, time: 1, ingredients: [{ type: 'item', name: item, amount: perSecond }], products: [{ type: 'item', name: item, amount: perSecond }] };
 }
 
-// A City Block's site with the room a layout's belt balancers need kept free on its inner area's
-// east side (ADR 0092): the widest of them for what leaves (sideOutput: [{ item, rate }]) and one
-// column more, taken off the inner area as the factory's own, so every try is placed in what is left
-// and the balancer stands in the room, never in the Buffer. The site itself where none is asked.
-export function reserveFor(site, sideOutput, logistics, catalog) {
-  if (!site || !logistics.balance?.length) return site;
-  let east = 0;
+// The entries with a belt balancer for each Goal item that asks for one (logistics.balance) and more
+// than one belt carries (ADR 0092): its Sub-Block takes the item from the step making it, and
+// leaves by train what it gives back. (A Byproduct Use's way of being no producer of its own.)
+export function withBalancers(entries, catalog, logistics) {
+  if (!logistics.balance?.length) return entries;
+  const belt = catalog.belts?.[logistics.belt];
+  if (!belt) return entries;
+  const perBelt = belt.itemsPerSecond * 60;
+  let out = entries;
   for (const item of logistics.balance) {
-    const rate = sideOutput.find(o => o.item === item)?.rate ?? 0;
-    if (rate > 0) east = Math.max(east, balancerWidth(rate, catalog, logistics.belt));
+    const at = out.findIndex(e => e.goal.item === item && !e.use);
+    if (at < 0) continue;
+    let rate = 0;
+    try {
+      rate = buildFlows(planSubBlocks(out, catalog, logistics), perBelt).sideOutput.find(o => o.item === item)?.rate ?? 0;
+    } catch {
+      continue;
+    }
+    if (beltsFor(rate, perBelt) < 2) continue;
+    ensureBalancer(catalog, item, logistics.belt);
+    out = [...out, { goal: { item, rate, balancer: true, from: { [item]: at } }, selection: { recipe: balancerRecipe(item), building: BALANCER }, use: true }];
   }
-  if (!east) return site;
-  east += 1;
-  return { ...site, inner: { ...site.inner, w: site.inner.w - east }, east: (site.east ?? 0) + east };
-}
-
-// The block with a balancer for `item` built into it, east of the factory (ADR 0092): every belt
-// leaving across the east edge with only that item goes into it, and as many belts as its rate
-// needs come out. In a City Block it stands inside the inner area, in the room kept for it
-// (site.east), never in the Buffer; the block's bounds then take it in, and the other belts and
-// pipes leaving go on to its east edge. Returns { block, note, failed } — block is the block itself
-// when nothing is built; note says why or what; failed: a balancer was asked for and does not fit.
-export function balanceBlock(block, catalog, item) {
-  const belt = block.entities.find(e => e.kind === 'belt')?.name;
-  if (!belt) return { block, note: null };
-  const leaving = (block.routes ?? []).filter(r => r.sink === 'side-output' && r.joins === undefined);
-  const mine = leaving.filter(r => r.kind === 'belt' && r.items.some(i => i.item === item && i.rate > 1e-9));
-  if (!mine.length) return { block, note: null };
-  const out = block.out ?? 4;
-  if (out !== 4) return { block, note: `The belt balancer for ${item} stands east of the factory: not built with the Output Side up or down.` };
-  if (mine.some(r => r.items.filter(i => i.rate > 1e-9).length > 1)) return { block, note: `The belt balancer for ${item} needs belts with only ${item}: turn on One item a belt.` };
-  mine.sort((p, q) => p.pieces.at(-1).y - q.pieces.at(-1).y);
-  const ends = mine.map(r => r.pieces.at(-1));
-  if (ends.some(p => p.travel !== 4)) return { block, note: `The belt balancer for ${item} found a belt not leaving east.` };
-  const total = mine.reduce((s, r) => s + r.items.reduce((t, i) => t + (i.item === item ? i.rate : 0), 0), 0);
-  const perBelt = catalog.belts[belt].itemsPerSecond * 60;
-  const n = ends.length, m = Math.min(n, beltsFor(total, perBelt));
-  if (n === 1) return { block, note: null };
-  const names = namesOf(catalog, belt);
-  const rates = mine.map(r => r.items.reduce((t, i) => t + (i.item === item ? i.rate : 0), 0) / perBelt);
-  const design = designFor(n, m, rates);
-  const taken = new Set([...block.entities, ...(block.site?.fixtures ?? [])].flatMap(e => Array.from({ length: e.w * e.h }, (_, i) => `${e.x + (i % e.w)},${e.y + Math.floor(i / e.w)}`)));
-  const inner = block.site?.inner, { bounds } = block;
-  // (Inside the inner area, the room kept east of it included: not in the Buffer.)
-  const reach = inner ? { x1: inner.x + inner.w - 1 + (block.site.east ?? 0), y0: inner.y, y1: inner.y + inner.h - 1 } : { x1: bounds.x + bounds.w + 400, y0: bounds.y - 4 * n, y1: bounds.y + bounds.h + 4 * n };
-  const free = (x, y) => !taken.has(`${x},${y}`) && x <= reach.x1 && y >= reach.y0 && y <= reach.y1;
-  const others = leaving.filter(r => !mine.includes(r));
-  // What else leaves across the edge, carried on to the balancer's east edge: the tile at the edge
-  // of each (a belt, or a pipe with the pipe-to-ground it tunnels with).
-  const edge = bounds.x + bounds.w - 1;
-  const through = [];
-  for (const r of others) {
-    if (!r.pieces.length) continue;
-    const last = r.pieces.reduce((a, p) => (p.x > a.x ? p : a));
-    if (last.x !== edge) continue;
-    if (r.kind === 'belt') { if (last.travel === 4) through.push({ x: last.x, y: last.y, kind: 'belt', route: r.id }); continue; }
-    const ground = r.pieces.find(p => p.kind === 'pipe-to-ground')?.name ?? `${last.name}-to-ground`;
-    names.pipe = last.name; names.pipeUnderground = ground; names.pipeReach = (catalog.pipes?.[ground]?.maxDistance ?? 10) - 1;
-    through.push({ x: last.x, y: last.y, kind: 'pipe', fluid: r.fluid, route: r.id });
-  }
-  const laid = layBalancer(design, ends, through, names, free, reach);
-  if (!laid) return { block, failed: true, note: `No room for a belt balancer for ${item} (${n} belts to ${m}) in the factory's east side${inner ? ` (inside the buffer, ${(block.site.east ?? 0)} tiles kept)` : ''}.` };
-  // (The balancer's belts belong to a route of their own, as every belt does: it carries what the
-  // out belts do, goes nowhere and is no Side Output.)
-  const id = Math.max(-1, ...block.routes.map(r => r.id)) + 1;
-  const entities = laid.entities.map(e => (e.kind === 'splitter' ? e : { ...e, route: e.route ?? id }));
-  const more = new Map();
-  for (const e of entities) if (e.route !== id && e.route !== undefined) more.set(e.route, [...(more.get(e.route) ?? []), e]);
-  const routes = [...block.routes.map(r => (mine.includes(r) ? { ...r, balanced: true } : more.has(r.id) ? { ...r, pieces: [...r.pieces, ...more.get(r.id).sort((p, q) => p.x - q.x)] } : r)),
-    { id, kind: 'belt', source: 'balancer', sink: null, balancer: true, items: [{ item, rate: total, supply: total, capacity: total, lane: 'out' }], consumers: [], pieces: entities.filter(e => e.route === id) }];
-  const x1 = Math.max(bounds.x + bounds.w - 1, laid.x1), y1 = Math.max(bounds.y + bounds.h - 1, laid.y1);
-  const [x0, y0] = [bounds.x, Math.min(bounds.y, laid.y0)];
-  const note = `Belt balancer for ${item}: ${n} belts in, ${m} out (${laid.x1 - laid.x0 + 1} × ${laid.y1 - laid.y0 + 1} tiles, ${Math.round(design.evenness * 100)}% even at this load).`;
-  const balancer = { item, n, m, rate: total, evenness: design.evenness, x0: laid.x0, x1: laid.x1, y0: laid.y0, y1: laid.y1, outputs: laid.outputs, note };
-  return { block: { ...block, entities: [...block.entities, ...entities], routes, balancer, bounds: { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 } }, note };
+  return out;
 }

@@ -375,8 +375,9 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
         arrow(x, y, s, e.travel, t.bg);
         // The items it carries, on every third tile, each merged item in turn.
         const n = pieceIndex.get(e);
-        const items = block.routes[e.route].items;
-        if (s >= 14 && n % 3 === 0) drawIcon(items[(n / 3) % items.length].item, x + s / 2, y + s / 2, s * 0.55);
+        // (A belt balancer's belts belong to no route.)
+        const items = block.routes[e.route]?.items;
+        if (items && s >= 14 && n % 3 === 0) drawIcon(items[(n / 3) % items.length].item, x + s / 2, y + s / 2, s * 0.55);
         break;
       }
       case 'splitter':

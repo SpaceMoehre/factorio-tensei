@@ -1,3 +1,4 @@
+import { withBalancers } from './balancer.js';
 import { expandChain, recipeOptions } from './chain.js';
 import { planSubBlocks } from './plan.js';
 import { search } from './search.js';
@@ -42,6 +43,8 @@ import { tidyBelts } from './layout/compact.js';
 //            Giving Way), starving (false: no layout that starves; 'only': none without looked
 //            for, the last Annex's) }
 export function* maximize(goals, catalog, logistics, options) {
+  // (No Annexes where a belt balancer takes the Goal's belts: an Annex is another chain, its belts its own, ADR 0092.)
+  if (logistics.balance?.length && options.annexes !== false) options = { ...options, annexes: false };
   const plan = planner(goals, catalog, logistics, options);
   const most = options.most ?? (options.upTo ? plan.wanted : Infinity);
   plan.cap(most);
@@ -841,7 +844,7 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     for (;;) {
       const chain = expandChain(list, catalog, { made: made.filter(item => !drawn.has(item)), selections, uses, exports, voids, index, extra: more, belt: logistics.belt, logistics, valves: !plain });
       const short = draws.filter(([fluid, { spare }]) => drawn.has(fluid) && (chain.trainInputs.find(t => t.item === fluid)?.rate ?? 0) > spare + 1e-6);
-      if (!short.length) return chain;
+      if (!short.length) return { ...chain, entries: withBalancers(chain.entries, catalog, logistics) };
       for (const [fluid] of short) drawn.delete(fluid);
     }
   };

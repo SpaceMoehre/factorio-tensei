@@ -1641,7 +1641,8 @@ function groupRoutes(ctx, instances, laneCapacity) {
     // little, ADR 0064.)
     const along = base.items.reduce((sum, i) => sum + i.rate, 0)
       / Math.max(1e-9, base.items.filter(i => base.consumers.some(step => plan[step].inputs.some(x => x.name === i.item))).reduce((sum, i) => sum + i.rate, 0));
-    const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) ? wants(g.consumers) * along : null);
+    // (A belt balancer wants all its belts bring, ADR 0092.)
+    const wantOf = g => (g.into !== undefined ? 0 : g.consumers.length && (base.sink !== 'side-output' || base.sorted) && !g.consumers.every(c => plan[c.inst.step].balancer) ? wants(g.consumers) * along : null);
     // What each belt of an option delivers: its producers' machines through its lanes, joined by
     // its splitters (with `joins`) or each going straight on.
     const deliver = (option, joins) => pathFlow({

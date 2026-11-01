@@ -248,7 +248,7 @@ Two belts of one Internal Path side by side through a splitter between the produ
 _Avoid_: balancer (only pairs are joined)
 
 **Belt Balancer**:
-Splitters built east of the block taking every belt of a Goal's item that leaves across the east edge (each carrying only that item) and giving back as many belts as the rate fills, rounded up (8 belts of 4000/min on yellow belts: 8-5), each out belt carrying about the same. A network of splitters on a power of two of lanes (the bitonic merge's pairs), the outputs not needed left without a belt; laid out by rows and channels, a belt crossing another's track going under it. Exactly even only where the out belts are a power of two; the page shows how even it is at the layout's load. It is part of the factory, not of the Buffer: the room it needs is kept off the inner area's east side for every layout tried, and the block's bounds take it in.
+A Sub-Block of the factory taking a Goal's item from the step making it, by an Internal Path of as few belts as its machines' lanes carry (each only that item), and giving back as many belts as the rate fills, rounded up (8 belts of 4000/min on yellow belts: 8-5), each carrying about the same. Its Module has no machines: a network of splitters on a power of two of lanes (the bitonic merge's pairs), belts merged down first where part filled, laid out in rows and channels, its belts against its west side and from its east side as a Head-on Belt's. Exactly even only where the out belts are a power of two. Placed and linked by the search like any other Sub-Block; where it asks for one, no Annex is built.
 _Avoid_: Splitter (a pair of belts of one Internal Path); sorting belts (Byproducts are sorted out by a filter splitter)
 
 **Fan-out**:

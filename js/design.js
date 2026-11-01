@@ -3,7 +3,8 @@
 import { planSubBlocks, beltRate, laneRate } from './plan.js';
 import { buildFlows, taken } from './flows.js';
 import { buildRoutes, coreLinks } from './routes.js';
-import { reserveFor } from './balancer.js';
+import { namesOf } from './balancer.js';
+import { balancerCore } from './layout/balancecore.js';
 import { buildCore, LayoutError, ROTATIONS, routeItems, fluidSides, dropOf, oriented, orientationKey } from './layout/core.js';
 import { N, S } from './layout/grid.js';
 import { routeModule, RoutingError, PowerError } from './layout/module.js';
@@ -71,7 +72,7 @@ export function context(entries, catalog, logistics, site = null) {
     handSize: Math.max(1, Math.floor(logistics.handSize ?? 1)),
   };
   // (The room a belt balancer will stand in kept free east of the inner area, ADR 0092.)
-  return { plan, flows, routes, catalog, logistics, env, site: reserveFor(site, flows.sideOutput, logistics, catalog) };
+  return { plan, flows, routes, catalog, logistics, env, site };
 }
 
 // How much faster than the plan a Sub-Block's machines can run (its headroom, from the Count
@@ -126,6 +127,7 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const building = ctx.catalog.buildings[sb.building];
   const links = coreLinks(sb, index, ctx.routes);
+  if (building.balancer) return balancerCandidates(ctx, index, sb, links);
   const shape = shapeOf(ctx, sb, index, links, rest);
   /** @type {any[]} */
   const candidates = whole && (sb.count > COPIES_FROM || tallCores(ctx, sb, shape)) && !only ? copyCandidates(ctx, index, shape, rng) : [];
@@ -228,6 +230,37 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
     if (d && d.trouble < candidates[0].design.trouble - 1e-6) candidates.unshift(...candidates.splice(k, 1));
   }
   return candidates.filter(c => !c.failed);
+}
+
+// A belt balancer's candidates (ADR 0092): its network for as many in belts as the Sub-Block has
+// out belts (the fewest, the least room), then for more, where its producers cannot bring theirs on
+// so few.
+function balancerCandidates(ctx, index, sb, links) {
+  const { catalog, logistics } = ctx;
+  const names = namesOf(catalog, logistics.belt);
+  const perBelt = catalog.belts[logistics.belt].itemsPerSecond * 60;
+  const out = [];
+  // (As many in belts as its producers' Internal Path has.)
+  for (const n of [pathBelts(ctx, ctx.routes[links.inputs[0]])]) {
+    const found = balancerCore(sb, links, names, n, perBelt);
+    if (!found) continue;
+    const { core } = found;
+    const variant = { balancer: n };
+    const spec = { core, variant, machines: sb.count, whole: true };
+    out.push({
+      estimate: { trouble: 0, area: core.w * core.h, stuck: 0, supporting: 0, uneven: 0, w: core.w, h: core.h }, variant, spec,
+      build: () => {
+        const routed = routeModule(core, { ...moduleOptions(ctx, links, { w: 1, e: 1, n: 0, s: 0 }, sb), squeeze: false });
+        // (Each out belt is fed as if by a machine of its own, both its lanes full: what its producer
+        // side of the Path Flow counts.)
+        const lane = ctx.env.laneCapacity;
+        const module = { ...routed, parts: routed.parts.map(p => (p.routeIds.includes(links.output) ? { ...p, drops: [{ machine: p.part, left: lane, right: lane, either: 0, share: 1 }] } : p)) };
+        return { kinds: [{ module, count: 1 }], variant, trouble: 0, area: module.area.w * module.area.h };
+      },
+    });
+  }
+  if (!out.length) throw new LayoutError(`${sb.item}: no belt balancer network fits`);
+  return out;
 }
 
 // A variant's key, field for field. (A variant asked again, the same object, keeps its key: plain
@@ -796,7 +829,7 @@ function corePathShort(ctx, sb, core, whole, share = null) {
     : share?.length === parts.length ? share : parts.map(p => p.made);
   const total = routeMade(sb, route);
   const belts = parts.map(p => p.drops);
-  const key = `${JSON.stringify(belts)}|${wants.join(',')}|${!route.sorted}|${total}|${sb.count}|${sb.headroom}|${ctx.env.laneCapacity}`;
+  const key = `${JSON.stringify(belts)}|${wants?.join(',')}|${!route.sorted}|${total}|${sb.count}|${sb.headroom}|${ctx.env.laneCapacity}`;
   let short = pathShorts.get(key);
   if (short === undefined) {
     if (pathShorts.size >= PATH_SHORTS) pathShorts.clear();
@@ -915,6 +948,8 @@ function copiesUnfed(ctx, index, kinds) {
 // tapped off: Py's crushers' coal and coal dust with their crushed coal, ADR 0064).
 function pathWants(ctx, route, n) {
   const consumer = ctx.plan[route.consumers[0]];
+  // (A belt balancer takes whatever its belts bring, ADR 0092.)
+  if (consumer.balancer) return null;
   const taken = route.items.reduce((sum, i) => sum + takenOff(route, consumer, i.item), 0);
   const rate = Math.max(taken, route.items.reduce((sum, i) => sum + i.rate, 0) * Math.min(1, taken / Math.max(1e-9, route.items.filter(i => consumer.inputs.some(x => x.name === i.item)).reduce((sum, i) => sum + i.rate, 0))));
   const cuts = exactCuts(Array(consumer.count).fill(1), n);
@@ -958,7 +993,7 @@ export function moduleOptions(ctx, links, margin, sb = null) {
     belt: { belt: belt.name, underground: belt.underground.name, reach: belt.underground.maxDistance },
     pipe: { pipe: logistics.plainPipe ?? 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance },
     pole: catalog.poles[logistics.pole], inserters: catalog.inserters,
-    electric: e => catalog.buildings[e.name].energy === 'electric',
+    electric: e => catalog.buildings[e.name]?.energy === 'electric',
     made: sb ? outputRate(sb) / sb.count : Infinity,
     // (Its item's belt: the others, its other products', ADR 0066.)
     output: links.output,
@@ -1388,13 +1423,21 @@ function pathBelts(ctx, route) {
   const rate = route.items.reduce((sum, i) => sum + i.rate, 0);
   // Each belt feeds a run of whole consumer machines: no more of them than one belt carries for.
   const belt = 2 * route.items[0].capacity;
+  // A belt balancer has no machines to feed: as many belts as its producers' machines need, each
+  // putting as much on a belt as both its lanes carry (ADR 0092).
+  if (consumer.balancer) {
+    const perMachine = producer.outputs.filter(o => o.type === 'item').reduce((sum, o) => sum + o.rate, 0) / producer.count;
+    const together = Math.max(1, Math.floor(belt / perMachine + 1e-9));
+    return Math.min(producer.count, Math.max(1, Math.ceil(rate / belt - 1e-9), Math.ceil(producer.count / together - 1e-9)));
+  }
   const each = route.items.reduce((sum, i) => sum + takenOff(route, consumer, i.item), 0) / consumer.count;
   const fed = Math.max(1, Math.floor(belt / each + 1e-9));
-  const need = Math.max(1, Math.ceil(rate / belt - 1e-9), Math.ceil(producer.count / outputBelt(ctx, producer) - 1e-9), Math.ceil(consumer.count / fed - 1e-9));
+  // (A belt balancer takes as many belts as its producers bring: no machines of its own to feed.)
+  const need = Math.max(1, Math.ceil(rate / belt - 1e-9), Math.ceil(producer.count / outputBelt(ctx, producer) - 1e-9), consumer.balancer ? 1 : Math.ceil(consumer.count / fed - 1e-9));
   // A consumer built only from copies takes its belts by whole copies, not machines: belts that
   // nearly fill leave no room for a run a copy longer than its share; one belt more does.
   const spare = consumer.count > ONLY_COPIES && rate > 0.85 * need * belt ? 1 : 0;
-  const most = Math.min(producer.count, consumer.count);
+  const most = consumer.balancer ? producer.count : Math.min(producer.count, consumer.count);
   // Belts sorting a byproduct out run on alone (no splitter evens them out): as many as make the
   // fewest producers a belt has make what the most consumers it has take (12 ball mills to 8
   // agitators: 4 belts of 3 to 2, not 3 of 4 to 3).

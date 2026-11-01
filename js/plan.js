@@ -1,6 +1,7 @@
 import { machineEffect, defaultModules } from './modules.js';
 import { assignFluidBoxes } from './fluidboxes.js';
 import { buildFlows } from './flows.js';
+import { ensureBalancer } from './balancer.js';
 
 // What a belt carries a minute (items), and one lane of it: half that. Infinity for a belt the
 // catalog does not have.
@@ -17,6 +18,8 @@ export const laneRate = (catalog, belt) => beltRate(catalog, belt) / 2;
 export function planSubBlocks(entries, catalog, logistics = {}) {
   const seen = new Set();
   return entries.map(({ goal, selection, byTrain = [], use }) => {
+    // (A belt balancer's recipe and building, ADR 0092.)
+    if (goal.balancer) ensureBalancer(catalog, goal.item, logistics.belt);
     if (!(goal.rate > 0)) throw new Error(`${goal.item}: the rate must be above 0`);
     // (A Sub-Block in parts, Bands, has an entry for each part.)
     if (seen.has(goal.item) && !goal.part && !use) throw new Error(`${goal.item} is a Goal more than once; combine them into one Goal`);
@@ -95,6 +98,7 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       ...(goal.exports ? { exports: goal.exports } : {}),
       ...(goal.voids ? { voids: goal.voids } : {}),
       ...(use ? { use: true } : {}),
+      ...(goal.balancer ? { balancer: true } : {}),
     };
   });
 }
