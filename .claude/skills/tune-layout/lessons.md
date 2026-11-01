@@ -202,6 +202,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **Reseeding inside the Annexes' own tries** (after 0090). Fast tier seeds 1–3: one gain (small parts 2 seed 1 1619.98 → 1799.98), the rest the same, at the time of five tries more in each Annex's Maximize: the Annexes' misses are room, not seed.
 
+- **Reseeding the Counts that starved too** (after 0090). Py silicon seed 3 stops at 5 machines on a 6 that starved (600/min, seed 2 makes 795); the reseed's five seeds starve it as well: fast tier seeds 1–3 every layout the same.
+
 ## Rules every change keeps
 
 - **The suite, not one setup** (the user: "for every new recipe chain I need to run tune-layout — is there no general fix?"). Each pass fixed what its own chain hit, checked against one or two other setups. `npm run suite` runs every setup tuned so far, laid out the same on any host, against its recorded result: no change is kept with a LOSS in it, and every new setup joins it.
