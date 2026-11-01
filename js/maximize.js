@@ -85,8 +85,12 @@ export function* maximize(goals, catalog, logistics, options) {
     const { entries } = plan.chainOf(list, {}, true);
     // (As long as a try of the search may take.)
     const deadline = (options.now ?? Date.now)() + (options.budgetMs ?? Infinity);
-    const outcome = bands(entries, plan.catalog, plan.logistics, options.site, { seed: options.seed ?? 1, until: () => (options.now ?? Date.now)() > deadline });
-    tried++;
+    let outcome = null;
+    // (A Count that finds no layout in Bands is tried again with other seeds, ADR 0091.)
+    for (let k = 0; k <= BAND_RESEEDS && !outcome?.block; k++) {
+      outcome = bands(entries, plan.catalog, plan.logistics, options.site, { seed: (options.seed ?? 1) + k, until: () => (options.now ?? Date.now)() > deadline });
+      tried++;
+    }
     if (!outcome?.block) {
       misses.push({ rate: list[0].rate, machines: n, reason: outcome?.failure?.message ?? null });
       return null;
@@ -1184,6 +1188,8 @@ const FILL = 10;
 const LEAST = 1 / 4;
 // Seeds a number above the best that found no layout is tried again with (ADR 0090).
 const RESEEDS = 5;
+// Seeds a Count that finds no layout in Bands is tried again with (ADR 0091).
+const BAND_RESEEDS = 2;
 // (Filling's fewest, at least: what fits over FINEST.)
 const FINEST = 10;
 

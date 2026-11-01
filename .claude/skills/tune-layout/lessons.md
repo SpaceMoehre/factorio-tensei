@@ -90,6 +90,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Annexes that fit kept: no Precheck verdict in an Annex's room (still made, for its time); a copy's pipe joining a built pipe of another fluid fails the layout as placed | Suite: molybdenum oxide 799.99 → 999.98 (4 + 1), coke 1800 → 2520 (5 → 7); molybdenum oxide page 799.99 → 999.98 | 0088 |
 | An Annex's try that found no room made again turning (a Sub-Block that finds no room tried turned a quarter); a copy's pipe beside a built one of its fluid in another network fails as placed | Suite: silicon 555 → 675 (5 → 6, its second Annex's soil extractors turned into a strip); page the same 795, 49 s more | 0089 |
 | The lowest Count above the total that found no layout tried again with seeds + 1 to + 5 (after the Annexes; Annexes redone beside a fit) | Py hot air seed 1: 8437.5 → 18000/min; seeds 2, 3: anthraquinone, perylene, silicon up, none down; 15 others the same | 0090 |
+| A Count that finds no layout in Bands tried again with seeds + 1 and + 2 | Py vrauks seeds 2, 3: 37.93, 43.66 → 52.97/min (seed 1 55.84 the same); five seeds no more | 0091 |
 
 ## What failed, was reverted, or must not be done
 
