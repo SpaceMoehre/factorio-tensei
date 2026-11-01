@@ -199,6 +199,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **Reseeding the lowest miss right after the climb** (0090's first forms). A fit of the same machines as the sorted-out best, packed another way, left the Annexes less room: coke 2520 → 1912.5 (4 sorted machines + a starving Annex of 3, against 6 with a byproduct riding alone) and coalbed gas seed 2 6600 → 6000 (9 and two Annexes of 1 against 10). Kept: only above the total found with the Annexes, no fit with a byproduct riding alone.
 
+- **Reseeding inside the Annexes' own tries** (after 0090). Fast tier seeds 1–3: one gain (small parts 2 seed 1 1619.98 → 1799.98), the rest the same, at the time of five tries more in each Annex's Maximize: the Annexes' misses are room, not seed.
+
 ## Rules every change keeps
 
 - **The suite, not one setup** (the user: "for every new recipe chain I need to run tune-layout — is there no general fix?"). Each pass fixed what its own chain hit, checked against one or two other setups. `npm run suite` runs every setup tuned so far, laid out the same on any host, against its recorded result: no change is kept with a LOSS in it, and every new setup joins it.
