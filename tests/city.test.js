@@ -430,14 +430,23 @@ test("the Foretelling: the first try is the most machines it foretells to fit; l
   assert.equal(plan.lo, first);
   assert.ok(plan.span(first + 1) > 1.05 * plan.room);
   assert.ok(plan.hi > first + 10);
-  const more = [];
+  const more = [], same = [];
   for (let n = plan.next(); n !== null; n = plan.next()) {
     more.push(n - first);
+    same.push(plan.same(n));
     if (n - first <= 6.25) fit(n);
     else plan.record(n, { block: null, starves: false, designed: null, tried: 12 });
   }
-  assert.deepEqual(more, [10, 5, 7.5, 6.25, 6.875, 6.5625]);
+  assert.deepEqual(more.slice(0, 6), [10, 5, 7.5, 6.25, 6.875, 6.5625]);
   assert.equal(plan.lo, first + 6.25);
+  // Faster (ADR 0093): then the machines of the highest that fit, run as fast as they may with
+  // no machine more anywhere (a thousandth short of that), and where that does not fit, halfway
+  // down, until the step is less than an eighth of Filling's last.
+  const faster = more.slice(6);
+  assert.equal(faster.length, 2);
+  assert.ok(same.slice(6).every(Boolean) && !same.slice(0, 6).some(Boolean));
+  assert.ok(faster[0] > 6.25 && faster[0] < 6.5625);
+  assert.ok(Math.abs(faster[1] - (6.25 + faster[0]) / 2) < 1e-9);
 
   // A try that did not fit (for want of room): the Foretelling no longer says it fits, and the
   // next try is no more than halfway down.

@@ -92,6 +92,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | The lowest Count above the total that found no layout tried again with seeds + 1 to + 5 (after the Annexes; Annexes redone beside a fit) | Py hot air seed 1: 8437.5 → 18000/min; seeds 2, 3: anthraquinone, perylene, silicon up, none down; 15 others the same | 0090 |
 | A Count that finds no layout in Bands tried again with seeds + 1 and + 2 | Py vrauks seeds 2, 3: 37.93, 43.66 → 52.97/min (seed 1 55.84 the same); five seeds no more | 0091 |
 | A belt balancer for a Goal's item (js/balancer.js: bitonic splitter network, channels of tracks with undergrounds, spare rows for swaps; room kept east; checked by tracing the belts) | Py small parts, 3 belts in 2 out, 23 × 4 tiles; 4-3 23, 8-5 55 columns wide (0092) |
+| Faster: after Filling, the best's machines run faster (the highest Count needing no machine more anywhere, a thousandth short, else halfway down); its misses no reseed's or starving try's | Py wood 116² 1048.66 → 1068.14/min (3.625 → 3.692), one try; silicon 675 → 687.56, same layout | 0093 |
 
 ## What failed, was reverted, or must not be done
 
@@ -206,6 +207,9 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **Reseeding the Counts that starved too** (after 0090). Py silicon seed 3 stops at 5 machines on a 6 that starved (600/min, seed 2 makes 795); the reseed's five seeds starve it as well: fast tier seeds 1–3 every layout the same.
 
 - **Reseeding the misses above the first layout, the Annexes laid out beside each fit and kept where the two deliver more** (after 0090; and with the Counts that starved too). Fast tier seeds 1–3: every layout the same as reseeding above the total only (Py silicon seed 3 stays 600/min where seed 2 makes 795: its 5-machine first layout fits with no seed, or fits and leaves no more Annex).
+
+- **Room the placer cannot use, worked at with search knobs** (0093). Py wood 116² (a chain 7 deep among roboports): at 3.75 and 3.9375 machines no layout in 3300 candidates, starving allowed. Moss's 108-wide design never stands (108 + a column per link in > 110) and took 620 of them; excluding it, Turning in the main tries, and Backtracking ×200 each moved "no room" to another Sub-Block (soil 28 × 50, muddy sludge 25 × 49), no fit. Before turning knobs, check whether the counts between the best and the next miss need a machine more at all: `planSubBlocks(...).map(s => s.count)` (3.625 and 3.694 the same Sub-Blocks).
+- **A Count at the very top of its machines** (0093). 3.696 wood processors (one Sub-Block's last machine at full speed) found no layout; 3.694 fit in 5 s. Aim a hair under a rounding edge.
 
 ## Rules every change keeps
 

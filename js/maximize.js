@@ -220,7 +220,9 @@ export function* maximize(goals, catalog, logistics, options) {
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
     } else {
       failure = outcome.failure;
-      misses.push({ rate: list[0].rate, machines: Math.ceil(n), count: n, starves: Boolean(outcome.starves), reason: outcome.failure?.message ?? null });
+      // (`same`: no machine more than the highest that fit, Faster: it tells nothing of more
+      // machines, so no reseed, starving try or report of what does not fit takes it, ADR 0093.)
+      misses.push({ rate: list[0].rate, machines: Math.ceil(n), count: n, starves: Boolean(outcome.starves), reason: outcome.failure?.message ?? null, same: plan.same(n) });
     }
   }
   const foretelling = function* () {
@@ -476,7 +478,7 @@ export function* maximize(goals, catalog, logistics, options) {
   // room the others leave (below). (None in Bands.)
   if (options.starving !== false && (only || !best || options.annexes === false) && (bestN !== null || !best)) {
     const from = bestN ?? 0;
-    const starved = [...new Set(misses.filter(m => m.starves && m.count > from && m.count < plan.ceiling && m.count <= most).map(m => m.count))].sort((a, b) => a - b);
+    const starved = [...new Set(misses.filter(m => m.starves && !m.same && m.count > from && m.count < plan.ceiling && m.count <= most).map(m => m.count))].sort((a, b) => a - b);
     const counts = function* () {
       yield* starved;
       for (let n = Math.max(Math.floor(from), ...starved.map(Math.floor)) + 1; ; n++) yield n;
@@ -631,7 +633,7 @@ export function* maximize(goals, catalog, logistics, options) {
     const seed = options.seed ?? 1;
     for (let again = true; again;) {
       again = false;
-      const above = misses.filter(m => !m.starves && m.count > best.count && m.count <= most).map(m => m.count);
+      const above = misses.filter(m => !m.starves && !m.same && m.count > best.count && m.count <= most).map(m => m.count);
       if (!above.length) break;
       const n = Math.min(...above);
       let k = 0;
@@ -687,7 +689,7 @@ export function* maximize(goals, catalog, logistics, options) {
     if (found) best = found.best;
   }
   // (A number that starved may lie below the highest that fit.)
-  const above = annexAbove ?? misses.filter(m => m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
+  const above = annexAbove ?? misses.filter(m => !m.same && m.rate > (best?.rate ?? 0)).sort((a, b) => a.rate - b.rate)[0] ?? null;
   return { ...(best ?? { rate: 0, machines: 0, count: 0, goals: plan.goalsFor(0) }), tried, failure: best ? null : failure, above, drawFailed };
 }
 
@@ -976,8 +978,39 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
       const more = least < 1 ? fill : Math.floor(fill);
       if (lo + more < hiOf() && rate(Math.min(lo + more, most)) > rate(lo)) return lo + more;
     }
-    return null;
+    // Faster (ADR 0093): last, the machines of the highest that fit run as fast as they may
+    // without a machine more anywhere (the Counts are rounded up: 3.625 wood processors need the
+    // Sub-Blocks 3.696 do), every one SAME_SPARE short of the top (at the top one machine runs at
+    // full speed, and no layout of it stands without Starvation: Py wood 3.696 found none, 3.694
+    // fit). Where that does not fit, halfway down, while that is FINER of Filling's last step
+    // above the highest that fit. (Not in an Annex: whole machines.)
+    if (least >= 1 || !(lo > 0)) return null;
+    const top = sameTop();
+    if (top === null) return null;
+    const want = top / (1 + SAME_SPARE);
+    const n = want < hi ? want : (lo + hi) / 2;
+    return n - lo >= finest / FINER && rate(Math.min(n, most)) > rate(lo) ? n : null;
   }
+  // The machines each Sub-Block needs for n, all of them: n that need the same stand in the
+  // same room.
+  const countsOf = n => planOf(n)?.map(s => s.count).join() ?? null;
+  // The highest n needing the machines the highest that fit does (one more of the first Goal's
+  // needs more), by bisection; null where none is higher.
+  const tops = new Map();
+  const sameTop = () => {
+    if (!tops.has(lo)) {
+      const mine = countsOf(lo);
+      let a = lo, b = lo + 1;
+      if (mine === null || countsOf(b) === mine) a = null;
+      else for (let k = 0; k < TOP_STEPS; k++) {
+        const mid = (a + b) / 2;
+        if (countsOf(mid) === mine) a = mid;
+        else b = mid;
+      }
+      tops.set(lo, a !== null && a > lo ? a : null);
+    }
+    return tops.get(lo);
+  };
   return {
     catalog, logistics, chainOf, goalsFor, room,
     asked: sb.count,
@@ -993,6 +1026,8 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
     // The highest n whose Sub-Blocks were all designed without Starvation.
     get designable() { return designable; },
     get filling() { return fill; },
+    // Whether n needs no machine more than the highest that fit (Faster, ADR 0093).
+    same: n => n > lo && lo > 0 && countsOf(n) === countsOf(lo),
     foretold,
     next() {
       if (lo >= most) return null;
@@ -1195,6 +1230,11 @@ const RESEEDS = 5;
 const BAND_RESEEDS = 2;
 // (Filling's fewest, at least: what fits over FINEST.)
 const FINEST = 10;
+// Faster (ADR 0093): each machine's share of its speed kept to spare below the top, the least
+// step halfway down (Filling's last over FINER), and the bisection's steps for the top.
+const SAME_SPARE = 1 / 1000;
+const FINER = 8;
+const TOP_STEPS = 30;
 
 // Whether a City Block has Fixtures in its room.
 function crowded(site) {
