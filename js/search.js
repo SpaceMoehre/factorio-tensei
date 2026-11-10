@@ -169,6 +169,20 @@ export function* search(entries, catalog, logistics, options = {}) {
     const spec = candidate.breakout?.[i];
     if (!spec || !base) return base;
     const k = `${i}:${c}:${spec}`;
+    if (!broken.has(k) && spec === 'alike') {
+      // (Grown, a Sub-Block with no machine more: its design likest the one it had, designed with
+      // the Breakouts' random source, so the search's own draws as without it.)
+      const was = options.near?.[ctx.plan[i].item]?.design;
+      const list = shareOf(i, ctx.plan[i].count, false);
+      broken.set(k, (list && was ? alike(list.filter(fitting), was) : []).map(designOf).find(Boolean) ?? base);
+    }
+    if (!broken.has(k) && spec.startsWith('grown')) {
+      // (Grown: the machines it had in the fit of fewer machines, of the design most like it had
+      // there, and the ones more together, apart.)
+      const n = Number(spec.slice(5)), was = options.near?.[ctx.plan[i].item]?.design;
+      const rest = shareOf(i, ctx.plan[i].count - n, true);
+      broken.set(k, breakoutDesign(rest && was ? alike(rest, was) : rest, shareOf(i, n, false), 1));
+    }
     if (!broken.has(k)) {
       const n = parseInt(spec, 10), group = spec.endsWith('g');
       broken.set(k, spec === 'copy' ? detachCopy(base)
@@ -255,6 +269,31 @@ export function* search(entries, catalog, logistics, options = {}) {
     });
   }
   const first = { choice, columns: ctx.plan.map(() => null), corridor: 2, gap: 1, weight: 4, lift: {}, order: {}, shift: {} };
+  // Grown (ADR 0094): a fit of fewer machines (`near`, by item: where each Sub-Block stood, of
+  // what design, in how many columns), laid out again with this try's machines: each Sub-Block of
+  // its design most like the one it had, placed first where it stood. (An item two Sub-Blocks
+  // make: neither.)
+  // Only where some Sub-Block has a few machines more and none more than a few: with none more (a
+  // try at the same machines, Faster) it is the fit again; with many more, nothing like it.
+  const added = i => ctx.plan[i].count - (options.near?.[ctx.plan[i].item]?.count ?? ctx.plan[i].count);
+  const few = i => added(i) <= Math.max(GROWN, Math.ceil((ctx.plan[i].count - added(i)) / 10));
+  let regrown = null;
+  if (site && options.near && ctx.plan.some((_, i) => added(i) > 0) && ctx.plan.every((_, i) => few(i))) {
+    regrown = { ...first, choice: [...first.choice], columns: [...first.columns], near: {}, breakout: {} };
+    ctx.plan.forEach((sb, i) => {
+      const was = options.near[sb.item];
+      if (!was || ctx.plan.filter(o => o.item === sb.item).length > 1) return;
+      if (was.box) regrown.near[i] = was.box;
+      regrown.columns[i] = was.columns;
+      if (!was.design) return;
+      // A few machines more than it had: those apart (Breakout), the rest as it was.
+      if (added(i) > 0) {
+        regrown.breakout[i] = `grown${added(i)}`;
+        return;
+      }
+      regrown.breakout[i] = 'alike';
+    });
+  }
   // Looking for a layout without Starvation in a City Block, the candidates in columns go first:
   // they pack tighter, and the first that fits ends the search. Spread (ADR 0013): a wide buffer
   // round every Sub-Block first, so its links find room, then ever tighter.
@@ -262,6 +301,11 @@ export function* search(entries, catalog, logistics, options = {}) {
   const swept = spread ? loosened(first, buffer) : [first, ...sweep(first, designs, site)];
   const queue = perfect && site ? [...swept.filter(c => c.layers), ...swept.filter(c => !c.layers)] : swept;
   let structured = queue.length;
+  // (First, and not counted among the candidates: where it fits, as most often just above a fit,
+  // nothing else is tried; where not, the search's own are tried as without it. Where its belts
+  // starve, by a few of a producer's machines, the try ends with that producer short, and Maximize
+  // tries again with those spare, ADR 0048.)
+  if (regrown) queue.unshift(regrown);
   // A design that starves cannot make a layout without Starvation: its estimate before routing
   // already shows it (routing only adds), its trouble once routed. Nor can one too big for the
   // City Block (by its routed module, else its core).
@@ -282,7 +326,9 @@ export function* search(entries, catalog, logistics, options = {}) {
   // place of the pairings that fit (Py hot air, 1.47 RHEs: 228 retries, 192 structured
   // candidates never tried, ADR 0072).
   const retry = c => {
-    if (retries++ < RETRIES) {
+    // (Grown's, behind the rest: they had cost the search's own candidates their turns, ADR 0094.)
+    if (c.near) queue.push(c);
+    else if (retries++ < RETRIES) {
       structured++;
       queue.unshift(c);
     } else queue.push(c);
@@ -300,7 +346,7 @@ export function* search(entries, catalog, logistics, options = {}) {
     // looking for one without Starvation, none of those) seldom finds one later.
     if ((bounded || (site && !best)) && tried >= structured + patience) break;
     const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng, site);
-    tried++;
+    if (candidate !== regrown) tried++;
     const as = JSON.stringify(candidate.layers ? { ...candidate, weight: 0, lift: 0, order: 0, at: 0 } : candidate);
     if (seen.has(as)) continue;
     seen.add(as);
@@ -506,7 +552,15 @@ export function* search(entries, catalog, logistics, options = {}) {
       // (With what it takes to lay it out again with Sub-Blocks the user moved.)
       block.edit = editOf(work, positions, { layout: used, squeeze: block.squeeze, entries, giving: ctx.giving });
       delete block.squeeze;
-      yield { block, score, tried, placed };
+      // (Where each Sub-Block stood, of what design, for a try at more machines: Grown.)
+      const stood = site ? Object.fromEntries(ctx.plan.map((sb, i) => {
+        const r = positions.rooms?.[i], p = r && positions[r.inst];
+        const d = designs[i][Math.min(candidate.choice[i], designs[i].length - 1)];
+        // (Grown here itself: the design and machines it had before, the rest apart still.)
+        const spec = candidate.breakout?.[i], was = spec === 'alike' || spec?.startsWith('grown') ? options.near[sb.item] : null;
+        return [sb.item, { box: p ? { x: p.x + r.x, y: p.y + r.y, w: r.w, h: r.h } : null, design: was ? was.design : shapeOf(d), columns: candidate.columns[i], count: was ? was.count : sb.count }];
+      })) : null;
+      yield { block, score, tried, placed, grown: stood };
     }
   }
   return { tried, failure, timedOut, short: best ? null : nearest };
@@ -517,6 +571,27 @@ export function* search(entries, catalog, logistics, options = {}) {
     return list.map(t => t.candidate);
   }
 }
+
+// A design's shape, as Grown matches it at another Count: copies of how many machines in how many
+// rows (else none: a whole module), and its estimate's size.
+function shapeOf(c) {
+  if (!c) return null;
+  const copies = c.spec?.copies ? { m: c.spec.copies.m, n: c.spec.copies.n, share: Boolean(c.spec.copies.share) } : null;
+  return { copies, w: c.estimate.w ?? 0, h: c.estimate.h ?? 0 };
+}
+
+// Designs (of a list) of a shape like `was` (shapeOf), the likest first: copies of as many
+// machines in as many rows, else whole modules; then by size, rows weighing most.
+function alike(list, was) {
+  const cost = c => {
+    const s = shapeOf(c);
+    return 4 * Math.abs(s.h - was.h) + Math.abs(s.w - was.w);
+  };
+  return list.filter(c => JSON.stringify(shapeOf(c).copies) === JSON.stringify(was.copies)).sort((a, b) => cost(a) - cost(b));
+}
+
+// Grown: how many machines more than it had a Sub-Block may stand apart (else a tenth of them).
+const GROWN = 3;
 
 // How many times as long as designing a try's candidates get at least.
 const LAYING = 2;

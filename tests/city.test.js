@@ -234,11 +234,12 @@ test('in a City Block, where a Sub-Block finds no room, the ones placed before i
 });
 
 // The lowest number above the best that found no layout is tried again with other seeds once the
-// climb ended (maximize.js, ADR 0090), RESEEDS (5) at most; not in an Annex's room (reseed: false).
+// climb ended (maximize.js, ADR 0090), RESEEDS (5) at most, until one fits; not in an Annex's room
+// (reseed: false).
 test('Maximize tries the lowest miss above the best again with other seeds, not where reseed is off', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 40, h: 30 }, fixtures: [{ name: 'roboport', kind: 'fixture', number: 1, x: 18, y: 13, w: 4, h: 4 }] }, 1);
   const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
-  const triesAtMiss = reseed => {
+  const climb = reseed => {
     const run = maximize([{ item: 'electronic-circuit', rate: 60 }], catalog, logistics, { made: ['copper-cable'], selections, site, maxCandidates: 12, budgetMs: 120000, annexes: false, bands: false, ...(reseed ? {} : { reseed: false }) });
     const tries = [];
     let best = 0;
@@ -247,10 +248,47 @@ test('Maximize tries the lowest miss above the best again with other seeds, not 
       if (v.type === 'try' && !v.starving && !v.giving) tries.push(v.rate);
       if (v.type === 'best') best = Math.max(best, v.rate);
     }
-    const miss = Math.min(...tries.filter(r => r > best));
-    return tries.filter(r => r === miss).length;
+    return { tries, best };
   };
-  assert.equal(triesAtMiss(true), triesAtMiss(false) + 5);
+  const plain = climb(false), reseeded = climb(true);
+  const miss = Math.min(...plain.tries.filter(r => r > plain.best));
+  const at = run => run.tries.filter(r => r === miss).length;
+  // Each seed in turn until one fits (with Grown first, ADR 0094, one may).
+  assert.ok(at(reseeded) > at(plain) && at(reseeded) <= at(plain) + 5, `${at(plain)} → ${at(reseeded)}`);
+  if (at(reseeded) < at(plain) + 5) assert.ok(reseeded.best >= miss);
+});
+
+// Grown (ADR 0094): a search given a fit of fewer machines (`near`: what the search yielded with it,
+// `grown`) first lays that out again: each Sub-Block of the design it had, where it stood, its
+// machines more apart (Breakout). Its first candidate fits.
+test('Grown: a try above a fit lays the fit out again first, the machines more apart', () => {
+  const site = siteOf({ area: { x: 0, y: 0, w: 40, h: 30 }, fixtures: [{ name: 'roboport', kind: 'fixture', number: 1, x: 18, y: 13, w: 4, h: 4 }] }, 1);
+  const selections = { 'electronic-circuit': { recipe: 'electronic-circuit', building: 'assembling-machine-2' }, 'copper-cable': { recipe: 'copper-cable', building: 'assembling-machine-2' } };
+  const plan = planner([{ item: 'electronic-circuit', rate: 60 }], catalog, logistics, { made: ['copper-cable'], selections, site });
+  const fit = attempt(plan, 2, { site, maxCandidates: 12, budgetMs: 120000, unsorted: true });
+  assert.ok(fit.block && fit.grown);
+  const before = Object.fromEntries(fit.block.subBlocks.map(sb => [sb.item, sb]));
+  const { entries } = plan.chainOf(plan.goalsFor(3), {});
+  const grown = (options = {}) => {
+    const run = search(entries, catalog, logistics, { seed: 1, site, perfect: true, unsorted: true, near: fit.grown, ...options });
+    const step = run.next();
+    return step.done ? { block: null, tried: step.value.tried } : { block: step.value.block, tried: step.value.tried };
+  };
+  const again = grown();
+  // (The first candidate, not counted among the search's.)
+  assert.ok(again.block);
+  assert.equal(again.tried, 0);
+  assertValid(again.block, catalog, logistics);
+  assert.equal(simulate(again.block).starvation.length, 0);
+  for (const sb of again.block.subBlocks) {
+    const was = before[sb.item];
+    if (sb.count > was.count) assert.equal(sb.apart?.length, 1, `${sb.item}: its ${sb.count - was.count} more apart`);
+    else assert.deepEqual([sb.x, sb.y, sb.w, sb.h], [was.x, was.y, was.w, was.h], `${sb.item} where it stood`);
+  }
+  // At the fit's own machines (nothing more anywhere), the search's own first candidate: nothing
+  // apart.
+  const same = search(plan.chainOf(plan.goalsFor(2), {}).entries, catalog, logistics, { seed: 1, site, perfect: true, unsorted: true, near: fit.grown, maxCandidates: 1 }).next();
+  assert.ok(same.done || !same.value.block.subBlocks.some(sb => sb.apart));
 });
 
 test('nothing fits a city block too small for the machines', () => {

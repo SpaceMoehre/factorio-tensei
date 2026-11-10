@@ -55,6 +55,10 @@ export function* maximize(goals, catalog, logistics, options) {
   let bestN = null;
   /** @type {any} */
   let bestScore = null;
+  // Grown (ADR 0094): where the best's Sub-Blocks stood, of what designs (search.js `grown`): a try
+  // above it lays that out again first, its few machines more apart.
+  let grownAt = null;
+  const near = n => (grownAt && bestN !== null && n > bestN ? { near: grownAt } : {});
   const misses = [];
   // (What a layout delivers: its rate where it starves nothing, ADR 0057. Annexes: the lowest
   // rate an Annex tried above what fit, and rates added up.)
@@ -216,7 +220,7 @@ export function* maximize(goals, catalog, logistics, options) {
       fitted(n, Math.ceil(n), outcome, false);
       if (n <= (best?.count ?? -Infinity)) return;
       best = { rate: list[0].rate, machines: Math.ceil(n), count: n, goals: list };
-      [bestN, bestScore, bestBlock] = [n, outcome.score, outcome.block];
+      [bestN, bestScore, bestBlock, grownAt] = [n, outcome.score, outcome.block, outcome.grown ?? null];
       yield { type: 'best', block: outcome.block, score: outcome.score, tried, ...best };
     } else {
       failure = outcome.failure;
@@ -287,7 +291,7 @@ export function* maximize(goals, catalog, logistics, options) {
         yield { ...trying(n), others: [...going.values()].map(g => Math.ceil(g.n)) };
         const id = ++trySeq;
         going.set(id, { n, on });
-        yield { type: 'start', id, job: jobOf(n, { precheck: n > plan.designable, unsorted: true }) };
+        yield { type: 'start', id, job: jobOf(n, { precheck: n > plan.designable, unsorted: true, ...near(n) }) };
         if (probing !== null) break;
       }
       if (!spec && going.size && going.size < width && ahead()) {
@@ -363,7 +367,7 @@ export function* maximize(goals, catalog, logistics, options) {
       const n = only || past ? null : probing ?? plan.next();
       if (n === null) break;
       yield trying(n);
-      const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true });
+      const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true, ...near(n) });
       yield* took(n, outcome);
       if (!outcome.block && probing !== null && !outcome.starves) break;
       probing = null;
@@ -637,7 +641,7 @@ export function* maximize(goals, catalog, logistics, options) {
       if (!above.length) break;
       const n = Math.min(...above);
       let k = 0;
-      yield* inTurn(() => (k < RESEEDS ? { n, extra: { seed: seed + ++k, unsorted: true, precheck: n > plan.designable }, say: trying(n) } : null), function* (m, out) {
+      yield* inTurn(() => (k < RESEEDS ? { n, extra: { seed: seed + ++k, unsorted: true, precheck: n > plan.designable, ...near(n) }, say: trying(n) } : null), function* (m, out) {
         tried += out.tried;
         noted(out);
         // (Not one with a byproduct riding on alone: the sorting phase kept fewer machines without.)
@@ -760,7 +764,7 @@ export function attempt(plan, n, options) {
 const SPARE = 2;
 
 // One try at the Goals `list` (attempt), with `spare` more of some steps' items.
-function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false, starving = false, turning = false }) {
+function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidates = Infinity, now = () => Date.now(), precheck = false, unsorted = false, routing = budgetMs, sorting = false, giving = false, starving = false, turning = false, near = null }) {
   let designed = null, entries;
   try {
     ({ entries } = plan.chainOf(list, spare));
@@ -775,7 +779,7 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
   const clock = () => (now() > until ? Infinity : now());
   try {
     const run = search(entries, plan.catalog, plan.logistics, {
-      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: !starving, settled: starving, precheck: precheck && !starving, turning, designed: d => { designed = d; },
+      seed, site, maxCandidates, deadline: now() + budgetMs, routing, unsorted, now: clock, perfect: !starving, settled: starving, precheck: precheck && !starving, turning, near, designed: d => { designed = d; },
       ...(giving ? { giving: list[0].item } : {}),
     });
     // (Starving: of the layouts found, the one that delivers most of the first Goal, ADR 0057.)
@@ -802,7 +806,7 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
         kept = step.value;
       } else if (step.value.score.starving === 0) {
         run.return(undefined);
-        return { block: step.value.block, score: step.value.score, placed: step.value.placed, tried: step.value.tried, designed, starves: false, failure: null };
+        return { block: step.value.block, score: step.value.score, placed: step.value.placed, tried: step.value.tried, designed, starves: false, failure: null, grown: step.value.grown };
       }
     }
   } catch (e) {

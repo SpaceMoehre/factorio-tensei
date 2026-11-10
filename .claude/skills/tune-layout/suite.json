@@ -9,7 +9,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 15.8,
+        "secs": 37.5,
         "tries": 120,
         "rate": 600,
         "machines": null,
@@ -31,7 +31,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 109.7,
+        "secs": 258.5,
         "tries": 2,
         "rate": 6.94,
         "machines": 27,
@@ -53,7 +53,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 110.6,
+        "secs": 264,
         "tries": 11,
         "rate": 18000,
         "machines": 2,
@@ -75,7 +75,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 196.5,
+        "secs": 418.6,
         "tries": 15,
         "rate": 687.56,
         "machines": 6,
@@ -97,7 +97,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 212.9,
+        "secs": 399.2,
         "tries": 17,
         "rate": 9937.5,
         "machines": 4,
@@ -119,7 +119,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 141,
+        "secs": 218.4,
         "tries": 12,
         "rate": 3300,
         "machines": 11,
@@ -141,7 +141,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 24.2,
+        "secs": 41.9,
         "tries": 20,
         "rate": 6000,
         "machines": 10,
@@ -163,7 +163,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 65.2,
+        "secs": 115.8,
         "tries": 2,
         "rate": 55.84,
         "machines": 78,
@@ -185,7 +185,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 87.5,
+        "secs": 141.9,
         "tries": 6,
         "rate": 900,
         "machines": 50,
@@ -207,7 +207,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 379.8,
+        "secs": 468.7,
         "tries": 17,
         "rate": 2520,
         "machines": 7,
@@ -229,8 +229,8 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 231.7,
-        "tries": 20,
+        "secs": 297,
+        "tries": 21,
         "rate": 499.7,
         "machines": 10,
         "failure": null,
@@ -238,9 +238,9 @@
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "108x104",
-        "entities": 2732,
-        "hash": "c85a98c4efd2"
+        "bounds": "108x108",
+        "entities": 2908,
+        "hash": "fdc4f8c5eb6a"
       }
     },
     {
@@ -251,7 +251,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 698.7,
+        "secs": 887,
         "tries": 10,
         "rate": 999.98,
         "machines": 5,
@@ -273,7 +273,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 562.6,
+        "secs": 689.5,
         "tries": 41,
         "rate": 400,
         "machines": 125,
@@ -295,18 +295,18 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 499.7,
-        "tries": 27,
-        "rate": 4992.18,
-        "machines": 14,
+        "secs": 615.8,
+        "tries": 28,
+        "rate": 5424.49,
+        "machines": 15,
         "failure": null,
-        "delivered": 4992.18,
+        "delivered": 5424.49,
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "228x202",
-        "entities": 6763,
-        "hash": "f64775b844c1"
+        "bounds": "228x210",
+        "entities": 7226,
+        "hash": "7334da36881b"
       }
     },
     {
@@ -317,7 +317,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 173.7,
+        "secs": 198.8,
         "tries": 20,
         "rate": null,
         "machines": null,
@@ -332,7 +332,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 70,
+        "secs": 116.1,
         "tries": 11,
         "rate": 1619.98,
         "machines": 9,
@@ -354,18 +354,18 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 101.3,
-        "tries": 17,
-        "rate": 1058.4,
+        "secs": 126.9,
+        "tries": 10,
+        "rate": 1157.14,
         "machines": 4,
         "failure": null,
-        "delivered": 1058.4,
+        "delivered": 1157.14,
         "valid": true,
         "starving": 0,
         "riding": 0,
         "bounds": "110x103",
-        "entities": 1608,
-        "hash": "4efcb5c64662"
+        "entities": 2023,
+        "hash": "278df3245106"
       }
     }
   ]

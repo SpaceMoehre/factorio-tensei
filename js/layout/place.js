@@ -34,6 +34,8 @@ const PART = 6;
 // Giving Way: the share of its machines (1 in so many) the Sub-Block that gives way may give up.
 const GIVE = 4;
 const BACKTRACKS = 24;
+// Grown: how many tiles from where it stood in a fit of fewer machines a Sub-Block looks first.
+const NEAR = 6;
 // Columns east of a Sub-Block whose belt to the train sorts a byproduct out after it.
 const SORT_ROOM = 4;
 
@@ -168,6 +170,23 @@ export function placeBlocks(ctx, prepared, params = {}) {
       if (p && ![...placed.keys()].some(j => clashes(i, { ...me, h: p.h }, j, p.block))) return { first: { x: wanted.x, y: wanted.y, parted: p }, others: () => [] };
     }
     const mine = links.filter(l => l.from === i && placed.has(l.to));
+    // Grown (ADR 0094): where it stood in a fit of fewer machines (`near`: its box there), it stands
+    // again where that is clear (its box there, or grown from that box's other edges), the
+    // spot nearest first; else as it would without.
+    const was = site && params.near?.[i];
+    if (was) {
+      const xs = [...new Set([was.x, was.x + was.w - b.w])], ys = [...new Set([was.y, was.y + was.h - b.h])];
+      const spots = [];
+      for (let d = 0; d <= NEAR && !spots.length; d++) {
+        for (const x of xs) for (const y of ys) {
+          for (const [dx, dy] of d ? [[-d, 0], [d, 0], [0, -d], [0, d]] : [[0, 0]]) {
+            const me = { x: x + dx, y: y + dy, w: b.w, h: b.h };
+            if (![...placed.keys()].some(j => clashes(i, me, j)) && lands(i, me)) spots.push({ x: me.x, y: me.y });
+          }
+        }
+      }
+      if (spots.length) return { first: spots[0], others: () => spots.slice(1, 1 + OTHER_SPOTS) };
+    }
     const lift = params.lift?.[i] ?? 0;
     // In a City Block, room west of it for the links it takes from other Sub-Blocks.
     const fedBy = site ? westRoom(i) : 0;
