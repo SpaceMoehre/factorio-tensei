@@ -8,7 +8,8 @@ import { finishBlock } from '../js/layout/compact.js';
 import { moveCopies, standing, editOf, reshapeCopies, shapesToward, turnCopies, compactCopies } from '../js/layout/edit.js';
 import { turnModule } from '../js/layout/turn.js';
 import { compactness } from '../js/layout/score.js';
-import { scoreOf } from '../js/layout/score.js';
+import { scoreOf, compare } from '../js/layout/score.js';
+import { turnedRound } from '../js/maximize.js';
 import { siteOf } from '../js/city.js';
 import { annexed } from '../js/annex.js';
 import { simulate } from '../js/sim.js';
@@ -276,4 +277,29 @@ test('pulled together, a block spread out comes back closer, every Sub-Block as 
   // Pulled together again: nothing closer.
   const again = drive(compactCopies(ctx, out.block.edit, { score: scoreOf(out.block) }));
   assert.ok(!again.block || compactness(again.block).value < compactness(out.block).value);
+});
+
+test("Maximize's last layout: a producer standing over its consumer, its belt running back, turned half round where it stands", () => {
+  // (A City Block too narrow for both side by side: the copper cable's stack under the circuits',
+  // its belt leaving east, back west into them.)
+  const site = siteOf({ area: { x: 0, y: 0, w: 18, h: 90 }, fixtures: [], unknown: [] }, 1);
+  const two = [asm2('electronic-circuit', 300), asm2('copper-cable', 900)];
+  let block = null;
+  const run = search(two, catalog, logistics, { seed: 1, maxCandidates: 8, site });
+  for (let step = run.next(); !step.done; step = run.next()) block = step.value.block;
+  const cable = block.subBlocks.findIndex(sb => sb.item === 'copper-cable'), circuit = 1 - cable;
+  const [from, to] = [block.subBlocks[cable], block.subBlocks[circuit]];
+  assert.ok(from.x + from.w > to.x, 'its belt runs back');
+  const belts = b => b.routes.filter(r => r.kind === 'belt').reduce((sum, r) => sum + r.pieces.length, 0);
+  const out = turnedRound(block, catalog, logistics, 'electronic-circuit', { site });
+  assert.equal(out.edit.turns[cable], 2);
+  assertValid(out, catalog, logistics);
+  assert.equal(starving(out), 0);
+  assert.ok(compare(scoreOf(out), scoreOf(block)) < 0);
+  assert.ok(belts(out) < belts(block), `${belts(out)} < ${belts(block)}`);
+  // Where it stood, the same box.
+  assert.deepEqual(['x', 'y', 'w', 'h'].map(k => out.subBlocks[cable][k]), ['x', 'y', 'w', 'h'].map(k => from[k]));
+  // Nothing running back: the block as it was.
+  const side = best();
+  assert.equal(turnedRound(side, catalog, logistics, 'electronic-circuit'), side);
 });

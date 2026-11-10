@@ -311,7 +311,7 @@ The user's making a Sub-Block squarer or longer where it stands (a right click o
 _Avoid_: resize (its machines stay as many)
 
 **Turn**:
-The user's turning a Sub-Block's stack a quarter (clockwise or not) where it stands, as a blueprint turns in the game: its machines, inserters, belts and pipes turn with it, its belts entering and leaving on the sides they turned to, the filter splitter sorting its byproduct out turned with it, every Link routed again as a Move's (ADR 0045, ADR 0046).
+The user's turning a Sub-Block's stack a quarter (clockwise or not) where it stands, as a blueprint turns in the game: its machines, inserters, belts and pipes turn with it, its belts entering and leaving on the sides they turned to, the filter splitter sorting its byproduct out turned with it, every Link routed again as a Move's (ADR 0045, ADR 0046). Maximize's last layout turns a Sub-Block half round so itself where a belt Link of it runs back (its producer's east end past its consumer's west end) and the block ranks better turned (ADR 0096).
 _Avoid_: rotation (the design's own variants turn machines: `rotation`)
 
 **Pull together**:

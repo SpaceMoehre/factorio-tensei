@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v81: Links running back, turned round (implemented)
+
+Once Maximize ends, a Sub-Block at either end of a belt link running back (the producer's east end east of its consumer's west end: its belt leaves east and comes back the whole way) is laid out again turned half round where it stands, as the user's turn does, the one running furthest back first; kept where the block ranks better, is valid and delivers as much. Py wood 116² among roboports: the wood seedlings' belt to the log farms (255 tiles: east, back west over their stack and round two others) goes straight down the west side; 1157.14/min the same, 2023 → 2012 entities. Every other suite layout the same. ADR 0096.
+
 ## v80: Where a stack stands, kept (implemented)
 
 The same layouts in less time. Placement in a City Block keeps where each stack may stand among the Fixtures across a try's candidates (five in six of its asks were alike one before), weighs a spot against every Sub-Block placed with one sum where the spots are many, and a failing variant's error captures no stack trace. Full tier side by side 4620 → 4414 s, every layout the same; Py titanium plate 236² 201.6 → 177 s (+24 MB peak). ADR 0095.

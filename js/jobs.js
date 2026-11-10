@@ -28,7 +28,7 @@
 // 'better', block, score, slid } for each slide it keeps, then { type: 'moved', block (null where
 // none was kept), score, slid, back, tried }.
 import { search } from './search.js';
-import { maximize, tidied } from './maximize.js';
+import { maximize, tidied, turnedRound } from './maximize.js';
 import { runTry, tryPool, drive } from './parallel.js';
 import { context, designStep, random, revive } from './design.js';
 import { moveCopies, reshapeCopies, turnCopies, compactCopies } from './layout/edit.js';
@@ -87,8 +87,10 @@ export async function* runJob(job, catalog, runner) {
         if (step.value.type === 'best') last = step.value;
         yield step.value;
       }
-      // The last layout once more, its belts straightened as Compactness weighs turns (ADR 0087).
-      const shown = last && tidied(last.block, catalog, logistics, list[0].item);
+      // The last layout once more: its links running back turned round (ADR 0096), its belts
+      // straightened as Compactness weighs turns (ADR 0087).
+      const round = last && turnedRound(last.block, catalog, logistics, list[0].item, { site, deadline: Date.now() + budgetMs });
+      const shown = round && tidied(round, catalog, logistics, list[0].item);
       if (shown && shown !== last.block) yield { ...last, block: shown };
       const { tried, failure, rate, machines, goals: fit, above, delivered } = step.value;
       yield { type: 'done', tried, failure: failure?.message ?? null, rate, machines, goals: fit, above, delivered };

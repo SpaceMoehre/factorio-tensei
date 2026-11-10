@@ -7,8 +7,10 @@ import { bands } from './bands.js';
 import { annexSite, annexed } from './annex.js';
 import { validateBlock } from './layout/validity.js';
 import { simulate, throughput } from './sim.js';
-import { scoreOf, riding } from './layout/score.js';
+import { scoreOf, riding, compare } from './layout/score.js';
 import { tidyBelts } from './layout/compact.js';
+import { turnCopies } from './layout/edit.js';
+import { context } from './design.js';
 
 // Maximize (CONTEXT.md): the highest rate of the Goals whose Compound Block fits the City Block
 // without Starvation, its Recipe Selections, modules and the items made here as chosen. The
@@ -1254,6 +1256,52 @@ function overlap(a, b) {
 // `tidyBelts`, ADR 0087). Only that one: an Annex is found beside a layout as it was laid out,
 // and a tidier layout before it changes the room it finds (ADR 0085). Where the straightened
 // block is not valid, or starves or delivers less of the first Goal, the block as it was.
+// The layout Maximize ends with, its links running back turned round (ADR 0096). A Sub-Block's
+// belts enter it from the west and leave it east; a producer standing over its consumer, its east
+// end past the consumer's west end, sends its belt the whole way back and round both (Py wood
+// among roboports: the wood seedlings' belt to the log farms 255 tiles, their boxes a tile apart).
+// Each Sub-Block at either end of such a link, the one running furthest back first, laid out again
+// turned half round where it stands (the user's turn, edit.js turnCopies: the same box, its belts
+// leaving west), kept where the block ranks better (score.js: Compactness weighs every turn of a
+// belt) and is valid, starving nothing more and delivering as much of the first Goal. Only that
+// one, as `tidied`; not a block with Annexes (no Sub-Block of it moves). The block as it was where
+// none is kept.
+// options: { site (the City Block's, or none), deadline, now }
+export function turnedRound(block, catalog, logistics, item, { site = null, deadline = Infinity, now = () => Date.now() } = {}) {
+  if (!block.edit) return block;
+  const back = b => {
+    const out = new Map();
+    for (const r of b.routes) {
+      if (r.kind !== 'belt' || typeof r.source !== 'number' || b.edit.turns?.[r.source]) continue;
+      const from = b.subBlocks[r.source];
+      for (const c of r.consumers) {
+        const to = b.subBlocks[c], by = from.x + from.w - to.x;
+        if (c === r.source || by <= 0 || b.edit.turns?.[c]) continue;
+        for (const i of [r.source, c]) out.set(i, Math.max(out.get(i) ?? 0, by));
+      }
+    }
+    return out;
+  };
+  const ctx = context(block.edit.entries, catalog, logistics, site);
+  const tried = new Set();
+  let best = block, score = scoreOf(block);
+  const starved = simulate(block).starvation.length, delivered = throughput(block).delivered(item);
+  for (;;) {
+    const next = [...back(best)].filter(([i]) => !tried.has(i)).sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+    if (!next || now() > deadline) break;
+    const [step] = next;
+    tried.add(step);
+    const run = turnCopies(ctx, best.edit, { step, turns: 2 }, { score, deadline, now });
+    let r = run.next();
+    while (!r.done) r = run.next();
+    const out = /** @type {any} */ (r.value);
+    if (out.failure || !out.block || compare(out.score, score) >= 0 || validateBlock(out.block, catalog, logistics).length) continue;
+    if (simulate(out.block).starvation.length > starved || throughput(out.block).delivered(item) < delivered - 1e-6) continue;
+    [best, score] = [out.block, out.score];
+  }
+  return best;
+}
+
 export function tidied(block, catalog, logistics, item) {
   const out = tidyBelts(block, catalog, logistics);
   if (out === block || validateBlock(out, catalog, logistics).length) return block;
