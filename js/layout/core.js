@@ -19,7 +19,17 @@ const REACH = {
   4: { row: 2, long: true, turn: 180 },
 };
 
-export class LayoutError extends Error {}
+// (Thrown and caught by the thousand as variants fail, its message all anyone reads: made with no
+// stack trace, whose capture took a fiftieth of a Maximize.)
+export class LayoutError extends Error {
+  /** @param {string} [message] */
+  constructor(message) {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 0;
+    super(message);
+    Error.stackTraceLimit = limit;
+  }
+}
 
 // A core's tile as a small integer, for its maps and sets (a string key per tile took much of a
 // core's time): columns and rows from -256, columns below 65280.

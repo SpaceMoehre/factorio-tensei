@@ -128,7 +128,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const partings = new Map();
   const copyLanded = new Map();
   // Where each Sub-Block may stand (lands), by spot: Backtracking asks again for the same spots.
-  // (By Sub-Block, then size: each spot's answer in an array over the City Block.)
+  // (By Sub-Block, then size: each spot's answer in an array over the City Block. Kept by the
+  // City Block, the stack's tiles and its budget: the candidates of a try place the same stacks
+  // again, five in six of the spots asked in Py wood 116² asked before.)
   /** @type {Map<number, { at: Int32Array, found: Set<string>[] }>[]} */
   const landed = [];
   // Sub-Blocks placed parted round the Fixtures (Parting), while placing one by one: their shape.
@@ -236,7 +238,12 @@ export function placeBlocks(ctx, prepared, params = {}) {
       const out = [];
       // (`shape`: as it stands, parted or not, for `apart`: as clashes has it, the lookups done once.)
       const boxes = [...placed.keys()].map(j => ({ ...box(j), step: j, entries: blocks[j].entries.map(e => placed.get(j).y + e), shape: shapeOf(j) }));
+      // (A box with no Nooks, not made room round, is clear where none of the tiles those placed
+      // need, with the gap round them, lies in it: one sum over a rectangle, not apart with each.
+      // Only where the spots are many: their sums cost a look at every tile round those placed.)
+      let needed = null;
       const clear = (me, mine) => {
+        if (!mine.pad && !mine.nooks.length && spots.length * boxes.length > (x1 - x0 + 2 * gap) * (y1 - y0 + 2 * gap)) return !(needed ??= neededBy(boxes, gap))(me.x, me.y, me.w, me.h);
         for (const o of boxes) if (!apart(mine, me, o.shape, o, gap)) return false;
         return true;
       };
@@ -428,10 +435,11 @@ export function placeBlocks(ctx, prepared, params = {}) {
   function lands(i, box) {
     // (Outside the City Block it lands nowhere, as `landing` says first. Inside, by its size, then
     // its corner's tile: an array read, not a Map's; Layers asks some twenty million times in Py
-    // small parts 2. 0: not asked yet, -1: null, else its answer in `found`.)
+    // small parts 2. 0: not asked yet, -1: null, -2: on no machine (most spots: one empty answer
+    // for all, kept as they are), else its answer in `found`.)
     const { inner } = site;
     if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return null;
-    const sizes = landed[i] ??= new Map(), size = box.w * 1024 + box.h;
+    const sizes = landed[i] ??= landedFor(site, `${budget(i)}|${blockTiles(i).key}`), size = box.w * 1024 + box.h;
     let mine = sizes.get(size);
     if (mine === undefined) sizes.set(size, (mine = { at: new Int32Array(inner.w * inner.h), found: [null] }));
     const k = (box.y - inner.y) * inner.w + box.x - inner.x;
@@ -440,10 +448,10 @@ export function placeBlocks(ctx, prepared, params = {}) {
     if (n === undefined) return site.landing(blockTiles(i), box, budget(i));
     if (n === 0) {
       const out = site.landing(blockTiles(i), box, budget(i));
-      n = out ? mine.found.push(out) - 1 : -1;
+      n = out ? (out.size ? mine.found.push(out) - 1 : -2) : -1;
       mine.at[k] = n;
     }
-    return n < 0 ? null : mine.found[n];
+    return n === -1 ? null : n === -2 ? ON_NONE : mine.found[n];
   }
 
   // Parting (in a City Block): where a Fixture would stand on the belts of a stack of copies
@@ -517,7 +525,9 @@ export function placeBlocks(ctx, prepared, params = {}) {
         for (const [x, y] of tiles) hard.add(tileKey(x + o.x, y + o.y));
         for (const [x, y, m] of machines) soft.set(tileKey(x + o.x, y + o.y), `${inst.index}:${m}`);
       }
-      tileSets.set(i, { hard, soft });
+      // (What they are, as lands keeps its answers by: the tiles in order, each machine's named.)
+      const key = `${[...hard].sort((a, b) => a - b).join()}|${[...soft].sort((a, b) => a[0] - b[0]).join()}`;
+      tileSets.set(i, { hard, soft, key });
     }
     return tileSets.get(i);
   }
@@ -1008,6 +1018,23 @@ function siteRules(site) {
   return rulesOf.get(site);
 }
 
+// Where a stack may stand in a City Block (placeBlocks' lands), by its rules and the stack's key
+// (its budget and tiles): its answers by size, the last LANDED_KEPT stacks asked.
+const LANDED_KEPT = 128;
+const landedOf = new WeakMap();
+/** @type {Set<string>} (Read only, as every answer of lands.) */
+const ON_NONE = new Set();
+function landedFor(rules, key) {
+  if (!landedOf.has(rules)) landedOf.set(rules, new Map());
+  const kept = landedOf.get(rules);
+  let sizes = kept.get(key);
+  if (sizes) kept.delete(key);
+  else sizes = new Map();
+  kept.set(key, sizes);
+  if (kept.size > LANDED_KEPT) kept.delete(kept.keys().next().value);
+  return sizes;
+}
+
 function makeRules(site) {
   const { inner } = site;
   // Fixtures in it, or right outside it where a link meets a box at its edge; filed by the cells
@@ -1314,6 +1341,34 @@ function apart(a, pa, b, pb, gap) {
 
 // Every tile of a box needed.
 const full = block => new Uint8Array(block.w * block.h).fill(1);
+
+// The tiles Sub-Blocks placed need within g of them, as apart has them (`boxes`: where each
+// stands, `shape` its block: one with no Nooks, or made room round, needs every tile of its box
+// grown by g), as sums over rectangles: whether a box (x, y, w, h) takes any. Apart says the
+// same of a box with no Nooks against each of them.
+function neededBy(boxes, g) {
+  if (!boxes.length) return () => false;
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (const o of boxes) [x0, y0, x1, y1] = [Math.min(x0, o.x - g), Math.min(y0, o.y - g), Math.max(x1, o.x + o.shape.w + g), Math.max(y1, o.y + o.shape.h + g)];
+  const w = x1 - x0, h = y1 - y0, W = w + 1;
+  const on = new Uint8Array(w * h);
+  for (const o of boxes) {
+    const s = o.shape, tw = s.w + 2 * g, th = s.h + 2 * g;
+    const mask = s.pad || !s.nooks.length ? null : (s.near ??= around(s, g));
+    for (let y = 0; y < th; y++) {
+      const row = (o.y - g - y0 + y) * w + o.x - g - x0;
+      if (!mask) on.fill(1, row, row + tw);
+      else for (let x = 0; x < tw; x++) if (mask[y * tw + x]) on[row + x] = 1;
+    }
+  }
+  const sum = new Int32Array(W * (h + 1));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) sum[(y + 1) * W + x + 1] = on[y * w + x] + sum[y * W + x + 1] + sum[(y + 1) * W + x] - sum[y * W + x];
+  return (bx, by, bw, bh) => {
+    const ax = Math.max(0, bx - x0), ay = Math.max(0, by - y0), az = Math.min(w, bx + bw - x0), aw = Math.min(h, by + bh - y0);
+    if (az <= ax || aw <= ay) return false;
+    return sum[aw * W + az] - sum[ay * W + az] - sum[aw * W + ax] + sum[ay * W + ax] > 0;
+  };
+}
 
 // A mask's sums over rectangles from its corner (an integral image, `w` its width) and whether it
 // is all ones: kept by mask.

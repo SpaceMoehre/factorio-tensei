@@ -195,6 +195,29 @@ test('in a City Block a Fixture standing where a machine would leaves that machi
     `${JSON.stringify(gears)}`);
 });
 
+// Where a stack may stand is kept from one placement to the next (ADR 0095): the same stack placed
+// again, prepared anew as another candidate does, stands where it stood, the same machine left
+// out; placed with no machine left out (`solid`, a budget of none), it is asked anew.
+test('in a City Block a stack placed again stands where it stood; with no machine to leave out, asked anew', () => {
+  const substation = { name: 'substation', kind: 'fixture', number: 1, x: 14, y: 3, w: 2, h: 2 };
+  const site = siteOf({ area: { x: 0, y: 0, w: 37, h: 21 }, fixtures: [substation] }, 1);
+  const ctx = context([asm2('iron-gear-wheel', 960)], catalog, logistics, site);
+  const designs = designStep(ctx, 0, random(1), { draws: 0 });
+  const design = designOf(designs.find(c => c.spec?.copies) ?? designs[0]);
+  const first = placeBlocks(ctx, prepare(ctx, [design]), {});
+  assert.equal(first.holes.size, 1);
+  const again = placeBlocks(ctx, prepare(ctx, [design]), {});
+  assert.deepEqual(again.boxes, first.boxes);
+  assert.deepEqual([...again.holes].map(([k, v]) => [k, [...v]]), [...first.holes].map(([k, v]) => [k, [...v]]));
+  let solid = null;
+  try {
+    solid = placeBlocks(ctx, prepare(ctx, [design]), { solid: true });
+  } catch (e) {
+    assert.ok(e instanceof RoutingError);
+  }
+  if (solid) assert.equal(solid.holes.size, 0);
+});
+
 // Giving Way: the same, the gears giving way. The machines the substation stands on (it straddles
 // two) are given up, none built apart: the block runs at the rate of those left, every rate scaled
 // down by as much.

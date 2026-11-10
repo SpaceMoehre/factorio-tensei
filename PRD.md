@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v80: Where a stack stands, kept (implemented)
+
+The same layouts in less time. Placement in a City Block keeps where each stack may stand among the Fixtures across a try's candidates (five in six of its asks were alike one before), weighs a spot against every Sub-Block placed with one sum where the spots are many, and a failing variant's error captures no stack trace. Full tier side by side 4620 → 4414 s, every layout the same; Py titanium plate 236² 201.6 → 177 s (+24 MB peak). ADR 0095.
+
 ## v79: Grown (implemented)
 
 A Maximize try above the highest that fit lays that fit out again first: each Sub-Block of the design it had, where it stood, the few machines it gains apart in a gap (Breakout); then searches as before, its own candidates untouched (Grown is not counted among them, draws its own random numbers, and its retries wait behind them). Only where some Sub-Block gains machines and none more than three (or a tenth). Where its belts starve by a few of a producer's machines, the spare machines retry runs it again. Py wood 116² among roboports: 1068.14 → 1157.14/min (3.692 → 4 wood processors), 787 → 626 s; suite titanium plate 236² 4992.18 → 5424.49/min (14 → 15 casting units), the rest the same rates. ADR 0094.
