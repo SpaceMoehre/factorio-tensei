@@ -5,7 +5,9 @@
 //   npm run suite -- --tier fast --out B.json
 //   node speedcmp.mjs A.json B.json
 //
-// Exits 1 where any setup laid out otherwise (a speed-up lays out the same, ADR 0058).
+// Exits 1 where any setup laid out otherwise (a speed-up lays out the same, ADR 0058). A setup with
+// no layout on either side counts as the same where it failed alike. pairs.mjs runs the two sides
+// setup by setup at once, which this side-by-side way does not (ADR 0102).
 import { readFileSync } from 'node:fs';
 
 const [a, b] = process.argv.slice(2);
@@ -19,8 +21,10 @@ let differ = 0, before = 0, after = 0;
 const rows = names.map(n => {
   const x = A[n], y = B[n];
   const same = x.hash && x.hash === y.hash;
-  const verdict = x.error || y.error ? `error ${x.error ?? ''} ${y.error ?? ''}`.trim() : same ? 'same layout' : 'DIFFERS';
-  if (verdict !== 'same layout') differ++;
+  // (No layout on either side, the same failure after as many tries: titanium plate standing on its own.)
+  const failed = !x.hash && !y.hash && x.failure && x.failure === y.failure && x.tries === y.tries;
+  const verdict = x.error || y.error ? `error ${x.error ?? ''} ${y.error ?? ''}`.trim() : same ? 'same layout' : failed ? 'same failure' : 'DIFFERS';
+  if (verdict !== 'same layout' && verdict !== 'same failure') differ++;
   else [before, after] = [before + x.secs, after + y.secs];
   const ratio = x.secs && y.secs ? `${((y.secs / x.secs - 1) * 100).toFixed(0)}%` : '-';
   return [n, `${x.secs ?? '-'} s`, `${y.secs ?? '-'} s`, ratio, verdict];

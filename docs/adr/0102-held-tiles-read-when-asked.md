@@ -27,6 +27,20 @@ Tried and dropped since ADR 0101 (each measured; none kept):
 - **Cores rebuilt for rates alone** (design.js `keptCores`): of the cores built again, almost all had been let go from the 2,000 kept (coke 20,215 of 22,297 alike in all but their rates); silicon none for rates. A kept core takes some 59 KB, 44% of it its belt rows' tiles as pairs of numbers: kept flat, some 1.75 times as many would fit in the same memory.
 - **Garbage collection** (7–11% of a run): in anthraquinone 924 scavenges took 2.4 s and 5 mark-compacts 50 ms of 42.8 s: what lives past the young generation, not how much is kept for long.
 
+The cuts of ADR 0097–0102 together, timed as pairs (`pairs.mjs`: each setup on the code before ADR 0097 and on this one at the same moment, the longest first, two pairs at once; side by side, two suites had left the faster side's last setups beside the other's longest):
+
+| Full tier | Before ADR 0097 | After ADR 0102 |
+|---|---|---|
+| Kicalk among roboports | 420.2 s | 315.7 s |
+| Molybdenum oxide among roboports | 511.5 s | 396.3 s |
+| Py titanium plate 236² | 383.4 s | 294.8 s |
+| Coke 116² | 221.2 s | 193.0 s |
+| Anthraquinone 116² | 153.6 s | 118.2 s |
+| Titanium plate standing on its own (no layout, the same failure) | 141.7 s | 90.4 s |
+| Vrauks 100 | 60.7 s | 41.9 s |
+| Wood 116² (the user's) | 148.7 s | 140.1 s |
+| All 17 | 2804.7 s | 2248.3 s, every setup the same layout, each faster (−6% to −36%) |
+
 Tests: the routing and city tests as they were.
 
 Still:

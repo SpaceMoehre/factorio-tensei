@@ -45,7 +45,8 @@ scratchpad (every output goes there, never in the repo).
 | `TIMEOUT=0 node --cpu-prof --cpu-prof-dir=$S/prof $TL/scripts/suite-one.mjs …` then `node $TL/scripts/profsum.mjs $S/prof/<file>.cpuprofile [top]` | Where the time goes, inclusive and self, by function. |
 | `node $TL/scripts/maxdet.mjs <setup> [K] [most]` | Maximize alone with no time limit: each event with its seconds and a layout hash, then one hash of them all. Two codes laying out the same print the same `END` hash. `STOPAT=<machines>` stops at a fit; `ROOT=` for another worktree. |
 | `npm run suite -- [--tier fast\|full] [--only a,b] [--root DIR] [--out F.json]` | Every suite setup, its `secs` and hash against the record. |
-| `node $SP/scripts/speedcmp.mjs A.json B.json` | Two suite `--out` files side by side: seconds before and after per setup, `same layout` or `DIFFERS`, and the total over those laid out the same. Exits 1 where any differs. |
+| `node $SP/scripts/speedcmp.mjs A.json B.json` | Two suite `--out` files side by side: seconds before and after per setup, `same layout` (or `same failure`, no layout on either side) or `DIFFERS`, and the total over those laid out the same. Exits 1 where any differs. |
+| `node $SP/scripts/pairs.mjs <root A> <root B> [--tier fast\|full] [--only a,b] [--parallel N] [--out DIR]` | The two roots run as pairs: each setup on both at the same moment, longest first, N pairs at once (default a quarter of the cores); writes `DIR/A.json`, `DIR/B.json` and prints speedcmp's table. The way to time a change over the suite: two suites run side by side leave the faster side's last setups beside the other's longest (0102: wood and small parts 2 10–90% "slower" in every such A/B). |
 | `node $TL/scripts/run.mjs <setup> [--mode auto\|build\|maximize] [--parallel N] [--total S] [--root DIR]` | Page-like wall clock: the setup's own budgets, worker threads (`--parallel N`: Maximize's tries at once). `summary.json` has `secs` and `bestAtS` (when the best came). |
 | `run.mjs … --profile-slow S` | A try with no event for S seconds sampled by V8's tick profiler. If it shows no JavaScript frames (0055), use timestamped phase logs instead. |
 
@@ -140,9 +141,7 @@ before"), before changing code.
 
    ```
    git worktree add $S/base-tree HEAD
-   npm run suite -- --tier fast --root $S/base-tree --out $S/A.json &
-   npm run suite -- --tier fast --out $S/B.json
-   node $SP/scripts/speedcmp.mjs $S/A.json $S/B.json
+   node $SP/scripts/pairs.mjs $S/base-tree . --tier fast --out $S/ab
    ```
 
    Every row `same layout`. One `DIFFERS` means the change is not pure: find why (a random
