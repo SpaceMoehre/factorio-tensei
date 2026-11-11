@@ -23,7 +23,7 @@ What changed:
 |---|---|---|
 | Rayon: rate, tries, best at | 631.25/min (13 machines), 24, 349.7 s | the same, 24, 349.2 s |
 
-On the page, its tries given their budgets, rayon's first layout and Annexes reach 13 machines and every miss above lies within a machine: the gate does not bite there; it saves the suite's tries at 20 candidates.
+On the page, its tries given their budgets, rayon reaches 13 machines with its Annexes and the same tries either way: the gate made no difference there; it saves the suite's tries at 20 candidates.
 
 Kicalk among roboports at seed 2 came out another layout of the same 125 machines, the same tries. Not this change: the code before it, run twice at once, made 129 and 130 machines at seed 2 (`maxdet.mjs`, no limit on 20 candidates a try). A fit that brings a loop by train is kept while the search runs as long again as it took, at least a second (maximize.js `once`, `until`): on a host loaded 20–28 that clock decides what an Annex finds.
 
