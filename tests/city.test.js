@@ -549,6 +549,28 @@ test("the Foretelling: the first try is the most machines it foretells to fit; l
   assert.ok(broken.foretold().machines < first, `${broken.foretold().machines} of ${first}`);
 });
 
+// Among Fixtures (ADR 0104): a layout found whose box spans nearly all the room teaches the
+// Foretelling nothing of how loosely the next packs (every layout spreads round them), so it still
+// foretells more than fit; in the same City Block clear of them such a box means it is full.
+test('the Foretelling among Fixtures learns nothing from a box spanning the room; a try that finds no room still teaches it', () => {
+  const grid = [];
+  for (let x = 7; x < 112; x += 18) for (let y = 7; y < 112; y += 18) grid.push({ name: 'substation', kind: 'fixture', number: grid.length + 1, x, y, w: 2, h: 2 });
+  const options = { made: pyItems.slice(1), selections: pySelections };
+  const crowded = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { ...options, site: siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: grid }, 2) });
+  const clear = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { ...options, site: siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2) });
+  // One machine fits, its box spanning all but a twentieth of the room.
+  const before = crowded.foretold().machines;
+  assert.ok(before > 1 && clear.foretold().machines > 1);
+  for (const plan of [crowded, clear]) plan.record(1, { block: {}, placed: Math.round(0.95 * plan.room), designed: null, tried: 1 });
+  assert.equal(crowded.foretold().machines, before);
+  assert.equal(crowded.next(), before);
+  assert.equal(clear.foretold().machines, 1);
+  // No room at the one foretold next: the Foretelling no longer says it fits.
+  const n = crowded.next();
+  crowded.record(n, { block: null, starves: false, designed: null, tried: 12 });
+  assert.ok(crowded.foretold().machines < n);
+});
+
 test('Maximize no higher than a cap: Filling stops at it, and once it fits nothing is left to try', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 116, h: 116 }, fixtures: [] }, 2);
   const plan = planner([{ item: 'small-parts-01', rate: 600 }], pyCatalog, logistics, { made: pyItems.slice(1), selections: pySelections, site });

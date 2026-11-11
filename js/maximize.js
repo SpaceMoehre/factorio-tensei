@@ -762,6 +762,10 @@ export function attempt(plan, n, options) {
   return again.block ? again : first;
 }
 
+// A layout's box spanning this share of the City Block's room or more teaches the Foretelling
+// nothing of how loosely the next packs, among Fixtures (planner record, ADR 0104).
+const SPANNING = 0.9;
+
 // The fewest spare machines a try may add to a Sub-Block (else a tenth of its Count).
 const SPARE = 2;
 
@@ -1066,7 +1070,14 @@ export function planner(goals, catalog, logistics, { made = [], selections = {},
       streak = !outcome.block && outcome.starves ? (outcome.timedOut ? Math.max(2, streak + 1) : streak + 1) : 0;
       if (outcome.block) {
         lo = Math.max(lo, n);
-        if (outcome.placed) loose = Math.max(spread = outcome.placed / modules(n), tightest);
+        // (Among Fixtures, a layout whose box spans nearly all the room says only that it fit,
+        // not how loosely the next packs: every layout spreads over the City Block round them, and
+        // the Foretelling learning from it foretold no more than what fit, try after try: Py kicalk
+        // among roboports climbed 67 to 89 a machine a try, ADR 0024. A try that finds no room
+        // still teaches it, `tightest`. In a City Block clear of Fixtures such a box means it is
+        // full.)
+        if (outcome.placed && (!crowded || outcome.placed < SPANNING * room)) loose = Math.max(spread = outcome.placed / modules(n), tightest);
+        else if (outcome.placed) spread = outcome.placed / modules(n);
         return;
       }
       if (outcome.starves) {

@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v89: Boxes spanning the block teach nothing (implemented)
+
+Among Fixtures, the Foretelling no longer learns how loosely a City Block packs from a layout whose box spans nearly all its room (every layout spreads round the Fixtures): it foretells on, and a try that finds no room still corrects it. Py kicalk among roboports climbs 67 → 87 in one try where it climbed a machine a try: 41 → 22 tries, 302 → 160 s at 20 candidates a try; on the page 73 → 59 tries. Every suite layout and rate the same, at seeds 2 and 3 too. ADR 0104.
+
 ## v88: Columns that stand nowhere (implemented)
 
 The same layouts in less time. Layers remembers, across candidates, the columns where a stack lands on no row or parts round the Fixtures on none, and stands a Sub-Block alone in its column on the nearest row it lands on, found among that column's rows kept once. Kicalk among roboports 387 → 346 s, vrauks 49 → 43 s, as pairs; every suite layout the same. ADR 0103.
