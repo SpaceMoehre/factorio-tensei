@@ -128,6 +128,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const partings = new Map();
   const copyLanded = new Map();
   const partable = new Map();
+  const nowheres = new Map();
   // Where each Sub-Block may stand (lands), by spot: Backtracking asks again for the same spots.
   // (By Sub-Block, then size: each spot's answer in an array over the City Block. Kept by the
   // City Block, the stack's tiles and its budget: the candidates of a try place the same stacks
@@ -148,7 +149,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     return { x: x0, y: y0, w: Math.max(...all.map(b => b.x + b.w)) - x0, h: Math.max(...all.map(b => b.y + b.h)) - y0 };
   };
   // In a City Block, the search's `layers` candidates stand the Sub-Blocks in columns instead.
-  const columns = site && params.layers ? inLayers(blocks, links, depth, routes, site, { corridor, gap, spread: params.layers }, landerOf, part) : null;
+  const columns = site && params.layers ? inLayers(blocks, links, depth, routes, site, { corridor, gap, spread: params.layers }, landerOf, part, nowhereOf) : null;
   if (site && params.layers && !columns) throw Object.assign(new RoutingError('the Sub-Blocks fit no columns in the city block'), { noColumns: true });
   for (const [i, p] of columns ?? []) {
     // A parted stack stands with its copies where they part.
@@ -476,6 +477,30 @@ export function placeBlocks(ctx, prepared, params = {}) {
     const { inner } = site;
     return x >= inner.x && y >= inner.y && x + w <= inner.x + inner.w && y + h <= inner.y + inner.h;
   }
+  // The columns where Sub-Block i, its box w × h, lands on no row (NO_ROW) or parts on none
+  // (NO_PARTING), by column from the City Block's west side: kept by the City Block, the stack as
+  // Parting reads it (each copy's module, number, column and offset), its budget and padding, and
+  // the box's size, the last NOWHERE_KEPT asked.
+  function nowhereOf(i, w, h) {
+    if (!nowheres.has(i)) {
+      const b = blocks[i];
+      let made = `${budget(i)}|${b.pad}|${w},${h}|`;
+      for (const inst of b.instances) {
+        const o = b.at.get(inst.index);
+        made += `${moduleOf(inst.module)}:${inst.index}:${inst.column ?? 0}:${o.x},${o.y};`;
+      }
+      if (!nowhereKept.has(site)) nowhereKept.set(site, new Map());
+      const kept = nowhereKept.get(site);
+      let found = kept.get(made);
+      if (found) kept.delete(made);
+      else found = { flags: new Uint8Array(site.inner.w), rows: new Array(site.inner.w) };
+      kept.set(made, found);
+      if (kept.size > NOWHERE_KEPT) kept.delete(kept.keys().next().value);
+      nowheres.set(i, { w, h, found });
+    }
+    const known = nowheres.get(i);
+    return known.w === w && known.h === h ? known.found : NO_FOUND;
+  }
   // Sub-Block i's answers for boxes w × h, by corner. 0: not asked yet, -1: null, -2: on no
   // machine (most spots: one empty answer for all, kept as they are), else its answer in `found`.
   function sizeOf(i, w, h) {
@@ -603,6 +628,12 @@ export function placeBlocks(ctx, prepared, params = {}) {
   }
 }
 
+// Columns where a stack lands on no row, or parts on none (placeBlocks' nowhereOf).
+const NO_ROW = 1, NO_PARTING = 2;
+const NOWHERE_KEPT = 256;
+/** @type {WeakMap<object, Map<string, { flags: Uint8Array, rows: (Int32Array | undefined)[] }>>} */
+const nowhereKept = new WeakMap();
+const NO_FOUND = { flags: new Uint8Array(0), rows: [] };
 // A stack's tiles no Fixture may stand on (blockTiles), the last TILES_KEPT stacks': by its copies'
 // modules (each by what tilesByMachine reads of it: its entities, area, belts and pipes, the same
 // objects in every routing of a module taken again, module.js), numbers and offsets.
@@ -641,7 +672,7 @@ const waysKept = new Map();
 // late where columns would fit them all.
 // Returns each Sub-Block's top-left corner (and a parted stack's copies, `parted`), or null when
 // no way fits.
-function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread }, landerOf, part) {
+function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread }, landerOf, part, nowhereOf) {
   const { inner } = site;
   const steps = blocks.map(b => b.step);
   // Consumers first, so each Sub-Block's column follows from its consumers'.
@@ -906,25 +937,67 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
         // (Each row asked of as numbers, nothing made where it lands nowhere: most rows, among
         // roboports' Fixtures.)
         const land = landerOf(it.i, blocks[it.i].w, it.h);
-        const clear = y => land(it.x, y) !== null && items.every(o => o === it || apart(blocks[it.i], { x: it.x, y }, blockOf(o.i), o, gap));
-        if (clear(it.y)) continue;
+        // (Where its stack lands on no row of this column, or parts on none, whatever stands in
+        // it: known from a scan before, by the stack, its budget and size, kept across candidates.
+        // Py kicalk among roboports: 382,046 columns tried, 936 standing.)
+        const { flags: nowhere, rows: landRows } = nowhereOf(it.i, blocks[it.i].w, it.h), at = it.x - inner.x;
+        const known = at >= 0 && at < nowhere.length ? nowhere[at] : 0;
+        let lands = false;
+        const clear = y => {
+          if (land(it.x, y) === null) return false;
+          lands = true;
+          return items.every(o => o === it || apart(blocks[it.i], { x: it.x, y }, blockOf(o.i), o, gap));
+        };
         let moved = null;
-        for (let d = 1; d < inner.h && moved === null; d++) {
-          if (clear(it.y - d)) moved = it.y - d;
-          else if (clear(it.y + d)) moved = it.y + d;
+        if (items.length === 1 && at >= 0 && at < nowhere.length && !(known & NO_ROW)) {
+          // Alone in its column, it stands on the row nearest where it wants to that it lands
+          // on, the upper of two as near: as the scan below finds it. (The rows it lands on in
+          // this column found once, the stack's and its size's, kept as its columns' flags are.)
+          let rows = landRows[at];
+          if (rows === undefined) {
+            const list = [];
+            for (let y = inner.y; y <= inner.y + inner.h - it.h; y++) if (land(it.x, y) !== null) list.push(y);
+            landRows[at] = rows = Int32Array.from(list);
+            if (!rows.length) nowhere[at] |= NO_ROW;
+          }
+          if (rows.length) {
+            let lo = 0, hi = rows.length;
+            while (lo < hi) {
+              const mid = (lo + hi) >> 1;
+              if (rows[mid] < it.y) lo = mid + 1;
+              else hi = mid;
+            }
+            // (rows[lo] the first at or below where it wants to stand, rows[lo - 1] the last above.)
+            const below = lo < rows.length ? rows[lo] : Infinity, above = lo > 0 ? rows[lo - 1] : -Infinity;
+            if (below === it.y) continue;
+            moved = it.y - above <= below - it.y ? above : below;
+          }
+        } else if (!(known & NO_ROW)) {
+          if (clear(it.y)) continue;
+          for (let d = 1; d < inner.h && moved === null; d++) {
+            if (clear(it.y - d)) moved = it.y - d;
+            else if (clear(it.y + d)) moved = it.y + d;
+          }
+          if (!lands && at >= 0 && at < nowhere.length) nowhere[at] |= NO_ROW;
         }
         // Parting: no spot clear, its stack parts round the Fixtures, standing as near where it
         // wants to as that lets it. (Above it, then below, a row further each step.)
+        let parts1 = false;
         const parts = y => {
           const p = moved === null && y >= inner.y ? part(it.i, it.x, y) : null;
+          if (p) parts1 = true;
           if (!p || !items.every(o => o === it || apart(p.block, { x: it.x, y }, blockOf(o.i), o, gap))) return;
           parted.set(it.i, p);
           it.h = p.h;
           moved = y;
         };
-        for (let d = 0; parting && d < inner.h && moved === null; d++) {
-          parts(it.y - d);
-          if (d) parts(it.y + d);
+        if (parting && moved === null && !(known & NO_PARTING)) {
+          for (let d = 0; d < inner.h && moved === null; d++) {
+            parts(it.y - d);
+            if (d) parts(it.y + d);
+          }
+          // (Every row asked, its stack parting on none.)
+          if (!parts1 && at >= 0 && at < nowhere.length) nowhere[at] |= NO_PARTING;
         }
         if (moved === null) return null;
         it.y = moved;

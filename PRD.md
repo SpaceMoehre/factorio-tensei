@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v88: Columns that stand nowhere (implemented)
+
+The same layouts in less time. Layers remembers, across candidates, the columns where a stack lands on no row or parts round the Fixtures on none, and stands a Sub-Block alone in its column on the nearest row it lands on, found among that column's rows kept once. Kicalk among roboports 387 → 346 s, vrauks 49 → 43 s, as pairs; every suite layout the same. ADR 0103.
+
 ## v87: Held tiles read when asked (implemented)
 
 The same layouts in less time. A link reads the tiles held for its route's other links into numbers only once it has asked of them as often as they are many: titanium plate standing on its own, its links many and short, no longer spends 3% of its run reading them. ADR 0102.
