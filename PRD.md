@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v87: Held tiles read when asked (implemented)
+
+The same layouts in less time. A link reads the tiles held for its route's other links into numbers only once it has asked of them as often as they are many: titanium plate standing on its own, its links many and short, no longer spends 3% of its run reading them. ADR 0102.
+
 ## v86: Routing asked by numbers (implemented)
 
 The same layouts in less time. A tunnel's line is looked up by a numeric key, a row's part once for all the tiles it reserves, waypoints by their coordinates, a pole spot's consumers in an array, and routing errors carry no stack trace. 300 module routings of molybdenum oxide 9–20% faster; full tier every layout the same, perylene 167 → 154 s, molybdenum oxide 709 → 680 s side by side. ADR 0101.

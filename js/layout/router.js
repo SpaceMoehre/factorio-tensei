@@ -850,21 +850,29 @@ function among(tiles, x, y) {
   return tiles.size > 0 && (tiles instanceof TileSet || tiles instanceof FewTiles ? tiles.hasAt(x, y) : tiles.has(key(x, y)));
 }
 
-// A few tiles' keys (`key`'s) that also answer by coordinates (`hasAt`) with no key made: a
-// link's tiles held for its route's other links, asked at every step of its search. (A key not
-// as `key` makes it is no tile's.)
+// A few tiles' keys (`key`'s) that also answer by coordinates (`hasAt`): a link's tiles held for
+// its route's other links, asked at every step of its search. By their keys at first; once asked
+// as many times as there are keys, read once into numbers, no key made after. (A key not as `key`
+// makes it is no tile's either way.)
 class FewTiles {
   /** @param {Set<string>} keys */
   constructor(keys) {
     this.size = keys.size;
-    this.tiles = new Set();
-    for (const k of keys) {
-      const [x, y] = String(k).split(',').map(Number);
-      if (key(x, y) === k) this.tiles.add(x * 0x100000 + y);
-    }
+    this.keys = keys;
+    /** @type {Set<number> | null} */
+    this.tiles = null;
+    this.asked = 0;
   }
 
   hasAt(x, y) {
+    if (this.tiles === null) {
+      if (++this.asked <= this.size) return this.keys.has(key(x, y));
+      this.tiles = new Set();
+      for (const k of this.keys) {
+        const [u, v] = String(k).split(',').map(Number);
+        if (key(u, v) === k) this.tiles.add(u * 0x100000 + v);
+      }
+    }
     return this.tiles.has(x * 0x100000 + y);
   }
 }
