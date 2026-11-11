@@ -25,6 +25,8 @@ What changed:
 
 On the page, its tries given their budgets, rayon reaches 13 machines with its Annexes and the same tries either way: the gate made no difference there; it saves the suite's tries at 20 candidates.
 
+At a fourth seed, the code before ADR 0104 against this one (ADR 0104–0106 together): the fast tier 11 of 11 and rayon, coke and kicalk the same layouts; kicalk 431.3 → 323.5 s (side by side).
+
 Kicalk among roboports at seed 2 came out another layout of the same 125 machines, the same tries. Not this change: the code before it, run twice at once, made 129 and 130 machines at seed 2 (`maxdet.mjs`, no limit on 20 candidates a try). A fit that brings a loop by train is kept while the search runs as long again as it took, at least a second (maximize.js `once`, `until`): on a host loaded 20–28 that clock decides what an Annex finds.
 
 Tests: Py rayon in its City Block, Annexes and Starving off: after its first fit no try more than a machine above the most that fit (city.test.js; before, five at 11).
