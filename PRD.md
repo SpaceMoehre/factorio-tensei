@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v84: Spots walked where they lie (implemented)
+
+The same layouts in less time. Placing one Sub-Block at a time, the City Block's spots are walked where they lie rather than listed anew at every ask, a column that runs back of the consumers (or lies in the room kept for the feeds) is passed over once rather than at every row, and each spot is asked of by its numbers. Full tier side by side 4221 → 4135 s, every layout the same; anthraquinone 116² 290 → 267 s, hot air 118² 134 → 116 s. ADR 0099.
+
 ## v83: Rows asked of as numbers (implemented)
 
 The same layouts in less time. Layers stands its columns asking of each row by its corner's numbers, a stack's answers among the Fixtures found once a scan and Parting's rows with no list made; a link asks of the tiles held for its route's other links by their coordinates; where a stack may stand is kept by what the stack is made of, not gathered again at every placement. Full tier side by side 4846 → 4660 s, every layout the same; kicalk among roboports 695 → 592 s, vrauks 120 → 101 s. ADR 0098.

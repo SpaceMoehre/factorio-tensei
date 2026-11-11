@@ -235,6 +235,8 @@ export function placeBlocks(ctx, prepared, params = {}) {
     // (What stands placed is taken once, not for each of the many spots a City Block offers: each
     // box with the rows its Side Inputs arrive on, their bounds, where the links' consumers are.)
     // (`back`: the spots not west of the consumers, else only those that are.)
+    // (`spots`: a list, or null for every spot of the City Block, walked where they lie: some
+    // 12,000 in one 116 wide, no list of them made.)
     const scored = (spots, back = false) => {
       const out = [];
       // (`shape`: as it stands, parted or not, for `apart`: as clashes has it, the lookups done once.)
@@ -243,48 +245,67 @@ export function placeBlocks(ctx, prepared, params = {}) {
       // need, with the gap round them, lies in it: one sum over a rectangle, not apart with each.
       // Only where the spots are many: their sums cost a look at every tile round those placed.)
       let needed = null;
-      const clear = (me, mine) => {
-        if (!mine.pad && !mine.nooks.length && many) return !(needed ??= neededBy(boxes, gap))(me.x, me.y, me.w, me.h);
+      const clear = (x, y, h, mine) => {
+        if (!mine.pad && !mine.nooks.length && many) return !(needed ??= neededBy(boxes, gap))(x, y, b.w, h);
+        const me = { x, y };
         for (const o of boxes) if (!apart(mine, me, o.shape, o, gap)) return false;
         return true;
       };
       const targets = mine.map(l => ({ x: placed.get(l.to).x, y: placed.get(l.to).y + l.toY - l.fromY }));
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const o of boxes) [x0, y0, x1, y1] = [Math.min(x0, o.x), Math.min(y0, o.y), Math.max(x1, o.x + o.w), Math.max(y1, o.y + o.h)];
-      const many = spots.length * boxes.length > (x1 - x0 + 2 * gap) * (y1 - y0 + 2 * gap);
-      // (A spot passed over before anything is made for it: a City Block offers thousands.)
-      for (const c of spots) {
-        if (fedBy && c.x < site.inner.x + gap + fedBy) continue;
+      const grid = spots ? null : site.spotGrid(b);
+      const many = (spots ? spots.length : grid.count) * boxes.length > (x1 - x0 + 2 * gap) * (y1 - y0 + 2 * gap);
+      const land = site ? landerOf(i, b.w, b.h) : null;
+      // How far a spot in column cx runs back of its consumers (null: passed over, by `back`, or
+      // in the room west of it kept for its feeds).
+      const behindAt = cx => {
+        if (fedBy && cx < site.inner.x + gap + fedBy) return null;
         let behind = 0;
         for (let k = 0; k < targets.length; k++) {
-          const d = c.x + b.w + 1 - targets[k].x;
+          const d = cx + b.w + 1 - targets[k].x;
           if (d > 0) behind += d;
         }
-        if (!behind === back) continue;
-        let me = { x: c.x, y: c.y, w: b.w, h: b.h };
-        if (!clear(me, b)) continue;
+        return !behind === back ? null : behind;
+      };
+      const visit = (cx, cy, behind) => {
+        if (!clear(cx, cy, b.h, b)) return;
         // In a City Block, Fixtures on none of its tiles but some of its machines: those left out;
         // else its stack parted round them (Parting), taller.
-        let holes = site ? lands(i, me) : null, parted = null;
+        let holes = site ? land(cx, cy) : null, parted = null, h = b.h;
         if (site && !holes) {
-          parted = part(i, c.x, c.y);
-          if (!parted) continue;
-          me = { ...me, h: parted.h };
-          if (!clear(me, parted.block)) continue;
+          parted = part(i, cx, cy);
+          if (!parted) return;
+          h = parted.h;
+          if (!clear(cx, cy, h, parted.block)) return;
           holes = parted.hits;
         }
-        const gw = Math.max(x1, c.x + b.w) - Math.min(x0, c.x), gh = Math.max(y1, c.y + me.h) - Math.min(y0, c.y);
+        const gw = Math.max(x1, cx + b.w) - Math.min(x0, cx), gh = Math.max(y1, cy + h) - Math.min(y0, cy);
         // Standing on its own, the block grows toward a square (Compactness): the strip it has
         // beyond one counts too.
         const grown = gw * gh + (site ? 0 : SQUARE * Math.abs(gw - gh) * Math.min(gw, gh));
         let length = 0;
-        for (const t of targets) length += Math.abs(t.x - (c.x + b.w)) + Math.abs(t.y - c.y);
+        for (const t of targets) length += Math.abs(t.x - (cx + b.w)) + Math.abs(t.y - cy);
         // Side Inputs of Sub-Blocks already placed arrive from the west: keep off their rows.
         let blocking = 0;
-        for (const o of boxes) if (o.x >= c.x + b.w) for (const y of o.entries) if (y >= c.y - 1 && y <= c.y + me.h) blocking++;
+        for (const o of boxes) if (o.x >= cx + b.w) for (const y of o.entries) if (y >= cy - 1 && y <= cy + h) blocking++;
         // A link running back west goes round both boxes. A parted stack wastes the rows it parts by.
         const cost = grown + weight * (length + 2 * behind + (behind ? 8 : 0)) + 40 * blocking + (holes?.size ?? 0) * b.holeCost + (parted ? (parted.h - b.h) * b.w : 0);
-        out.push({ x: c.x, y: c.y, cost, ...(parted ? { parted } : {}) });
+        out.push(parted ? { x: cx, y: cy, cost, parted } : { x: cx, y: cy, cost });
+      };
+      if (spots) {
+        for (const c of spots) {
+          const behind = behindAt(c.x);
+          if (behind !== null) visit(c.x, c.y, behind);
+        }
+      } else {
+        // (Its columns passed over once, not at every row.)
+        const xs = [], behinds = [];
+        for (let x = grid.x0; x <= grid.x1; x += grid.step) {
+          const behind = behindAt(x);
+          if (behind !== null) xs.push(x), behinds.push(behind);
+        }
+        for (let y = grid.y0; y <= grid.y1; y += grid.step) for (let k = 0; k < xs.length; k++) visit(xs[k], y, behinds[k]);
       }
       return out;
     };
@@ -292,7 +313,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     const lists = new Map();
     const scoredOf = (name, back = false) => {
       const k = `${name}${back}`;
-      if (!lists.has(k)) lists.set(k, scored(name === 'spots' ? site.spots(b) : candidates, back));
+      if (!lists.has(k)) lists.set(k, scored(name === 'spots' ? null : candidates, back));
       return lists.get(k);
     };
     const pick = list => list.reduce((best, c) => (!best || c.cost < best.cost ? c : best), null);
@@ -1317,11 +1338,13 @@ function makeRules(site) {
     }
     return hit;
   };
-  // Large City Blocks are scanned in steps, so placing stays quick.
-  const spots = ({ w, h }, step = Math.max(1, Math.round(Math.sqrt(inner.w * inner.h) / 80))) => {
-    const out = [];
-    for (let y = inner.y; y <= inner.y + inner.h - h; y += step) for (let x = inner.x; x <= inner.x + inner.w - w; x += step) out.push({ x, y });
-    return out;
+  // Large City Blocks are scanned in steps, so placing stays quick: a box's spots, its corner from
+  // x0, y0 to x1, y1 in steps of `step`, row by row (`count` of them).
+  const spotGrid = ({ w, h }) => {
+    const step = Math.max(1, Math.round(Math.sqrt(inner.w * inner.h) / 80));
+    const x0 = inner.x, y0 = inner.y, x1 = inner.x + inner.w - w, y1 = inner.y + inner.h - h;
+    const count = x1 < x0 || y1 < y0 ? 0 : (Math.floor((x1 - x0) / step) + 1) * (Math.floor((y1 - y0) / step) + 1);
+    return { x0, y0, x1, y1, step, count };
   };
   // roomFor: the share of its spots (every other tile) where a box of these tiles (coveredBy) fits,
   // as `fits` tells. Kept by the tiles: a module alike in another design or try takes the same (in
@@ -1367,7 +1390,7 @@ function makeRules(site) {
     rooms.set(id, share);
     return share;
   };
-  return { inner, fixtures, fits, landing, spots, room };
+  return { inner, fixtures, fits, landing, spotGrid, room };
 }
 
 // The tiles of a module that no Fixture may stand on, relative to its area's corner: its
