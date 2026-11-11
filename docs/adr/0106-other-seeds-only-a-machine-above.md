@@ -19,6 +19,12 @@ What changed:
 | All 17 | 2246.8 s | 2236.7 s |
 | Fast tier at seeds 2 and 3; rayon, coke and kicalk too (`ratecmp.mjs`) | | every rate the same (22 of 22, 6 of 6) |
 
+| Page-like, three tries at once (`run.mjs --parallel 3`, the two sides at once) | Before | After |
+|---|---|---|
+| Rayon: rate, tries, best at | 631.25/min (13 machines), 24, 349.7 s | the same, 24, 349.2 s |
+
+On the page, its tries given their budgets, rayon's first layout and Annexes reach 13 machines and every miss above lies within a machine: the gate does not bite there; it saves the suite's tries at 20 candidates.
+
 Kicalk among roboports at seed 2 came out another layout of the same 125 machines, the same tries. Not this change: the code before it, run twice at once, made 129 and 130 machines at seed 2 (`maxdet.mjs`, no limit on 20 candidates a try). A fit that brings a loop by train is kept while the search runs as long again as it took, at least a second (maximize.js `once`, `until`): on a host loaded 20–28 that clock decides what an Annex finds.
 
 Tests: Py rayon in its City Block, Annexes and Starving off: after its first fit no try more than a machine above the most that fit (city.test.js; before, five at 11).
