@@ -33,8 +33,10 @@ export class Grid {
     // Connections that must take a plain pipe, never a pipe-to-ground.
     this.surfaceOnly = new TileSet(area);
     this.tunnels = [];
-    // Tunnels by type and line, for tunnelFits.
+    // Tunnels by type and line, for tunnelFits (`lineKey`); the same lists by type, then line as a
+    // number (`lineOf`), for the router's asks.
     this.tunnelLines = new Map();
+    this.byLine = new Map();
   }
 
   reserveFluidPort(x, y, routeId) {
@@ -46,7 +48,12 @@ export class Grid {
     const t = { name, ...span(a, b) };
     this.tunnels.push(t);
     const k = lineKey(name, t);
-    if (!this.tunnelLines.has(k)) this.tunnelLines.set(k, []);
+    if (!this.tunnelLines.has(k)) {
+      const list = [];
+      this.tunnelLines.set(k, list);
+      if (!this.byLine.has(name)) this.byLine.set(name, new Map());
+      this.byLine.get(name).set(lineOf(t.axis === 'h', t.line), list);
+    }
     this.tunnelLines.get(k).push(t);
   }
 
@@ -58,9 +65,10 @@ export class Grid {
   }
 
   // The tunnels of this type on the line from a to b (a router weighing several lengths of
-  // tunnel from one tile asks once).
+  // tunnel from one tile asks once). (By numbers: the router asks at every state it expands.)
   tunnelLine(name, a, b) {
-    return this.tunnelLines.get(lineKey(name, span(a, b))) ?? NONE;
+    const h = a.y === b.y;
+    return this.byLine.get(name)?.get(lineOf(h, h ? a.y : a.x)) ?? NONE;
   }
 
   // Routing may try an option and take it back: everything it changes is saved here (with
@@ -180,6 +188,20 @@ export class TileSet extends Set {
     return this;
   }
 
+  // A tile by its coordinates, its key as `key` makes it: no key read back.
+  addAt(x, y) {
+    super.add(key(x, y));
+    const i = x - this.area.x, j = y - this.area.y;
+    if (i >= 0 && j >= 0 && i < this.area.w && j < this.area.h) this.mask[j * this.area.w + i] = 1;
+    return this;
+  }
+
+  deleteAt(x, y) {
+    const i = x - this.area.x, j = y - this.area.y;
+    if (i >= 0 && j >= 0 && i < this.area.w && j < this.area.h) this.mask[j * this.area.w + i] = 0;
+    return super.delete(key(x, y));
+  }
+
   delete(k) {
     const i = this.spot(k);
     if (i >= 0) this.mask[i] = 0;
@@ -199,6 +221,8 @@ export class TileSet extends Set {
 }
 
 const lineKey = (name, s) => `${name}|${s.axis}|${s.line}`;
+// A line as a number: rows even, columns odd.
+const lineOf = (h, line) => 2 * line + (h ? 0 : 1);
 
 // The line a tunnel runs along and the stretch of it that it covers.
 export function span(a, b) {

@@ -101,7 +101,10 @@ function routeAnew(core, opts) {
     const grid = new Grid(area);
     for (const e of core.entities) grid.place(e);
     const partOf = row => parts.find(p => p.key === partKey(row)).id;
-    for (const row of core.rows) for (const [x, y] of row.reserve) grid.reserve(x, y, partOf(row));
+    for (const row of core.rows) {
+      const id = partOf(row);
+      for (const [x, y] of row.reserve) grid.reserve(x, y, id);
+    }
     for (const row of core.pipeRows) for (const [x, y] of row.reserve) grid.reserve(x, y, pipeId(row.routeId));
     for (const port of core.ports) for (const [x, y] of port.tiles) grid.reserveFluidPort(x, y, pipeId(port.routeId));
     for (const [x, y] of core.pipeBlocked) grid.pipeBlocked.add(key(x, y));

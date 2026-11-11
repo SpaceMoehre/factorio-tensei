@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v86: Routing asked by numbers (implemented)
+
+The same layouts in less time. A tunnel's line is looked up by a numeric key, a row's part once for all the tiles it reserves, waypoints by their coordinates, a pole spot's consumers in an array, and routing errors carry no stack trace. 300 module routings of molybdenum oxide 9–20% faster; full tier every layout the same, perylene 167 → 154 s, molybdenum oxide 709 → 680 s side by side. ADR 0101.
+
 ## v85: Cores built leaner (implemented)
 
 The same layouts in less time. Building a core finds whether a tile lies on a machine by the machine's row and period, makes each slot's lists, mark and key once for all its inserters, finds each fluid's port by its route, and reads a belt row's tiles in one look each. 400 cores of a nexelit run built 28% faster (those of 44–50 machines); nexelit 116 → 99 s, silicon 212 → 200 s side by side; every suite layout the same. ADR 0100.

@@ -30,6 +30,16 @@ export function legCost(pieces, heading, turn = TURN_COST) {
 }
 
 export class RoutingError extends Error {
+  // (Thrown and caught by the thousand as legs find no way, its message and fields all anyone
+  // reads: made with no stack trace, as LayoutError is.)
+  /** @param {string} [message] */
+  constructor(message) {
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 0;
+    super(message);
+    Error.stackTraceLimit = limit;
+  }
+
   /** @type {number[] | undefined} the Sub-Blocks a link that found no room runs between */
   steps;
   /** @type {boolean | undefined} whether the layout had Fan-outs (the caller may route it again) */
@@ -60,7 +70,7 @@ export function routeBelt(grid, spec, names) {
   const commit = leg => commitLeg(grid, spec, names.underground, leg, pieces);
   let starts = spec.start.tiles.map(([x, y]) => ({ x, y, a: spec.start.dir }));
   const pending = new TileSet(grid.area);
-  for (const [x, y] of spec.waypoints) pending.add(key(x, y));
+  for (const [x, y] of spec.waypoints) pending.addAt(x, y);
   // from: the waypoint a leg leaves, its piece not yet laid (the leg's first move lays it).
   // (x, y: the key's tile, for the moves to compare without making keys.)
   const target = { key: null, last: false, from: null, x: 0, y: 0 };
@@ -73,7 +83,7 @@ export function routeBelt(grid, spec, names) {
     target.x = wx;
     target.y = wy;
     target.last = i === spec.waypoints.length - 1 && spec.end === 'dead';
-    pending.delete(target.key);
+    pending.deleteAt(wx, wy);
     // A straight belt arrives heading the way its row runs on (toward the next waypoint in the
     // row, or on past the last), where it can go on: a free tile ahead, or one to surface on.
     const want = spec.straight === 2 ? rowHeading(spec.waypoints, i) : null;
@@ -231,7 +241,7 @@ function growTree(grid, spec, names, seedPieces) {
   const inTree = new Uint8Array(grid.area.w * grid.area.h);
   const [[x0, y0], ...rest] = spec.terminals;
   const pending = new TileSet(grid.area);
-  for (const [x, y] of rest) pending.add(key(x, y));
+  for (const [x, y] of rest) pending.addAt(x, y);
   const moves = pipeMoves(grid, spec, names, pending);
   // The distance to the tree, brought up to date once per leg as the tree grows (`upTo`: the
   // tiles it holds).
@@ -273,7 +283,7 @@ function growTree(grid, spec, names, seedPieces) {
     commit(leg);
   }
   for (const [x, y, outward] of rest) {
-    pending.delete(key(x, y));
+    pending.deleteAt(x, y);
     if (tree.has(key(x, y))) continue;
     const leg = search(grid, [{ x, y, a: outward }], toTree.isGoal, toTree.heuristic, moves,
       () => !pipeReaches(grid, spec.id, x, y, inTree, names.reach));
@@ -818,6 +828,8 @@ function pipeMoves(grid, spec, names, pending) {
     const dx = DX[d], dy = DY[d];
     const ax = node.x + dx, ay = node.y + dy;
     if (canPipe(grid, spec, ax, ay) && !pending.hasAt(ax, ay) && !grid.surfaceOnly.hasAt(ax, ay)) return options;
+    // (The tunnels of this type on the line every hop runs along: looked up once, as a belt's are.)
+    const line = grid.tunnelLine(names.underground, node, { x: ax, y: ay });
     for (const hop of HOPS(names.reach)) {
       // A pipe tunnel may not pass under a tile that must carry a surface pipe: a join or a port.
       const ux = node.x + dx * (hop - 1), uy = node.y + dy * (hop - 1);
@@ -825,7 +837,7 @@ function pipeMoves(grid, spec, names, pending) {
       const qx = node.x + dx * hop, qy = node.y + dy * hop;
       if (!endOk(qx, qy)) continue;
       const s = span(node, { x: qx, y: qy });
-      if (grid.tunnelLine(names.underground, node, { x: qx, y: qy }).some(t => spansOverlap(t, s))) continue;
+      if (line.some(t => spansOverlap(t, s))) continue;
       options.push(tunnelMove(node, hop, qx, qy, s));
     }
     return options;

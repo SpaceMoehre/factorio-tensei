@@ -42,8 +42,10 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
   for (let y = y0; y < y0 + rows; y++) {
     for (let x = ax; x < ax + cols; x++) if (fits(grid, x, y, pw, ph)) fitsAt[index(x, y)] = 1;
   }
-  // For each candidate, the consumers it powers; for each consumer, the candidates powering it.
-  const covers = new Map();
+  // For each candidate, the consumers it powers (by its index: no Map asked at every pair); for
+  // each consumer, the candidates powering it.
+  /** @type {number[][]} */
+  const covers = new Array(cols * rows);
   const poweredBy = consumers.map((e, i) => {
     const out = [];
     const xs = Math.floor(e.x - r - pw / 2) + 1, xe = Math.ceil(e.x + e.w + r - pw / 2) - 1;
@@ -53,8 +55,7 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
         const c = index(x, y);
         if (!fitsAt[c]) continue;
         out.push(c);
-        if (!covers.has(c)) covers.set(c, []);
-        covers.get(c).push(i);
+        (covers[c] ??= []).push(i);
       }
     }
     return out;
@@ -70,7 +71,7 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
   // Greedy cover: the candidate powering the most consumers not yet powered; among equals, one
   // inside the block, then the one nearest a pole already placed.
   const gain = new Int32Array(cols * rows);
-  for (const [c, list] of covers) gain[c] = list.length;
+  covers.forEach((list, c) => { gain[c] = list.length; });
   const blocked = new Uint8Array(cols * rows);
   const poles = [];
   const placed = new Buckets(spec.wireReach);
@@ -81,7 +82,7 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
   // wired together).
   const byGain = [];
   const file = c => (byGain[gain[c]] ??= new Set()).add(c);
-  for (const c of [...covers.keys()].sort((a, b) => a - b)) file(c);
+  covers.forEach((_, c) => file(c));
   const regain = (c, before) => {
     byGain[before]?.delete(c);
     if (gain[c] > 0 && !blocked[c]) file(c);
@@ -98,7 +99,7 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
         if (!blocked[d]) { blocked[d] = 1; byGain[gain[d]]?.delete(d); }
       }
     }
-    for (const i of covers.get(c) ?? []) {
+    for (const i of covers[c] ?? []) {
       if (coverCount[i]++ === 0) {
         uncovered--;
         for (const d of poweredBy[i]) {
@@ -132,8 +133,8 @@ export function placePoles(grid, consumers, spec, { fixed = [], inside = false }
   const greedy = poles.length;
   connect(poles, free, spec, placed, anchors, p => p.candidate !== undefined && outside(p.candidate));
   // Bridging poles power what lies in their reach too.
-  for (const p of poles.slice(greedy)) for (const i of covers.get(p.candidate) ?? []) coverCount[i]++;
-  prune(poles, spec, coverCount, p => covers.get(p.candidate) ?? [], anchors);
+  for (const p of poles.slice(greedy)) for (const i of covers[p.candidate] ?? []) coverCount[i]++;
+  prune(poles, spec, coverCount, p => covers[p.candidate] ?? [], anchors);
   for (const p of poles) {
     delete p.candidate;
     grid.place(p);
