@@ -15,6 +15,7 @@ import { prepare, compose, RoutingError } from '../js/layout/compose.js';
 import { placeBlocks } from '../js/layout/place.js';
 import { finishBlock } from '../js/layout/compact.js';
 import { riding } from '../js/layout/score.js';
+import { setupOf } from '../js/setup.js';
 import { catalog as vanilla, logistics, pyCatalog } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 
@@ -303,6 +304,26 @@ test('Maximize tries the lowest miss above the best again with other seeds, not 
   // Each seed in turn until one fits (with Grown first, ADR 0094, one may).
   assert.ok(at(reseeded) > at(plain) && at(reseeded) <= at(plain) + 5, `${at(plain)} → ${at(reseeded)}`);
   if (at(reseeded) < at(plain) + 5) assert.ok(reseeded.best >= miss);
+});
+
+// Nor where the sorting phase kept fewer machines than fit (ADR 0105): Py coke in its 116 × 116
+// City Block fits 5 coke ovens with a byproduct riding on alone, sorted out finds no room for 5, 4
+// kept; every try above them, unsorted, could fit only with it riding on too. Before, five seeds
+// at 5.3125 followed, the first fitting and passed over.
+test('Maximize tries no other seed above a best the sorting phase kept below what fit: Py coke', async () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const setup = JSON.parse(readFileSync(new URL('./fixtures/coke-116.json', import.meta.url), 'utf8'));
+  const { goals, choices, logistics: py } = setupOf(setup, shipped);
+  const site = siteOf(readCityBlock(await decodeBlueprint(setup.city.blueprint), shipped), setup.city.buffer);
+  const run = maximize(goals, shipped, py, { ...choices, site, seed: 1, maxCandidates: 20, budgetMs: 1e12, annexes: false, starving: false });
+  const events = [];
+  for (let step = run.next(); !step.done; step = run.next()) events.push(/** @type {any} */ (step.value));
+  const bests = events.filter(v => v.type === 'best');
+  const fewer = bests.findIndex((v, k) => k > 0 && v.machines < bests[k - 1].machines);
+  assert.ok(fewer > 0, bests.map(v => v.machines).join());
+  assert.equal(bests[fewer].score.riding, 0);
+  const after = events.slice(events.indexOf(bests[fewer]) + 1).filter(v => v.type === 'try');
+  assert.deepEqual(after, []);
 });
 
 // Grown (ADR 0094): a search given a fit of fewer machines (`near`: what the search yielded with it,

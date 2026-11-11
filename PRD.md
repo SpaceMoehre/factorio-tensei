@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v90: No other seed above what sorting gave up (implemented)
+
+Maximize no longer tries other seeds above a best the sorting phase kept below what fit: unsorted, any layout there fits only with its byproduct riding on alone, and is passed over. Py coke 116²: five tries at 5.3125 gone, 247 → 193 s at 20 candidates a try, the same layout. Every suite layout the same, at seeds 2 and 3 too. ADR 0105.
+
 ## v89: Boxes spanning the block teach nothing (implemented)
 
 Among Fixtures, the Foretelling no longer learns how loosely a City Block packs from a layout whose box spans nearly all its room (every layout spreads round the Fixtures): it foretells on, and a try that finds no room still corrects it. Py kicalk among roboports climbs 67 → 87 in one try where it climbed a machine a try: 41 → 22 tries, 302 → 160 s at 20 candidates a try; on the page 73 → 59 tries. Every suite layout and rate the same, at seeds 2 and 3 too. ADR 0104.

@@ -452,6 +452,8 @@ export function* maximize(goals, catalog, logistics, options) {
   // (A byproduct riding on clogs the belts into its consumers, ADR 0052: where none sorts it out
   // at the most that fit, fewer machines that do, SORT_BELOW whole numbers below it, at least the
   // least asked for; with tries at once, all of them together, ADR 0060.)
+  // (Whether it kept fewer machines than fit: Another seed then tries nothing, below.)
+  let sortedDown = false;
   if (best && bestN !== null && bestScore.riding > 0 && riding(bestBlock).some(r => r.items.length === 1)) {
     const routing = Math.max(options.budgetMs ?? 0, SORTING_MS), least = Math.max(1, options.least ?? 1);
     const fewer = giving ? [] : [...Array(SORT_BELOW).keys()].map(k => Math.ceil(bestN) - 1 - k).filter(n => n >= least);
@@ -468,7 +470,7 @@ export function* maximize(goals, catalog, logistics, options) {
       if (!out.block || out.score.riding > 0) return true;
       const list = plan.goalsFor(n);
       best = { rate: list[0].rate, machines: n, count: n, goals: list };
-      [bestN, bestScore, bestBlock] = [n, out.score, out.block];
+      [bestN, bestScore, bestBlock, sortedDown] = [n, out.score, out.block, true];
       yield { type: 'best', block: out.block, score: out.score, tried, ...best };
       return false;
     });
@@ -634,8 +636,12 @@ export function* maximize(goals, catalog, logistics, options) {
   // beside it laid out again, and the next miss above it tried the same. Only above the total:
   // a first layout of the same machines packs another way and may leave an Annex less room (Py
   // coalbed gas seed 2: 9 and two Annexes of 1 against 10 alone), so this cannot lose a fit,
-  // only the time of its tries. Not in an Annex's room (its caller's tries are long enough).
-  if (options.reseed !== false && !only && probing === null && best && bestN !== null && options.starving !== 'only') {
+  // only the time of its tries. Not in an Annex's room (its caller's tries are long enough). Nor
+  // where the sorting phase kept fewer machines than fit: more fitted with a byproduct riding on
+  // alone, sorted out it found no room, and the tries here, unsorted, fit only with it riding on
+  // too, each passed over (Py coke: 5 sorted found no room, 4 kept, five seeds at 5.3125 tried,
+  // the first fitting with it riding, ADR 0105).
+  if (options.reseed !== false && !only && probing === null && best && bestN !== null && options.starving !== 'only' && !sortedDown) {
     const seed = options.seed ?? 1;
     for (let again = true; again;) {
       again = false;
