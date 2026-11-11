@@ -115,9 +115,27 @@ kinds, a checklist to look for again:
   sorting); tries above a jump in the chain (0068: print `planSubBlocks` at n, n+0.5, n+1).
 - **Waiting**: workers idle while one try runs its whole budget (0060); a try that can no longer
   tell anything still running; Annexes waiting on tries that cannot change the best.
+- **The same answer asked again**: count a hot loop's outcomes, not only its time. Layers'
+  `column` was 22% of kicalk; 382,046 calls, 936 standing, nearly all "no row here" for the same
+  stack and column (0103). Where an answer depends only on things that repeat across candidates
+  (a stack, its budget, a column, the City Block), keep it; where repeats are few (Parting's
+  rows: 4%), leave it.
 
 Write the cause in one sentence, with its number ("3,374 of 4,522 cores were alike one built
 before"), before changing code.
+
+**A function's own time** (its lines spread thin, `buildCore`, `routeAnew`): dump a few hundred of
+its real inputs from a run in a scratch copy (JSON; Sets and catalog objects by name), then a
+bench in `$S` that runs them, hashes every output, and prints per-section times from timers put at
+its sections (`performance.now()` into a global). Run old and new **in separate processes, in
+turn**, several times: two versions in one process share the collector, and a cut that makes
+fewer objects times the same there (0100); a profile's line ticks inside a big function mislead
+(0097). ADR 0100 (400 cores) and 0101 (300 module routings) were found and proven this way.
+
+**An answer kept or skipped**: before the hashes, a check mode in a scratch copy that computes the
+old way beside the new for every ask and counts differences (0097 Layers' ways: 193 searches;
+0103: 787,476 rows, 341,136 flags). A "none" flag is set only after a loop that asked every case
+(0103's first form set one where the loop never ran; the hashes still matched).
 
 ### 4. Change
 
@@ -231,3 +249,7 @@ changed and how, the causes cut, what still dominates, the commit.
 - **A rate gain from a speed-up on the page is real** (more candidates in the budget), but name it
   as that, not as a layout improvement, and show the same-K hashes alongside.
 - **Do not change rates or rules the user set** to save time.
+- **Side by side is not paired**: two suites run at once leave the faster side's last setups
+  beside the other's longest (0102). Use `pairs.mjs`.
+- **A cut that pays where asked much may cost where asked little** (0095, 0102): profile the setups
+  that ask least too (titanium plate standing on its own: no City Block, many short links).
