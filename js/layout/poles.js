@@ -10,6 +10,15 @@ const distance = (a, b) => {
   const [ax, ay] = center(a), [bx, by] = center(b);
   return Math.hypot(ax - bx, ay - by);
 };
+// distance(a, b) <= d, by the squares: Math.hypot only where they all but tie, so the answer is
+// its own. (Searches for a pole's bridge ask it by the million.)
+const inReach = (a, b, d) => {
+  const dx = a.x + a.w / 2 - (b.x + b.w / 2), dy = a.y + a.h / 2 - (b.y + b.h / 2), s = dx * dx + dy * dy, r = d * d;
+  if (s < r * (1 - 1e-9)) return true;
+  if (s > r * (1 + 1e-9)) return false;
+  return distance(a, b) <= d;
+};
+const NONE = new Set();
 
 // Minimal Pole Placement: greedy cover of every consumer's footprint by supply areas, then
 // bridge poles until the network is connected, then drop any pole that is redundant. Poles may
@@ -208,8 +217,10 @@ function connect(poles, free, spec, placed, anchors = [], outside = /** @param {
     for (const p of start) parent.set(p, null);
     // Whether a pole at `node` wires to another component; the free spots it wires to.
     const reaches = node => placed.within(node, reach).some(p => parentOf.has(p) && root(p) !== own && near(node, p));
-    const around = (node, from = spots) => from.within(node, reach).filter(c => !used.has(c) && !overlaps(c, node) && distance(node, c) <= reach
-      && !placed.within(c, 0).some(p => overlaps(p, c)));
+    // (The spots a search has not reached yet first, the cheapest ask: most it looks at it has.)
+    const spotFree = (node, c, seen) => !seen.has(c) && !used.has(c) && !overlaps(c, node) && inReach(node, c, reach)
+      && !placed.within(c, 0).some(p => overlaps(p, c));
+    const around = (node, from = spots) => from.within(node, reach).filter(c => spotFree(node, c, NONE));
     let reached = null;
     if (anchors.length) reached = toward(start, own, parent, reaches, node => around(node, sparse ?? spots));
     else {
@@ -221,11 +232,13 @@ function connect(poles, free, spec, placed, anchors = [], outside = /** @param {
         if (reached) break;
         const next = [];
         for (const node of frontier) {
-          for (const c of around(node)) {
-            if (parent.has(c)) continue;
+          // (Each spot within reach in turn, as `around` lists them, less those reached already:
+          // a wave asks its spots by the thousand.)
+          spots.each(node, reach, c => {
+            if (!spotFree(node, c, parent)) return;
             parent.set(c, node);
             next.push(c);
-          }
+          });
         }
         // (Spots inside first, so they lead the next wave.)
         frontier = [...next.filter(n => !outside(n)), ...next.filter(outside)];
@@ -407,6 +420,19 @@ class Buckets {
       }
     }
     return out;
+  }
+
+  // Each of those within() lists, in its order, handed to f (no list made).
+  each(e, d, f) {
+    const [cx, cy] = center(e);
+    const span = Math.ceil((d + 1) / this.size);
+    const bx = Math.floor(cx / this.size), by = Math.floor(cy / this.size);
+    for (let dx = -span; dx <= span; dx++) {
+      for (let dy = -span; dy <= span; dy++) {
+        const list = this.map.get(this.key(bx + dx, by + dy));
+        if (list) for (const x of list) f(x);
+      }
+    }
   }
 
   // Distance from e to the nearest entity, searching outward ring by ring.

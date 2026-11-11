@@ -127,6 +127,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
   const tileSets = new Map();
   const partings = new Map();
   const copyLanded = new Map();
+  const partable = new Map();
   // Where each Sub-Block may stand (lands), by spot: Backtracking asks again for the same spots.
   // (By Sub-Block, then size: each spot's answer in an array over the City Block. Kept by the
   // City Block, the stack's tiles and its budget: the candidates of a try place the same stacks
@@ -243,19 +244,24 @@ export function placeBlocks(ctx, prepared, params = {}) {
       // Only where the spots are many: their sums cost a look at every tile round those placed.)
       let needed = null;
       const clear = (me, mine) => {
-        if (!mine.pad && !mine.nooks.length && spots.length * boxes.length > (x1 - x0 + 2 * gap) * (y1 - y0 + 2 * gap)) return !(needed ??= neededBy(boxes, gap))(me.x, me.y, me.w, me.h);
+        if (!mine.pad && !mine.nooks.length && many) return !(needed ??= neededBy(boxes, gap))(me.x, me.y, me.w, me.h);
         for (const o of boxes) if (!apart(mine, me, o.shape, o, gap)) return false;
         return true;
       };
       const targets = mine.map(l => ({ x: placed.get(l.to).x, y: placed.get(l.to).y + l.toY - l.fromY }));
       let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
       for (const o of boxes) [x0, y0, x1, y1] = [Math.min(x0, o.x), Math.min(y0, o.y), Math.max(x1, o.x + o.w), Math.max(y1, o.y + o.h)];
+      const many = spots.length * boxes.length > (x1 - x0 + 2 * gap) * (y1 - y0 + 2 * gap);
+      // (A spot passed over before anything is made for it: a City Block offers thousands.)
       for (const c of spots) {
-        let me = { x: c.x, y: c.y, w: b.w, h: b.h };
         if (fedBy && c.x < site.inner.x + gap + fedBy) continue;
         let behind = 0;
-        for (const t of targets) behind += Math.max(0, c.x + b.w + 1 - t.x);
+        for (let k = 0; k < targets.length; k++) {
+          const d = c.x + b.w + 1 - targets[k].x;
+          if (d > 0) behind += d;
+        }
         if (!behind === back) continue;
+        let me = { x: c.x, y: c.y, w: b.w, h: b.h };
         if (!clear(me, b)) continue;
         // In a City Block, Fixtures on none of its tiles but some of its machines: those left out;
         // else its stack parted round them (Parting), taller.
@@ -467,19 +473,32 @@ export function placeBlocks(ctx, prepared, params = {}) {
     if (!mine.has(key)) mine.set(key, parting(i, x, y));
     return mine.get(key);
   }
+  // (Each Sub-Block's copies from the top, with what parting reads of each, worked out once a
+  // placement: Parting asks of a stack at every spot of every column it is tried in, Py kicalk
+  // among roboports some two million times a Maximize.)
   function parting(i, x, y) {
-    const b = blocks[i];
-    const copies = [...b.instances].sort((p, q) => b.at.get(p.index).y - b.at.get(q.index).y);
-    if (copies.length < 2 || b.pad || copies.some(inst => (inst.column ?? 0) > 0)) return null;
+    if (!partable.has(i)) {
+      const b = blocks[i];
+      const copies = [...b.instances].sort((p, q) => b.at.get(p.index).y - b.at.get(q.index).y);
+      partable.set(i, copies.length < 2 || b.pad || copies.some(inst => (inst.column ?? 0) > 0) ? null : {
+        // (`above`: the plain stack's gap above it, kept.)
+        copies: copies.map((inst, k) => {
+          const o = b.at.get(inst.index), { w, h } = inst.module.area;
+          return { inst, o, w, h, above: k ? o.y - (b.at.get(copies[k - 1].index).y + copies[k - 1].module.area.h) : o.y };
+        }),
+        plain: Math.max(...copies.map(inst => b.at.get(inst.index).y + inst.module.area.h)),
+        most: budget(i),
+      });
+    }
+    const stack = partable.get(i);
+    if (!stack) return null;
     const at = new Map(), hit = new Set();
     let bottom = 0;
-    for (const [k, inst] of copies.entries()) {
-      const o = b.at.get(inst.index), { w, h } = inst.module.area;
-      // The plain stack's gap above it kept.
-      let top = k ? bottom + o.y - (b.at.get(copies[k - 1].index).y + copies[k - 1].module.area.h) : o.y;
+    for (const [k, { inst, o, w, h, above }] of stack.copies.entries()) {
+      let top = (k ? bottom : 0) + above;
       let landed = null;
       for (let d = 0; d <= h + PART && !landed; d++) {
-        landed = copyLands(inst, { x: x + o.x, y: y + top + d, w, h }, budget(i) - hit.size);
+        landed = copyLands(inst, x + o.x, y + top + d, w, h, stack.most - hit.size);
         if (landed) top += d;
       }
       if (!landed) return null;
@@ -487,8 +506,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
       at.set(inst.index, { x: o.x, y: top });
       bottom = top + h;
     }
-    const plain = Math.max(...copies.map(inst => b.at.get(inst.index).y + inst.module.area.h));
-    const h = b.h + bottom - plain;
+    const b = blocks[i], h = b.h + bottom - stack.plain;
     return y + h <= site.inner.y + site.inner.h ? { at, h, hits: hit, block: { ...b, at, h, nooks: [], need: null, near: undefined } } : null;
   }
 
@@ -505,11 +523,11 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // Whether a copy may stand at `box` (as lands has it, its machines Fixtures stand on no more
   // than `most`), by spot: Parting asks of the same spots again for every spot its stack is tried
   // at (Py kicalk among roboports: two thirds of a Maximize).
-  function copyLands(inst, box, most) {
+  function copyLands(inst, x, y, w, h, most) {
     if (!copyLanded.has(inst.index)) copyLanded.set(inst.index, new Map());
-    const mine = copyLanded.get(inst.index), key = (box.x + 1024) * 4096 + box.y + 1024;
+    const mine = copyLanded.get(inst.index), key = (x + 1024) * 4096 + y + 1024;
     let all = mine.get(key);
-    if (all === undefined) mine.set(key, (all = site.landing(copyTiles(inst), box, Infinity)));
+    if (all === undefined) mine.set(key, (all = site.landing(copyTiles(inst), { x, y, w, h }, Infinity)));
     return all && all.size <= most ? all : null;
   }
 
@@ -536,6 +554,12 @@ export function placeBlocks(ctx, prepared, params = {}) {
 // The most steps Layers takes putting Sub-Blocks in columns: all it takes to weigh every way of
 // 10 Sub-Blocks (Py molybdenum oxide's), each up to two columns further west.
 const LAYER_STEPS = (3 ** 11 - 1) / 2;
+// Of the ways that fit, how many Layers tries to stand clear of the Fixtures; the last WAYS_KEPT
+// asks' ways kept.
+const WAYS_TRIED = 24;
+const WAYS_KEPT = 64;
+/** @type {Map<string, { cost: number, cols: Map<number, number> }[]>} */
+const waysKept = new Map();
 
 // Layers, in a City Block: the Sub-Blocks in columns, the Goals easternmost and every producer in
 // a column west of all it feeds; each column's Sub-Blocks stacked top to bottom a gap apart, each
@@ -561,8 +585,8 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
   // (Each Sub-Block's Side Outputs by step, for shape.)
   const outs = steps.map(i => outputs.get(i));
   // The columns in use, east to west, with their Sub-Blocks, widths, heights and crossing belts.
-  // (Asked for every way weighed, and for every Sub-Block put in on the way: written out in
-  // loops. Sub-Blocks not in a column yet count nowhere.)
+  // (For the ways that fit, as they stand; the search over the ways weighs them as this does, by
+  // `weigh`. Sub-Blocks not in a column yet count nowhere.)
   const shape = cols => {
     const used = [...new Set(cols.values())].sort((a, b) => a - b);
     // (A column's place from the east, by its number.)
@@ -640,37 +664,100 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
   const chain = new Map();
   for (const i of order) chain.set(i, blocks[i].w + Math.max(0, ...feeds.get(i).filter(q => chain.has(q)).map(q => chain.get(q) + corridor)));
   if (Math.max(...chain.values()) > inner.w) return null;
-  const fitting = [];
+  // (The ways that fit, kept by all they are weighed by: the candidates of a try put the same
+  // Sub-Blocks in columns again, of the same sizes and Nooks. Py titanium plate: 18 of 39 alike,
+  // two seconds each.)
+  const wayKey = JSON.stringify([steps.map(i => [blocks[i].w, blocks[i].h, blocks[i].pad, blocks[i].nooks, blocks[i].entries.length]),
+    links.map(l => [l.from, l.to]), order, outs, inner.w, inner.h, corridor, gap, spread]);
+  const known = waysKept.get(wayKey);
+  if (known) {
+    waysKept.delete(wayKey);
+    waysKept.set(wayKey, known);
+  }
+  const fitting = known ?? [];
   // (At most LAYER_STEPS taken, each Sub-Block as far east as it may first: with many
   // Sub-Blocks, every way of them is far too many to weigh, ADR 0055.)
   let taken = 0;
+  // What shape tells of a way, weighed as the search goes (every step of it asks): its cost (span
+  // times its tallest column with the belts crossing it, and 40 for each belt crossing a column),
+  // or -1 where it is too wide or too tall for the room. (Each Sub-Block's column in `at`, -1 for
+  // none yet; columns counted in typed arrays, nothing made: shape's allocations took most of
+  // Layers' time in Py titanium plate.)
+  const at = new Int32Array(blocks.length).fill(-1);
+  const most = steps.length * (spread + 1) + 1;
+  const rank = new Int32Array(most), wide = new Int32Array(most), tall = new Int32Array(most), turn = new Int32Array(most), cross = new Int32Array(most), count = new Int32Array(most);
+  const nooked = new Uint8Array(most);
+  const weigh = () => {
+    rank.fill(-1);
+    for (const i of steps) if (at[i] >= 0) rank[at[i]] = 0;
+    let used = 0;
+    for (let c = 0; c < most; c++) if (rank[c] === 0) rank[c] = ++used;
+    for (let n = 0; n < used; n++) { wide[n] = -1; tall[n] = 0; turn[n] = 0; cross[n] = 0; count[n] = 0; nooked[n] = 0; }
+    for (const i of steps) {
+      if (at[i] < 0) continue;
+      const n = rank[at[i]] - 1, b = blocks[i];
+      if (b.w > wide[n]) wide[n] = b.w;
+      tall[n] += b.h;
+      count[n]++;
+      if (b.nooks.length) nooked[n] = 1;
+    }
+    for (const l of links) {
+      const to = at[l.to], from = at[l.from];
+      if (to < 0 || from < 0) continue;
+      const a = rank[to] - 1, b = rank[from] - 1;
+      for (let n = a; n < b; n++) turn[n]++;
+      for (let n = a + 1; n < b; n++) cross[n]++;
+    }
+    for (const i of steps) {
+      if (at[i] < 0) continue;
+      const m = rank[at[i]] - 1, entries = blocks[i].entries.length;
+      for (let n = m + 1; n < used; n++) cross[n] += entries;
+      for (let n = 0; n < m; n++) cross[n] += outs[i];
+    }
+    let span = 0, highest = -Infinity, crossings = 0;
+    for (let n = 0; n < used; n++) span += wide[n] + (n > 0 ? corridor + Math.floor(turn[n - 1] / 2) : 0);
+    if (span > inner.w) return -1;
+    for (let n = 0; n < used; n++) {
+      let h = tall[n] + gap * (count[n] - 1);
+      if (h + cross[n] > inner.h && nooked[n]) {
+        const list = steps.filter(i => at[i] >= 0 && rank[at[i]] - 1 === n);
+        h = Math.min(h, stackOf(list, wide[n]).height);
+      }
+      if (h + cross[n] > inner.h) return -1;
+      if (h + cross[n] > highest) highest = h + cross[n];
+      crossings += cross[n];
+    }
+    return span * highest + 40 * crossings;
+  };
   const assign = n => {
     if (taken++ >= LAYER_STEPS) return;
     if (n === order.length) {
-      const s = shape(col);
-      if (s.span > inner.w || s.height.some((h, k) => h + s.crossing[k] > inner.h)) return;
-      const tall = Math.max(...s.height.map((h, k) => h + s.crossing[k]));
-      fitting.push({ cost: s.span * tall + 40 * s.crossing.reduce((sum, c) => sum + c, 0), cols: new Map(col) });
+      const cost = weigh();
+      if (cost >= 0) fitting.push({ cost, cols: new Map(col) });
       return;
     }
     // (A way too wide or too tall for the room with the Sub-Blocks put in so far stays so as the
     // rest go in: none of its ways are weighed, ADR 0055.)
-    if (n > 0) {
-      const s = shape(col);
-      if (s.span > inner.w || s.height.some((h, k) => h + s.crossing[k] > inner.h)) return;
-    }
+    if (n > 0 && weigh() < 0) return;
     const i = order[n];
     const lo = Math.max(0, ...feeds.get(i).map(q => (col.has(q) ? col.get(q) + 1 : 0)));
     for (let c = lo; c <= lo + spread; c++) {
       col.set(i, c);
+      at[i] = c;
       assign(n + 1);
     }
     col.delete(i);
+    at[i] = -1;
   };
-  assign(0);
-  // The ways that fit, least spanning first, until one stands clear of the Fixtures.
-  fitting.sort((a, b) => a.cost - b.cost);
-  for (const { cols } of fitting.slice(0, site.fixtures.length ? 24 : 1)) {
+  if (!known) {
+    assign(0);
+    // The ways that fit, least spanning first, until one stands clear of the Fixtures.
+    fitting.sort((a, b) => a.cost - b.cost);
+    fitting.splice(WAYS_TRIED);
+    waysKept.set(wayKey, fitting);
+    if (waysKept.size > WAYS_KEPT) waysKept.delete(waysKept.keys().next().value);
+  }
+  for (const { cols } of fitting.slice(0, site.fixtures.length ? WAYS_TRIED : 1)) {
     const at = stand(cols);
     if (at) return at;
   }
@@ -922,35 +1009,44 @@ function placeApart(prepared, positions, blocks, moved, links, params, site) {
       const n = linked(box);
       return n ? Math.max(gap + 1, corridor + n - 1) : gap + 1;
     });
-    // Every link this machine's belts take, with it standing at `at`: to and from its neighbours
-    // along each belt, from the west edge or on to the east edge.
-    const length = at => {
-      const block = extentOf([...boxes, { ...at, w, h }]);
+    // Every link this machine's belts take, with it standing at `at` (the block then `block`): to
+    // and from its neighbours along each belt, from the west edge or on to the east edge. (Which
+    // links count found once, not at each of the many spots it is weighed at: each spot's links
+    // summed with no lists made.)
+    const ends = [];
+    for (const route of belts) {
+      route.slots.forEach((slot, k) => {
+        const prev = route.slots[k - 1];
+        if (slot.inst === inst) {
+          if (k === 0 && route.source === 'side-input') ends.push({ west: slot });
+          if (k === route.slots.length - 1 && route.sink === 'side-output') ends.push({ east: slot });
+        }
+        if (!prev || (slot.inst !== inst && prev.inst !== inst)) return;
+        ends.push({ prev, slot });
+      });
+    }
+    const stubs = pipes.map(route => ({ route, mine: route.stubs.find(st => st.inst === inst), others: route.stubs.filter(st => st.inst !== inst && positions[st.inst.index]) }));
+    const length = (at, block) => {
       let sum = 0;
-      for (const route of belts) {
-        route.slots.forEach((slot, k) => {
-          const prev = route.slots[k - 1];
-          if (slot.inst === inst) {
-            if (k === 0 && route.source === 'side-input') sum += end(slot, at, true).x - block.x;
-            if (k === route.slots.length - 1 && route.sink === 'side-output') sum += block.x + block.w - end(slot, at, false).x;
-          }
-          if (!prev || (slot.inst !== inst && prev.inst !== inst)) return;
+      for (const { west, east, prev, slot } of ends) {
+        if (west) sum += end(west, at, true).x - block.x;
+        else if (east) sum += block.x + block.w - end(east, at, false).x;
+        else {
           const a = where(prev, at), b = where(slot, at);
-          if (!a || !b) return;
+          if (!a || !b) continue;
           const from = end(prev, a, false), to = end(slot, b, true);
           const dx = to.x - from.x;
           sum += Math.abs(dx) + Math.abs(to.y - from.y) + (dx < 0 ? 2 * -dx + 8 : 0);
-        });
+        }
       }
-      for (const route of pipes) {
-        const mine = route.stubs.find(st => st.inst === inst);
-        const others = route.stubs.filter(st => st.inst !== inst && positions[st.inst.index]);
+      for (const { route, mine, others } of stubs) {
         const p = { x: at.x + mine.x - inst.module.area.x, y: at.y + mine.y - inst.module.area.y };
-        const near = others.map(st => {
+        let near = Infinity;
+        for (const st of others) {
           const q = positions[st.inst.index];
-          return Math.abs(q.x + st.x - st.inst.module.area.x - p.x) + Math.abs(q.y + st.y - st.inst.module.area.y - p.y);
-        });
-        if (near.length) sum += Math.min(...near);
+          near = Math.min(near, Math.abs(q.x + st.x - st.inst.module.area.x - p.x) + Math.abs(q.y + st.y - st.inst.module.area.y - p.y));
+        }
+        if (others.length) sum += near;
         else if (route.source === 'side-input') sum += p.x - block.x;
       }
       return sum;
@@ -968,8 +1064,10 @@ function placeApart(prepared, positions, blocks, moved, links, params, site) {
         const me = { x, y, w, h };
         if (boxes.some((b, n) => overlaps(me, b, clearance[n], gap)) || corridors.some(c => overlaps(me, c, 0))) continue;
         if (site && !site.fits(tiles, me)) continue;
-        const grown = extentOf([...boxes, me]);
-        options.push({ x, y, cost: grown.w * grown.h + weight * length(me) });
+        // (The boxes and it: the room they span grown by it.)
+        const gx = Math.min(room.x, x), gy = Math.min(room.y, y);
+        const grown = { x: gx, y: gy, w: Math.max(room.x + room.w, x + w) - gx, h: Math.max(room.y + room.h, y + h) - gy };
+        options.push({ x, y, cost: grown.w * grown.h + weight * length(me, grown) });
       }
     }
     if (!options.length) throw new RoutingError('no room for a machine broken out of its Sub-Block');

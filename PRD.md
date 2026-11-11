@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v82: Asked again, asked lean (implemented)
+
+The same layouts in less time. Bridging two pole networks passes over the spots it reached already before measuring any, by the squares of the distance; Layers keeps the ways of the columns that fit across a try's candidates and weighs each way in typed arrays; Parting works out a stack's copies once a placement; a machine broken out of its Sub-Block finds the room spanned once; Placement passes a spot over before making its box. Py titanium plate standing on its own 238 → 168 s, titanium plate 236² 392 → 337 s, kicalk among roboports 417 → 374 s, side by side; every suite layout the same. ADR 0097.
+
 ## v81: Links running back, turned round (implemented)
 
 Once Maximize ends, a Sub-Block at either end of a belt link running back (the producer's east end east of its consumer's west end: its belt leaves east and comes back the whole way) is laid out again turned half round where it stands, as the user's turn does, the one running furthest back first; kept where the block ranks better, is valid and delivers as much. Py wood 116² among roboports: the wood seedlings' belt to the log farms (255 tiles: east, back west over their stack and round two others) goes straight down the west side; 1157.14/min the same, 2023 → 2012 entities. Every other suite layout the same. ADR 0096.

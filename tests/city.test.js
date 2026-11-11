@@ -615,6 +615,20 @@ test('Layers: Sub-Blocks wider in columns than the City Block fit none; one by o
   assert.ok(placeBlocks(narrow, prepare(narrow, designs), {}).bounds.w <= w);
 });
 
+// The ways Layers weighs, kept (ADR 0097): the same Sub-Blocks, prepared anew as another candidate
+// does, put in columns again stand where they stood; spread further west, they are weighed anew.
+test('Layers: the same Sub-Blocks in columns again stand where they stood', () => {
+  const entries = [asm2('electronic-circuit', 600), asm2('copper-cable', 1800)];
+  const ctx = context(entries, catalog, logistics, siteOf({ area: { x: 0, y: 0, w: 120, h: 120 }, fixtures: [], unknown: [] }, 2));
+  const rng = random(1);
+  const designs = [];
+  for (const i of ctx.flows.order) designs[i] = designOf(designStep(ctx, i, rng)[0]);
+  const where = params => placeBlocks(ctx, prepare(ctx, designs), params).boxes.map(b => [b.x, b.y, b.w, b.h]);
+  const first = where({ layers: 2 });
+  assert.deepEqual(where({ layers: 2 }), first);
+  assert.ok(where({ layers: 1 }).length === first.length);
+});
+
 test('byproducts riding on, by belt: two on one belt are told from one alone', () => {
   const belt = (id, items) => ({ id, kind: 'belt', source: 1, consumers: [0], items: items.map(item => ({ item })) });
   const block = {
