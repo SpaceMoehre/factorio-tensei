@@ -25,5 +25,20 @@ What changed:
 
 Tests: a routing that failed fails again once its core was let go from those kept, the same class and message, and then the same error, not routed again (module.test.js).
 
+The session's cuts together, ADR 0097–0107, timed as pairs (`pairs.mjs`: each setup on the code before ADR 0097 and on this one at the same moment, the longest first, two pairs at once; host loaded 13–28):
+
+| Full tier | Before ADR 0097 | After ADR 0107 |
+|---|---|---|
+| Kicalk among roboports | 761.2 s | 181.9 s |
+| Molybdenum oxide among roboports | 702.7 s | 569.6 s |
+| Py titanium plate 236² | 511.4 s | 431.4 s |
+| Anthraquinone 116² | 320.9 s | 220.4 s |
+| Rayon 116² | 289.3 s | 187.2 s |
+| Coke 116² | 250.4 s | 175.6 s |
+| Titanium plate standing on its own (no layout, the same failure) | 258.2 s | 164.0 s |
+| Wood 116² (the user's) | 148.1 s | 134.3 s |
+| All 17 | 4065.7 s | 2763.0 s (−32%), every setup the same layout, each faster (−3% to −76%) |
+
 Still:
 - Molybdenum oxide's layouts routed again once let go (1,240, 23 s of 353): kept, they cost memory.
+- Where the time goes now (`suite-one.mjs` profiled, 20 candidates a try): titanium plate 236² (417 s) routing its links, the router's search 46% inclusive, its Annexes 49%; anthraquinone (95 s) designing 37% (buildCore 22%), Placement 23%; kicalk among roboports (119 s) Placement 25%, routing its modules 21%, the router's search 19%. Garbage collection 6–10% in each.
