@@ -42,3 +42,4 @@ The session's cuts together, ADR 0097–0107, timed as pairs (`pairs.mjs`: each 
 Still:
 - Molybdenum oxide's layouts routed again once let go (1,240, 23 s of 353): kept, they cost memory.
 - Where the time goes now (`suite-one.mjs` profiled, 20 candidates a try): titanium plate 236² (417 s) routing its links, the router's search 46% inclusive, its Annexes 49%; anthraquinone (95 s) designing 37% (buildCore 22%), Placement 23%; kicalk among roboports (119 s) Placement 25%, routing its modules 21%, the router's search 19%. Garbage collection 6–10% in each.
+- A module's poles placed again for entities powered before (module.js `powered`, counted in a scratch copy): kicalk 582 of 1,035 (3.5 s of 79 s), anthraquinone 303 of 750 (0.5 s of 64 s). A memo must key what the grid holds and the consumers, not only the entities.
