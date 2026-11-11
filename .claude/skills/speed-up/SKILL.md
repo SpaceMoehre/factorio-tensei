@@ -239,8 +239,9 @@ changed and how, the causes cut, what still dominates, the commit.
 - Log every try (its City Block, seed, options, outcome, seconds) before cutting a phase: 0105 and
   0106 came from such logs (Another seed tried where it could not pay).
 - A module's poles placed again for entities powered before (module.js `powered`): kicalk 582 of
-  1,035. `placePoles` places its poles into the grid it is given: a memo must place them too, and
-  key what the grid holds (0107).
+  1,035. Kept by the grid's tiles taken and the consumers (placed into the grid again on a hit):
+  −1%, the key's reading costing most of it (lessons). A cheaper key (the routed module's own)
+  would be the way.
 - Layouts routed again once let go from the 50 kept (molybdenum oxide 1,240, 23 s of 353):
   keeping more costs 0.5 GB per thousand (0107).
 - Kicalk at seed 2 lays out by the clock: a fit bringing a loop by train is kept while the search
