@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v85: Cores built leaner (implemented)
+
+The same layouts in less time. Building a core finds whether a tile lies on a machine by the machine's row and period, makes each slot's lists, mark and key once for all its inserters, finds each fluid's port by its route, and reads a belt row's tiles in one look each. 400 cores of a nexelit run built 28% faster (those of 44–50 machines); nexelit 116 → 99 s, silicon 212 → 200 s side by side; every suite layout the same. ADR 0100.
+
 ## v84: Spots walked where they lie (implemented)
 
 The same layouts in less time. Placing one Sub-Block at a time, the City Block's spots are walked where they lie rather than listed anew at every ask, a column that runs back of the consumers (or lies in the room kept for the feeds) is passed over once rather than at every row, and each spot is asked of by its numbers. Full tier side by side 4221 → 4135 s, every layout the same; anthraquinone 116² 290 → 267 s, hot air 118² 134 → 116 s. ADR 0099.
