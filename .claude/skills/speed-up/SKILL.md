@@ -233,8 +233,19 @@ changed and how, the causes cut, what still dominates, the commit.
 - In a City Block with Fixtures, Annexes wait for the first layout's last tries (0060).
 - Candidates' time is "twice as long as designing": a measure of the chain's size, not of what
   its candidates need (0059).
-- Kicalk/vrauks Maximize climbs one machine a try: the Foretelling learns from a box spanning the
-  block (0024).
+- Kicalk's climb after 87, a machine a try (0104): its boxes at 87–89 span the same share of the
+  room; scaled to the room the Foretelling overshot (one try more). The first layout's top is
+  there; the one-a-try climb is right.
+- Log every try (its City Block, seed, options, outcome, seconds) before cutting a phase: 0105 and
+  0106 came from such logs (Another seed tried where it could not pay).
+- A module's poles placed again for entities powered before (module.js `powered`): kicalk 582 of
+  1,035. `placePoles` places its poles into the grid it is given: a memo must place them too, and
+  key what the grid holds (0107).
+- Layouts routed again once let go from the 50 kept (molybdenum oxide 1,240, 23 s of 353):
+  keeping more costs 0.5 GB per thousand (0107).
+- Kicalk at seed 2 lays out by the clock: a fit bringing a loop by train is kept while the search
+  runs as long again (maximize.js `once`, `until`). Run the old code twice before reading a
+  `DIFFERS` there (0106).
 - One Item a Belt: titanium plate's one-machine try 7 → 687 s to its first layout, most
   candidates finding no path to the east edge (0066).
 
