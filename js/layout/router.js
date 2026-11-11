@@ -167,7 +167,7 @@ function edgeGoal(grid, side) {
 // Returns the leg's pieces; `joined`, set on them, the join key it ended at.
 export function routeLink(grid, spec, names) {
   const pieces = [];
-  const keepOff = spec.keepOff ?? new Set();
+  const keepOff = spec.keepOff?.size ? new FewTiles(spec.keepOff) : new Set();
   const moves = beltMoves(grid, spec, names, keepOff, { key: null, last: false, x: 0, y: 0 });
   const { goal } = spec;
   const joins = spec.joins ?? null;
@@ -835,7 +835,26 @@ function pipeMoves(grid, spec, names, pending) {
 // Whether a tile is among `tiles` (keys): by its coordinates where they are a TileSet, no key
 // made; none made either where there are none.
 function among(tiles, x, y) {
-  return tiles.size > 0 && (tiles instanceof TileSet ? tiles.hasAt(x, y) : tiles.has(key(x, y)));
+  return tiles.size > 0 && (tiles instanceof TileSet || tiles instanceof FewTiles ? tiles.hasAt(x, y) : tiles.has(key(x, y)));
+}
+
+// A few tiles' keys (`key`'s) that also answer by coordinates (`hasAt`) with no key made: a
+// link's tiles held for its route's other links, asked at every step of its search. (A key not
+// as `key` makes it is no tile's.)
+class FewTiles {
+  /** @param {Set<string>} keys */
+  constructor(keys) {
+    this.size = keys.size;
+    this.tiles = new Set();
+    for (const k of keys) {
+      const [x, y] = String(k).split(',').map(Number);
+      if (key(x, y) === k) this.tiles.add(x * 0x100000 + y);
+    }
+  }
+
+  hasAt(x, y) {
+    return this.tiles.has(x * 0x100000 + y);
+  }
 }
 
 function beltPiece(spec, names, x, y, d) {

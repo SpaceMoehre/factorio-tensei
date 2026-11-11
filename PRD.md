@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v83: Rows asked of as numbers (implemented)
+
+The same layouts in less time. Layers stands its columns asking of each row by its corner's numbers, a stack's answers among the Fixtures found once a scan and Parting's rows with no list made; a link asks of the tiles held for its route's other links by their coordinates; where a stack may stand is kept by what the stack is made of, not gathered again at every placement. Full tier side by side 4846 → 4660 s, every layout the same; kicalk among roboports 695 → 592 s, vrauks 120 → 101 s. ADR 0098.
+
 ## v82: Asked again, asked lean (implemented)
 
 The same layouts in less time. Bridging two pole networks passes over the spots it reached already before measuring any, by the squares of the distance; Layers keeps the ways of the columns that fit across a try's candidates and weighs each way in typed arrays; Parting works out a stack's copies once a placement; a machine broken out of its Sub-Block finds the room spanned once; Placement passes a spot over before making its box. Py titanium plate standing on its own 238 → 168 s, titanium plate 236² 392 → 337 s, kicalk among roboports 417 → 374 s, side by side; every suite layout the same. ADR 0097.

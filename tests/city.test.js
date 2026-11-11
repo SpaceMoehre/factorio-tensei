@@ -256,6 +256,30 @@ test('in a City Block, where a Sub-Block finds no room, the ones placed before i
   assert.ok(boxes[cable].x + boxes[cable].w <= boxes[circuits].x, JSON.stringify(boxes));
 });
 
+// Where each stack may stand among the Fixtures, kept across placements by what it is made of (ADR
+// 0098): the same designs prepared again, as the next candidate does (copies of the same routed
+// modules), stand where they stood, one by one and in columns.
+test('in a City Block, the same designs prepared again stand where they stood', () => {
+  const substations = [11, 33].map((x, n) => ({ name: 'substation', kind: 'fixture', number: n + 1, x, y: 10, w: 2, h: 2 }));
+  const site = siteOf({ area: { x: 0, y: 0, w: 44, h: 44 }, fixtures: substations }, 1);
+  const selections = Object.fromEntries(['electronic-circuit', 'copper-cable'].map(item => [item, { recipe: item, building: 'assembling-machine-2' }]));
+  const { entries } = expandChain([{ item: 'electronic-circuit', rate: 900 }], catalog, { made: ['copper-cable'], selections });
+  const ctx = context(entries, catalog, logistics, site);
+  const candidates = ctx.plan.map((_, i) => designStep(ctx, i, random(1), { draws: 0 })[0]);
+  const where = params => {
+    try {
+      return placeBlocks(ctx, prepare(ctx, candidates.map(designOf)), params).boxes.map(b => [b.x, b.y, b.w, b.h]);
+    } catch (e) {
+      if (!(e instanceof RoutingError)) throw e;
+      return e.message;
+    }
+  };
+  for (const params of [{}, { layers: 2 }]) {
+    const first = where(params);
+    assert.deepEqual(where(params), first);
+  }
+});
+
 // The lowest number above the best that found no layout is tried again with other seeds once the
 // climb ended (maximize.js, ADR 0090), RESEEDS (5) at most, until one fits; not in an Annex's room
 // (reseed: false).

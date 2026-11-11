@@ -148,7 +148,7 @@ export function placeBlocks(ctx, prepared, params = {}) {
     return { x: x0, y: y0, w: Math.max(...all.map(b => b.x + b.w)) - x0, h: Math.max(...all.map(b => b.y + b.h)) - y0 };
   };
   // In a City Block, the search's `layers` candidates stand the Sub-Blocks in columns instead.
-  const columns = site && params.layers ? inLayers(blocks, links, depth, routes, site, { corridor, gap, spread: params.layers }, lands, part) : null;
+  const columns = site && params.layers ? inLayers(blocks, links, depth, routes, site, { corridor, gap, spread: params.layers }, landerOf, part) : null;
   if (site && params.layers && !columns) throw Object.assign(new RoutingError('the Sub-Blocks fit no columns in the city block'), { noColumns: true });
   for (const [i, p] of columns ?? []) {
     // A parted stack stands with its copies where they part.
@@ -441,19 +441,35 @@ export function placeBlocks(ctx, prepared, params = {}) {
   function lands(i, box) {
     // (Outside the City Block it lands nowhere, as `landing` says first. Inside, by its size, then
     // its corner's tile: an array read, not a Map's; Layers asks some twenty million times in Py
-    // small parts 2. 0: not asked yet, -1: null, -2: on no machine (most spots: one empty answer
-    // for all, kept as they are), else its answer in `found`.)
+    // small parts 2.)
+    if (!inside(box.x, box.y, box.w, box.h)) return null;
+    return landIn(i, sizeOf(i, box.w, box.h), box.x, box.y, box.w, box.h);
+  }
+  // The same for Sub-Block i, its box w × h, at each corner x, y it is asked at (Layers asks of
+  // every row of every column a Sub-Block is tried in): its size's answers found once.
+  function landerOf(i, w, h) {
+    let mine = null;
+    return (x, y) => (inside(x, y, w, h) ? landIn(i, mine ??= sizeOf(i, w, h), x, y, w, h) : null);
+  }
+  function inside(x, y, w, h) {
     const { inner } = site;
-    if (box.x < inner.x || box.y < inner.y || box.x + box.w > inner.x + inner.w || box.y + box.h > inner.y + inner.h) return null;
-    const sizes = landed[i] ??= landedFor(site, `${budget(i)}|${blockTiles(i).key}`), size = box.w * 1024 + box.h;
+    return x >= inner.x && y >= inner.y && x + w <= inner.x + inner.w && y + h <= inner.y + inner.h;
+  }
+  // Sub-Block i's answers for boxes w × h, by corner. 0: not asked yet, -1: null, -2: on no
+  // machine (most spots: one empty answer for all, kept as they are), else its answer in `found`.
+  function sizeOf(i, w, h) {
+    const sizes = landed[i] ??= landedFor(site, `${budget(i)}|${blockTiles(i).key}`), size = w * 1024 + h;
     let mine = sizes.get(size);
-    if (mine === undefined) sizes.set(size, (mine = { at: new Int32Array(inner.w * inner.h), found: [null] }));
-    const k = (box.y - inner.y) * inner.w + box.x - inner.x;
+    if (mine === undefined) sizes.set(size, (mine = { at: new Int32Array(site.inner.w * site.inner.h), found: [null] }));
+    return mine;
+  }
+  function landIn(i, mine, x, y, w, h) {
+    const k = (y - site.inner.y) * site.inner.w + x - site.inner.x;
     let n = mine.at[k];
     // (A corner off the tile grid: not kept.)
-    if (n === undefined) return site.landing(blockTiles(i), box, budget(i));
+    if (n === undefined) return site.landing(blockTiles(i), { x, y, w, h }, budget(i));
     if (n === 0) {
-      const out = site.landing(blockTiles(i), box, budget(i));
+      const out = site.landing(blockTiles(i), { x, y, w, h }, budget(i));
       n = out ? (out.size ? mine.found.push(out) - 1 : -2) : -1;
       mine.at[k] = n;
     }
@@ -534,22 +550,52 @@ export function placeBlocks(ctx, prepared, params = {}) {
   // Tiles of a Sub-Block's stack that no Fixture may stand on, by where they lie in its box: its
   // machines and their inserters (`soft`: each tile's copy and machine, `index:machine`) and the
   // rest (`hard`).
+  // (Kept across placements by what the stack is made of: each copy's module, its number and
+  // where it stands in the stack. The candidates of a try place the same stacks again; Py kicalk's
+  // of a hundred machines took a twentieth of its Maximize to gather anew.)
   function blockTiles(i) {
     if (!tileSets.has(i)) {
-      const hard = new Set(), soft = new Map();
+      let made = '';
       for (const inst of blocks[i].instances) {
         const o = blocks[i].at.get(inst.index);
-        const { tiles, machines } = tilesByMachine(inst.module);
-        for (const [x, y] of tiles) hard.add(tileKey(x + o.x, y + o.y));
-        for (const [x, y, m] of machines) soft.set(tileKey(x + o.x, y + o.y), `${inst.index}:${m}`);
+        made += `${moduleOf(inst.module)}:${inst.index}:${o.x},${o.y};`;
       }
-      // (What they are, as lands keeps its answers by: the tiles in order, each machine's named.)
-      const key = `${[...hard].sort((a, b) => a - b).join()}|${[...soft].sort((a, b) => a[0] - b[0]).join()}`;
-      tileSets.set(i, { hard, soft, key });
+      let kept = tilesKept.get(made);
+      if (kept) tilesKept.delete(made);
+      else {
+        const hard = new Set(), soft = new Map();
+        for (const inst of blocks[i].instances) {
+          const o = blocks[i].at.get(inst.index);
+          const { tiles, machines } = tilesByMachine(inst.module);
+          for (const [x, y] of tiles) hard.add(tileKey(x + o.x, y + o.y));
+          for (const [x, y, m] of machines) soft.set(tileKey(x + o.x, y + o.y), `${inst.index}:${m}`);
+        }
+        // (What they are, as lands keeps its answers by: the tiles in order, each machine's named.)
+        const key = `${[...hard].sort((a, b) => a - b).join()}|${[...soft].sort((a, b) => a[0] - b[0]).join()}`;
+        kept = { hard, soft, key };
+      }
+      tilesKept.set(made, kept);
+      if (tilesKept.size > TILES_KEPT) tilesKept.delete(tilesKept.keys().next().value);
+      tileSets.set(i, kept);
     }
     return tileSets.get(i);
   }
 }
+
+// A stack's tiles no Fixture may stand on (blockTiles), the last TILES_KEPT stacks': by its copies'
+// modules (each by what tilesByMachine reads of it: its entities, area, belts and pipes, the same
+// objects in every routing of a module taken again, module.js), numbers and offsets.
+const TILES_KEPT = 64;
+const tilesKept = new Map();
+const objectIds = new WeakMap();
+let objectCount = 0;
+const idOf = o => {
+  if (typeof o !== 'object' || o === null) return '-';
+  let id = objectIds.get(o);
+  if (id === undefined) objectIds.set(o, (id = objectCount++));
+  return id;
+};
+const moduleOf = m => `${idOf(m.entities)}.${idOf(m.area)}.${idOf(m.parts)}.${idOf(m.fluids)}`;
 
 // The most steps Layers takes putting Sub-Blocks in columns: all it takes to weigh every way of
 // 10 Sub-Blocks (Py molybdenum oxide's), each up to two columns further west.
@@ -574,7 +620,7 @@ const waysKept = new Map();
 // late where columns would fit them all.
 // Returns each Sub-Block's top-left corner (and a parted stack's copies, `parted`), or null when
 // no way fits.
-function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread }, lands, part) {
+function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread }, landerOf, part) {
   const { inner } = site;
   const steps = blocks.map(b => b.step);
   // Consumers first, so each Sub-Block's column follows from its consumers'.
@@ -833,11 +879,13 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
         for (const it of items) Object.assign(it, { x: cx + at.get(it.i).x, y: y0 + at.get(it.i).y });
       }
       if (items.some(it => it.y < inner.y || it.y + it.h > inner.y + inner.h)) return null;
-      const boxOf = (it, y = it.y) => ({ x: it.x, y, w: blocks[it.i].w, h: it.h });
       const parted = new Map();
       const blockOf = i => parted.get(i)?.block ?? blocks[i];
       for (const it of items) {
-        const clear = y => lands(it.i, boxOf(it, y)) && items.every(o => o === it || apart(blocks[it.i], { x: it.x, y }, blockOf(o.i), o, gap));
+        // (Each row asked of as numbers, nothing made where it lands nowhere: most rows, among
+        // roboports' Fixtures.)
+        const land = landerOf(it.i, blocks[it.i].w, it.h);
+        const clear = y => land(it.x, y) !== null && items.every(o => o === it || apart(blocks[it.i], { x: it.x, y }, blockOf(o.i), o, gap));
         if (clear(it.y)) continue;
         let moved = null;
         for (let d = 1; d < inner.h && moved === null; d++) {
@@ -845,15 +893,17 @@ function inLayers(blocks, links, depth, routes, site, { corridor, gap, spread },
           else if (clear(it.y + d)) moved = it.y + d;
         }
         // Parting: no spot clear, its stack parts round the Fixtures, standing as near where it
-        // wants to as that lets it.
+        // wants to as that lets it. (Above it, then below, a row further each step.)
+        const parts = y => {
+          const p = moved === null && y >= inner.y ? part(it.i, it.x, y) : null;
+          if (!p || !items.every(o => o === it || apart(p.block, { x: it.x, y }, blockOf(o.i), o, gap))) return;
+          parted.set(it.i, p);
+          it.h = p.h;
+          moved = y;
+        };
         for (let d = 0; parting && d < inner.h && moved === null; d++) {
-          for (const y of d ? [it.y - d, it.y + d] : [it.y]) {
-            const p = moved === null && y >= inner.y ? part(it.i, it.x, y) : null;
-            if (!p || !items.every(o => o === it || apart(p.block, { x: it.x, y }, blockOf(o.i), o, gap))) continue;
-            parted.set(it.i, p);
-            it.h = p.h;
-            moved = y;
-          }
+          parts(it.y - d);
+          if (d) parts(it.y + d);
         }
         if (moved === null) return null;
         it.y = moved;
