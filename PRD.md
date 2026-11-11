@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v92: Failures kept longer (implemented)
+
+The same layouts in less time. A module routing that failed is kept apart, by a hash of its core, long after its core is let go from the cores kept: it fails again at once. Full tier −1.5% as pairs, Py hot air −10 to −13%; peak memory as before. ADR 0107.
+
 ## v91: Other seeds only a machine above (implemented)
 
 Maximize tries other seeds only for a miss no more than a machine more than the machines that fit alone: every seed that fit in the suite, at three seeds, was the next machine. Py rayon: five tries at 11 alone, where 6 fit, gone, 134 → 116 s at 20 candidates a try, the same layout. Every suite layout the same, at seeds 2 and 3 too. ADR 0106.

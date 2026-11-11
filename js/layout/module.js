@@ -26,6 +26,18 @@ const REROUTES = 3;
 //         that), lane: items/min a lane carries, offsets: every output inserter whose
 //         prototype allows custom vectors picks its lane by its drop point (Inserter_Config) }
 //
+// A string's hash: 64 bits, as two 32-bit hashes (FNV-1a and another multiplier), and its length.
+function hashOf(s) {
+  let a = 0x811c9dc5, b = 0x9747b28c;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193);
+    b = Math.imul(b ^ c, 0x5bd1e995);
+    b ^= b >>> 15;
+  }
+  return `${(a >>> 0).toString(36)}:${(b >>> 0).toString(36)}:${s.length}`;
+}
+
 // (Routed once a core and options: Maximize designs the same Sub-Block again and again, its
 // repeated modules routed again in every try, and candidates come back from other workers as
 // copies. Routing draws no random numbers. A module routed before is taken again, by everything
@@ -35,14 +47,21 @@ const REROUTES = 3;
 // same error. The last ROUTED_KEPT cores.)
 const ROUTED_KEPT = 50;
 const routedKept = new Map();
-// A core's fields as a key, once a core (copies of a kept core share its entities, design.js).
+// (Failures kept longer, FAILED_KEPT, by a hash of the core: an error holds little, the core's
+// key much. Molybdenum oxide routed 464 failures again once their core was let go, ADR 0107.)
+const FAILED_KEPT = 20000;
+const failedKept = new Map();
+// A core's fields as a key, and its hash, once a core (copies of a kept core share its entities,
+// design.js).
 const coreKeys = new WeakMap();
 export function routeModule(core, opts) {
-  let ck = coreKeys.get(core.entities);
-  if (ck === undefined) {
+  let keys = coreKeys.get(core.entities);
+  if (keys === undefined) {
     const { pathShort, ...fields } = core;
-    coreKeys.set(core.entities, ck = JSON.stringify(fields));
+    const json = JSON.stringify(fields);
+    coreKeys.set(core.entities, keys = { ck: json, hash: hashOf(json) });
   }
+  const { ck } = keys;
   let known = routedKept.get(ck);
   if (known) routedKept.delete(ck);
   else known = new Map();
@@ -61,12 +80,22 @@ export function routeModule(core, opts) {
   k += opts.order ? '|o' : '|';
   let hit = known.get(k);
   // (The catalog's own objects: the same catalog.)
-  if (hit === undefined || hit.inserters !== opts.inserters || hit.pole !== opts.pole) {
-    try {
-      hit = { module: routeAnew(core, opts), inserters: opts.inserters, pole: opts.pole };
-    } catch (e) {
-      if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
-      hit = { error: e, inserters: opts.inserters, pole: opts.pole };
+  const stale = h => h === undefined || h.inserters !== opts.inserters || h.pole !== opts.pole;
+  if (stale(hit)) {
+    const fk = `${keys.hash}|${k}`;
+    hit = failedKept.get(fk);
+    if (stale(hit)) {
+      try {
+        hit = { module: routeAnew(core, opts), inserters: opts.inserters, pole: opts.pole };
+      } catch (e) {
+        if (!(e instanceof RoutingError || e instanceof PowerError)) throw e;
+        // (Kept as its fields alone: a stack trace captured holds what its frames held, 0.45 GB
+        // in molybdenum oxide's failures kept.)
+        const error = Object.assign(Object.create(Object.getPrototypeOf(e)), e, { message: e.message });
+        hit = { error, inserters: opts.inserters, pole: opts.pole };
+        failedKept.set(fk, hit);
+        if (failedKept.size > FAILED_KEPT) failedKept.delete(failedKept.keys().next().value);
+      }
     }
     known.set(k, hit);
   }

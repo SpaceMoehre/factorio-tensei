@@ -80,6 +80,40 @@ test('a core routed again is taken as routed before', () => {
   assert.notEqual(wider.entities, first.entities);
 });
 
+// A routing that failed fails again with the same error once its core was let go from the cores
+// kept (ROUTED_KEPT): failures are kept longer, by a hash of the core (ADR 0107).
+test('a routing that failed fails the same again, its core let go from those kept', () => {
+  const setup = smallParts({ ...logistics, handSize: 3 });
+  const { ctx, sb, links } = setup;
+  const core = buildCore(sb, pyCatalog.buildings[sb.building], links, allSides(setup), ctx.env);
+  const options = moduleOptions(ctx, links, { w: 1, e: 1, n: 0, s: 0 });
+  // (Poles reaching no tile beside the machine: none powers it.)
+  const weak = { ...options, pole: { ...options.pole, supplyRadius: 0.5 } };
+  let first = null;
+  try {
+    routeModule(core, weak);
+  } catch (e) {
+    first = e;
+  }
+  assert.ok(first, 'no pole powers the machine');
+  // (Cores of their own, a field more each, routed after it: it is let go.)
+  let others = 0;
+  const again = () => {
+    for (let i = 0; i < 60; i++) routeModule(structuredClone({ ...core, other: others++ }), options);
+    try {
+      routeModule(structuredClone(core), weak);
+    } catch (e) {
+      return e;
+    }
+    return null;
+  };
+  const second = again(), third = again();
+  assert.ok(second instanceof first.constructor);
+  assert.equal(second.message, first.message);
+  // (Not routed again: the failure kept.)
+  assert.equal(third, second);
+});
+
 test('a routed module runs every belt from its west edge to its east edge, and a copy trims what it needs not', () => {
   const setup = smallParts({ ...logistics, handSize: 1 });
   const { ctx, sb, links } = setup;
