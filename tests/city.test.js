@@ -326,6 +326,24 @@ test('Maximize tries no other seed above a best the sorting phase kept below wha
   assert.deepEqual(after, []);
 });
 
+// Nor more than a machine more than the machines that fit alone (ADR 0106): Py rayon in its 116 × 116
+// City Block, its first try 11 machines finding no room, 6 at most fitting alone. Before, five
+// seeds at 11 followed.
+test('Maximize tries no other seed more than a machine more than fit alone: Py rayon', () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const setup = JSON.parse(readFileSync(new URL('./fixtures/rayon-116.json', import.meta.url), 'utf8'));
+  const { goals, choices, logistics: py } = setupOf(setup, shipped);
+  const site = siteOf({ area: { x: 0, y: 0, w: setup.city.w, h: setup.city.h }, fixtures: [] }, setup.city.buffer);
+  const run = maximize(goals, shipped, py, { ...choices, site, seed: 1, maxCandidates: 20, budgetMs: 1e12, annexes: false, starving: false });
+  const events = [];
+  for (let step = run.next(); !step.done; step = run.next()) events.push(/** @type {any} */ (step.value));
+  const first = events.findIndex(v => v.type === 'best');
+  assert.ok(first > 0 && events.slice(0, first).some(v => v.type === 'try' && v.machines === 11));
+  const most = Math.max(...events.filter(v => v.type === 'best').map(v => v.machines));
+  assert.ok(most <= 6, String(most));
+  assert.deepEqual(events.slice(first).filter(v => v.type === 'try' && v.machines > most + 1).map(v => v.machines), []);
+});
+
 // Grown (ADR 0094): a search given a fit of fewer machines (`near`: what the search yielded with it,
 // `grown`) first lays that out again: each Sub-Block of the design it had, where it stood, its
 // machines more apart (Breakout). Its first candidate fits.

@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v91: Other seeds only a machine above (implemented)
+
+Maximize tries other seeds only for a miss no more than a machine more than the machines that fit alone: every seed that fit in the suite, at three seeds, was the next machine. Py rayon: five tries at 11 alone, where 6 fit, gone, 134 → 116 s at 20 candidates a try, the same layout. Every suite layout the same, at seeds 2 and 3 too. ADR 0106.
+
 ## v90: No other seed above what sorting gave up (implemented)
 
 Maximize no longer tries other seeds above a best the sorting phase kept below what fit: unsorted, any layout there fits only with its byproduct riding on alone, and is passed over. Py coke 116²: five tries at 5.3125 gone, 247 → 193 s at 20 candidates a try, the same layout. Every suite layout the same, at seeds 2 and 3 too. ADR 0105.

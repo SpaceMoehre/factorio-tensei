@@ -640,12 +640,16 @@ export function* maximize(goals, catalog, logistics, options) {
   // where the sorting phase kept fewer machines than fit: more fitted with a byproduct riding on
   // alone, sorted out it found no room, and the tries here, unsorted, fit only with it riding on
   // too, each passed over (Py coke: 5 sorted found no room, 4 kept, five seeds at 5.3125 tried,
-  // the first fitting with it riding, ADR 0105).
+  // the first fitting with it riding, ADR 0105). Nor more than a machine more than the machines
+  // that fit alone (whole machines): another seed finds the next machine where a miss was the
+  // seed's, never a first layout far above (Py rayon: 6 alone and Annexes to 10, five seeds at 11
+  // alone; in the suite at three seeds, every seed that fit was at most a machine more, silicon
+  // seed 3 3.73 → 5, ADR 0106).
   if (options.reseed !== false && !only && probing === null && best && bestN !== null && options.starving !== 'only' && !sortedDown) {
     const seed = options.seed ?? 1;
     for (let again = true; again;) {
       again = false;
-      const above = misses.filter(m => !m.starves && !m.same && m.count > best.count && m.count <= most).map(m => m.count);
+      const above = misses.filter(m => !m.starves && !m.same && m.count > best.count && m.count <= most && m.count <= Math.ceil(plan.lo) + 1).map(m => m.count);
       if (!above.length) break;
       const n = Math.min(...above);
       let k = 0;
