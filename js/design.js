@@ -279,14 +279,17 @@ function keyOf(variant) {
 // copy of the core built (what the caller adds to it is its own), with its signature; a variant
 // that failed fails again. Kept by catalog: the building is the catalog's. (Each context by a
 // number of its own, CONTEXTS at most: a key of the whole context made and looked up for every
-// variant took long.)
+// variant took long.) Variants that failed apart, FAILED_KEPT of them: a failure is its message
+// alone, and among the cores built they let go of cores asked again (Py anthraquinone: of 36,223
+// cores built, 16,875 again, a third of its variants failing; ADR 0109).
 const CORES_KEPT = 2000;
+const FAILED_KEPT = 50000;
 const CONTEXTS = 20000;
 const coresKept = new WeakMap();
 function keptCores(ctx, sb, links) {
-  if (!coresKept.has(ctx.catalog)) coresKept.set(ctx.catalog, { cores: new Map(), contexts: new Map(), next: 0 });
+  if (!coresKept.has(ctx.catalog)) coresKept.set(ctx.catalog, { cores: new Map(), failed: new Map(), contexts: new Map(), next: 0 });
   const store = coresKept.get(ctx.catalog);
-  const { cores: kept, contexts } = store;
+  const { cores: kept, failed, contexts } = store;
   const building = ctx.catalog.buildings[sb.building];
   const ids = [...links.inputs, links.output, ...links.apart, ...links.fluids.map(f => f.routeId)];
   const { routes, ...env } = ctx.env;
@@ -302,6 +305,8 @@ function keptCores(ctx, sb, links) {
       context = contexts.get(whole);
     }
     const key = `${context}\n${variantKey}`;
+    const error = failed.get(key);
+    if (error !== undefined) throw new LayoutError(error);
     let hit = kept.get(key);
     if (hit === undefined) {
       try {
@@ -309,7 +314,9 @@ function keptCores(ctx, sb, links) {
         hit = { core, signature: signatureOf(core) };
       } catch (e) {
         if (!(e instanceof LayoutError)) throw e;
-        hit = { error: e.message };
+        failed.set(key, e.message);
+        if (failed.size > FAILED_KEPT) failed.delete(failed.keys().next().value);
+        throw new LayoutError(e.message);
       }
       kept.set(key, hit);
       if (kept.size > CORES_KEPT) kept.delete(kept.keys().next().value);
@@ -317,7 +324,6 @@ function keptCores(ctx, sb, links) {
       kept.delete(key);
       kept.set(key, hit);
     }
-    if (hit.error !== undefined) throw new LayoutError(hit.error);
     return { core: { ...hit.core }, signature: hit.signature };
   };
 }

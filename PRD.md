@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v94: Failed variants kept apart (implemented)
+
+The same layouts in less time. A Sub-Block variant whose core failed is kept apart from the cores kept, so failures no longer push out cores asked again: full tier −1.3% as pairs, anthraquinone and silicon −4%, peak memory lower. ADR 0109.
+
 ## v93: Pipes flood nearest first (implemented)
 
 The same layouts in less time. A pipe leg that has searched long asks whether it could reach its tree at all; that flood now goes nearest the tree first, as the belt's does, and meets it after a few tiles: titanium plate's 670 asks 30.5 → 0.2 s, full tier −1.6% as pairs. ADR 0108.
