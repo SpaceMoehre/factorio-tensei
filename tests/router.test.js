@@ -32,6 +32,30 @@ test('a pipe-to-ground hop may be shorter than its reach', () => {
   assert.ok(ends[0] < 2 && ends[1] > 3 && ends[1] - ends[0] < 10, `pipe-to-ground ${ends}`);
 });
 
+// A connection walled in thicker than a pipe dives fails at once (router.js pipeReaches, its
+// flood nearest the tree first, ADR 0108); with a way out through the wall, it connects.
+test('a pipe connection walled in thicker than its reach fails; with a way out, it connects', () => {
+  // (Room inside the wall for more states than the leg searches before it asks.)
+  const ring = gap => {
+    const grid = new Grid({ x: 0, y: 0, w: 80, h: 80 });
+    for (let x = 35; x <= 75; x++) {
+      for (let y = 20; y <= 60; y++) {
+        const d = Math.max(Math.abs(x - 55), Math.abs(y - 40));
+        if (d >= 10 && !(gap && y === 40 && x > 55)) wall(grid, x, y);
+      }
+    }
+    grid.reserveFluidPort(5, 40, 0);
+    grid.reserveFluidPort(55, 40, 0);
+    return grid;
+  };
+  const spec = { id: 0, fluid: 'water', terminals: [[5, 40, E], [55, 40, E]], source: false, sink: false };
+  const started = Date.now();
+  assert.throws(() => routePipe(ring(false), spec, pipes), /cannot connect 55,40/);
+  assert.ok(Date.now() - started < 5000);
+  const pieces = routePipe(ring(true), spec, pipes);
+  assert.ok(pieces.some(p => p.x > 75));
+});
+
 // A north-south belt already runs down column 3; an east-west belt across the row must dive
 // under it rather than feed into it.
 test('a belt crossing another route goes under it through a tunnel', () => {

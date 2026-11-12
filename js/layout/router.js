@@ -286,7 +286,7 @@ function growTree(grid, spec, names, seedPieces) {
     pending.deleteAt(x, y);
     if (tree.has(key(x, y))) continue;
     const leg = search(grid, [{ x, y, a: outward }], toTree.isGoal, toTree.heuristic, moves,
-      () => !pipeReaches(grid, spec.id, x, y, inTree, names.reach));
+      () => !pipeReaches(grid, spec.id, x, y, inTree, names.reach, toTree.heuristic));
     if (!leg) throw new RoutingError(`${spec.fluid}: cannot connect ${x},${y}`);
     commit(leg);
   }
@@ -623,13 +623,30 @@ function reachable(grid, id, starts, wx, wy, reach, pending) {
 // Whether a pipe could reach the tree from (x, y) at all: a flood over tiles free for it,
 // stepping to a neighbour or diving up to its reach under anything. It ignores every finer rule,
 // so it only ever says no when no path exists. (inTree: the tree's tiles in the area, by index.)
-function pipeReaches(grid, id, x0, y0, inTree, reach) {
+// Nearest the tree first (`toTree`, the leg's distance to it; a bucket a distance): where it
+// reaches the tree, as it did every time in the suite, a few tiles are seen, not every tile nearer
+// than it (Py titanium plate: 670 floods 30.5 → 0.2 s, ADR 0108). What it reaches, and so its
+// answer, is the same in any order.
+function pipeReaches(grid, id, x0, y0, inTree, reach, toTree) {
   const { x: ax, y: ay, w, h } = grid.area;
   const seen = new Uint8Array(w * h);
-  const queue = [x0, y0];
+  /** @type {number[][]} */
+  const buckets = [];
+  let lowest = Infinity;
+  const push = (x, y) => {
+    const d = toTree(x, y);
+    (buckets[d] ??= []).push(x, y);
+    if (d < lowest) lowest = d;
+  };
   if (x0 >= ax && y0 >= ay && x0 < ax + w && y0 < ay + h) seen[(y0 - ay) * w + (x0 - ax)] = 1;
-  for (let q = 0; q < queue.length; q += 2) {
-    const x = queue[q], y = queue[q + 1];
+  push(x0, y0);
+  while (lowest < buckets.length) {
+    const bucket = buckets[lowest];
+    if (!bucket?.length) {
+      lowest++;
+      continue;
+    }
+    const y = bucket.pop(), x = bucket.pop();
     for (const [dx, dy] of SIDES) {
       for (let n = 1; n <= reach; n++) {
         const nx = x + dx * n, ny = y + dy * n;
@@ -639,7 +656,7 @@ function pipeReaches(grid, id, x0, y0, inTree, reach) {
         if (inTree[i] === 1) return true;
         if (!grid.freeFor(nx, ny, id) || grid.pipeBlocked.hasAt(nx, ny)) continue;
         seen[i] = 1;
-        queue.push(nx, ny);
+        push(nx, ny);
       }
     }
   }
