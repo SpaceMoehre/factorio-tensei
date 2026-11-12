@@ -521,8 +521,11 @@ function inBands(slots, entries, plan, catalog, logistics, site, seed, goal, pac
 // Whether Sub-Block i's machines stand two rows to a Part in a Slot (a row of perRow each): some
 // design of two rows as long (or one shorter) routes without starving and fits the Slot, among
 // those a Part of them gets (its belts as a Part's; random variants too). The designs' sizes are
-// cached by what decides them: the recipe and machine, what it takes and makes, its Count and the
-// row; each Slot is checked against them. (A Part's belts visiting both bands outside its rows
+// cached by the recipe and machine, what it takes and makes, the Part's machines and the row; each
+// Slot is checked against them. (Not by the Sub-Block's Count: a Part of two rows is as many
+// machines at every Count above them, and was designed again for each, Py vrauks 36 times for
+// 12 Parts. The first Count asked designs it: the rest of the chain enters its design, seldom
+// what fits, ADR 0110.) (A Part's belts visiting both bands outside its rows
 // run round them: with many, the design outgrows the Slot, Py vrauks-2 paddocks two rows of eight
 // 112 wide.)
 // (By catalog; the City Block's inner size and Fixtures, and the seed, decide the designs too: a
@@ -534,7 +537,7 @@ function twoRowsFit(entries, plan, catalog, logistics, site, seed, i, slot, perR
   const twoRows = twoRowsOf.get(catalog);
   const sb = plan[i];
   const machines = Math.min(sb.count, 2 * perRow);
-  const key = JSON.stringify([sb.recipe, sb.building, sb.modules, sb.inputs.map(x => x.name), sb.outputs.map(x => x.name), sb.count, perRow, logistics, seed, site?.inner.w, site?.inner.h, site?.fixtures.length]);
+  const key = JSON.stringify([sb.recipe, sb.building, sb.modules, sb.inputs.map(x => x.name), sb.outputs.map(x => x.name), machines, perRow, logistics, seed, site?.inner.w, site?.inner.h, site?.fixtures.length]);
   if (!twoRows.has(key)) {
     // The Sub-Block as a Part of that many machines, the rest whole.
     const probe = entries.map(e => (e.goal.item !== sb.item ? e : { ...e, goal: { ...e.goal, rate: e.goal.rate * machines / sb.count, part: true, machines } }));
