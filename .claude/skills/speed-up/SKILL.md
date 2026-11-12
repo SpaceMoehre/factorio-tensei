@@ -247,6 +247,8 @@ changed and how, the causes cut, what still dominates, the commit.
 - Kicalk at seed 2 lays out by the clock: a fit bringing a loop by train is kept while the search
   runs as long again (maximize.js `once`, `until`). Run the old code twice before reading a
   `DIFFERS` there (0106).
+- Bands designs each part anew in every packing it lays out, alike parts too (trits 8 s of 44,
+  0110): shared designs would need their routes relabelled.
 - One Item a Belt: titanium plate's one-machine try 7 → 687 s to its first layout, most
   candidates finding no path to the east edge (0066).
 

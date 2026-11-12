@@ -27,3 +27,4 @@ Tests: the Bands tests as they were (city.test.js).
 
 Still:
 - Each Part's designs are routed until one fits the Slot asked (`designOf`): the first Slot asked of a Part routes most of them.
+- Bands lays out a try's parts once for each packing it tries (trits: three), each part designed anew, alike parts too (trits' two Parts of ten reefs: 6 designs, 8 s of 44; counted in a scratch copy). Their designs differ by their belts' routes: shared, they would need relabelling.
