@@ -493,8 +493,17 @@ function copyCandidates(ctx, index, shape, rng) {
   // And as long as fit with no more beside them than one belt snaking through (a column and a
   // lane each side), a trunk per fluid and the module's margins: copies Fluids Between need little.
   const snug = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.floor((ctx.site.inner.w - 8 - 3 * shape.links.fluids.length - 4) / pitch))) : 0;
+  // And as long as leave room, within its width, for all Placement stands beside a stack of
+  // copies (place.js stackOf): each belt's lane to turn in on both sides, a trunk per fluid, a
+  // Recipe Loop's taps. (`wide` reserves for so many belts as snake at most; a stack of copies
+  // whose belts all snake came out a column too wide: Py trits reefs in 236², rows of 20, 229 in
+  // 228, ADR 0111.)
+  const taps = Math.max(0, ...(ctx.routes ?? []).filter(r => r.taps && r.source === index).map(r => r.taps.length * (r.items.length > 1 ? 2.5 : 1)));
+  const sides = 2 * (2 * shape.belts.length + 2) + 3 * shape.links.fluids.length + (taps ? Math.ceil(3 + 2 * taps) : 0) + 2;
+  const fit = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.floor((ctx.site.inner.w - sides) / pitch))) : 0;
   const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)],
-    ...(tall ? [[1, tall], [2, tall]] : []), ...(wide ? [[1, wide], [2, wide]] : []), ...(snug > wide ? [[2, snug], [1, snug]] : [])];
+    ...(tall ? [[1, tall], [2, tall]] : []), ...(wide ? [[1, wide], [2, wide]] : []), ...(snug > wide ? [[2, snug], [1, snug]] : []),
+    ...(fit && fit < wide ? [[1, fit], [2, fit]] : [])];
   // Two-Way Copies: where whole machines cannot fill an Internal Path's belts evenly, a Copy of
   // as few machines as fill some of them whole, each machine dropping onto the belts either side
   // of it.
@@ -510,7 +519,7 @@ function copyCandidates(ctx, index, shape, rng) {
     const aspect = Math.max(stack.w / stack.h, stack.h / stack.w);
     const spec = { copies: { m, n, count, rest, ...(share ? { share } : {}) } };
     out.push({
-      estimate: { trouble: 0, area: sb.count * pitch * depth * (1 + 0.1 * aspect), w: n * pitch, h: rows * depth }, copies: count,
+      estimate: { trouble: 0, area: sb.count * pitch * depth * (1 + 0.1 * aspect), w: n * pitch, h: rows * depth, ...(ctx.site ? { sides } : {}) }, copies: count,
       spec, build: () => buildSpec(ctx, index, spec, rng),
     });
   }

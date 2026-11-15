@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v96: Copies as wide as fit (implemented)
+
+Copies of a module also come in rows as long as leave room for all that stands beside their stack (each belt's lane on both sides, a trunk per fluid, a Recipe Loop's taps), and where such a stack spans most of the City Block, its flattest designs are placed one by one right after the first candidate once those in columns fit none. Py trits in a clear 236² City Block: at 20 candidates a try 91 → 125 reefs; on the page 124 → 127 (31.87 → 32.48/min), best at 717 → 571 s. ADR 0111.
+
 ## v95: Two-row Parts designed once a Part (implemented)
 
 Bands' check whether a Sub-Block's machines stand two rows to a Part in a Slot designs that Part once for every Count it is the same Part at (its machines and row), not once a Count. Vrauks 51.5 → 31.5 s, trits 105.6 → 92.9 s; every suite rate the same at three seeds. ADR 0110.

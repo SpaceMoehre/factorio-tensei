@@ -9,7 +9,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 14.8,
+        "secs": 9.6,
         "tries": 120,
         "rate": 600,
         "machines": null,
@@ -31,7 +31,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 101.3,
+        "secs": 71.5,
         "tries": 2,
         "rate": 6.94,
         "machines": 27,
@@ -46,6 +46,28 @@
       }
     },
     {
+      "name": "trits-236",
+      "file": "trits-236.json",
+      "what": "Py trits in a clear 236² City Block (no Fixtures, no Bands): 120-odd reefs in copies as wide as the block, their rcs (22×22) beside them; copies whose stack, belts turning beside it, fits the width, placed one by one among the first candidates (ADR 0111)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 900,
+      "result": {
+        "secs": 329.8,
+        "tries": 17,
+        "rate": 32.13,
+        "machines": 125,
+        "failure": null,
+        "delivered": 32.13,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "228x227",
+        "entities": 12902,
+        "hash": "8a53c97b1fb3"
+      }
+    },
+    {
       "name": "hot-air-118",
       "file": "hot-air-118.json",
       "what": "Py hot air among 32 poles, 118²: few big machines, closed fluid loops, temperatures",
@@ -53,7 +75,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 79.2,
+        "secs": 53.6,
         "tries": 11,
         "rate": 18000,
         "machines": 2,
@@ -75,7 +97,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 204.9,
+        "secs": 155.6,
         "tries": 16,
         "rate": 687.56,
         "machines": 6,
@@ -97,7 +119,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 150.7,
+        "secs": 112.1,
         "tries": 17,
         "rate": 9937.5,
         "machines": 4,
@@ -119,7 +141,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 110.4,
+        "secs": 85.2,
         "tries": 11,
         "rate": 3300,
         "machines": 11,
@@ -141,7 +163,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 24.1,
+        "secs": 18.3,
         "tries": 20,
         "rate": 6000,
         "machines": 10,
@@ -163,7 +185,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 33.7,
+        "secs": 26.7,
         "tries": 2,
         "rate": 55.84,
         "machines": 78,
@@ -185,7 +207,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 89.7,
+        "secs": 69,
         "tries": 6,
         "rate": 900,
         "machines": 50,
@@ -207,7 +229,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 216.7,
+        "secs": 163.9,
         "tries": 12,
         "rate": 2520,
         "machines": 7,
@@ -229,7 +251,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 153.4,
+        "secs": 109.4,
         "tries": 16,
         "rate": 499.7,
         "machines": 10,
@@ -251,7 +273,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 622.6,
+        "secs": 403.1,
         "tries": 11,
         "rate": 999.98,
         "machines": 5,
@@ -273,7 +295,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 241.7,
+        "secs": 161.7,
         "tries": 22,
         "rate": 400,
         "machines": 125,
@@ -295,7 +317,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 428.3,
+        "secs": 281,
         "tries": 28,
         "rate": 5424.49,
         "machines": 15,
@@ -317,7 +339,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 144,
+        "secs": 94.3,
         "tries": 20,
         "rate": null,
         "machines": null,
@@ -332,7 +354,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 127.3,
+        "secs": 71.6,
         "tries": 11,
         "rate": 1619.98,
         "machines": 9,
@@ -354,7 +376,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 143.3,
+        "secs": 74.4,
         "tries": 10,
         "rate": 1157.14,
         "machines": 4,

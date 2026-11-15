@@ -344,6 +344,25 @@ test('Maximize tries no other seed more than a machine more than fit alone: Py r
   assert.deepEqual(events.slice(first).filter(v => v.type === 'try' && v.machines > most + 1).map(v => v.machines), []);
 });
 
+// Copies in rows as long as leave room beside their stack for every belt turning in it, its
+// fluids' trunks and its Recipe Loop's taps (design.js copyCandidates `fit`, `estimate.sides`),
+// and that flattest design placed one by one among the first candidates (search.js sweep, ADR
+// 0111): Py trits in a clear 236 × 236 City Block, 112 reefs in rows of 19 with their rcs above.
+// Before, rows of 20 stood a column wider than the room, and at 20 candidates a try none fit.
+test('the flattest copies fit the City Block width and are placed one by one early: Py trits 236², 112 reefs', () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const setup = JSON.parse(readFileSync(new URL('./fixtures/trits-236.json', import.meta.url), 'utf8'));
+  const { goals, choices, logistics: py } = setupOf(setup, shipped);
+  const site = siteOf({ area: { x: 0, y: 0, w: setup.city.w, h: setup.city.h }, fixtures: [] }, setup.city.buffer);
+  const plan = planner(goals, shipped, py, { ...choices, site });
+  const { block, failure } = attempt(plan, 112, { site, seed: 1, maxCandidates: 20, budgetMs: 1e12, unsorted: true });
+  assert.ok(block, failure?.message);
+  const reefs = block.subBlocks.find(sb => sb.item === 'trits');
+  assert.ok(reefs.count >= 112);
+  assertValid(block, shipped, py);
+  assert.deepEqual(simulate(block).starvation, []);
+});
+
 // Grown (ADR 0094): a search given a fit of fewer machines (`near`: what the search yielded with it,
 // `grown`) first lays that out again: each Sub-Block of the design it had, where it stood, its
 // machines more apart (Breakout). Its first candidate fits.

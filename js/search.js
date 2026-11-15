@@ -427,7 +427,13 @@ export function* search(entries, catalog, logistics, options = {}) {
     // A failure's hints acted on: the next candidates try what it suggests. (`composed`: the block
     // as routed, where finishing it failed.)
     const failed = ({ error, hint }, composed = null) => {
-      if (candidate.layers && hint.noColumns && !columned && ++unfit === LAYERS_UNFIT) queue.splice(0, queue.length, ...queue.filter(c => !c.layers), ...queue.filter(c => c.layers));
+      // (The flattest designs spanning the room right after the first of them: wide stacks stand
+      // one above the other, Py trits reefs in rows as wide as the City Block; not before it, where
+      // it fit, Py wood 3.625 processors, ADR 0111.)
+      if (candidate.layers && hint.noColumns && !columned && ++unfit === LAYERS_UNFIT) {
+        const one = queue.filter(c => !c.layers && !c.flat);
+        queue.splice(0, queue.length, ...one.slice(0, 1), ...queue.filter(c => !c.layers && c.flat), ...one.slice(1), ...queue.filter(c => c.layers));
+      }
       // No pole for a machine there: room round the Sub-Blocks about it.
       if (hint.pole && composed) makeRoom(near(composed.subBlocks, hint.pole));
       else if (hint.room) makeRoom(hint.room);
@@ -689,6 +695,7 @@ function packs(base, boxes, buffer) {
 // In a City Block, each also with its Sub-Blocks in columns (Layers), right after it.
 function sweep(first, designs, site = null) {
   const list = [first];
+  const flats = [];
   // In a City Block, each Sub-Block's narrowest design that routes, no taller than its room (a
   // stack of copies counted whole): side by side in columns they fit its width where the best
   // ones, squarer, do not together — a choice no change of one Sub-Block's design at a time reaches.
@@ -704,14 +711,24 @@ function sweep(first, designs, site = null) {
     // And each one's flattest design that routes and stands no wider than the room (with the room
     // beside a stack its belts turn in): one above the other they fill its height where columns
     // side by side leave room unused.
-    const flattest = designs.map((options, i) => {
+    const flattestBy = sides => designs.map((options, i) => {
       const tall = c => c.estimate.h * (c.spec?.copies ? c.spec.copies.count + (c.spec.copies.rest ? 1 : 0) : 1);
       const flat = options.map((_, k) => k)
-        .filter(k => options[k].estimate.w !== undefined && options[k].estimate.trouble <= 1e-6 && options[k].estimate.w + FLAT_SIDES <= site.inner.w)
+        .filter(k => options[k].estimate.w !== undefined && options[k].estimate.trouble <= 1e-6 && options[k].estimate.w + sides(options[k]) <= site.inner.w)
         .sort((a, b) => tall(options[a]) - tall(options[b]));
       return flat.find(k => (designOf(options[k])?.trouble ?? Infinity) <= 1e-6) ?? first.choice[i];
     });
-    if (![first.choice, narrowest].some(c => c.join() === flattest.join())) list.push({ ...first, choice: flattest });
+    const flattest = flattestBy(() => FLAT_SIDES);
+    // (Placed one by one second of those, after the first, once the candidates in columns fit none,
+    // where a stack of copies in it spans most of the room's width (ACROSS): it stands above or
+    // below the rest, never beside another, ADR 0111.)
+    const wide = choice => choice.some((k, i) => designs[i][k]?.spec?.copies && designs[i][k].estimate.w + Math.max(FLAT_SIDES, designs[i][k].estimate.sides ?? 0) > ACROSS * site.inner.w);
+    if (![first.choice, narrowest].some(c => c.join() === flattest.join())) list.push({ ...first, choice: flattest, ...(wide(flattest) ? { flat: true } : {}) });
+    // And the flattest whose stacks fit with all a stack of copies stands beside it (its design's
+    // `estimate.sides`): last, and as the flattest once the candidates in columns fit none (Py
+    // trits reefs in rows of 20 came out a column wider than the room, ADR 0111).
+    const fitting = flattestBy(c => Math.max(FLAT_SIDES, c.estimate.sides ?? 0));
+    if (![first.choice, narrowest, flattest].some(c => c.join() === fitting.join())) flats.push({ ...first, choice: fitting, ...(wide(fitting) ? { flat: true } : {}) });
   }
   for (const corridor of [3, 1]) list.push({ ...first, corridor });
   list.push({ ...first, gap: 2 }, { ...first, weight: 1 }, { ...first, weight: 12 });
@@ -748,11 +765,15 @@ function sweep(first, designs, site = null) {
     const tried = new Set(list.map(c => c.choice.join()));
     for (const choice of all.filter(c => !tried.has(c.join())).sort((a, b) => area(a) - area(b))) list.push({ ...first, choice });
   }
-  return (site ? list.flatMap(c => [c, { ...c, layers: LAYER_SPREAD }]) : list).slice(1);
+  return (site ? [...list.flatMap(c => [c, { ...c, layers: LAYER_SPREAD }]), ...flats] : list).slice(1);
 }
 
-// The room a stack of copies needs beside its rows: where its belts turn and its links meet it.
+// The room a stack of copies needs beside its rows: where its belts turn and its links meet it
+// (at least; a design of copies says what its own stack needs, `estimate.sides`, ADR 0111).
 const FLAT_SIDES = 20;
+// A stack of copies spanning this share of the City Block's width or more stands one above the
+// other with the rest (ADR 0111).
+const ACROSS = 0.8;
 
 // In a City Block, every pairing of the best PAIRED designs of each Sub-Block is tried where
 // there are no more than PAIRINGS.
