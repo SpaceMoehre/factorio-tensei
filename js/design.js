@@ -220,8 +220,20 @@ function designOnce(ctx, index, rng, { now = () => Date.now(), deadline = Infini
   // The first candidate that routes goes first; the ones before it that do not, go. Routing shows
   // how the lanes fill: while the best so far starves, the next ones are routed too, and the
   // one that starves least goes first.
+  /** @type {any} */
   let failure = null;
-  while (candidates.length && !designOf(candidates[0])) failure = candidates.shift().failed;
+  const routed = () => {
+    while (candidates.length && !designOf(candidates[0])) failure = candidates.shift().failed;
+  };
+  routed();
+  // Where no whole module routes though its core starved nothing, fewer machines repeat it after
+  // all, the copies abreast (a column each), each copy's belts running on into the next, none
+  // ending at a machine where a module without does (Py advanced circuits: two chipshooters take
+  // eleven belts, more than two machines in a row or a column share, ADR 0113).
+  if (!candidates.length && whole && !only && sb.count >= 2 && !first.some(c => c.copies)) {
+    candidates.push(...copyCandidates(ctx, index, shape, rng, true).sort(rank));
+    routed();
+  }
   if (!candidates.length) throw new LayoutError(`${sb.recipe}: ${failure?.message ?? 'no layout routes'}`);
   for (let k = 1; k < candidates.length && candidates[0].design.trouble > 1e-6 && now() < deadline; k++) {
     // Routing only adds to what a core's estimate already starves (its lanes and curves decided).
@@ -472,7 +484,7 @@ const TALL = 0.8;
 // than routed again. Belts the module does not exhaust run through every copy: the copies
 // alternate between the module and its reverse (those belts running east to west), so such a
 // belt snakes down the stack. The machines left over make a smaller module at the bottom.
-function copyCandidates(ctx, index, shape, rng) {
+function copyCandidates(ctx, index, shape, rng, abreast = false) {
   const sb = ctx.plan[index];
   const out = [];
   const pair = Math.max(1, Math.floor(shape.rowCap / 2));
@@ -503,7 +515,9 @@ function copyCandidates(ctx, index, shape, rng) {
   const fit = ctx.site ? Math.max(1, Math.min(shape.rowCap, Math.floor((ctx.site.inner.w - sides) / pitch))) : 0;
   const sizes = [...(drops ? [[2, drops], [1, drops]] : []), [2, Math.max(1, Math.min(pair, square))], [2, square], [2, pair], [1, Math.min(shape.rowCap, square)],
     ...(tall ? [[1, tall], [2, tall]] : []), ...(wide ? [[1, wide], [2, wide]] : []), ...(snug > wide ? [[2, snug], [1, snug]] : []),
-    ...(fit && fit < wide ? [[1, fit], [2, fit]] : [])];
+    ...(fit && fit < wide ? [[1, fit], [2, fit]] : []),
+    // (Abreast, a machine a copy too: copies after no whole module routed, ADR 0113.)
+    ...(abreast ? [[1, 1]] : [])];
   // Two-Way Copies: where whole machines cannot fill an Internal Path's belts evenly, a Copy of
   // as few machines as fill some of them whole, each machine dropping onto the belts either side
   // of it.
@@ -517,7 +531,7 @@ function copyCandidates(ctx, index, shape, rng) {
     // Estimated by the machines' footprint with a band per row; a squarer stack ranks first.
     const stack = { w: n * pitch, h: count * rows * depth };
     const aspect = Math.max(stack.w / stack.h, stack.h / stack.w);
-    const spec = { copies: { m, n, count, rest, ...(share ? { share } : {}) } };
+    const spec = { copies: { m, n, count, rest, ...(share ? { share } : {}), ...(abreast ? { abreast } : {}) } };
     out.push({
       estimate: { trouble: 0, area: sb.count * pitch * depth * (1 + 0.1 * aspect), w: n * pitch, h: rows * depth, ...(ctx.site ? { sides } : {}) }, copies: count,
       spec, build: () => buildSpec(ctx, index, spec, rng),
@@ -546,13 +560,13 @@ export function copiesDesign(ctx, index, rows, n, rng) {
 // ({ copies: { m, n, count, rest } }). Throws RoutingError or PowerError where it does not route.
 function buildSpec(ctx, index, spec, rng) {
   if (spec.copies) {
-    const { m, n, count, rest, share = false } = spec.copies;
-    const main = repeatable(ctx, index, m, n, rng, count + (rest ? 1 : 0), null, share);
+    const { m, n, count, rest, share = false, abreast = false } = spec.copies;
+    const main = repeatable(ctx, index, m, n, rng, count + (rest ? 1 : 0), null, share, abreast);
     const kinds = [{ ...main, count }];
     if (rest) kinds.push({ ...repeatable(ctx, index, rest, share ? Math.min(n, rest) : n, rng, count + 1, main.chained, share), count: 1 });
     const area = kinds.reduce((sum, k) => sum + k.count * k.module.area.w * k.module.area.h, 0);
-    const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds) + copiesUnfed(ctx, index, kinds);
-    return { kinds, trouble, area, copies: count };
+    const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds, abreast) + copiesUnfed(ctx, index, kinds, abreast);
+    return { kinds, trouble, area, copies: count, ...(abreast ? { abreast } : {}) };
   }
   const { core, variant, machines, whole } = spec;
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
@@ -621,7 +635,7 @@ export function revive(ctx, index, list, rng) {
 // (`chained` fixes the set, for the leftover module). With `share` (Two-Way Copies), its
 // Internal Path out runs on belts of its own, as many as its machines fill (shapeOf), each
 // machine dropping onto the belts either side of it.
-function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false) {
+function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false, through = false) {
   const full = ctx.plan[index];
   const sb = scaled(full, m);
   const building = ctx.catalog.buildings[sb.building];
@@ -703,7 +717,8 @@ function repeatable(ctx, index, m, n, rng, copies, chained = null, share = false
   const routed = ({ variant, core }) => (variant.pipes.length || !core.ports.some(p => p.tiles.some(([, , d]) => d === N || d === S))
     ? areaOf(core) : core.w * (core.h + links.fluids.length));
   found.splice(0, found.length, ...mirrorsThatHelp(found));
-  found.sort((a, b) => trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || routed(a) - routed(b));
+  const heads = ({ variant }) => (through ? variant.heads?.length ?? 0 : 0);
+  found.sort((a, b) => heads(a) - heads(b) || trouble(a.core) - trouble(b.core) || a.core.supporting - b.core.supporting || stuck(a) - stuck(b) || routed(a) - routed(b));
   let failure = null;
   // (A core taken again by a variant alike routes as it did: one that failed is not routed again.)
   const failed = new Map();
@@ -890,10 +905,10 @@ function pathShortfall(ctx, sb, belts, wants, join = false, total = outputRate(s
 // groups them): what those belts cannot bring their consumers. Copies alternate between a kind's
 // module and its reverse (compose.js makeInstances, taken as one column): a belt snaking through
 // them runs the other way in every second copy, so its machines drop onto the other lane there.
-function copiesShortfall(ctx, index, kinds) {
+function copiesShortfall(ctx, index, kinds, abreast = false) {
   const sb = ctx.plan[index];
   let copy = 0;
-  const moduleOf = k => (copy++ % 2 && k.reverse ? k.reverse : k.module);
+  const moduleOf = k => (copy++ % 2 && k.reverse && !abreast ? k.reverse : k.module);
   const parts = kinds.flatMap((k, n) => Array.from({ length: k.count }, (_, c) => moduleOf(k).parts.filter(p => p.drops.length && itemsBelt(ctx, sb, p))
     .map(p => ({ ...p, drops: p.drops.map(d => ({ ...d, machine: `${n}.${c}:${d.machine}` })) }))).flat());
   if (!parts.length) return 0;
@@ -908,7 +923,7 @@ function copiesShortfall(ctx, index, kinds) {
 // through the copies (it runs the same way in a copy and its reverse) starts a run of its own in
 // every copy. Where that takes more runs than the path has belts (pathBelts: as both ends cut
 // it), the machines of the runs beyond them go short.
-function copiesUnfed(ctx, index, kinds) {
+function copiesUnfed(ctx, index, kinds, abreast = false) {
   const sb = ctx.plan[index];
   let short = 0;
   for (const route of ctx.routes) {
@@ -922,13 +937,15 @@ function copiesUnfed(ctx, index, kinds) {
       // its reverse in turn as compose.js makeInstances stands them, the leftover module after the
       // rest. A run goes on into the next copy where its part runs the other way, the belt
       // snaking down the column, while it has machines left to feed; else a new run starts.)
-      let copy = 0, dir = null, left = 0;
+      // (Copies abreast, ADR 0113: none reversed, a run going on into the next copy where its
+      // part runs through the one before.)
+      let copy = 0, dir = null, left = 0, through = false;
       for (const k of kinds) {
         for (let c = 0; c < k.count; c++) {
-          const p = on(copy++ % 2 && k.reverse ? k.reverse : k.module)[0];
+          const p = on(copy++ % 2 && k.reverse && !abreast ? k.reverse : k.module)[0];
           if (!p) continue;
           let machines = p.machines;
-          if (dir === null || p.dir === dir || !left) {
+          if (dir === null || (abreast ? !through : p.dir === dir) || !left) {
             runs++;
             left = fed;
           }
@@ -941,6 +958,7 @@ function copiesUnfed(ctx, index, kinds) {
             left = fed;
           }
           dir = p.dir;
+          through = p.canExit && p.kind !== 'head';
         }
       }
     } else {

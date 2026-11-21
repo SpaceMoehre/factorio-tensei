@@ -1463,7 +1463,8 @@ function makeInstances(plan, designs, wanted) {
     const w = Math.max(...kinds.map(k => k.module.area.w)) + 6;
     const h = kinds.reduce((sum, k) => sum + k.module.area.h, 0) / n;
     const square = n >= 4 ? Math.max(1, Math.min(n, Math.round(Math.sqrt(n * h / w)))) : 1;
-    const columns = Math.max(1, Math.min(n, wanted[i] === 0 ? square : wanted[i] ?? 1));
+    // (Copies whose belts all run through them stand abreast, a column each, ADR 0113.)
+    const columns = Math.max(1, Math.min(n, wanted[i] === 0 ? square : wanted[i] ?? (designs[i].abreast ? n : 1)));
     const perColumn = Math.ceil(n / columns);
     let rowOffset = 0, reversed = false;
     kinds.forEach((kind, j) => {

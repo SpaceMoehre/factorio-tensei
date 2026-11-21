@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v98: Copies abreast (implemented)
+
+Where no whole module of a Sub-Block routes though its core starves nothing, it repeats a module of fewer machines, one a copy too, the copies abreast (a column each, none reversed, the module with the fewest Head-on Belts): each belt runs through one copy straight into the next. Py advanced circuits among roboports, 116², out to the right: two chipshooters take eleven belts and no design of two routed; 60 → 159.85/min (1 → 2.66 machines), best at 1001 s; suite at 20 candidates a try 60 → 159.85/min (3 machines: 2.66); every other suite layout the same. ADR 0113.
+
 ## v97: Side Inputs each on its own (implemented)
 
 In a City Block where three Side Inputs or more would each be chained from one Sub-Block taking it to the next, every Sub-Block takes each on its own, their belts sharing a line from the west edge through splitters (Fan-out). Py advanced circuits among roboports, 116² (29 Sub-Blocks, 30 Side Input belts): 19.47 → 46.87/min, best at 2127 → 1269 s; trits 236² 125 → 133 reefs; every other suite layout the same. ADR 0112.

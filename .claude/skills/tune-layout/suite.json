@@ -411,6 +411,28 @@
         "entities": 7734,
         "hash": "45c000905312"
       }
+    },
+    {
+      "name": "advanced-circuit-116-right",
+      "file": "advanced-circuit-116-right.json",
+      "what": "Py advanced circuits among 8 roboports, 116² (238 × 120 snap grid), out to the right, inductors, ceramic, fiberboard, cobalt extract and methanal by train: two chipshooters or more take eleven belts, more than a whole module of them shares, so they repeat a module of one, the copies abreast (ADR 0113)",
+      "K": 20,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 262.1,
+        "tries": 14,
+        "rate": 159.85,
+        "machines": 3,
+        "failure": null,
+        "delivered": 159.85,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "230x108",
+        "entities": 7349,
+        "hash": "769ed56a4c16"
+      }
     }
   ]
 }
