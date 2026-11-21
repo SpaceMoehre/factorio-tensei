@@ -5,6 +5,10 @@ import { taken, joinedInto } from './flows.js';
 // Factorio 2.0 fluid segments move up to 6000 units/s.
 const PIPE_CAPACITY = 6000 * 60;
 
+// Side Inputs chained from Sub-Block to Sub-Block in a City Block from which each Sub-Block takes
+// them on its own instead (ADR 0112).
+const CHAINED = 3;
+
 // Every route item carries its rate (what the plan moves), supply (what enters the route) and
 // capacity (what the route can carry), all per minute. The train keeps Side Input saturated.
 // A Supplied Item (flows.joined): the Use's belt of it (`supplies`: { item, into: the producer,
@@ -12,8 +16,8 @@ const PIPE_CAPACITY = 6000 * 60;
 // onto it (compose.js); the Use's pipe of it joins the producer's network (`into`: that route),
 // the producer's pipe carrying both.
 // apart(i): whether Sub-Block i puts each solid product on a belt of its own (One Item a Belt,
-// ADR 0066).
-export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: number) => boolean} */ (() => false)) {
+// ADR 0066). city: in a City Block.
+export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: number) => boolean} */ (() => false), { city = false } = {}) {
   const rank = new Map(flows.order.map((sb, i) => [sb, i]));
   const byOrder = (a, b) => rank.get(a) - rank.get(b);
   // (Those taking it by train: not one taking it from a Sub-Block, as Py's RHEs take the coke oven
@@ -26,11 +30,18 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
 
   // A Side Input one belt cannot carry to all its consumers comes as its own route to each, so
   // each consumer can split it into parallel belts of its own.
-  const solids = flows.sideInput.filter(i => i.type === 'item').flatMap(input => {
+  // (In a City Block where CHAINED Side Inputs or more would each run from one Sub-Block taking it
+  // to the next, every Sub-Block takes each on its own, ADR 0112: chained, their belts ran across
+  // the block between Sub-Blocks standing far apart, crossing each other and the links between
+  // Sub-Blocks, Py advanced circuits' 13 of 30. One or two chained cost a line and splitters
+  // less, Py perylene's Annexes.)
+  const items = flows.sideInput.filter(i => i.type === 'item');
+  const apartAll = city && items.filter(i => consumersOf(i.item).length > 1 && i.rate <= 2 * laneCapacity).length >= CHAINED;
+  const solids = items.flatMap(input => {
     const consumers = consumersOf(input.item);
     // (Parts of a Sub-Block standing apart, Bands, take theirs each on its own too.) Their belts
     // still share belts from the west edge through splitters (compose.js: a Fan-out across them).
-    if (consumers.length < 2 || (input.rate <= 2 * laneCapacity && !consumers.some(c => plan[c].part))) return [{ ...input, consumers }];
+    if (consumers.length < 2 || (input.rate <= 2 * laneCapacity && !apartAll && !consumers.some(c => plan[c].part))) return [{ ...input, consumers }];
     return consumers.map(c => ({ ...input, rate: plan[c].inputs.find(x => x.name === input.item).rate, consumers: [c], perConsumer: true }));
   });
   for (const { consumers, items, perConsumer } of mergeGroups(solids, laneCapacity)) {

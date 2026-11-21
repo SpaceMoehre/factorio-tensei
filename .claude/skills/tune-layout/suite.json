@@ -53,18 +53,18 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 329.8,
-        "tries": 17,
-        "rate": 32.13,
-        "machines": 125,
+        "secs": 129.4,
+        "tries": 15,
+        "rate": 34.19,
+        "machines": 133,
         "failure": null,
-        "delivered": 32.13,
+        "delivered": 34.19,
         "valid": true,
         "starving": 0,
         "riding": 0,
         "bounds": "228x227",
-        "entities": 12902,
-        "hash": "8a53c97b1fb3"
+        "entities": 13061,
+        "hash": "e182dc436d57"
       }
     },
     {
@@ -388,6 +388,28 @@
         "bounds": "110x103",
         "entities": 2012,
         "hash": "107a023e52a9"
+      }
+    },
+    {
+      "name": "advanced-circuit-116",
+      "file": "advanced-circuit-116.json",
+      "what": "Py advanced circuits among 8 roboports, 116² (238 × 120 snap grid): 29 Sub-Blocks of a machine or few, 30 Side Input belts and 8 pipes from the west edge, 13 Side Inputs taken by several Sub-Blocks each on its own (ADR 0112)",
+      "K": 20,
+      "tier": "full",
+      "timeout": 3600,
+      "result": {
+        "secs": 249.8,
+        "tries": 15,
+        "rate": 44.96,
+        "machines": 1,
+        "failure": null,
+        "delivered": 44.96,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "230x112",
+        "entities": 7734,
+        "hash": "45c000905312"
       }
     }
   ]

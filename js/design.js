@@ -59,7 +59,7 @@ export function context(entries, catalog, logistics, site = null) {
     || (mixed.internal.some(e => e.from === i && e.item === plan[i].item) && solidBy(i).some(o => taken(plan, mixed, i, o.name) < o.rate - 1e-6)));
   const lane = laneRate(catalog, logistics.belt);
   const flows = buildFlows(plan, beltRate(catalog, logistics.belt), apart);
-  const routes = buildRoutes(plan, flows, lane, apart);
+  const routes = buildRoutes(plan, flows, lane, apart, { city: Boolean(site) });
   plan.forEach((sb, i) => { sb.headroom = spareSpeed(sb, i, routes, lane); });
   const env = {
     routes, inserters,

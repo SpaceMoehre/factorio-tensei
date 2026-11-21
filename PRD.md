@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v97: Side Inputs each on its own (implemented)
+
+In a City Block where three Side Inputs or more would each be chained from one Sub-Block taking it to the next, every Sub-Block takes each on its own, their belts sharing a line from the west edge through splitters (Fan-out). Py advanced circuits among roboports, 116² (29 Sub-Blocks, 30 Side Input belts): 19.47 → 46.87/min, best at 2127 → 1269 s; trits 236² 125 → 133 reefs; every other suite layout the same. ADR 0112.
+
 ## v96: Copies as wide as fit (implemented)
 
 Copies of a module also come in rows as long as leave room for all that stands beside their stack (each belt's lane on both sides, a trunk per fluid, a Recipe Loop's taps), and where such a stack spans most of the City Block, its flattest designs are placed one by one right after the first candidate once those in columns fit none. Py trits in a clear 236² City Block: at 20 candidates a try 91 → 125 reefs; on the page 124 → 127 (31.87 → 32.48/min), best at 717 → 571 s. ADR 0111.
