@@ -45,7 +45,9 @@ test('Input Sides: the belts from the train come in across the edge the user cho
 test('Input and Output Sides, several each: each belt to or from the train on one of them', () => {
   const site = siteOf({ area: { x: 0, y: 0, w: 60, h: 60 }, fixtures: [] }, 2);
   const all = ['left', 'up', 'right', 'down'];
-  for (const [logi, where] of [[{ ...logistics, input: all, output: all }, site], [{ ...logistics, input: ['up', 'down'], output: ['up', 'left'] }, site], [{ ...logistics, input: all, output: all }, null]]) {
+  /** @type {[any, any][]} */
+  const cases = [[{ ...logistics, input: all, output: all }, site], [{ ...logistics, input: ['up', 'down'], output: ['up', 'left'] }, site], [{ ...logistics, input: all, output: all }, null]];
+  for (const [logi, where] of cases) {
     const best = layOut(logi, where);
     assert.ok(best, JSON.stringify([logi.input, logi.output, !!where]));
     const ins = best.ins ?? [12], outs = best.outs ?? [best.out ?? 4];

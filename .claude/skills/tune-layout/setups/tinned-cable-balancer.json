@@ -1,0 +1,21 @@
+{
+  "catalog": "5ffa7dfe82d1",
+  "goals": [{ "item": "tinned-cable", "rate": 1800, "balance": true }],
+  "logistics": {
+    "belt": "transport-belt", "pipe": "niobium-pipe-to-ground", "pole": "medium-electric-pole",
+    "inserter": "fast-inserter", "longInserter": "long-handed-inserter", "fuel": "coal", "liquidFuel": "methane",
+    "rightAngle": true, "handSize": 2, "budget": 1000, "circuit": "red", "plainPipe": "niobium-pipe",
+    "fuels": { "biomass": "biomass" },
+    "output": ["left", "up", "right"],
+    "input": ["left", "up", "right"]
+  },
+  "made": ["copper-cable", "tinned-cable"],
+  "selections": {
+    "copper-cable": { "recipe": "copper-cable", "building": "automated-factory-mk01" },
+    "tinned-cable": { "recipe": "tinned-cable", "building": "automated-factory-mk01" }
+  },
+  "uses": [],
+  "exports": [],
+  "voids": ["blood"],
+  "city": { "on": false, "w": 116, "h": 116, "buffer": 4, "maximize": true }
+}

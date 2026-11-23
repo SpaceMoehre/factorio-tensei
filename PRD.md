@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v100: A balancer built as made (implemented)
+
+A balancer's design come back from a design worker is built as the balancer it is, not as a core of machines (squeezed, its in belts' end tiles gone: the page failed at once, "p is undefined"); a balancer starves only where its belts bring less in all than it gives, not where one brings less than an even share. Py tinned cable 1800/min into a 3–2 balancer: failure → 1800/min, 65 × 50, valid, starving nothing. ADR 0115.
+
 ## v99: Input and Output Sides (implemented)
 
 The user chooses the edges the train brings the inputs across ("Input sides", left by default) and those the products leave across ("Output sides", right by default), one or several each, all four if they like: each belt and pipe to or from the train takes whichever of its sides it reaches soonest. The block still runs west to east. Py advanced circuits, 2 chipshooters, all four sides: the train's belts and pipes 3230 → 1556 tiles, every belt and pipe 5695 → 3906. ADR 0114.

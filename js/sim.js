@@ -6,8 +6,12 @@ const EPSILON = 1e-9;
 // whatever the Sub-Blocks along the way do not take. A Recipe Loop's feedback belts tapped off a
 // route (route.taps) take theirs first: what they carry on to their own consumers is theirs.
 export function simulate(block) {
+  /** @type {{ route: number, subBlock: number | null, item: string, demand: number, available: number, cause?: string }[]} */
   const starvation = [];
   const demandOf = (route, sb, item) => (block.subBlocks[sb].inputs.find(x => x.name === item)?.rate ?? 0) * (route.share?.[sb] ?? 1);
+  // A belt balancer takes whatever each of its belts brings: short only where they bring less in
+  // all than it gives (ADR 0092, ADR 0115). By Sub-Block and item: { demand, available, route }.
+  const balanced = new Map();
   for (const route of block.routes) {
     // (A Supplied Item's belt side-loads what it brings onto it, a lane with room for it.)
     const available = laneShares(route.items).map((a, i) => a + (route.items[i].joined ?? 0));
@@ -24,11 +28,20 @@ export function simulate(block) {
       for (const sb of route.consumers) {
         // A route split into parallel belts carries its part's share of each consumer's demand.
         const demand = demandOf(route, sb, item);
-        take(sb, demand);
+        if (block.subBlocks[sb].balancer) {
+          const k = `${sb}|${item}`, t = balanced.get(k) ?? { sb, item, demand: 0, available: 0, route: route.id };
+          t.demand += demand;
+          t.available += left;
+          balanced.set(k, t);
+          left = Math.max(0, left - demand);
+        } else take(sb, demand);
         consumed += demand;
       }
       if (route.sink === 'side-output') take(null, Math.max(0, rate - consumed));
     });
+  }
+  for (const t of balanced.values()) {
+    if (t.demand > t.available + EPSILON * Math.max(1, t.demand)) starvation.push({ route: t.route, subBlock: t.sb, item: t.item, demand: t.demand, available: t.available });
   }
   block.subBlocks.forEach((sb, i) => starvation.push(...inserterStarvation(sb, i)));
   return { ok: starvation.length === 0, starvation };

@@ -111,3 +111,38 @@ test('a balancer Sub-Block laid out in a block: valid, no starvation, its splitt
   assert.deepEqual(simulate(block).starvation, []);
   assert.ok(block.entities.some(e => e.kind === 'splitter' && e.subBlock === bal));
 });
+
+// A balancer's candidate come back from a worker (revive: its build lost in the structured clone)
+// builds as it was made: its own network unsqueezed, its out belts fed. Built as a core of
+// machines, it was squeezed, its in belts' end tiles gone (ADR 0115: Py tinned cable 1800/min,
+// "p is undefined").
+test('a balancer candidate revived from a worker builds as the one made here', async () => {
+  const { context, designStep, designOf, revive, random } = await import('../js/design.js');
+  const { logistics: base } = await import('./fixtures/catalog.js');
+  const settings = { ...base, ...logistics, plainPipe: base.plainPipe };
+  const entries = withBalancers([stepOf('iron-gear-wheel', 2700)], catalog, settings);
+  const ctx = context(entries, catalog, settings);
+  const i = ctx.plan.findIndex(sb => sb.balancer);
+  const made = designStep(ctx, i, random(1), {});
+  const back = revive(ctx, i, made.map(({ build, design, ...c }) => structuredClone(c)), random(1));
+  const [a, b] = [designOf(made[0]), designOf(back[0])];
+  assert.ok(a && b);
+  const tiles = d => d.kinds[0].module.entities.map(e => `${e.kind}@${e.x},${e.y}`).sort();
+  assert.deepEqual(tiles(b), tiles(a));
+  assert.deepEqual(b.kinds[0].module.parts.map(p => p.drops), a.kinds[0].module.parts.map(p => p.drops));
+});
+
+// A balancer takes whatever each of its belts brings (ADR 0115): belts bringing it unevenly
+// starve nothing while they bring all it gives, short only in all.
+test('a balancer starves only where its belts bring less in all than it gives', async () => {
+  const { simulate } = await import('../js/sim.js');
+  const belt = (id, rate) => ({ id, kind: 'belt', source: 0, sink: null, consumers: [1], share: { 1: 1 / 3 }, items: [{ item: 'x', rate: 600, supply: rate, capacity: 900 }], pieces: [] });
+  const block = rates => ({
+    subBlocks: [{ count: 3, inputs: [], outputs: [{ name: 'x', rate: 1800 }] }, { count: 2, balancer: true, inputs: [{ name: 'x', rate: 1800 }], outputs: [] }],
+    routes: rates.map((r, k) => belt(k, r)),
+  });
+  assert.deepEqual(simulate(block([570, 750, 480])).starvation, []);
+  const short = simulate(block([570, 600, 480])).starvation;
+  assert.equal(short.length, 1);
+  assert.equal(Math.round(short[0].demand - short[0].available), 150);
+});

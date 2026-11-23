@@ -433,6 +433,28 @@
         "entities": 7349,
         "hash": "769ed56a4c16"
       }
+    },
+    {
+      "name": "tinned-cable-balancer",
+      "file": "tinned-cable-balancer.json",
+      "what": "Py tinned cable 1800/min into a belt balancer (3 belts in, 2 out), standing on its own, inputs and products on the left, top or right: a balancer's candidate come back from a design worker built as a core of machines (squeezed, its in belts' end tiles gone: \"p is undefined\"), and its in belts bringing it unevenly counted as starving (ADR 0115)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 1800,
+      "result": {
+        "secs": 3.3,
+        "tries": 40,
+        "rate": 1800,
+        "machines": null,
+        "failure": "copies overlap at 28,2",
+        "delivered": 1800,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "69x49",
+        "entities": 619,
+        "hash": "0bc49a85eca2"
+      }
     }
   ]
 }

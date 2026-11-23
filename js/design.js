@@ -261,18 +261,24 @@ function balancerCandidates(ctx, index, sb, links) {
     const spec = { core, variant, machines: sb.count, whole: true };
     out.push({
       estimate: { trouble: 0, area: core.w * core.h, stuck: 0, supporting: 0, uneven: 0, w: core.w, h: core.h }, variant, spec,
-      build: () => {
-        const routed = routeModule(core, { ...moduleOptions(ctx, links, { w: 1, e: 1, n: 0, s: 0 }, sb), squeeze: false });
-        // (Each out belt is fed as if by a machine of its own, both its lanes full: what its producer
-        // side of the Path Flow counts.)
-        const lane = ctx.env.laneCapacity;
-        const module = { ...routed, parts: routed.parts.map(p => (p.routeIds.includes(links.output) ? { ...p, drops: [{ machine: p.part, left: lane, right: lane, either: 0, share: 1 }] } : p)) };
-        return { kinds: [{ module, count: 1 }], variant, trouble: 0, area: module.area.w * module.area.h };
-      },
+      build: () => buildBalancer(ctx, index, spec),
     });
   }
   if (!out.length) throw new LayoutError(`${sb.item}: no belt balancer network fits`);
   return out;
+}
+
+// A belt balancer's module: its network routed as laid, never squeezed (its straight belts are
+// the network's), each out belt fed as if by a machine of its own, both its lanes full: what its
+// producer side of the Path Flow counts. (Also for a candidate come back from a worker, revive:
+// routed as a core of machines, it was squeezed, its in belts' end tiles gone, ADR 0115.)
+function buildBalancer(ctx, index, spec) {
+  const sb = ctx.plan[index], { core, variant } = spec;
+  const links = coreLinks(sb, index, ctx.routes);
+  const routed = routeModule(core, { ...moduleOptions(ctx, links, { w: 1, e: 1, n: 0, s: 0 }, sb), squeeze: false });
+  const lane = ctx.env.laneCapacity;
+  const module = { ...routed, parts: routed.parts.map(p => (p.routeIds.includes(links.output) ? { ...p, drops: [{ machine: p.part, left: lane, right: lane, either: 0, share: 1 }] } : p)) };
+  return { kinds: [{ module, count: 1 }], variant, trouble: 0, area: module.area.w * module.area.h };
 }
 
 // A variant's key, field for field. (A variant asked again, the same object, keeps its key: plain
@@ -568,6 +574,8 @@ function buildSpec(ctx, index, spec, rng) {
     const trouble = kinds.reduce((sum, k) => sum + k.count * k.trouble, 0) + copiesShortfall(ctx, index, kinds, abreast) + copiesUnfed(ctx, index, kinds, abreast);
     return { kinds, trouble, area, copies: count, ...(abreast ? { abreast } : {}) };
   }
+  // (A belt balancer's its own, ADR 0092, ADR 0115.)
+  if (spec.variant?.balancer !== undefined) return buildBalancer(ctx, index, spec);
   const { core, variant, machines, whole } = spec;
   const sb = whole ? ctx.plan[index] : scaled(ctx.plan[index], machines);
   const links = coreLinks(sb, index, ctx.routes);
