@@ -7,6 +7,13 @@ import { assignFluidBoxes } from '../fluidboxes.js';
 const DIR = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
 const OPPOSITE = { 0: 8, 4: 12, 8: 0, 12: 4 };
 const key = (x, y) => `${x},${y}`;
+// The sides the train's belts and pipes come in across and leave across (ADR 0069, ADR 0114):
+// west and east by default.
+const SIDE = { 0: 'north', 4: 'east', 8: 'south', 12: 'west' };
+const insOf = block => block.ins ?? [12];
+const outsOf = block => block.outs ?? [block.out ?? 4];
+const onSide = (b, d, p) => (d === 4 ? p.x === b.x + b.w - 1 : d === 12 ? p.x === b.x : d === 0 ? p.y === b.y : p.y === b.y + b.h - 1);
+const sidesText = list => list.map(d => SIDE[d]).join(' or ');
 
 const tilesOf = e => {
   const tiles = [];
@@ -426,11 +433,11 @@ export function pipeNetwork(block, route, catalog, logistics, machines) {
     }
   }
   for (const m of machines.filter(m => !reached.has(m))) problems.push(`${route.fluid} does not reach ${m.name} at ${m.x},${m.y}`);
-  if (route.source === 'side-input' && !pieces.some(p => p.x === block.bounds.x) && drawnFrom(block, route) === null) problems.push(`${route.fluid} does not start at the west edge`);
+  if (route.source === 'side-input' && !pieces.some(p => insOf(block).some(d => onSide(block.bounds, d, p))) && drawnFrom(block, route) === null) problems.push(`${route.fluid} does not start at the ${sidesText(insOf(block))} edge`);
   // (Joined with pipes of its network, through theirs; in an Annex's City Block reaching one built
   // before it will do: that was checked with its own.)
   const built = p => route.network !== undefined && p.network === route.network;
-  const atOut = p => ((block.out ?? 4) === 4 ? p.x === block.bounds.x + block.bounds.w - 1 : block.out === 0 ? p.y === block.bounds.y : p.y === block.bounds.y + block.bounds.h - 1);
+  const atOut = p => outsOf(block).some(d => onSide(block.bounds, d, p));
   if (route.sink === 'side-output' && !joinedTo(block, route, reach).some(p => atOut(p) || built(p))) problems.push(`${route.fluid} does not reach the train's edge`);
   // A valve between its pipe and the one it tops up or lets the spare off; a void at the end of
   // its pipe (ADR 0062).
@@ -532,10 +539,10 @@ export function endsAtEastEdge(block, route) {
     const problems = joinsFromSide(block, route);
     return problems.length ? problems : endsAtEastEdge(block, block.routes[route.joins]);
   }
-  const out = block.out ?? 4, { x, y, w, h } = block.bounds;
-  const edge = out === 4 ? last.x === x + w - 1 : out === 0 ? last.y === y : last.y === y + h - 1;
-  if (!edge) return [`route ${route.id} does not reach the ${out === 4 ? 'east' : out === 0 ? 'north' : 'south'} edge`];
-  if (last.travel !== out) return [`route ${route.id} does not leave ${out === 4 ? 'east' : out === 0 ? 'north' : 'south'}ward`];
+  const outs = outsOf(block);
+  const edges = outs.filter(d => onSide(block.bounds, d, last));
+  if (!edges.length) return [`route ${route.id} does not reach the ${sidesText(outs)} edge`];
+  if (!edges.includes(last.travel)) return [`route ${route.id} does not leave ${sidesText(edges.length === 1 ? edges : outs)}ward`];
   return [];
 }
 
@@ -555,8 +562,9 @@ function joinsFromSide(block, route) {
   return [];
 }
 
+// (On an Input Side, ADR 0114: the west by default.)
 function startsAtWestEdge(block, route) {
-  return route.pieces[0].x === block.bounds.x ? [] : [`route ${route.id} does not start at the west edge`];
+  return insOf(block).some(d => onSide(block.bounds, d, route.pieces[0])) ? [] : [`route ${route.id} does not start at the ${sidesText(insOf(block))} edge`];
 }
 
 // A Side Input's belt in a Fan-out starts at a splitter on the belt from the west edge; a Recipe

@@ -70,6 +70,9 @@
   .check { display: flex; gap: 8px; align-items: center; }
   .check input { accent-color: var(--accent); width: 16px; height: 16px; }
   .check .hint, .budget .hint { margin: 0; }
+  .sides { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
+  .budget.sides input { width: 16px; }
+  .sides .hint { flex-basis: 100%; }
   .budget { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
   .budget input { width: 80px; }
 
@@ -155,7 +158,7 @@
 
   /* Logistics */
   .settings { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 10px 10px; align-items: center; }
-  .settings > label { font-size: 13px; color: var(--muted); }
+  .settings > label, .settings > .label { font-size: 13px; color: var(--muted); }
   #city > .settings { margin-top: 10px; }
   #city-bp { height: 56px; margin-top: 8px; }
 
@@ -427,8 +430,10 @@
         <span id="other-fuels" style="display:contents"></span>
         <label for="circuit">Circuit wires</label>
         <span class="budget"><select id="circuit" aria-label="Circuit wires joining every pole and inserter" style="width:auto"><option value="none">None</option><option value="red">Red</option><option value="green">Green</option><option value="both">Red and green</option></select> <span class="hint">join every pole and inserter</span></span>
-        <label for="output-side">Output side</label>
-        <span class="budget"><select id="output-side" aria-label="The side the block's products leave by" style="width:auto"><option value="right">Right</option><option value="up">Up</option><option value="down">Down</option></select> <span class="hint">where the train takes the products; it brings the inputs from the left</span></span>
+        <span class="label" id="input-sides-label">Input sides</span>
+        <span class="budget sides" id="input-sides" role="group" aria-labelledby="input-sides-label"><label class="check"><input type="checkbox" data-side="left"> Left</label><label class="check"><input type="checkbox" data-side="up"> Up</label><label class="check"><input type="checkbox" data-side="right"> Right</label><label class="check"><input type="checkbox" data-side="down"> Down</label> <span class="hint">where the train brings the inputs; each takes the nearest</span></span>
+        <span class="label" id="output-sides-label">Output sides</span>
+        <span class="budget sides" id="output-sides" role="group" aria-labelledby="output-sides-label"><label class="check"><input type="checkbox" data-side="left"> Left</label><label class="check"><input type="checkbox" data-side="up"> Up</label><label class="check"><input type="checkbox" data-side="right"> Right</label><label class="check"><input type="checkbox" data-side="down"> Down</label> <span class="hint">where the train takes the products; each takes the nearest</span></span>
         <label for="right-angle">90° inserters</label>
         <label class="check"><input type="checkbox" id="right-angle"> <span class="hint">needs the Inserter_Config mod</span></label>
         <label for="one-item">One item a belt</label>

@@ -119,9 +119,23 @@ $('circuit').addEventListener('change', () => {
   // Only the blueprint and the map change: the block stays as it is.
   if (best) show(best.block, best.tried, best.found, best.score, { view: map?.viewport() });
 });
-// The Output Side (ADR 0069): the edge the products leave across; the inputs come from the left.
-$('output-side').value = state.logistics.output ?? 'right';
-$('output-side').addEventListener('change', () => { state.logistics.output = $('output-side').value; save(); });
+// The Input and Output Sides (ADR 0069, ADR 0114): the edges the train brings the inputs across
+// and takes the products across, one or several each (a side alone kept as its name). At least
+// one stays ticked.
+for (const [key, fallback] of [['input', 'left'], ['output', 'right']]) {
+  const boxes = [...$(`${key}-sides`).querySelectorAll('input[data-side]')];
+  const chosen = () => [state.logistics[key] ?? fallback].flat();
+  const sync = () => { for (const b of boxes) b.checked = chosen().includes(b.dataset.side); };
+  sync();
+  for (const b of boxes) {
+    b.addEventListener('change', () => {
+      const list = boxes.filter(x => x.checked).map(x => x.dataset.side);
+      if (!list.length) return sync();
+      state.logistics[key] = list.length === 1 ? list[0] : list;
+      save();
+    });
+  }
+}
 $('right-angle').checked = state.logistics.rightAngle;
 $('right-angle').addEventListener('change', () => { state.logistics.rightAngle = $('right-angle').checked; save(); });
 // One Item a Belt (ADR 0066): on unless the user keeps a machine's products on one belt.
@@ -618,6 +632,12 @@ function iconOf(item) {
 }
 
 // A name as people read it: "iron-pulp-01" is "Iron pulp 01".
+// The train's edges, named: 'left' or ['up', 'right'] → "west", "north or east".
+function trainEdges(sides) {
+  const names = { left: 'west', up: 'north', right: 'east', down: 'south' };
+  return [sides].flat().map(k => names[k] ?? k).join(' or ');
+}
+
 function label(name) {
   return displayName(name);
 }
@@ -1413,7 +1433,7 @@ function inspect(hit, block) {
     }, iconOf(sb.item), el('span', { textContent: `${label(sb.item)} ×${sb.count}` }));
   };
   const end = (at, west) => (typeof at === 'number' ? sbLink(at)
-    : el('span', { className: 'train' }, iconOf('locomotive'), el('span', { textContent: `Train (${west ? 'west' : { up: 'north', down: 'south' }[state.logistics.output] ?? 'east'} edge)` })));
+    : el('span', { className: 'train' }, iconOf('locomotive'), el('span', { textContent: `Train (${trainEdges(west ? state.logistics.input ?? 'left' : state.logistics.output ?? 'right')} edge)` })));
   const facts = rows => el('dl', { className: 'facts' }, ...rows.filter(Boolean).flatMap(([k, ...v]) => [el('dt', { textContent: k }), el('dd', {}, ...v)]));
   // A flow: its icon and name, its rate, and how full it runs of `capacity` (a bar).
   const flow = (name, n, capacity = null, note = '') => {

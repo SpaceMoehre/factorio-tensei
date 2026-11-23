@@ -9,17 +9,45 @@ const FREE = -2147483648;
 const NONE = Object.freeze([]);
 
 // The Output Side (ADR 0069): the edge the block's belts and pipes to the train leave across, as
-// the user chooses it (logistics.output: 'right', 'up' or 'down'; east by default). The block runs
-// west to east all the same; only the last legs to the train turn there.
-export const outSide = logistics => ({ up: N, down: S }[logistics?.output] ?? E);
-// Whether a piece at x, y heading a leaves `area` across the Output Side `out`.
-export const atOut = (area, out, x, y, a) => a === out && (out === E ? x === area.x + area.w - 1 : out === N ? y === area.y : y === area.y + area.h - 1);
+// the user chooses it (logistics.output: 'right', 'up', 'down' or 'left'; east by default). The
+// block runs west to east all the same; only the last legs to the train turn there.
+// Input and Output Sides (ADR 0114): logistics.input, the edges the train brings what the block
+// takes across (west by default), and logistics.output, each one side or a list of them; a belt
+// or pipe to or from the train takes whichever of its edges it reaches soonest.
+const SIDES = { up: N, right: E, down: S, left: W };
+const sidesOf = (v, fallback) => {
+  const list = (Array.isArray(v) ? v : v === undefined || v === null ? [] : [v]).map(k => SIDES[k]).filter(d => d !== undefined);
+  return list.length ? [N, E, S, W].filter(d => list.includes(d)) : [fallback];
+};
+export const outSides = logistics => sidesOf(logistics?.output, E);
+export const inSides = logistics => sidesOf(logistics?.input, W);
+// (The one Output Side where there is one, the first otherwise.)
+export const outSide = logistics => outSides(logistics)[0];
+// Whether a piece at x, y heading a leaves `area` across one of the sides `outs` (a side, or a
+// list of them).
+export const atOut = (area, outs, x, y, a) => (Array.isArray(outs) ? outs : [outs]).some(out => a === out && onEdge(area, out, x, y));
+// Whether x, y lies on `area`'s edge on side d.
+export const onEdge = (area, d, x, y) => (d === E ? x === area.x + area.w - 1 : d === W ? x === area.x : d === N ? y === area.y : y === area.y + area.h - 1);
+// Every tile along `area`'s edges on the sides `sides`, heading in: where a belt or pipe from the
+// train starts, or a search for one to it (from the edge inward to the pipes it joins).
+export const edgeTiles = (area, sides) => sides.flatMap(d => {
+  const a = opposite(d);
+  if (d === E || d === W) {
+    const x = d === E ? area.x + area.w - 1 : area.x;
+    return [...Array(area.h).keys()].map(k => ({ x, y: area.y + k, a }));
+  }
+  const y = d === N ? area.y : area.y + area.h - 1;
+  return [...Array(area.w).keys()].map(k => ({ x: area.x + k, y, a }));
+});
 
 export class Grid {
-  // out: the Output Side (outSide).
-  constructor(area, out = E) {
+  // out: the Output Sides (outSides; or one of them); ins: the Input Sides (inSides).
+  /** @param {any} area @param {number | number[]} [out] @param {number[]} [ins] */
+  constructor(area, out = E, ins = [W]) {
     this.area = area;
-    this.out = out;
+    this.outs = Array.isArray(out) ? out : [out];
+    this.out = this.outs[0];
+    this.ins = ins;
     // What stands on each tile: outside the area by key (`occupied`), inside it by tile index
     // (`cells`). (A snapshot copies the few outside, not every entity's every tile.)
     this.occupied = new Map();

@@ -122,18 +122,27 @@ function markers(block, merges = []) {
   // In a City Block, only inside it (in its Buffer).
   const area = block.site?.area;
   const merged = new Set(merges.map(m => m.merge));
+  // (Across the sides the train comes in and leaves by, ADR 0069 and 0114: the one whose edge
+  // the route reaches, the first otherwise.)
+  const ins = block.ins ?? [12], outs = block.outs ?? [block.out ?? 4];
+  const STEP = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
   for (const route of block.routes ?? []) {
-    const side = route.source === 'side-input' ? -1 : route.sink === 'side-output' ? 1 : 0;
+    const sides = route.source === 'side-input' ? ins : route.sink === 'side-output' ? outs : [];
     // A Fan-out's belts come in on its belts from the west edge, each with what it brings.
-    if (!side || !route.pieces.length || route.fedBy !== undefined) continue;
-    const end = route.pieces.reduce((best, p) => (p.x * side > best.x * side ? p : best));
-    let x = end.x + side;
-    while (taken.has(`${x},${end.y}`)) x += side;
-    if (area && (x < area.x || x >= area.x + area.w)) continue;
-    taken.add(`${x},${end.y}`);
+    if (!sides.length || !route.pieces.length || route.fedBy !== undefined) continue;
+    const ends = sides.map(d => {
+      const [dx, dy] = STEP[d];
+      return { d, dx, dy, end: route.pieces.reduce((best, p) => (p.x * dx + p.y * dy > best.x * dx + best.y * dy ? p : best)) };
+    });
+    const b = block.bounds;
+    const { dx, dy, end } = ends.find(({ d, end: p }) => (b ? (d === 4 ? p.x === b.x + b.w - 1 : d === 12 ? p.x === b.x : d === 0 ? p.y === b.y : p.y === b.y + b.h - 1) : false)) ?? ends[0];
+    let x = end.x + dx, y = end.y + dy;
+    while (taken.has(`${x},${y}`)) [x, y] = [x + dx, y + dy];
+    if (area && (x < area.x || x >= area.x + area.w || y < area.y || y >= area.y + area.h)) continue;
+    taken.add(`${x},${y}`);
     const [first] = route.items;
     out.push({
-      name: 'display-panel', kind: 'marker', x, y: end.y, w: 1, h: 1,
+      name: 'display-panel', kind: 'marker', x, y, w: 1, h: 1,
       icon: { type: route.kind === 'pipe' ? 'fluid' : 'item', name: first.item },
       // (A merged belt's items each on the belt coming in north and south of it.)
       text: (route.brings ?? route.items).map((i, k) => `${merged.has(route.id) ? (k ? '↓ ' : '↑ ') : ''}${i.item} ${Math.round(i.rate)}/min`).join(merged.has(route.id) ? ' · ' : ' + '),
@@ -153,21 +162,32 @@ function mergers(block) {
   const tiles = e => [...Array(e.w * e.h).keys()].map(i => `${e.x + (i % e.w)},${e.y + Math.floor(i / e.w)}`);
   const taken = new Set([...block.entities, ...(block.site?.fixtures ?? [])].flatMap(tiles));
   const area = block.site?.area;
-  // The tiles beside the west edge Side Inputs come in through.
+  // The tiles beside the west edge Side Inputs come in through (or the edges, ADR 0114: a belt
+  // coming in heading d, across the side opposite d).
   const inputs = (block.routes ?? []).filter(r => r.source === 'side-input' && r.fedBy === undefined && r.pieces.length);
-  const west = block.bounds?.x ?? Math.min(...block.entities.map(e => e.x));
-  const entering = new Set(inputs.flatMap(r => r.pieces.filter(p => p.x === west).map(p => `${p.x - 1},${p.y}`)));
+  const STEP = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
+  const b = block.bounds ?? (() => {
+    const x = Math.min(...block.entities.map(e => e.x)), y = Math.min(...block.entities.map(e => e.y));
+    return { x, y, w: Math.max(...block.entities.map(e => e.x + e.w)) - x, h: Math.max(...block.entities.map(e => e.y + e.h)) - y };
+  })();
+  const ins = block.ins ?? [12];
+  // (Where a piece heading d stands on the edge it came in across.)
+  const entersAt = (p, d) => ins.includes((d + 8) % 16) && (d === 4 ? p.x === b.x : d === 12 ? p.x === b.x + b.w - 1 : d === 8 ? p.y === b.y : p.y === b.y + b.h - 1);
+  const entering = new Set(inputs.flatMap(r => r.pieces.flatMap(p => [0, 4, 8, 12].filter(d => entersAt(p, d)).map(d => `${p.x - STEP[d][0]},${p.y - STEP[d][1]}`))));
   const out = [];
   for (const r of inputs) {
     const [first] = r.pieces;
-    if (r.kind !== 'belt' || r.items.length !== 2 || r.loop || !['belt', 'underground-belt'].includes(first.kind) || (first.travel ?? first.direction) !== 4 || first.x !== west) continue;
-    const x = first.x - 1, { y } = first;
-    const spots = [[x, y - 1], [x, y], [x, y + 1]];
-    if (spots.some(([u, v]) => taken.has(`${u},${v}`)) || entering.has(`${x},${y - 1}`) || entering.has(`${x},${y + 1}`)) continue;
-    if (area && spots.some(([u, v]) => u < area.x || v < area.y || v >= area.y + area.h)) continue;
-    // (Facing east, the north side is the left lane: the first item's.)
-    const piece = (v, d) => ({ name: belt, kind: 'belt', x, y: v, w: 1, h: 1, direction: d, merge: r.id });
-    out.push(piece(y - 1, 8), piece(y, 4), piece(y + 1, 0));
+    const d = first.travel ?? first.direction;
+    if (r.kind !== 'belt' || r.items.length !== 2 || r.loop || !['belt', 'underground-belt'].includes(first.kind) || !entersAt(first, d)) continue;
+    // (Behind it, and either side of that: left, then right of its heading.)
+    const [fx, fy] = STEP[d], [lx, ly] = STEP[(d + 12) % 16];
+    const x = first.x - fx, y = first.y - fy;
+    const spots = [[x + lx, y + ly], [x, y], [x - lx, y - ly]];
+    if (spots.some(([u, v]) => taken.has(`${u},${v}`)) || entering.has(`${spots[0][0]},${spots[0][1]}`) || entering.has(`${spots[2][0]},${spots[2][1]}`)) continue;
+    if (area && spots.some(([u, v]) => u < area.x || u >= area.x + area.w || v < area.y || v >= area.y + area.h)) continue;
+    // (Facing in, the left side's lane is the first item's.)
+    const piece = (/** @type {number[]} */ [u, v], dir) => ({ name: belt, kind: 'belt', x: u, y: v, w: 1, h: 1, direction: dir, merge: r.id });
+    out.push(piece(spots[0], (d + 4) % 16), piece(spots[1], d), piece(spots[2], (d + 12) % 16));
     for (const [u, v] of spots) taken.add(`${u},${v}`);
   }
   return out;

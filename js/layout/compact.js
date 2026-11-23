@@ -1,4 +1,4 @@
-import { Grid, N, E, S, W, VEC, key, opposite, span, outSide } from './grid.js';
+import { Grid, N, E, S, W, VEC, key, opposite, span, outSides, inSides } from './grid.js';
 import { routeLink, RoutingError, legCost } from './router.js';
 import { placePoles, PowerError } from './poles.js';
 import { inserterTiles, fluidEnds } from './validity.js';
@@ -34,8 +34,12 @@ export function given(block, step) {
 }
 
 export function finishBlock(block, catalog, logistics, { squeeze = true } = {}) {
-  // (The Output Side, for the checks, ADR 0069.)
-  if (outSide(logistics) !== E) block = { ...block, out: outSide(logistics) };
+  // (The Output Side, for the checks, ADR 0069; the Output Sides where several, the Input Sides
+  // where not the west alone, ADR 0114.)
+  const outs = outSides(logistics), ins = inSides(logistics);
+  if (outs.length === 1 && outs[0] !== E) block = { ...block, out: outs[0] };
+  if (outs.length > 1) block = { ...block, outs };
+  if (ins.length > 1 || ins[0] !== W) block = { ...block, ins };
   // Pipes buried, byproduct belts merged, belts straightened and poles placed; where a merged or
   // straightened belt took the room a pole needed, powered as buried (ADR 0051, ADR 0052).
   const finish = b => {
@@ -220,7 +224,7 @@ function beltGrid(block, catalog, logistics) {
   if (!spec?.underground || !block.routes.some(r => r.kind === 'belt')) return null;
   const names = { belt: spec.name, underground: spec.underground.name, reach: spec.underground.maxDistance };
   const fixtures = block.site?.fixtures ?? [];
-  const grid = new Grid(block.site ? block.site.inner : extent(block.entities), outSide(logistics));
+  const grid = new Grid(block.site ? block.site.inner : extent(block.entities), outSides(logistics), inSides(logistics));
   for (const e of [...fixtures, ...block.entities]) grid.place(e);
   const partner = new Map();
   for (const r of block.routes) {

@@ -1,4 +1,4 @@
-import { Grid, N, E, S, W, VEC, key, turnLeft, turnRight, opposite, outSide, atOut } from './grid.js';
+import { Grid, N, E, S, W, VEC, key, turnLeft, turnRight, opposite, outSides, inSides, atOut, onEdge, edgeTiles } from './grid.js';
 import { turnSide } from './turn.js';
 import { routeLink, routePipe, RoutingError, legCost } from './router.js';
 import { PowerError } from './poles.js';
@@ -101,8 +101,10 @@ export function compose(ctx, prepared, positions, layout) {
   // Item's pipe there, even from one copy: it turns back to join its network.)
   const { site = null } = ctx;
   const area = site ? { ...site.inner } : extentOf([...placed, ...(positions.bounds ? [positions.bounds] : [])], layout.margin);
-  // (The edge the belts and pipes to the train leave across, ADR 0069.)
-  const out = outSide(ctx.logistics);
+  // (The edges the belts and pipes to the train leave across, ADR 0069, and those the train's
+  // come in across, ADR 0114.)
+  const out = outSides(ctx.logistics), ins = inSides(ctx.logistics);
+  const west = ins.length === 1 && ins[0] === W;
   // Standing on its own, a row along the top for each Recipe Loop's feedback to run back west
   // on, from its producer to the Sub-Block it feeds.
   const feeds = routes.filter(r => r.tapOf !== undefined && !layout.plain);
@@ -122,7 +124,10 @@ export function compose(ctx, prepared, positions, layout) {
   // In a City Block, the column just west of the westmost copy: a Side Input is routed through
   // the block from there (a search from the City Block's west edge would flood all the room in
   // front of it), then from the west edge on to where it starts.
-  const approach = site ? Math.max(area.x, Math.min(...placed.map(p => p.box.x)) - 1) : area.x;
+  // Where a belt from the train starts: on its Input Sides, heading in.
+  const fromTrain = west ? westEdge(area) : edgeTiles(area, ins);
+  // (Only where the train comes in across the west edge alone.)
+  const approach = site && west ? Math.max(area.x, Math.min(...placed.map(p => p.box.x)) - 1) : area.x;
 
   // Fan-outs, each run's belts in line order (by route id): a Sub-Block's copies' (groupRoutes),
   // and (unless `alone`) a Side Input's belts into several Sub-Blocks, cut into runs by where
@@ -138,7 +143,7 @@ export function compose(ctx, prepared, positions, layout) {
 
   // Every copy's machines, inserters and routed pieces, under the global route ids.
   const placeAll = () => {
-    const grid = new Grid(area, out);
+    const grid = new Grid(area, out, ins);
     for (const f of site?.fixtures ?? []) grid.place(f);
     // (An Annex's City Block: the tunnels the layout before it built, and where a pipe would join
     // its machines.)
@@ -309,7 +314,7 @@ export function compose(ctx, prepared, positions, layout) {
     const slot = route.slots[k];
     const entry = slot.pieces[0];
     const into = { x: entry.x, y: entry.y, a: slot.part.dir ?? E };
-    if (k === 0) return entry.x > area.x || into.a !== E ? { starts: westEdge(area), goal: into } : null;
+    if (k === 0) return ins.some(d => into.a === opposite(d) && onEdge(area, d, entry.x, entry.y)) ? null : { starts: fromTrain, goal: into };
     const prev = route.slots[k - 1].pieces.at(-1);
     const [dx, dy] = VEC[prev.travel];
     return { starts: [{ x: prev.x + dx, y: prev.y + dy, a: prev.travel }], goal: into };
@@ -401,8 +406,9 @@ export function compose(ctx, prepared, positions, layout) {
         break;
       }
     }
-    const reachesWest = route.stubs.some(s => s.side === 'W' && placed[s.inst.index].x + s.x === area.x);
-    const reachesEast = out === E && route.stubs.some(s => s.side === 'E' && placed[s.inst.index].x + s.x === area.x + area.w - 1);
+    // (A stub on the train's edge already reaches it: on an Input or Output Side, ADR 0114.)
+    const reachesWest = ins.includes(W) && route.stubs.some(s => s.side === 'W' && placed[s.inst.index].x + s.x === area.x);
+    const reachesEast = out.includes(E) && route.stubs.some(s => s.side === 'E' && placed[s.inst.index].x + s.x === area.x + area.w - 1);
     // (In an Annex's City Block, a Side Input drawn from a pipe the layout before it built: only
     // from there where the train brings none, ADR 0032.)
     const drawn = route.source === 'side-input' ? site?.draws?.[route.fluid] : undefined;
@@ -564,7 +570,7 @@ export function compose(ctx, prepared, positions, layout) {
       if (task.fanOut) {
         // (In a City Block its line keeps off the west edge's column, where the Side Inputs come in.)
         const kept = [];
-        for (let y = area.y; site && y < area.y + area.h; y++) {
+        for (let y = area.y; site && ins.includes(W) && y < area.y + area.h; y++) {
           if (grid.at(area.x, y) || grid.holder(area.x, y) !== undefined) continue;
           grid.reserve(area.x, y, -1);
           kept.push(y);
@@ -982,7 +988,7 @@ export function compose(ctx, prepared, positions, layout) {
     const room = open;
     // From the west edge (in a City Block through the approach column) into a splitter.
     const fromWest = (id, goal) => (goal.x > approach + 1 && approach > area.x ? approached(grid, id, goal)
-      : routeLink(grid, { id, starts: westEdge(area), goal }, belts));
+      : routeLink(grid, { id, starts: fromTrain, goal }, belts));
     for (const order of source ? [members] : [members, [...members].reverse()]) {
       // (From producers, what their belt brings, no belt joining.)
       const { joins, supply, brings } = planFan(order, source && (source.brought ?? new Map(source.trunk.items.map(i => [i.item, i.supply]))));
@@ -1314,7 +1320,7 @@ export function compose(ctx, prepared, positions, layout) {
         grid.restore(saved);
       }
     }
-    return routeLink(grid, { id, starts: westEdge(area), goal, keepOff }, belts);
+    return routeLink(grid, { id, starts: fromTrain, goal, keepOff }, belts);
   }
 
   // Two belts of one Internal Path through a splitter, each in its own lane of it: 2 to 2 (each

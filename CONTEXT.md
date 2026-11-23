@@ -61,7 +61,10 @@ What a Byproduct Use makes of an item a step of the chain makes: it joins that s
 _Avoid_: feeding a consumer from two belts (one belt into it, the Use's joining it)
 
 **Output Side**:
-The edge of the block the products leave across to the train, as the user chooses it: right (east, by default), up or down. The Side Input comes in across the west edge whatever it is (ADR 0069).
+An edge of the block the products leave across to the train, as the user chooses them: right (east, by default), up, down or left, one or several; each belt or pipe to the train leaves across whichever it reaches soonest (ADR 0069, ADR 0114).
+
+**Input Side**:
+An edge of the block the train brings what it takes across, as the user chooses them: left (west, by default), up, right or down, one or several; each Side Input comes in across whichever is nearest where it goes (ADR 0114).
 
 **Fluid Temperature**:
 What a recipe takes a fluid at (a minimum, a maximum) and makes it at; a fluid with none comes at its default. A step taking a fluid at a temperature only takes it from a step making it so, and pipes of a fluid at two temperatures stay apart (ADR 0067).

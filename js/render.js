@@ -205,15 +205,16 @@ export function createMap(canvas, block, { onHover = () => {}, onSelect = () => 
       ctx.strokeRect(sx(a.x), sy(a.y), a.w * s, a.h * s);
     }
     // Side Input enters on the west edge, Side Output leaves on the east edge (in a City Block,
-    // inside its Buffer).
+    // inside its Buffer): on the Output Side the user chose (ADR 0069, block.out, east by default)
+    // or the Input and Output Sides (ADR 0114, block.ins and block.outs).
     const b = site?.inner ?? block.bounds;
+    const edge = d => (d === 0 ? ctx.fillRect(sx(b.x), sy(b.y), b.w * s, s)
+      : d === 8 ? ctx.fillRect(sx(b.x), sy(b.y + b.h - 1), b.w * s, s)
+        : ctx.fillRect(sx(d === 12 ? b.x : b.x + b.w - 1), sy(b.y), s, b.h * s));
     ctx.fillStyle = 'rgba(120, 200, 140, 0.18)';
-    ctx.fillRect(sx(b.x), sy(b.y), s, b.h * s);
+    for (const d of block.ins ?? [12]) edge(d);
     ctx.fillStyle = 'rgba(230, 160, 90, 0.18)';
-    // (On the Output Side the user chose, ADR 0069: block.out, east by default.)
-    if (block.out === 0) ctx.fillRect(sx(b.x), sy(b.y), b.w * s, s);
-    else if (block.out === 8) ctx.fillRect(sx(b.x), sy(b.y + b.h - 1), b.w * s, s);
-    else ctx.fillRect(sx(b.x + b.w - 1), sy(b.y), s, b.h * s);
+    for (const d of block.outs ?? [block.out ?? 4]) edge(d);
 
     // The City Block's entities, which the block is built around.
     for (const f of fixtures) {
