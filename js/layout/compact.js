@@ -4,6 +4,7 @@ import { placePoles, PowerError } from './poles.js';
 import { inserterTiles, fluidEnds } from './validity.js';
 import { wirePairs } from './wires.js';
 import { beltRate, laneRate } from '../plan.js';
+import { points, laneOf } from './module.js';
 
 // Squeezes a routed Compound Block: every column (and row) that holds nothing but belts and
 // pipes running straight across it, and empty tiles, comes out, and everything beyond moves in
@@ -45,7 +46,7 @@ export function finishBlock(block, catalog, logistics, { squeeze = true } = {}) 
   const finish = b => {
     const buried = buryPipes(b, catalog, logistics);
     try {
-      return power(straightenBelts(exportBelts(mergeByproducts(clone(buried), catalog, logistics), catalog, logistics), catalog, logistics), catalog, logistics);
+      return power(straightenBelts(exportBelts(mergeOutputs(clone(buried), catalog, logistics), catalog, logistics), catalog, logistics), catalog, logistics);
     } catch (e) {
       if (!(e instanceof PowerError)) throw e;
       return power(buried, catalog, logistics);
@@ -257,45 +258,72 @@ function beltGrid(block, catalog, logistics) {
   return { names, grid, partner, reached, unplace, dropTunnel };
 }
 
-// Byproduct belts merged (ADR 0052). Each run of producers sorting a byproduct out sends it on its
-// own belt to the east edge (ADR 0030); side-loading joins another only where one lane has room
-// for all of it, which a byproduct on both lanes seldom finds (Py's ball mills' biomass, 358 a
-// minute a belt, 179 a lane). Once the block is routed, a byproduct's belt is routed again from
-// its splitter to beside another's, heading the same way, and the two go through a splitter
-// there, on only on that one's side: each lane keeps its share, so two of them go on as one while
-// each lane carries half a belt at most. Kept where its way is shorter than to the east edge;
-// the longest ways are freed first. Changes the block in place.
-export function mergeByproducts(block, catalog, logistics) {
-  // (Its own filter splitter, not one tapping an item off it, ADR 0064.)
-  const filtered = r => (r.filter || !r.taps ? r.pieces.findIndex(p => p.kind === 'splitter' && p.filter && (!r.filter || p.filter === r.filter)) : -1);
-  const lines = block.routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.joins === undefined && filtered(r) >= 0
-    && !block.routes.some(o => o.joins === r.id));
-  if (lines.length < 2) return block;
+// Belts to the train of one item merged (ADR 0052, ADR 0118). Each run of producers sends its
+// item on its own belt to the Output Side (a byproduct sorted out, ADR 0030, or the item itself):
+// side-loading joins another only where one lane has room for all of it, which a belt on both
+// lanes seldom finds (Py's ball mills' biomass, 358 a minute a belt, 179 a lane). Once the block
+// is routed, a belt's stretch past the last that puts anything on it is routed again to beside
+// another's of the same item, heading the same way, and the two go through a splitter there, on
+// only on that one's side: each lane keeps its own, so two of them go on as one while neither
+// lane carries more than half a belt (each belt's lanes from where its inserters drop, else as
+// much as it carries on either). A byproduct's is kept where its way is shorter than to the
+// Output Side. `every`: any belt to the train too (the layout shown, spacedInputs), kept where it
+// costs less than `slack` more than its old way. The longest ways are freed first. Changes the
+// block in place.
+export function mergeOutputs(block, catalog, logistics, { every = false, slack = 0 } = {}) {
+  // (Its own filter splitter, not one tapping an item off it, ADR 0064, nor the one it leaves
+  // from carrying on what that one sorts off, fedFrom.)
+  const filtered = r => (r.fedFrom === undefined && (r.filter || !r.taps) ? r.pieces.findIndex(p => p.kind === 'splitter' && p.filter && (!r.filter || p.filter === r.filter)) : -1);
+  // (What it carries on to the train: a byproduct sorted out, else its one item.)
+  const itemOf = r => (filtered(r) >= 0 ? r.pieces[filtered(r)].filter : every && r.items.length === 1 && !r.items[0].joined ? r.items[0].item : null);
+  const lines = block.routes.filter(r => r.kind === 'belt' && r.sink === 'side-output' && r.joins === undefined && itemOf(r)
+    && (filtered(r) >= 0 || (!r.loop && !r.exported && !r.taps?.length && r.fedBy === undefined)) && !block.routes.some(o => o.joins === r.id));
+  if (lines.length < 2 || new Set(lines.map(itemOf)).size === lines.length) return block;
   const belted = beltGrid(block, catalog, logistics);
   if (!belted) return block;
   const { names, grid, partner, reached, unplace, dropTunnel } = belted;
   const spec = catalog.belts[logistics.belt];
   const laneCapacity = laneRate(catalog, logistics.belt);
   const splitterName = spec.splitter ?? spec.name.replace(/transport-belt$/, 'splitter');
-  const itemOf = r => r.pieces[filtered(r)].filter;
   const rateOf = r => r.items.find(i => i.item === itemOf(r))?.rate ?? 0;
-  const lanes = new Map(lines.map(r => [r, rateOf(r) / 2]));
-  const awayOf = r => r.pieces.slice(filtered(r) + 1);
   const feeders = new Set(block.entities.filter(e => e.out).map(e => e.out));
+  // (Tiles another route's belt heads into: it side-loads there.)
+  const sideFed = new Map();
+  for (const e of block.entities) if (e.out && e.route !== undefined) sideFed.set(e.out, [...sideFed.get(e.out) ?? [], e.route]);
+  // Where its stretch to the train starts: past a byproduct's filter splitter; else past the last
+  // piece anything puts on it, takes from it or joins it at (a splitter, an inserter's or machine's
+  // drop, another belt), not a tunnel's exit.
+  const startOf = r => {
+    if (filtered(r) >= 0) return filtered(r);
+    let k = -1;
+    r.pieces.forEach((p, i) => {
+      const t = key(p.x, p.y);
+      if ((p.kind !== 'belt' && p.kind !== 'underground-belt') || reached.has(t) || (sideFed.get(t) ?? []).some(id => id !== r.id)) k = i;
+    });
+    if (k < 0) return -1;
+    while (r.pieces[k + 1]?.underground === 'output') k++;
+    return k + 1 < r.pieces.length ? k : -1;
+  };
+  // (A byproduct's where its drops do not say: half on each, as before, ADR 0052.)
+  const lanes = new Map(lines.map(r => [r, lanesOf(block, r, itemOf(r), rateOf(r), laneCapacity, catalog) ?? (filtered(r) >= 0 ? [rateOf(r) / 2, rateOf(r) / 2] : [Math.min(rateOf(r), laneCapacity), Math.min(rateOf(r), laneCapacity)])]));
+  const awayOf = r => (startOf(r) < 0 ? [] : r.pieces.slice(startOf(r) + 1));
   const free = (x, y) => grid.inBounds(x, y) && !grid.at(x, y) && grid.holder(x, y) === undefined && !feeders.has(key(x, y)) && !reached.has(key(x, y));
   const into = new Set(), gone = new Set();
   const removed = new Set(), added = [];
   for (const b of [...lines].sort((p, q) => awayOf(q).length - awayOf(p).length)) {
     if (into.has(b)) continue;
-    const away = awayOf(b), splitter = b.pieces[filtered(b)];
+    const away = awayOf(b), from = b.pieces[startOf(b)];
     if (!away.length || away.some(p => p.kind !== 'belt' && p.kind !== 'underground-belt')) continue;
     for (const p of away) unplace(p);
     const tunnels = away.filter(p => partner.has(p)).map(p => [p, partner.get(p)]);
     for (const [p, q] of tunnels) dropTunnel(p, q);
     // (Beside a straight belt of another's way, the one before it straight too, nothing ahead.)
     const joins = new Set(), offered = new Map();
+    const [bl, br] = lanes.get(b);
     for (const a of lines) {
-      if (a === b || gone.has(a) || itemOf(a) !== itemOf(b) || lanes.get(a) + rateOf(b) / 2 > laneCapacity + 1e-6) continue;
+      if (a === b || gone.has(a) || itemOf(a) !== itemOf(b)) continue;
+      const [al, ar] = lanes.get(a);
+      if (al + bl > laneCapacity + 1e-6 || ar + br > laneCapacity + 1e-6) continue;
       const way = awayOf(a);
       way.forEach((p, k) => {
         if (k === 0 || p.kind !== 'belt' || way[k - 1].kind !== 'belt' || way[k - 1].travel !== p.travel || way[k + 1]?.kind === 'splitter') return;
@@ -314,7 +342,7 @@ export function mergeByproducts(block, catalog, logistics) {
     let leg = null;
     if (joins.size) {
       try {
-        leg = routeLink(grid, { id: b.id, starts: [{ x: away[0].x, y: away[0].y, a: splitter.travel }], goal: 'join', joins, keepOff: reached, most: 4000 }, names);
+        leg = routeLink(grid, { id: b.id, starts: [{ x: away[0].x, y: away[0].y, a: from.travel }], goal: 'join', joins, keepOff: reached, most: 4000 }, names);
       } catch (err) {
         if (!(err instanceof RoutingError)) throw err;
       }
@@ -323,7 +351,8 @@ export function mergeByproducts(block, catalog, logistics) {
     const chosen = joined && offered.get(joined);
     // (Nor one passing over the tiles its splitter takes on its way there, ADR 0064.)
     const over = chosen && leg.some(p => [chosen.piece, chosen.beside].some(t => t.x === p.x && t.y === p.y));
-    if (!chosen || over || legCost(leg, splitter.travel) >= legCost(away, splitter.travel)) {
+    const allowed = filtered(b) >= 0 ? 0 : slack;
+    if (!chosen || over || legCost(leg, from.travel) >= legCost(away, from.travel) + allowed) {
       grid.restore(before);
       for (const p of away) grid.place(p);
       for (const [p, q] of tunnels) grid.addTunnel(names.underground, p, q);
@@ -340,17 +369,43 @@ export function mergeByproducts(block, catalog, logistics) {
     // (Ahead of its side, nothing for the splitter to feed.)
     grid.reserve(beside.x + VEC[piece.travel][0], beside.y + VEC[piece.travel][1], b.id);
     leg.forEach((p, i) => { if (p.underground === 'input') partner.set(p, leg[i + 1]); });
-    b.pieces = [...b.pieces.slice(0, filtered(b) + 1), ...leg, piece];
+    b.pieces = [...b.pieces.slice(0, startOf(b) + 1), ...leg, piece];
     b.joins = a.id;
     for (const p of away) removed.add(p);
     added.push(...leg);
-    lanes.set(a, lanes.get(a) + rateOf(b) / 2);
+    lanes.set(a, [lanes.get(a)[0] + bl, lanes.get(a)[1] + br]);
     into.add(a);
     gone.add(b);
   }
   if (!removed.size) return block;
   block.entities = [...block.entities.filter(e => !removed.has(e)), ...added];
   return block;
+}
+
+// What a belt to the train carries of `item` on each lane, [left, right] as it travels: from
+// where the output inserters and machines putting it on drop (laneOf), each lane no more than
+// the belt carries nor half a belt; as much as it carries on either where they do not account for
+// all of it (a splitter joining another belt into it): null.
+function lanesOf(block, route, item, rate, half, catalog) {
+  const most = Math.min(rate, half);
+  if (route.pieces.some(p => p.kind === 'splitter' && !p.filter)) return null;
+  const at = new Map(route.pieces.map((p, i) => [key(p.x, p.y), i]));
+  const put = { left: 0, right: 0, either: 0 };
+  for (const e of block.entities) {
+    let drop = null, flow = 0;
+    if (e.kind === 'inserter' && e.role === 'output' && (!e.moves || e.moves.includes(item))) {
+      drop = points(e, catalog.inserters ?? {}).drop;
+      flow = e.flow ?? e.rate ?? Infinity;
+    } else if (e.kind === 'building' && e.drop) {
+      drop = { x: e.x + e.drop.x, y: e.y + e.drop.y };
+      flow = Infinity;
+    }
+    const i = drop && at.get(key(Math.floor(drop.x), Math.floor(drop.y)));
+    if (i === undefined || i === null || !drop) continue;
+    put[laneOf(route.pieces, i, drop).lane] += flow;
+  }
+  if (put.left + put.right + put.either < rate - 1e-6 * Math.max(1, rate)) return null;
+  return [Math.min(most, put.left + put.either), Math.min(most, put.right + put.either)];
 }
 
 // An Annex's Side Input belts fed from the block's (ADR 0061). An Annex's belt of an item the
@@ -668,9 +723,10 @@ function placesOff(block, logistics) {
   return inputPlaces(block, logistics, area).reduce((sum, { d, lines, places }) => sum + lines.reduce((s, r, j) => s + Math.abs(along(d, r.pieces[0]) - places[j]), 0), 0);
 }
 
-// A block shown standing on its own with its belts from the train spaced (ADR 0117): its poles
-// taken up (they stand where spaced belts would go), the belts spaced and straightened, the poles
-// placed again. A copy, or the block itself where none moves or the poles find no room.
+// A block shown standing on its own with its belts from the train spaced (ADR 0117) and its
+// belts to the train of one item merged (ADR 0118): its poles taken up (they stand where moved
+// belts would go), the belts spaced, merged and straightened, the poles placed again. A copy, or
+// the block itself where none moves or the poles find no room.
 export function spacedInputs(block, catalog, logistics) {
   const copy = clone(block);
   const bare = { ...copy, entities: copy.entities.filter(e => e.kind !== 'pole') };
@@ -683,9 +739,12 @@ export function spacedInputs(block, catalog, logistics) {
     const off = placesOff(out, logistics);
     if (!best || off < best.off) best = { out, off };
   }
-  if (!best) return block;
+  // Then its belts to the train of one item merged, however far (ADR 0118).
+  const spread = best?.out ?? bare, { entities } = spread;
+  const merged = mergeOutputs(spread, catalog, logistics, { every: true, slack: Infinity });
+  if (!best && merged.entities === entities) return block;
   try {
-    return power(straightenBelts(best.out, catalog, logistics), catalog, logistics);
+    return power(straightenBelts(merged, catalog, logistics), catalog, logistics);
   } catch (e) {
     if (!(e instanceof PowerError)) throw e;
     return block;

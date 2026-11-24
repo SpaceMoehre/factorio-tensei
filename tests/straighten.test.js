@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { straightenBelts, mergeByproducts, tidyBelts } from '../js/layout/compact.js';
+import { straightenBelts, mergeOutputs, tidyBelts } from '../js/layout/compact.js';
 import { endsAtEastEdge, routeChain } from '../js/layout/validity.js';
 
 const N = 0, E = 4, S = 8;
@@ -59,7 +59,7 @@ test('a byproduct belt merges with another carrying it, through a splitter besid
   };
   const routes = [lineOf(0, 0), lineOf(1, 3)];
   const block = { subBlocks: [], routes, entities: [...new Set(routes.flatMap(r => r.pieces))], bounds: { x: 0, y: 0, w: 11, h: 5 } };
-  mergeByproducts(block, merging, logistics);
+  mergeOutputs(block, merging, logistics);
   assert.equal(routes[0].joins, 1);
   const end = routes[0].pieces.at(-1);
   assert.equal(end.kind, 'splitter');
@@ -68,4 +68,33 @@ test('a byproduct belt merges with another carrying it, through a splitter besid
   assert.deepEqual(routeChain(routes[0], { belts: merging.belts }, logistics, block.entities), []);
   assert.deepEqual(routeChain(routes[1], { belts: merging.belts }, logistics, block.entities), []);
   assert.ok(block.entities.length < 22);
+});
+
+// Two runs of producers each sending gears on to the east edge on a belt of their own, 300 a
+// minute, an inserter dropping it all on one lane: in the layout shown one goes on with the
+// other where their lanes differ (300 a lane of 450), not where they share one (600).
+test('belts to the train of one item merge where each lane has room, in the layout shown', () => {
+  const merging = { ...catalog, belts: { 'transport-belt': { ...catalog.belts['transport-belt'], itemsPerSecond: 15 } } };
+  const lineOf = (id, y, lane) => {
+    const pieces = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(x => ({ ...belt(x, y, E), route: id }));
+    const inserter = {
+      name: 'fast-inserter', kind: 'inserter', x: 1, y: y - 1, w: 1, h: 1, direction: 0, role: 'output', moves: ['gear'], rate: 300, flow: 300,
+      vectors: { pickup: { x: 0, y: -1 }, drop: { x: 0, y: lane === 'left' ? 0.75 : 1.25 } },
+    };
+    return { route: { id, kind: 'belt', source: 0, sink: 'side-output', consumers: [], items: [{ item: 'gear', rate: 300 }], pieces }, inserter };
+  };
+  const blockOf2 = lanes => {
+    const lines = [lineOf(0, 1, lanes[0]), lineOf(1, 5, lanes[1])];
+    const routes = lines.map(l => l.route);
+    return { subBlocks: [], routes, entities: [...routes.flatMap(r => r.pieces), ...lines.map(l => l.inserter)], bounds: { x: 0, y: 0, w: 11, h: 7 } };
+  };
+  const joined = b => b.routes.filter(r => r.joins !== undefined).length;
+  assert.equal(joined(mergeOutputs(blockOf2(['left', 'right']), merging, logistics)), 0, 'not while laid out: byproducts alone');
+  const block = mergeOutputs(blockOf2(['left', 'right']), merging, logistics, { every: true, slack: Infinity });
+  assert.equal(joined(block), 1);
+  const [b] = block.routes.filter(r => r.joins !== undefined);
+  assert.equal(b.pieces.at(-1).kind, 'splitter');
+  assert.deepEqual(endsAtEastEdge(block, b), []);
+  for (const r of block.routes) assert.deepEqual(routeChain(r, { belts: merging.belts }, logistics, block.entities), []);
+  assert.equal(joined(mergeOutputs(blockOf2(['left', 'left']), merging, logistics, { every: true, slack: Infinity })), 0, 'one lane would carry 600');
 });

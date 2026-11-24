@@ -128,8 +128,9 @@ function markers(block, merges = []) {
   const STEP = { 0: [0, -1], 4: [1, 0], 8: [0, 1], 12: [-1, 0] };
   for (const route of block.routes ?? []) {
     const sides = route.source === 'side-input' ? ins : route.sink === 'side-output' ? outs : [];
-    // A Fan-out's belts come in on its belts from the west edge, each with what it brings.
-    if (!sides.length || !route.pieces.length || route.fedBy !== undefined) continue;
+    // A Fan-out's belts come in on its belts from the west edge, each with what it brings; a belt
+    // to the train merged into another leaves on it (ADR 0052, ADR 0118).
+    if (!sides.length || !route.pieces.length || route.fedBy !== undefined || (route.sink === 'side-output' && route.joins !== undefined)) continue;
     const ends = sides.map(d => {
       const [dx, dy] = STEP[d];
       return { d, dx, dy, end: route.pieces.reduce((best, p) => (p.x * dx + p.y * dy > best.x * dx + best.y * dy ? p : best)) };
@@ -145,10 +146,17 @@ function markers(block, merges = []) {
       name: 'display-panel', kind: 'marker', x, y, w: 1, h: 1,
       icon: { type: route.kind === 'pipe' ? 'fluid' : 'item', name: first.item },
       // (A merged belt's items each on the belt coming in north and south of it.)
-      text: (route.brings ?? route.items).map((i, k) => `${merged.has(route.id) ? (k ? '↓ ' : '↑ ') : ''}${i.item} ${Math.round(i.rate)}/min`).join(merged.has(route.id) ? ' · ' : ' + '),
+      text: (route.brings ?? leaving(block, route)).map((i, k) => `${merged.has(route.id) ? (k ? '↓ ' : '↑ ') : ''}${i.item} ${Math.round(i.rate)}/min`).join(merged.has(route.id) ? ' · ' : ' + '),
     });
   }
   return out;
+}
+
+// What a route carries, with what the belts to the train merged into it bring of their item.
+function leaving(block, route) {
+  const into = (block.routes ?? []).filter(r => r.sink === 'side-output' && r.joins === route.id);
+  if (!into.length) return route.items;
+  return route.items.map(i => ({ ...i, rate: i.rate + into.reduce((sum, r) => sum + (r.items.find(x => x.item === i.item)?.rate ?? 0), 0) }));
 }
 
 // Belt Merge built: a Side Input belt carrying two items, a lane each, starts a tile west of the

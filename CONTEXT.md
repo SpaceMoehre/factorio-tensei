@@ -227,7 +227,7 @@ The train-fed path carrying every item some Sub-Block needs but no Sub-Block in 
 _Avoid_: hardcoded raw item list
 
 **Side Output**:
-The train-bound path carrying every Goal's target item not consumed internally by another Sub-Block, plus unconsumed Byproducts (the Compound Block's final products). It leaves on the Compound Block's east edge (in a City Block, the Buffer's).
+The train-bound path carrying every Goal's target item not consumed internally by another Sub-Block, plus unconsumed Byproducts (the Compound Block's final products). It leaves on the Compound Block's east edge (in a City Block, the Buffer's). In the layout shown, belts of one item to the train merge through a splitter while neither lane carries more than half a belt, each lane as its drops fill it (Output Merge, ADR 0118).
 _Avoid_: hardcoded output item list
 
 **Pipe Network**:
@@ -248,6 +248,10 @@ Where in its target tile an inserter drops: Inserter_Config sets it on a 3×3 gr
 **Output Drop**:
 Where a machine puts its products itself: a point just beside it that turns with it (the building's `vector_to_place_result`: Py's soil and sand extractors, casting units…), on its drop tile. A belt there takes them on the lane nearer the machine, so its row's output belt runs straight past the drop tiles of its face, with no output inserter: as many machines to a row as their drops fill a lane, whichever the belt passes first — or two rows facing one belt between them, a lane each. Where a row's drops may fill their lane before a machine's turn (one machine making more than a lane: a casting unit's 900 plates a minute on a yellow belt), 90° inserters in the belt's row support it, taking what its drop surely cannot onto the other lane. Nothing but its own output's belt may lie on a drop tile: another belt there would get its products. Designs and layouts with the fewest output inserters at such machines win, starving no more.
 _Avoid_: output field, direct insertion (an inserter's is the Drop Offset)
+
+**Output Merge**:
+Two belts to the train of one item going on as one: the stretch of one past the last that puts anything on it routed again to beside the other's, the two through a splitter there going on only on the other's side, so each lane keeps its own. Made only where neither lane then carries more than half a belt (each belt's lanes from where its inserters and machines drop). Byproducts sorted out merge as the block is finished, where shorter (ADR 0052); every belt of one item on the layout shown, however long (ADR 0118). Belts of different items stay apart.
+_Avoid_: Belt Merge (two items, a lane each, on a Side Input)
 
 **Belt Merge**:
 Putting two items on one belt, one per Lane. Eligible only when both items already travel the same route (the same Side Input path feeding the same Sub-Blocks in the same order) — not any two unrelated belts — and only when each item's rate fits within one Lane. Parallel belts are judged per part: two single-item Side Inputs of one Sub-Block, each split into parallel belts, may share each part's belt when each item fits its Lane for the rows that belt feeds. The blueprint builds a merged Side Input's belt itself, a tile west of the block: each item comes in on a belt of its own from the north and the south, the two meeting head-on, so each lands on its own Lane (ADR 0037).

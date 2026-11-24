@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v103: Belts to the train of one item merged (implemented)
+
+In the layout shown, belts to the train of one item go on as one through a splitter while neither lane carries more than half a belt, each lane as its producers' drops fill it; belts of different items stay apart. A belt carrying an item on past a byproduct's filter splitter is no longer taken for the byproduct's. Py reo, cobalt extract and tinned cable 116², input and output left and up: 12 belts to the train → 10 (stone 90 + 240 on one, iron oxide 72 + 216 on one), the same rate. ADR 0118.
+
 ## v102: Input Spacing (implemented)
 
 The belts from the train come in evenly along their Input Side: each, in its order along the side, gets the middle of its equal stretch, its first stretch routed again from there on the layout shown (nothing else moves; the search ranks and Maximize builds on layouts as routed). With several Input Sides each line from the train gets a side of its own, shared so each brings about as much (by rate, belts and pipes apart), the nearer side where that keeps them even. Py iron plate 900/min in 150 stone furnaces: its 17 belts from the train 1 to 11 rows apart (six side by side) → 2 to 4, the same layout otherwise. Headless (Node worker threads), a try stopped before its worker took it no longer ends the whole Maximize. ADR 0117.
