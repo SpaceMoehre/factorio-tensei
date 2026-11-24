@@ -286,8 +286,10 @@ function growTree(grid, spec, names, seedPieces) {
   if (spec.mustJoin && !joined) throw new RoutingError(`${spec.fluid}: no way to join its network`);
   if (joined) commit(joined);
   if (spec.source) {
-    const starts = spec.draws ? [...spec.draws.starts, ...(spec.draws.only ? [] : inStarts(grid))] : inStarts(grid);
-    const leg = search(grid, starts, toTree.isGoal, toTree.heuristic, moves);
+    // (From its Slot where it has one, ADR 0117; where that finds no way, from every tile.)
+    const from = edge => (spec.draws ? [...spec.draws.starts, ...(spec.draws.only ? [] : edge)] : edge);
+    const leg = (spec.inStarts && search(grid, from(spec.inStarts), toTree.isGoal, toTree.heuristic, moves))
+      || search(grid, from(inStarts(grid)), toTree.isGoal, toTree.heuristic, moves);
     if (!leg) throw new RoutingError(`${spec.fluid}: no path from ${spec.draws?.only ? 'the pipe it draws from' : 'the west edge'}`);
     commit(leg);
   }
@@ -545,9 +547,12 @@ function search(grid, starts, isGoal, heuristic, moves, hopeless = () => false, 
   const open = new Heap();
   const best = bestCosts(grid.area);
   for (const s of starts) {
-    // (A state is its tile and heading: whatever else a start carries, no search reads.)
-    open.push(state(s.x, s.y, s.a, false, 0, LAYS_NONE, 0, 0, null), heuristic(s.x, s.y));
-    best.set(s, 0);
+    // (A state is its tile and heading, and what starting there costs, `g`: a line from the train
+    // away from its Slot, ADR 0117. Whatever else a start carries, no search reads.)
+    const g = s.g ?? 0;
+    if (s.g !== undefined && best.get(s) <= g) continue;
+    open.push(state(s.x, s.y, s.a, false, g, LAYS_NONE, 0, 0, null), g + heuristic(s.x, s.y));
+    best.set(s, g);
   }
   // A leg that has not found its goal after exploring every tile many times over has none (nor
   // after `most`: a leg that may be tried elsewhere).

@@ -6,6 +6,7 @@ import { trim, maxFlow } from './module.js';
 import { pathFlow } from './flow.js';
 import { simulate } from '../sim.js';
 import { valvesOf } from '../chain.js';
+import { shareSides } from './sides.js';
 
 export { RoutingError, PowerError, maxFlow };
 
@@ -140,6 +141,46 @@ export function compose(ctx, prepared, positions, layout) {
   const beltSpec = catalog.belts[logistics.belt];
   const belts = { belt: beltSpec.name, underground: beltSpec.underground.name, reach: beltSpec.underground.maxDistance };
   const pipes = { pipe: logistics.plainPipe ?? 'pipe', underground: logistics.pipe, reach: catalog.pipes[logistics.pipe].maxDistance };
+
+  // Across several Input Sides, each line from the train's own side, shared so each takes about
+  // as much (ADR 0117), planned once the copies stand.
+  /** @type {Map<number, number>} */
+  let sideOf = new Map();
+  // A belt from the train: from its side; where it finds no way from there, from every tile of
+  // every Input Side, the nearest winning.
+  const trainLink = (grid, spec) => {
+    if (sideOf.has(spec.id)) {
+      try {
+        return routeLink(grid, { ...spec, starts: edgeTiles(area, [sideOf.get(spec.id)]) }, belts);
+      } catch (e) {
+        if (!(e instanceof RoutingError)) throw e;
+      }
+    }
+    return routeLink(grid, { ...spec, starts: fromTrain }, belts);
+  };
+  // The lines from the train among the tasks: each belt from it into its first copy (a
+  // Fan-out's, one line), each pipe from it not on an Input Side's edge already; where each goes
+  // (its entry; the middle of its stubs) and what it brings.
+  const linesOf = tasks => {
+    /** @type {import('./sides.js').Line[]} */
+    const lines = [];
+    const middle = ps => ({ x: Math.round(ps.reduce((s, p) => s + p.x, 0) / ps.length), y: Math.round(ps.reduce((s, p) => s + p.y, 0) / ps.length) });
+    const rate = rs => rs.reduce((s, r) => s + r.items.reduce((t, i) => t + i.rate, 0), 0);
+    for (const t of tasks) {
+      if (t.pipe !== undefined) {
+        const r = routes[t.pipe];
+        if (r.source !== 'side-input' || r.valve || !r.stubs.length) continue;
+        if (ins.includes(W) && r.stubs.some(st => st.side === 'W' && placed[st.inst.index].x + st.x === area.x)) continue;
+        lines.push({ ids: [r.id], kind: 'pipe', rate: rate([r]), ...middle(r.stubs.map(st => ({ x: placed[st.inst.index].x + st.x, y: placed[st.inst.index].y + st.y }))) });
+        continue;
+      }
+      if (t.slot !== 0 || t.route.source !== 'side-input' || t.split || t.taps || t.gather || t.supply || t.fanOut) continue;
+      if (!t.fan && !endsOf(t)) continue;
+      const members = t.fan ? t.fan.map(id => routes[id]) : [t.route];
+      lines.push({ ids: members.map(r => r.id), kind: 'belt', rate: rate(members), ...middle(members.map(r => r.slots[0].pieces[0])) });
+    }
+    return lines;
+  };
 
   // Every copy's machines, inserters and routed pieces, under the global route ids.
   const placeAll = () => {
@@ -462,7 +503,8 @@ export function compose(ctx, prepared, positions, layout) {
     }
     if (terminals.length < 2 && !source && !sink && !joins) return [];
     if (!terminals.length) throw new RoutingError(`${route.fluid}: no stub to join`);
-    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...voided, ...(draws ? { draws } : {}), ...(joins ? { joins } : {}) }, pipes);
+    const side = source ? sideOf.get(route.id) : undefined;
+    return routePipe(grid, { id: route.id, fluid: route.fluid, terminals, source, sink, ...voided, ...(draws ? { draws } : {}), ...(joins ? { joins } : {}), ...(side === undefined ? {} : { inStarts: edgeTiles(area, [side]) }) }, pipes);
   };
 
   // Pipes first (no fluid may touch another), then the belt links in their order. When one
@@ -506,6 +548,7 @@ export function compose(ctx, prepared, positions, layout) {
       const belts_ = linkTasks().map(t => ({ ...t, rank: taskRank(t) }))
         .sort((a, b) => a.rank[0] - b.rank[0] || a.rank[1] - b.rank[1] || a.route.id - b.route.id || a.slot - b.slot);
       order = [...fluids, ...belts_];
+      if (ins.length > 1) sideOf = shareSides(area, ins, linesOf(order));
       if (layout.routeOrder) order.sort((a, b) => layout.routeOrder.indexOf(a.route?.id ?? a.pipe) - layout.routeOrder.indexOf(b.route?.id ?? b.pipe));
     }
     tried.add(order.map(keyOf).join());
@@ -680,8 +723,8 @@ export function compose(ctx, prepared, positions, layout) {
     const ends = endsOf(task);
     if (!ends) return [];
     const keepOff = meetsOf(task);
-    return task.slot === 0 && approach > area.x ? approached(grid, task.route.id, ends.goal, keepOff)
-      : routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal, keepOff }, belts);
+    if (task.slot === 0) return approach > area.x ? approached(grid, task.route.id, ends.goal, keepOff) : trainLink(grid, { id: task.route.id, goal: ends.goal, keepOff });
+    return routeLink(grid, { id: task.route.id, starts: ends.starts, goal: ends.goal, keepOff }, belts);
   }
 
   // The tiles where the other links of a task's route meet their copies (before an entry, after
@@ -988,7 +1031,7 @@ export function compose(ctx, prepared, positions, layout) {
     const room = open;
     // From the west edge (in a City Block through the approach column) into a splitter.
     const fromWest = (id, goal) => (goal.x > approach + 1 && approach > area.x ? approached(grid, id, goal)
-      : routeLink(grid, { id, starts: fromTrain, goal }, belts));
+      : trainLink(grid, { id, goal }));
     for (const order of source ? [members] : [members, [...members].reverse()]) {
       // (From producers, what their belt brings, no belt joining.)
       const { joins, supply, brings } = planFan(order, source && (source.brought ?? new Map(source.trunk.items.map(i => [i.item, i.supply]))));

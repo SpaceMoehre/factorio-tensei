@@ -5,6 +5,8 @@ import { layOut, failureOf } from './layout/lay.js';
 import { placeBlocks, roomFor } from './layout/place.js';
 import { starvationOf, better } from './layout/score.js';
 import { simulate } from './sim.js';
+import { spacedInputs } from './layout/compact.js';
+import { validateBlock } from './layout/validity.js';
 import { editOf } from './layout/edit.js';
 import { partByConsumer } from './plan.js';
 import { turnDesign } from './layout/turn.js';
@@ -574,10 +576,18 @@ export function* search(entries, catalog, logistics, options = {}) {
         const spec = candidate.breakout?.[i], was = spec === 'alike' || spec?.startsWith('grown') ? options.near[sb.item] : null;
         return [sb.item, { box: p ? { x: p.x + r.x, y: p.y + r.y, w: r.w, h: r.h } : null, design: was ? was.design : shapeOf(d), columns: candidate.columns[i], count: was ? was.count : sb.count }];
       })) : null;
-      yield { block, score, tried, placed, grown: stood };
+      // (Shown standing on its own with its belts from the train spaced, where that is valid and
+      // starves nothing more; ranked, and kept for Maximize, as laid out: ADR 0117.)
+      yield { block: site ? block : spaced(block), score, tried, placed, grown: stood };
     }
   }
   return { tried, failure, timedOut, short: best ? null : nearest };
+
+  function spaced(block) {
+    const out = spacedInputs(block, catalog, logistics);
+    if (out === block || validateBlock(out, catalog, logistics).length || simulate(out).starvation.length > simulate(block).starvation.length) return block;
+    return out;
+  }
 
   // Breakout trials as candidates, each remembered with what it tries.
   function register(list) {

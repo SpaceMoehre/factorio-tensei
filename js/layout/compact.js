@@ -1,4 +1,4 @@
-import { Grid, N, E, S, W, VEC, key, opposite, span, outSides, inSides } from './grid.js';
+import { Grid, N, E, S, W, VEC, key, opposite, span, outSides, inSides, onEdge, edgeTiles } from './grid.js';
 import { routeLink, RoutingError, legCost } from './router.js';
 import { placePoles, PowerError } from './poles.js';
 import { inserterTiles, fluidEnds } from './validity.js';
@@ -535,6 +535,163 @@ export function exportBelts(block, catalog, logistics) {
   return block;
 }
 
+// Input Spacing on the finished block (ADR 0117). Each belt from the train came in across
+// the tile of its side nearest its entry: those to one row of copies side by side, a gap of a
+// dozen rows to the next (Py iron plate's 17 ore belts: six in a row, twice). On each Input Side,
+// its belts from the train in their order along it, each gets its place, the middle of its equal
+// stretch of the side; one away from its place has its first stretch (up to where anything takes
+// from it or it forks; at most SHARE_CUTS places to join it again) routed again from the side's
+// free tiles nearer its place, each tile from it SPREAD dearer, kept from the nearest (the
+// shortest way of those). Nothing else moves. Changes the block in place.
+// Not while the block is laid out: spaced belts are longer, and a search ranking its layouts
+// with them chose another (vanilla gears, cables and petroleum gas: one whose Sub-Blocks' boxes
+// overlap); in a City Block Maximize lays Annexes beside a layout as routed, and spaced belts
+// took the room they found (five suite setups a machine short). Only on the layout shown: each
+// a search yields standing on its own (spacedInputs), Maximize's last (tidyBelts).
+// What a tile from its place costs a belt's new start: more than a tile of belt (1), so
+// the nearest start wins over a shorter way.
+const SPREAD = 2;
+const SPREAD_PASSES = 3;
+export function spreadInputs(block, catalog, logistics, { nearFirst = false } = {}) {
+  if (!block.routes.some(r => r.kind === 'belt' && r.source === 'side-input')) return block;
+  const belted = beltGrid(block, catalog, logistics);
+  if (!belted) return block;
+  const { names, grid, partner, reached, unplace, dropTunnel } = belted;
+  const { area } = grid;
+  // (A start: free, nothing reaches it, no belt points into it.)
+  const free = (x, y) => grid.inBounds(x, y) && !grid.at(x, y) && grid.holder(x, y) === undefined && !reached.has(key(x, y))
+    && Object.values(VEC).every(([dx, dy]) => grid.at(x + dx, y + dy)?.out !== key(x, y));
+  const removed = new Set(), added = [];
+  // (Again while any moves: one that found no way may find one once others moved, a few times.)
+  for (let pass = 0, moved = true; moved && pass < SPREAD_PASSES; pass++) {
+    moved = false;
+    for (const { d, lines, places } of inputPlaces(block, logistics, area)) {
+      const off = j => Math.abs(along(d, lines[j].pieces[0]) - places[j]);
+      // (A new leg keeps off the other belts' places: it may run along the edge, never over one.)
+      const edge = edgeTiles(area, [d]);
+      const placeKey = at => (d === W || d === E ? key(edge[0].x, at) : key(at, edge[0].y));
+      for (const j of lines.map((_, j) => j).sort((a, b) => (nearFirst ? off(a) - off(b) : off(b) - off(a)) || a - b)) {
+        const route = lines[j], at = places[j], was = off(j);
+        if (was < 1) continue;
+        const { pieces } = route;
+        const keep = new Set([...reached, ...places.filter((_, i) => i !== j).map(placeKey)]);
+        const starts = edge.filter(s => Math.abs(along(d, s) - at) < was && free(s.x, s.y) && !keep.has(key(s.x, s.y)))
+          .map(s => ({ ...s, g: SPREAD * Math.abs(along(d, s) - at) }));
+        if (!starts.length) continue;
+        let end = pieces.findIndex(p => (p.kind !== 'belt' && p.kind !== 'underground-belt') || reached.has(key(p.x, p.y)));
+        if (end < 0) end = pieces.length - 1;
+        const cuts = [];
+        for (let k = 1; k <= end; k++) {
+          if (pieces[k].kind === 'belt' && pieces[k - 1].underground !== 'input' && pieces[k - 1].out === key(pieces[k].x, pieces[k].y)) cuts.push(k);
+        }
+        const tried = cuts.length <= SHARE_CUTS ? cuts : Array.from({ length: SHARE_CUTS }, (_, i) => cuts[Math.round(i * (cuts.length - 1) / (SHARE_CUTS - 1))]);
+        // The stretch up to cut k off the grid; `put` puts it back.
+        const lift = k => {
+          const away = pieces.slice(0, k);
+          const tunnels = away.filter(p => partner.has(p)).map(p => [p, partner.get(p)]);
+          for (const p of away) unplace(p);
+          for (const [p, q] of tunnels) dropTunnel(p, q);
+          return () => {
+            for (const p of away) grid.place(p);
+            for (const [p, q] of tunnels) grid.addTunnel(names.underground, p, q);
+          };
+        };
+        const legTo = (k, from) => {
+          const goal = { x: pieces[k].x, y: pieces[k].y, a: pieces[k - 1].travel };
+          try {
+            return routeLink(grid, { id: route.id, starts: from, goal, keepOff: keep, most: 4000 }, names);
+          } catch (err) {
+            if (!(err instanceof RoutingError)) throw err;
+            return null;
+          }
+        };
+        let best = null;
+        for (const k of tried) {
+          const put = lift(k);
+          const before = grid.snapshot();
+          const leg = legTo(k, starts);
+          grid.restore(before);
+          put();
+          if (!leg?.length) continue;
+          const near = Math.abs(along(d, leg[0]) - at), cost = legCost(leg, leg[0].travel) - legCost(pieces.slice(0, k), pieces[0].travel);
+          if (!best || near < best.near || (near === best.near && cost < best.cost)) best = { near, cost, k, start: starts.find(s => s.x === leg[0].x && s.y === leg[0].y) };
+        }
+        if (!best?.start) continue;
+        // (Laid again from that start alone: the grid as it was when found.)
+        const put = lift(best.k);
+        const before = grid.snapshot();
+        const leg = legTo(best.k, [best.start]);
+        if (!leg?.length) {
+          grid.restore(before);
+          put();
+          continue;
+        }
+        leg.forEach((p, i) => { if (p.underground === 'input') partner.set(p, leg[i + 1]); });
+        for (const p of pieces.slice(0, best.k)) removed.add(p);
+        added.push(...leg);
+        route.pieces = [...leg, ...pieces.slice(best.k)];
+        moved = true;
+      }
+    }
+  }
+  if (!removed.size) return block;
+  block.entities = [...block.entities, ...added].filter(e => !removed.has(e));
+  return block;
+}
+
+// Where a point lies along side d.
+const along = (d, p) => (d === W || d === E ? p.y : p.x);
+
+// On each Input Side of `area` with two belts from the train or more: those belts in their order
+// along it, and each one's place, the middle of its equal stretch of the side.
+function inputPlaces(block, logistics, area) {
+  const ins = inSides(logistics);
+  // (Its first piece on the edge, heading in or along it: never back out across it.)
+  const sideOf = r => {
+    const p = r.pieces[0];
+    return p && (p.kind === 'belt' || p.kind === 'underground-belt') ? ins.find(d => p.travel !== d && onEdge(area, d, p.x, p.y)) : undefined;
+  };
+  const out = [];
+  for (const d of ins) {
+    const lines = block.routes.filter(r => r.kind === 'belt' && r.source === 'side-input' && sideOf(r) === d);
+    if (lines.length < 2) continue;
+    lines.sort((a, b) => along(d, a.pieces[0]) - along(d, b.pieces[0]) || a.id - b.id);
+    const [lo, length] = d === W || d === E ? [area.y, area.h] : [area.x, area.w];
+    out.push({ d, lines, places: lines.map((_, j) => lo + Math.floor((j + 0.5) * length / lines.length)) });
+  }
+  return out;
+}
+
+// How far a block's belts from the train stand from their places, in all.
+function placesOff(block, logistics) {
+  const area = block.site ? block.site.inner : extent(block.entities.filter(e => e.kind !== 'pole'));
+  return inputPlaces(block, logistics, area).reduce((sum, { d, lines, places }) => sum + lines.reduce((s, r, j) => s + Math.abs(along(d, r.pieces[0]) - places[j]), 0), 0);
+}
+
+// A block shown standing on its own with its belts from the train spaced (ADR 0117): its poles
+// taken up (they stand where spaced belts would go), the belts spaced and straightened, the poles
+// placed again. A copy, or the block itself where none moves or the poles find no room.
+export function spacedInputs(block, catalog, logistics) {
+  const copy = clone(block);
+  const bare = { ...copy, entities: copy.entities.filter(e => e.kind !== 'pole') };
+  // (The farthest from its place first, then the nearest: the nearer in all.)
+  let best = null;
+  for (const nearFirst of [false, true]) {
+    const one = clone(bare), { entities } = one;
+    const out = spreadInputs(one, catalog, logistics, { nearFirst });
+    if (out.entities === entities) continue;
+    const off = placesOff(out, logistics);
+    if (!best || off < best.off) best = { out, off };
+  }
+  if (!best) return block;
+  try {
+    return power(straightenBelts(best.out, catalog, logistics), catalog, logistics);
+  } catch (e) {
+    if (!(e instanceof PowerError)) throw e;
+    return block;
+  }
+}
+
 // Belts routed round what is no longer there take the short way (ADR 0051). Links were routed
 // round plain pipes that then went underground, so a belt could turn three times and dive under
 // a pipe that is gone: after a splitter, a lane looping round into a tunnel where one turn the
@@ -615,13 +772,15 @@ export function straightenBelts(block, catalog, logistics, { turn = undefined } 
 
 // Belts straightened once more on a block shown as laid out, a turn weighing a tile as Compactness
 // weighs it (score.js BEND) where routing weighs it a fifth of one: a belt stepping out of its row
-// and back, or down twice where once does, straightens (ADR 0087). A copy, or the block itself
-// where nothing straightens.
+// and back, or down twice where once does, straightens (ADR 0087); its belts from the train
+// spaced first (ADR 0117). A copy, or the block itself where nothing changes.
 const TIDY_TURN = 1;
 export function tidyBelts(block, catalog, logistics) {
-  const copy = clone(block), { entities } = copy;
+  // (Its belts from the train spaced first, in a City Block too: ADR 0117.)
+  const spaced = spacedInputs(block, catalog, logistics);
+  const copy = spaced === block ? clone(block) : spaced, { entities } = copy;
   const out = straightenBelts(copy, catalog, logistics, { turn: TIDY_TURN });
-  return out.entities === entities ? block : { ...out, bounds: extent(out.entities) };
+  return out.entities === entities && spaced === block ? block : { ...out, bounds: extent(out.entities) };
 }
 
 export function compact(block) {

@@ -70,7 +70,10 @@ export async function* runJob(job, catalog, runner) {
           run: async job => {
             for await (const data of worker.run({ attempt: job, logistics })) {
               if (data.type === 'attempted') return data.outcome;
-              if (data.type === 'error') throw new Error(data.message);
+              // (A try stopped before its worker took it has the worker's "stopped" for an error:
+              // no failure, nothing waits for it. Thrown, it went unhandled and ended the worker
+              // thread running the whole Maximize under Node, ADR 0117.)
+              if (data.type === 'error' && !stopped) throw new Error(data.message);
             }
             // (A try stopped, its worker with it, has no outcome: nothing waits for one.)
             if (stopped) return new Promise(() => {});

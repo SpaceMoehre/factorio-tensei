@@ -64,7 +64,11 @@ _Avoid_: feeding a consumer from two belts (one belt into it, the Use's joining 
 An edge of the block the products leave across to the train, as the user chooses them: right (east, by default), up, down or left, one or several; each belt or pipe to the train leaves across whichever it reaches soonest (ADR 0069, ADR 0114).
 
 **Input Side**:
-An edge of the block the train brings what it takes across, as the user chooses them: left (west, by default), up, right or down, one or several; each Side Input comes in across whichever is nearest where it goes (ADR 0114).
+An edge of the block the train brings what it takes across, as the user chooses them: left (west, by default), up, right or down, one or several; each Side Input comes in across whichever is nearest where it goes (ADR 0114), with several shared so each takes about as much (Input Spacing, ADR 0117).
+
+**Input Spacing**:
+How the belts and pipes from the train stand along the Input Sides (ADR 0117). Across several Input Sides each line has a side of its own, the largest first onto the side taking least so far (by rate, belts and pipes apart), lines swapping sides where the loads stay as even and their ways in are shorter. On the layout shown each belt from the train, in its order along its side, gets its place, the middle of its equal stretch of the side: its first stretch is routed again from there, or as near as a way is free; nothing else moves (the search ranks, and Maximize builds on, layouts as routed).
+_Avoid_: Slot (a Part's room in Bands)
 
 **Fluid Temperature**:
 What a recipe takes a fluid at (a minimum, a maximum) and makes it at; a fluid with none comes at its default. A step taking a fluid at a temperature only takes it from a step making it so, and pipes of a fluid at two temperatures stay apart (ADR 0067).
