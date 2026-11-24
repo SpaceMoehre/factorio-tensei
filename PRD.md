@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v105: The search at Bands' top first (implemented)
+
+Where Bands would go first in a City Block (its Parts holding many more machines than foretold), Maximize first tries the search once at the most Bands' Parts hold; fitting there, Bands is not tried and the search climbs on, its copies Making Way round the Fixtures. Not fitting, Bands goes as before. Py navens 60/min in the 236² roboport City Block, page-like with 3 tries at once: 145 cultures (365.37/min) at 3561 s → 171 (430.91/min) at 1075 s. Vrauks and trits pay one try finding no room. ADR 0120.
+
 ## v104: Output inserters share only their own products (implemented)
 
 A machine's output inserters share what they move with those moving the same products, not with every output inserter of the machine: a product on a belt of its own (ADR 0066) is its inserters' alone. Py's evaporator (6 iron oxide and 10 ree concentrate in 8 s, a hand of 2): its clocks 3 and 5 swings in 16 s → 3 and 5 in 8 s. Layouts unchanged. ADR 0119.

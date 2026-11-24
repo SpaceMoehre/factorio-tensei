@@ -836,9 +836,10 @@ test('Maximize in a City Block whose Fixtures stand in rows starts from Bands: 7
 });
 
 // With tries at once, Bands' top is worked out in a worker beside the first tries; once it says
-// its parts hold FILL more than foretold, Bands goes then, as one at a time it goes first, and
-// fitting so many, no try of the search is begun after it.
-test('Maximize with tries at once among Fixture rows: Bands once its top is known, 78 vrauks paddocks, no search try after', async () => {
+// its parts hold FILL more than foretold, the search tries once at that top (ADR 0120), then,
+// that finding no room, Bands goes, as one at a time they go first, and fitting so many, no try
+// of the search is begun after it.
+test('Maximize with tries at once among Fixture rows: the search once at Bands\' top, then Bands, 78 vrauks paddocks, no search try after', async () => {
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const blueprint = await decodeBlueprint(readFileSync(new URL('./fixtures/roboport-city-block.txt', import.meta.url), 'utf8'));
   const site = siteOf(readCityBlock(blueprint, shipped), 4);
@@ -856,9 +857,36 @@ test('Maximize with tries at once among Fixture rows: Bands once its top is know
   let next = await events.next();
   for (; !next.done; next = await events.next()) if (/** @type {any} */ (next.value).type === 'best') found.push(next.value);
   assert.equal(found.at(-1).machines, 78);
-  // (Only the two begun beside the top's worker before it came.)
-  assert.equal(started.length, 2, `search tries begun: ${started}`);
+  // (The two begun beside the top's worker before it came, and the one at the top.)
+  assert.equal(started.length, 3, `search tries begun: ${started}`);
+  assert.equal(started[2], 78, `search tries begun: ${started}`);
   assert.equal(next.value.machines, 78);
+});
+
+// Where the search's copies Make Way round a few Fixtures they may pack denser than Bands' Parts
+// (ADR 0120): Py navens cultures (10 × 10) in the roboport City Block (236²), Bands' parts holding
+// 153, the Foretelling 98. The search tries once at Bands' top first and fits there: Bands is not
+// tried (before: Bands 125, its tries up to 1000 s each, the search nothing above it; 170 fit).
+test('Maximize among Fixture rows tries the search at Bands\' top first, and fitting, no Bands: Py navens', async () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const setup = JSON.parse(readFileSync(new URL('./fixtures/navens-236.json', import.meta.url), 'utf8'));
+  const { goals, choices, logistics: py } = setupOf(setup, shipped);
+  const site = siteOf(readCityBlock(await decodeBlueprint(setup.city.blueprint), shipped), setup.city.buffer);
+  // (153 fits at the search's 45th candidate.)
+  const run = maximize(goals, shipped, py, { ...choices, site, seed: 1, maxCandidates: 50, budgetMs: 1e12, annexes: false, starving: false });
+  const events = [];
+  for (let step = run.next(); !step.done; step = run.next()) {
+    events.push(/** @type {any} */ (step.value));
+    if (step.value.type === 'best') break;
+  }
+  run.return(undefined);
+  const tries = events.filter(v => v.type === 'try'), best = events.find(v => v.type === 'best');
+  assert.equal(tries.length, 1, tries.map(v => v.machines).join());
+  assert.ok(tries[0].machines >= 150, `${tries[0].machines}`);
+  assert.equal(best.machines, tries[0].machines);
+  assert.equal(best.block.subBlocks.filter(sb => sb.item === 'navens').length, 1, 'the search\'s one Sub-Block, not Bands\' parts');
+  assertValid(best.block, shipped, py);
+  assert.equal(simulate(best.block).starvation.length, 0);
 });
 
 // Py vrauks-2, its incubators by vrauks-cocoon-2: paddocks and incubators each take five items

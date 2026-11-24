@@ -187,7 +187,7 @@ Placement in a City Block by columns: every Sub-Block in a column, the Goals eas
 _Avoid_: columns of copies (a Sub-Block's own stack may stand in several columns: compose.js decides)
 
 **Bands**:
-In a City Block whose Fixtures stand in rows, the Production Chain in Parts, each a row or two of machines in a Slot: a run of rows no Fixture stands in across a range of the City Block (it whole, or cut at one of its Fixture columns). The Sub-Blocks with the tallest rows take the tallest Slots first, the Goal fills what is left; small Sub-Blocks stand in the rows a Part's Slot has to spare, or where Placement finds room. Maximize tries it first where its Parts hold many more machines than the Foretelling foretells.
+In a City Block whose Fixtures stand in rows, the Production Chain in Parts, each a row or two of machines in a Slot: a run of rows no Fixture stands in across a range of the City Block (it whole, or cut at one of its Fixture columns). The Sub-Blocks with the tallest rows take the tallest Slots first, the Goal fills what is left; small Sub-Blocks stand in the rows a Part's Slot has to spare, or where Placement finds room. Maximize tries it first where its Parts hold many more machines than the Foretelling foretells, but first the search once at the most they hold: where the search's copies Make Way round a few Fixtures they may pack denser, and fitting there, Bands is not tried.
 _Avoid_: grid layout, template
 
 **Part**:

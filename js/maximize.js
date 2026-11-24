@@ -150,16 +150,29 @@ export function* maximize(goals, catalog, logistics, options) {
   // (What the Foretelling foretells before any try: Bands goes first where its parts hold FILL
   // more.)
   const foretold0 = plan.foretold().machines;
+  // Bands going first: the search tries once at its top first, alone (`atTop`, `probing`); fitting
+  // there, Bands is not tried (it cannot fit more), the search going on above. Its copies Make Way
+  // round a few Fixtures and may pack denser than Bands' Parts in their Slots (Py navens among
+  // roboports: Bands 125 cultures, its tries up to 1000 s; the search 170 in 30 s, ADR 0120);
+  // where Fixtures stand thick, looser (below).
+  let atTop = false;
   if (!only && top >= foretold0 + FILL) {
     told = plan.foretold().machines;
     yield { type: 'foretell', ...plan.foretold() };
-    yield* inBands(plan.foretold().machines);
+    [atTop, probing] = [true, top];
   }
   // Bands gone first and fitting FILL more than the Foretelling foretold: the search tries nothing
   // above it. Its Placement round the Fixtures packs looser than Bands' Parts in their Slots (Py
   // vrauks: 55 paddocks, Bands 78; Py trits: 18 reefs, Bands 27, ADR 0025, ADR 0073), and its
   // tries above them found no room after 3 to 4 minutes (vrauks), more than a minute (trits).
-  let past = banded && best !== null && best.machines >= told + FILL;
+  let past = false;
+  // (The search's try at Bands' top taken: not fitting, Bands now, `past` as above.)
+  const afterTop = function* (outcome) {
+    [atTop, probing] = [false, null];
+    if (outcome.block) return;
+    yield* inBands(Math.max(foretold0, best?.machines ?? 0));
+    past = bestN === null && best !== null && best.machines >= foretold0 + FILL;
+  };
   // Tries made in turn (`next()`: { n, extra (attempt's options), say (an event first) }, or null
   // at the end), up to `width` under way at once: each outcome taken in their order (`take`, a
   // generator: false to end them, those still under way stopped, ADR 0060). One at a time, made
@@ -310,25 +323,31 @@ export function* maximize(goals, catalog, logistics, options) {
       }
       if (id === topId) {
         [top, topId] = [outcome.top, null];
-        // Bands' parts holding FILL more than foretold before any try: Bands now, above the best
-        // so far, as one at a time goes first (the tries under way go on meanwhile); fitting FILL
-        // more than foretold, the search tries nothing above it (`past`).
+        // Bands' parts holding FILL more than foretold before any try: as one at a time goes
+        // first, the search once at its top, alone (the tries under way stopped); not fitting,
+        // Bands, above the best so far; fitting FILL more than foretold, the search tries nothing
+        // above it (`past`).
         if (!only && top >= foretold0 + FILL && top > (best?.machines ?? 0)) {
-          yield* inBands(Math.max(foretold0, best?.machines ?? 0));
-          past = bestN === null && best !== null && best.machines >= foretold0 + FILL;
-          if (past) break;
-          // (Tries under way at no more machines than it fit tell nothing more.)
-          for (const [k, g] of going) {
-            if (g.n > plan.lo) continue;
-            going.delete(k);
-            yield { type: 'cancel', id: k };
-          }
+          for (const k of going.keys()) yield { type: 'cancel', id: k };
+          going.clear();
+          [atTop, probing] = [true, top];
         }
         continue;
       }
       const { n } = going.get(id);
       going.delete(id);
       yield* took(n, outcome);
+      if (atTop) {
+        yield* afterTop(outcome);
+        if (past) break;
+        // (Tries under way at no more machines than it fit tell nothing more.)
+        for (const [k, g] of going) {
+          if (g.n > plan.lo) continue;
+          going.delete(k);
+          yield { type: 'cancel', id: k };
+        }
+        continue;
+      }
       if (spec && bestN !== spec.base) {
         for (const k of spec.ids) yield { type: 'cancel', id: k };
         spec.run.return(undefined);
@@ -365,12 +384,16 @@ export function* maximize(goals, catalog, logistics, options) {
     for (;;) {
       yield* foretelling();
       // (An Annex's first try: its least, one of the first Goal's machines. None fitting for want
-      // of room, no more is tried.)
+      // of room, no more is tried. Or the one at Bands' top.)
       const n = only || past ? null : probing ?? plan.next();
       if (n === null) break;
       yield trying(n);
       const outcome = attempt(plan, n, { ...options, precheck: n > plan.designable, unsorted: true, ...near(n) });
       yield* took(n, outcome);
+      if (atTop) {
+        yield* afterTop(outcome);
+        continue;
+      }
       if (!outcome.block && probing !== null && !outcome.starves) break;
       probing = null;
     }

@@ -118,6 +118,7 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 | Belts to the train of one item merged on the layout shown (spacing's pass, poles up first): each lane from where its drops fall, a splitter keeping lanes | Py reo 116²: 12 belts to the train → 10, same rate; suite rates the same | 0118 |
 | Input Spacing on the layout shown: each belt from the train's first stretch routed again from the middle of its equal stretch of the side (poles taken up and placed again), nothing else moving; sides shared by rate at routing (several Input Sides only) | Py iron plate's 17 train belts 1–11 rows apart → 2–4, same layout | 0117 |
 | Faster: after Filling, the best's machines run faster (the highest Count needing no machine more anywhere, a thousandth short, else halfway down); its misses no reseed's or starving try's | Py wood 116² 1048.66 → 1068.14/min (3.625 → 3.692), one try; silicon 675 → 687.56, same layout | 0093 |
+| The search once at Bands' top before Bands goes first; fitting there, no Bands (copies Making Way round a few Fixtures pack denser than Parts between Fixture rows) | Py navens 236² page 145 → 171 cultures, 3561 → 1075 s; vrauks, trits one try more, same layouts | 0120 |
 
 ## What failed, was reverted, or must not be done
 
@@ -266,6 +267,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 - **A count of "inserters sharing" a machine's output** (0119) counted every output inserter, though each product had a belt and inserters of its own: every clock half what it was. Share by what each moves. A user's arithmetic for a wrong number ("the hand applied twice") may point at the wrong cause: reproduce, then read the inputs to the formula.
 - **A route starting at another's splitter** (fedFrom: the item carried on past a byproduct's filter splitter) has that splitter among its pieces: a check for "its own filter splitter" took it for the byproduct's belt (0052–0118: it could merge the item onto the byproduct's). Ask whose splitter it is (fedFrom), not whether one is there.
 - **A headless run ending "the worker was stopped"** (before 0117) had lost its Maximize to an unhandled rejection in a worker thread (a try begun and stopped in one turn): later phases and the shown layout never ran, and the run looked done. Compare `tried` between runs; a run.mjs result that differs from the page's by phases may be this. Worker-thread `console.error` is lost when the process exits: debug there with `appendFileSync`.
+
+- **No search above a Bands fit as a rule** (0081 → 0120). A speed-up resting on two setups (vrauks, trits: the search packing looser than Bands) cost Py navens 171 → 145 cultures in the same City Block: there the search's copies Make Way round the Fixtures. A cut that skips a phase because it never paid on the suite needs a cheap check that it cannot pay (here one try at Bands' top), not the suite's word. And a single try alone at a far higher Count (`attempt --n`) is the quickest test of a schedule: 170 fit in 31 s where Maximize stopped at 125.
 
 ## Rules every change keeps
 

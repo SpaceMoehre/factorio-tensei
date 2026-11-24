@@ -9,7 +9,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 24.9,
+        "secs": 33.2,
         "tries": 120,
         "rate": 600,
         "machines": null,
@@ -31,8 +31,8 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 207.5,
-        "tries": 2,
+        "secs": 245.1,
+        "tries": 3,
         "rate": 6.94,
         "machines": 27,
         "failure": null,
@@ -53,7 +53,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 536.3,
+        "secs": 582.1,
         "tries": 15,
         "rate": 34.19,
         "machines": 133,
@@ -75,7 +75,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 181.1,
+        "secs": 186.3,
         "tries": 11,
         "rate": 18000,
         "machines": 2,
@@ -97,7 +97,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 320.5,
+        "secs": 338.9,
         "tries": 16,
         "rate": 687.56,
         "machines": 6,
@@ -119,7 +119,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 188.8,
+        "secs": 213.6,
         "tries": 17,
         "rate": 9937.5,
         "machines": 4,
@@ -141,7 +141,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 133.2,
+        "secs": 153.9,
         "tries": 11,
         "rate": 3300,
         "machines": 11,
@@ -163,7 +163,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 26.5,
+        "secs": 32.7,
         "tries": 20,
         "rate": 6000,
         "machines": 10,
@@ -185,8 +185,8 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 48.7,
-        "tries": 2,
+        "secs": 102.4,
+        "tries": 3,
         "rate": 55.84,
         "machines": 78,
         "failure": null,
@@ -207,7 +207,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 113,
+        "secs": 130.2,
         "tries": 6,
         "rate": 900,
         "machines": 50,
@@ -229,7 +229,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 255.7,
+        "secs": 302.3,
         "tries": 12,
         "rate": 2520,
         "machines": 7,
@@ -251,7 +251,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 183.4,
+        "secs": 196.3,
         "tries": 16,
         "rate": 499.7,
         "machines": 10,
@@ -273,7 +273,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 624.7,
+        "secs": 838.3,
         "tries": 11,
         "rate": 999.98,
         "machines": 5,
@@ -295,7 +295,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 216.3,
+        "secs": 300.6,
         "tries": 22,
         "rate": 400,
         "machines": 125,
@@ -317,7 +317,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 401.8,
+        "secs": 566.6,
         "tries": 28,
         "rate": 5424.49,
         "machines": 15,
@@ -339,7 +339,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 127.1,
+        "secs": 177.3,
         "tries": 20,
         "rate": 1800,
         "machines": null,
@@ -361,7 +361,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 84.9,
+        "secs": 123.4,
         "tries": 11,
         "rate": 1619.98,
         "machines": 9,
@@ -383,7 +383,7 @@
       "tier": "fast",
       "timeout": 900,
       "result": {
-        "secs": 99.8,
+        "secs": 155.4,
         "tries": 10,
         "rate": 1157.14,
         "machines": 4,
@@ -405,7 +405,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 561.4,
+        "secs": 845.7,
         "tries": 15,
         "rate": 44.96,
         "machines": 1,
@@ -427,7 +427,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 578.1,
+        "secs": 875.2,
         "tries": 14,
         "rate": 159.85,
         "machines": 3,
@@ -449,7 +449,7 @@
       "tier": "fast",
       "timeout": 1800,
       "result": {
-        "secs": 15.3,
+        "secs": 17,
         "tries": 40,
         "rate": 1800,
         "machines": null,
@@ -471,7 +471,7 @@
       "tier": "fast",
       "timeout": 1800,
       "result": {
-        "secs": 11.4,
+        "secs": 14,
         "tries": 40,
         "rate": 900,
         "machines": null,
@@ -493,7 +493,7 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 224.4,
+        "secs": 284.8,
         "tries": 14,
         "rate": 180,
         "machines": 3,
@@ -505,6 +505,28 @@
         "bounds": "110x107",
         "entities": 2533,
         "hash": "15234ab4d921"
+      }
+    },
+    {
+      "name": "navens-236",
+      "file": "navens-236.json",
+      "what": "Py navens cultures (10 × 10) in the roboport City Block, 236², every side in and out: Bands' parts hold more than foretold, the search's copies Making Way round the few Fixtures pack denser (the search once at Bands' top first, ADR 0120)",
+      "K": 50,
+      "tier": "full",
+      "timeout": 7200,
+      "result": {
+        "secs": 1066.1,
+        "tries": 25,
+        "rate": 413.26,
+        "machines": 164,
+        "failure": null,
+        "delivered": 413.26,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "228x228",
+        "entities": 13557,
+        "hash": "6e9bec51af93"
       }
     }
   ]
