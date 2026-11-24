@@ -1377,7 +1377,11 @@ export function shapeOf(ctx, sb, index, links, rest = false, share = false) {
       outLane: isOutput ? outputLane(ctx, sb) : 0, oneSide: isOutput ? oneSide(ctx, sb) : 0, oneBelt: !splittable, dropLane: isOutput ? dropLane(ctx, sb) : 0,
     };
   });
-  const depths = ctx.env.rightAngle ? [1, 2, 3, 4] : [2, 3, 4];
+  // A machine at most 2 tiles across takes no 90° inserter: the inserter and the belt tile beside
+  // it fill its column pair, and its belt cannot pass the lone tile between two machines'
+  // inserters (Py stone furnaces: no module of 18 routed, ADR 0116).
+  const narrow = Math.max(ctx.catalog.buildings[sb.building].size.w, ctx.catalog.buildings[sb.building].size.h) <= 2;
+  const depths = ctx.env.rightAngle && !narrow ? [1, 2, 3, 4] : [2, 3, 4];
   if (belts.length > 2 * depths.length + 4) {
     throw new LayoutError(`${sb.recipe} needs ${belts.length} belts; ${2 * depths.length + 4} fit around a machine`);
   }

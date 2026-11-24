@@ -70,6 +70,18 @@ test('inserter count scales with throughput', () => {
   assertValid(block, catalog, off);
 });
 
+// A search whose candidates are all like ones tried before ends (ADR 0116): one Sub-Block of few
+// designs mutates into nothing new long before a minute's budget.
+test('a search finding nothing new ends before its deadline', () => {
+  const started = Date.now();
+  const run = search([{ goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' } }], catalog, logistics, { seed: 1, deadline: started + 60000 });
+  let best = null, step;
+  for (step = run.next(); !step.done; step = run.next()) best = step.value.block;
+  assert.ok(best);
+  assert.ok(Date.now() - started < 45000, `${Date.now() - started} ms`);
+  assert.equal(step.value.timedOut, false);
+});
+
 // 37.5 iron plates/min keep 2 stone furnaces busy; each burns 90kW / 4MJ = 0.0225 coal/s.
 test('a burner machine gets a Fuel input at its power draw: 2 stone furnaces, 2.7 coal/min', () => {
   const block = solve([{ goal: { item: 'iron-plate', rate: 37.5 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' } }], catalog, logistics);
@@ -78,6 +90,18 @@ test('a burner machine gets a Fuel input at its power draw: 2 stone furnaces, 2.
   assert.ok(Math.abs(coal.items.find(i => i.item === 'coal').rate - 2.7) < 1e-9);
   assertFeedsEveryMachine(block, coal, machinesOf(block, 'iron-plate'), catalog);
   assertValid(block, catalog, logistics);
+});
+
+// 2 × 2 furnaces take no 90° inserter (ADR 0116): its belt tile beside it fills their column
+// pair, and the belt cannot pass between two furnaces' inserters. With 90° inserters on, no
+// module of copies built (past 120 machines a Sub-Block repeats one only: Py's 150 stone
+// furnaces found no layout); their belts a row off, they route.
+test('stone furnaces with 90° inserters on repeat a module: their belts a row off', () => {
+  const ctx = context([{ goal: { item: 'iron-plate', rate: 1125 }, selection: { recipe: 'iron-plate', building: 'stone-furnace' } }], catalog, logistics, null);
+  assert.equal(ctx.plan[0].count, 60);
+  const copies = designStep(ctx, 0, random(1)).filter(c => c.spec?.copies);
+  assert.ok(copies.length, 'no module of copies');
+  assert.ok(copies.some(c => designOf(c)?.trouble === 0), 'no module of copies routes without starving');
 });
 
 // Py science pack 2: 18 packs per 180 s craft; research-center-mk01 runs at speed 1, so each

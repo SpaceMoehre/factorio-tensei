@@ -341,6 +341,10 @@ export function* search(entries, catalog, logistics, options = {}) {
   // one by one weighs its spots: weight, lift, order, at): one like them places and lays out the
   // same again, and is passed over (sweep's weights in columns, mutations that change nothing).
   const seen = new Set();
+  // Candidates in a row all like one tried before: past REPEATS, mutating finds nothing new (one
+  // Sub-Block of few designs: Py stone furnaces' best came at 15 s, then 71 million candidates
+  // passed over to the end of the 1000 s budget, ADR 0116).
+  let repeats = 0;
   while (tried < maxCandidates && (tried === 0 || !(timedOut = now() >= until))) {
     // In a City Block, a search whose structured candidates found no room for a layout (or,
     // looking for one without Starvation, none of those) seldom finds one later.
@@ -348,7 +352,11 @@ export function* search(entries, catalog, logistics, options = {}) {
     const candidate = queue.length ? queue.shift() : refining.length ? refining.shift() : mutate(best?.candidate ?? first, designs, rng, site);
     if (candidate !== regrown) tried++;
     const as = JSON.stringify(candidate.layers ? { ...candidate, weight: 0, lift: 0, order: 0, at: 0 } : candidate);
-    if (seen.has(as)) continue;
+    if (seen.has(as)) {
+      if (++repeats >= REPEATS) break;
+      continue;
+    }
+    repeats = 0;
     seen.add(as);
     const k = `${candidate.choice.join()}|${candidate.columns.join()}|${JSON.stringify(candidate.breakout ?? {})}|${JSON.stringify(candidate.turns ?? {})}`;
     if (!prepared.has(k)) {
@@ -601,6 +609,9 @@ const GROWN = 3;
 
 // How many times as long as designing a try's candidates get at least.
 const LAYING = 2;
+
+// Candidates in a row like ones tried before that end a search.
+const REPEATS = 10000;
 
 // Designs kept from searches before, the latest KEPT_DESIGNS (Maximize tries the same Goals
 // again: an Annex's first try in each Annex's room, those that may starve after those that may

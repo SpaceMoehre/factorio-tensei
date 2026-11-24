@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v101: Narrow machines take no 90° inserter (implemented)
+
+A machine at most 2 tiles across (stone furnaces) takes its belts a row off, an ordinary inserter between, even with 90° inserters on: the inserter and the belt tile beside it fill its two columns, and the belt cannot pass between two machines' inserters. A search whose candidates are all like ones tried before (10,000 in a row) ends rather than run out its budget. Py iron plate 900/min in 150 stone furnaces: failure ("no module of 18 routes") → 900/min, 81 × 46, valid, starving nothing, done at 34 s. ADR 0116.
+
 ## v100: A balancer built as made (implemented)
 
 A balancer's design come back from a design worker is built as the balancer it is, not as a core of machines (squeezed, its in belts' end tiles gone: the page failed at once, "p is undefined"); a balancer starves only where its belts bring less in all than it gives, not where one brings less than an even share. Py tinned cable 1800/min into a 3–2 balancer: failure → 1800/min, 65 × 50, valid, starving nothing. ADR 0115.

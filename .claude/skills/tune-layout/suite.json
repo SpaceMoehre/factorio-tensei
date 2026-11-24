@@ -455,6 +455,28 @@
         "entities": 619,
         "hash": "0bc49a85eca2"
       }
+    },
+    {
+      "name": "iron-plate-stone-furnace",
+      "file": "iron-plate-stone-furnace.json",
+      "what": "Py iron plate 900/min in 150 stone furnaces (2 × 2, burning coal, ash out with the plates), 90° inserters, standing on its own: every module of 18 failed, the furnaces too narrow for a 90° inserter and its belt tile (ADR 0116)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 1800,
+      "result": {
+        "secs": 2.7,
+        "tries": 40,
+        "rate": 900,
+        "machines": null,
+        "failure": "belt 19: no splitter after its producers sends ash away and the rest past every entry",
+        "delivered": 900,
+        "valid": true,
+        "starving": 0,
+        "riding": 2,
+        "bounds": "25x105",
+        "entities": 1127,
+        "hash": "7b01953d6329"
+      }
     }
   ]
 }
