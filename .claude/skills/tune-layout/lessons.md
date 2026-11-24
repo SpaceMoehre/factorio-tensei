@@ -270,6 +270,8 @@ These were distilled from the ADRs. Each item cites its ADR: read the ADR before
 
 - **No search above a Bands fit as a rule** (0081 → 0120). A speed-up resting on two setups (vrauks, trits: the search packing looser than Bands) cost Py navens 171 → 145 cultures in the same City Block: there the search's copies Make Way round the Fixtures. A cut that skips a phase because it never paid on the suite needs a cheap check that it cannot pay (here one try at Bands' top), not the suite's word. And a single try alone at a far higher Count (`attempt --n`) is the quickest test of a schedule: 170 fit in 31 s where Maximize stopped at 125.
 
+- **Copies parted together, not each as few rows down as it can** (after 0120). Py navens among roboports leaves ~36 rows empty where Fixture rows (about every 29.5 rows) meet the cultures' belts and pipes (a copy every 17–18). A search over every copy's drop at once (the fewest machines given up, as Parting's fallback where the greedy stack runs past the room) found nothing more: 12 copies need 229 rows of 228 at best, 11 copies and the spores' 19-row block about 230. Page-like the same 171. The strips can only be filled by something shorter than a copy standing in them (a row of spore collectors, about 10 rows): one Sub-Block split over several Parting gaps.
+
 ## Rules every change keeps
 
 - **The suite, not one setup** (the user: "for every new recipe chain I need to run tune-layout — is there no general fix?"). Each pass fixed what its own chain hit, checked against one or two other setups. `npm run suite` runs every setup tuned so far, laid out the same on any host, against its recorded result: no change is kept with a LOSS in it, and every new setup joins it.
