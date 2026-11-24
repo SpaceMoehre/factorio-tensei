@@ -85,3 +85,25 @@ test('a block\'s inserters share their machines\' full-speed flows', () => {
   // Each machine's iron inserters share its 3/s evenly.
   for (const e of inserters.filter(e => e.role === 'input')) assert.ok(Math.abs(rate(e) * e.sharing - 3) < 1e-9);
 });
+
+// Py's evaporator makes 6 iron oxide and 10 ree concentrate in 8 s, each on a belt of its own
+// (ADR 0066), a hand of 2: its iron oxide inserter swings 3 times in 8 s, its ree concentrate one
+// 5 times — not each sharing its machine's products with the other's (3 in 16 s, 5 in 16 s).
+test('a machine\'s output inserters share only the products they move', async () => {
+  const { readFileSync } = await import('node:fs');
+  const py = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  // (The solid separators taking the ree concentrate: the iron oxide goes apart, on a belt of its own.)
+  const block = solve([
+    { goal: { item: 'reo', rate: 60 }, selection: { recipe: 'reo', building: 'solid-separator' } },
+    { goal: { item: 'ree-concentrate', rate: 120 }, selection: { recipe: 'ree-concentrate1', building: 'evaporator' } },
+  ], py,
+    { ...logistics, belt: 'transport-belt', inserter: 'fast-inserter', longInserter: 'long-handed-inserter', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', pole: 'medium-electric-pole', rightAngle: true, handSize: 2 });
+  const { of } = clocksOf(block, py, 2);
+  const step = block.subBlocks.findIndex(sb => sb.item === 'ree-concentrate');
+  const outs = block.entities.filter(e => e.kind === 'inserter' && e.role === 'output' && e.subBlock === step);
+  assert.ok(outs.some(e => e.moves.join() === 'iron-oxide'), 'the iron oxide on a belt of its own');
+  const machines = block.entities.filter(e => e.kind === 'building' && e.subBlock === step).length;
+  const perSecond = item => outs.filter(e => e.moves.includes(item)).reduce((sum, e) => { const [s, t] = of.get(e).split('/').map(Number); return sum + 2 * s / t; }, 0);
+  assert.ok(Math.abs(perSecond('iron-oxide') - machines * 6 / 8) < 1e-9, `${perSecond('iron-oxide')} iron oxide/s`);
+  assert.ok(Math.abs(perSecond('ree-concentrate') - machines * 10 / 8) < 1e-9, `${perSecond('ree-concentrate')} ree concentrate/s`);
+});

@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v104: Output inserters share only their own products (implemented)
+
+A machine's output inserters share what they move with those moving the same products, not with every output inserter of the machine: a product on a belt of its own (ADR 0066) is its inserters' alone. Py's evaporator (6 iron oxide and 10 ree concentrate in 8 s, a hand of 2): its clocks 3 and 5 swings in 16 s → 3 and 5 in 8 s. Layouts unchanged. ADR 0119.
+
 ## v103: Belts to the train of one item merged (implemented)
 
 In the layout shown, belts to the train of one item go on as one through a splitter while neither lane carries more than half a belt, each lane as its producers' drops fill it; belts of different items stay apart. A belt carrying an item on past a byproduct's filter splitter is no longer taken for the byproduct's. Py reo, cobalt extract and tinned cable 116², input and output left and up: 12 belts to the train → 10 (stone 90 + 240 on one, iron oxide 72 + 216 on one), the same rate. ADR 0118.

@@ -416,8 +416,8 @@ export function buildCore(sb, building, links, variant, env) {
   // in the entities), and so does what its inserters move: a Fixture standing on one leaves it
   // out (place.js).
   // An inserter also carries what it moves, for its clock (clocks.js): into the machine, the
-  // items of its belt, shared by the machine's inserters on that belt; out of it, the machine's
-  // products, shared by all its output inserters (`sharing`).
+  // items of its belt, shared by the machine's inserters on that belt; out of it, the products it
+  // moves, shared by the machine's output inserters moving the same (`sharing`).
   // (Out of a machine putting each product on a belt of its own, filtered to it, ADR 0066.)
   const filtered = links.apart?.length > 0;
   const moving = (isOutput, items, sharing) => ({ role: isOutput ? 'output' : 'input', moves: items.map(i => i.name), sharing, ...(isOutput && filtered ? { filters: items.map(i => i.name) } : {}) });
@@ -518,9 +518,12 @@ export function buildCore(sb, building, links, variant, env) {
         supply.get(supplyKey).perMachine.push(moved);
         supply.get(supplyKey).machines.push(machine);
       }
-      let outputs = 0;
-      for (let k = first; k < entities.length; k++) if (entities[k].role === 'output') outputs++;
-      for (let k = first; k < entities.length; k++) if (entities[k].role === 'output') entities[k].sharing = outputs;
+      // (Its output inserters moving the same products share them: each product on a belt of its
+      // own, its inserters share it alone, ADR 0066 — not with those of the other products.)
+      const outputs = new Map();
+      const moveKey = e => e.moves.join('|');
+      for (let k = first; k < entities.length; k++) if (entities[k].role === 'output') outputs.set(moveKey(entities[k]), (outputs.get(moveKey(entities[k])) ?? 0) + 1);
+      for (let k = first; k < entities.length; k++) if (entities[k].role === 'output') entities[k].sharing = outputs.get(moveKey(entities[k]));
       for (const [c, y] of rowTaps[r]) {
         stamped.set(cell(x0 + c, y), 'tap');
         taps.push({ routeId: period.get(c, y).route, tile: [x0 + c, y] });
