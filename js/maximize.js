@@ -37,7 +37,7 @@ import { context } from './design.js';
 // that starve, kept where they deliver more of the first Goal (ADR 0057): one more Annex, or with
 // no Annexes (or none that fits without), more machines than the best. A fit that starves carries
 // what it delivers (`delivered`, sim.js throughput); its 'try' says `starving`.
-// options: { made, selections, uses, exports, voids, index, site, budgetMs (each try's), maxCandidates (each try's),
+// options: { made, selections, uses, exports, voids, sciencePacks, turds, index, site, budgetMs (each try's), maxCandidates (each try's),
 //            seed, now, upTo (no higher than the Goals' own rates: a City Block they do not fit
 //            filled up to them), annexes (false: none), bands (false: no Bands), most (no more of
 //            the first Goal's machines), probe (one of them first: none fitting, nothing more),
@@ -74,7 +74,7 @@ export function* maximize(goals, catalog, logistics, options) {
   // (Tries at once: its top worked out in a worker of its own beside the tries, Bands then after
   // them, ADR 0060.)
   let top = 0, topId = null;
-  const plannerOf = () => ({ made: options.made, selections: options.selections, uses: options.uses, exports: options.exports, voids: options.voids, site: options.site, least: options.least, extra: options.extra });
+  const plannerOf = () => ({ made: options.made, selections: options.selections, uses: options.uses, exports: options.exports, voids: options.voids, sciencePacks: options.sciencePacks, turds: options.turds, site: options.site, least: options.least, extra: options.extra });
   // (`parallel` a function: an Annex begun beside the caller's tries, as many at once as the
   // caller's workers it leaves, asked anew before each; its tries go to those workers even one at
   // a time, `pooled`, not run here in turn while the caller's wait, ADR 0083.)
@@ -876,7 +876,7 @@ function once(plan, list, spare, { site, seed = 1, budgetMs = 10000, maxCandidat
 // tiles n machines' Sub-Blocks are foretold to span, of the City Block's `room`; `asked`: the
 // first Goal's machines at the Goals' own rates, `wanted` as many running as fast as those take.
 /** @param {any[]} goals @param {any} catalog @param {any} logistics @param {any} options */
-export function planner(goals, catalog, logistics, { made = [], selections = {}, uses = [], exports = [], voids = [], index = recipeOptions(catalog), site, least = LEAST, extra = {} }) {
+export function planner(goals, catalog, logistics, { made = [], selections = {}, uses = [], exports = [], voids = [], sciencePacks = null, turds = null, index = recipeOptions(catalog, sciencePacks, turds), site, least = LEAST, extra = {} }) {
   // In an Annex's City Block, a fluid made here that a pipe built before it has to spare comes
   // from there instead, while that has enough (ADR 0032).
   const draws = Object.entries(site?.draws ?? {}).filter(([fluid]) => made.includes(fluid));

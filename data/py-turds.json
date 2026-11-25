@@ -1,0 +1,2053 @@
+[
+ {
+  "name": "arqad-upgrade",
+  "choices": [
+   {
+    "name": "air-conditioner",
+    "unlock": [],
+    "replace": {
+     "arqad-egg-1": "arqad-egg-1-cold",
+     "arqad-egg-2": "arqad-egg-2-cold",
+     "arqad-egg-3": "arqad-egg-3-cold",
+     "arqad-egg-4": "arqad-egg-4-cold",
+     "arqad-egg-5": "arqad-egg-5-cold",
+     "wax": "wax-buffed",
+     "wax-to-lube": "wax-to-lube-buffed",
+     "honey-comb": "honey-comb-buffed"
+    }
+   },
+   {
+    "name": "cags",
+    "unlock": [
+     "cags"
+    ],
+    "replace": {
+     "arqad-hive-mk01": "arqad-hive-mk01-with-cags",
+     "arqad-hive-mk02": "arqad-hive-mk02-with-cags",
+     "arqad-hive-mk03": "arqad-hive-mk03-with-cags",
+     "arqad-hive-mk04": "arqad-hive-mk04-with-cags"
+    }
+   },
+   {
+    "name": "drone",
+    "unlock": [
+     "ez-queen"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "arthurian-upgrade",
+  "choices": [
+   {
+    "name": "abacus",
+    "unlock": [
+     "abacus"
+    ],
+    "replace": {
+     "arthurian-maturing-1": "arthurian-maturing-1-abacus",
+     "arthurian-maturing-2": "arthurian-maturing-2-abacus",
+     "arthurian-maturing-3": "arthurian-maturing-3-abacus",
+     "arthurian-maturing-4": "arthurian-maturing-4-abacus"
+    }
+   },
+   {
+    "name": "heated-stone",
+    "unlock": [],
+    "replace": {
+     "arthurian-egg-1": "arthurian-egg-1-hot-stones",
+     "arthurian-egg-2": "arthurian-egg-2-hot-stones",
+     "arthurian-egg-3": "arthurian-egg-3-hot-stones",
+     "arthurian-egg-4": "arthurian-egg-4-hot-stones"
+    }
+   },
+   {
+    "name": "cannibalism",
+    "unlock": [
+     "arthurian-cannibalism"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "atomizer-upgrade",
+  "choices": [
+   {
+    "name": "sc-core",
+    "unlock": [
+     "venom-gland-to-dynemicin"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "sub-atomic",
+    "unlock": [
+     "cognition-osteochain-to-kondo-substrate"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "d-core",
+    "unlock": [
+     "dimensional-gastricorg-to-inverse-opal"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "auog-upgrade",
+  "choices": [
+   {
+    "name": "sawdust",
+    "unlock": [],
+    "replace": {
+     "auog-food-01": "auog-food-01-sawdust",
+     "auog-food-02": "auog-food-02-sawdust"
+    }
+   },
+   {
+    "name": "glowing-mushrooms",
+    "unlock": [
+     "auog-recharge-glowing-mushroom-mk01",
+     "auog-recharge-glowing-mushroom-mk02",
+     "auog-recharge-glowing-mushroom-mk03",
+     "auog-recharge-glowing-mushroom-mk04"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "underground-chambers",
+    "unlock": [],
+    "replace": {
+     "auog-paddock-mk01": "auog-paddock-mk01-with-dirt",
+     "auog-paddock-mk02": "auog-paddock-mk02-with-dirt",
+     "auog-paddock-mk03": "auog-paddock-mk03-with-dirt",
+     "auog-paddock-mk04": "auog-paddock-mk04-with-dirt"
+    }
+   }
+  ]
+ },
+ {
+  "name": "bhoddos-upgrade",
+  "choices": [
+   {
+    "name": "extra-drones",
+    "unlock": [],
+    "replace": {
+     "bhoddos-1": "bhoddos-1-meltdown",
+     "bhoddos-2": "bhoddos-2-meltdown",
+     "bhoddos-3": "bhoddos-3-meltdown",
+     "bhoddos-4": "bhoddos-4-meltdown"
+    }
+   },
+   {
+    "name": "exoenzymes",
+    "unlock": [],
+    "replace": {
+     "bhoddos-1": "bhoddos-1-exoenzymes",
+     "bhoddos-2": "bhoddos-2-exoenzymes",
+     "bhoddos-3": "bhoddos-3-exoenzymes",
+     "bhoddos-4": "bhoddos-4-exoenzymes"
+    }
+   },
+   {
+    "name": "gills",
+    "unlock": [],
+    "replace": {
+     "bhoddos-spore": "bhoddos-spore-upgraded",
+     "sporopollenin": "sporopollenin-gills",
+     "biomass-sporopollenin": "biomass-sporopollenin-nerfed"
+    }
+   }
+  ]
+ },
+ {
+  "name": "biofactory-upgrade",
+  "choices": [
+   {
+    "name": "molecular-polyentomology",
+    "unlock": [
+     "naphtha-arqad"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "compusun",
+    "unlock": [
+     "carbon-black-phytoplankton"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "resonant",
+    "unlock": [
+     "nanofibrils-xyhiphoe"
+    ],
+    "replace": {
+     "filtration-media-2": "filtration-media-2-nanofibril-turd"
+    }
+   }
+  ]
+ },
+ {
+  "name": "bioprinting-upgrade",
+  "choices": [
+   {
+    "name": "high-viability",
+    "unlock": [],
+    "replace": {
+     "bio-scafold": "bio-scafold-with-lamp",
+     "bio-scafold-2": "bio-scafold-2-with-lamp",
+     "bio-scafold-3": "bio-scafold-3-with-lamp",
+     "bio-scafold-4": "bio-scafold-4-with-lamp"
+    }
+   },
+   {
+    "name": "biomimetics",
+    "unlock": [],
+    "replace": {
+     "bio-printer-mk01": "bio-printer-mk01-yag",
+     "bio-printer-mk02": "bio-printer-mk02-yag",
+     "bio-printer-mk03": "bio-printer-mk03-yag",
+     "bio-printer-mk04": "bio-printer-mk04-yag"
+    }
+   },
+   {
+    "name": "covalent",
+    "unlock": [
+     "stem-cell-recycle-1",
+     "stem-cell-recycle-2",
+     "stem-cell-recycle-3"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "bioreactor-upgrade",
+  "choices": [
+   {
+    "name": "aerators",
+    "unlock": [
+     "path-1-advanced-recipe"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "baffles",
+    "unlock": [
+     "path-2-advanced-recipe"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "jacket",
+    "unlock": [
+     "path-3-advanced-recipe"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "cadaveric-arum-upgrade",
+  "choices": [
+   {
+    "name": "acid-comtemplator",
+    "unlock": [],
+    "replace": {
+     "cadaveric-arum-1": "cadaveric-arum-1-soil",
+     "cadaveric-arum-2": "cadaveric-arum-2-soil",
+     "cadaveric-arum-3": "cadaveric-arum-3-soil",
+     "cadaveric-arum-4": "cadaveric-arum-4-soil"
+    }
+   },
+   {
+    "name": "solar-scope",
+    "unlock": [],
+    "replace": {
+     "cadaveric-arum-mk01": "cadaveric-arum-mk01-with-nanofibrils",
+     "cadaveric-arum-mk02": "cadaveric-arum-mk02-with-nanofibrils",
+     "cadaveric-arum-mk03": "cadaveric-arum-mk03-with-nanofibrils",
+     "cadaveric-arum-mk04": "cadaveric-arum-mk04-with-nanofibrils"
+    }
+   },
+   {
+    "name": "e-photo",
+    "unlock": [],
+    "replace": {
+     "cadaveric-arum-1": "cadaveric-arum-1-msa",
+     "cadaveric-arum-2": "cadaveric-arum-2-msa",
+     "cadaveric-arum-3": "cadaveric-arum-3-msa",
+     "cadaveric-arum-4": "cadaveric-arum-4-msa"
+    }
+   }
+  ]
+ },
+ {
+  "name": "compost-upgrade",
+  "choices": [
+   {
+    "name": "constant",
+    "unlock": [],
+    "replace": {
+     "fine-powdered-biomass": "fine-powdered-biomass-irragration",
+     "compost-plant-mk01": "compost-plant-mk01-with-pump",
+     "compost-plant-mk02": "compost-plant-mk02-with-pump",
+     "compost-plant-mk03": "compost-plant-mk03-with-pump",
+     "compost-plant-mk04": "compost-plant-mk04-with-pump"
+    }
+   },
+   {
+    "name": "humus",
+    "unlock": [
+     "cheap-retrovirus",
+     "biomass-destruction",
+     "sweet-syrup",
+     "a-molasse"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "worm-hotel",
+    "unlock": [
+     "worm",
+     "worm-stone",
+     "worm-wood",
+     "worm-coarse",
+     "worm-manure"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "cottongut-upgrade",
+  "choices": [
+   {
+    "name": "igm",
+    "unlock": [],
+    "replace": {
+     "cottongut-science-red-seeds": "cottongut-science-red-seeds-80-20",
+     "cottongut-science-green-seeds": "cottongut-science-green-seeds-80-20",
+     "cottongut-science-blue-seeds": "cottongut-science-blue-seeds-80-20",
+     "cottongut-science-py-seeds": "cottongut-science-py-seeds-80-20",
+     "cottongut-science-prod-seeds": "cottongut-science-prod-seeds-80-20",
+     "denatured-seismite-2": "denatured-seismite-2-80-20"
+    }
+   },
+   {
+    "name": "ts",
+    "unlock": [
+     "cottongut-food-03"
+    ],
+    "replace": {
+     "caged-cottongut-1": "caged-cottongut-1-cannibal",
+     "caged-cottongut-2": "caged-cottongut-2-cannibal",
+     "caged-cottongut-3": "caged-cottongut-3-cannibal",
+     "caged-cottongut-4": "caged-cottongut-4-cannibal"
+    }
+   },
+   {
+    "name": "ud",
+    "unlock": [],
+    "replace": {
+     "prandium-lab-mk01": "prandium-lab-mk01-ultrasound",
+     "prandium-lab-mk02": "prandium-lab-mk02-ultrasound",
+     "prandium-lab-mk03": "prandium-lab-mk03-ultrasound",
+     "prandium-lab-mk04": "prandium-lab-mk04-ultrasound"
+    }
+   }
+  ]
+ },
+ {
+  "name": "creature-chamber-upgrade",
+  "choices": [
+   {
+    "name": "respiratory",
+    "unlock": [],
+    "replace": {}
+   },
+   {
+    "name": "neural-fusion",
+    "unlock": [
+     "arthurian-codex"
+    ],
+    "replace": {
+     "creature-chamber-mk01": "creature-chamber-mk01-arthurian",
+     "creature-chamber-mk02": "creature-chamber-mk02-arthurian",
+     "creature-chamber-mk03": "creature-chamber-mk03-arthurian",
+     "creature-chamber-mk04": "creature-chamber-mk04-arthurian"
+    }
+   },
+   {
+    "name": "cc",
+    "unlock": [
+     "fluidflyavan-convert-from-base",
+     "fluidavan-convert-from-base",
+     "nukavan-convert-from-base",
+     "flyavan-convert-from-base",
+     "caravan-convert-from-base",
+     "work-o-dile-convert-from-base",
+     "thikat-convert-from-base",
+     "digosaurus-convert-from-base"
+    ],
+    "replace": {
+     "fluidflyavan": "fluidflyavan-turd",
+     "fluidavan": "fluidavan-turd",
+     "nukavan": "nukavan-turd",
+     "flyavan": "flyavan-turd",
+     "caravan": "caravan-turd",
+     "work-o-dile": "work-o-dile-turd",
+     "thikat": "thikat-turd",
+     "digosaurus": "digosaurus-turd"
+    }
+   }
+  ]
+ },
+ {
+  "name": "cridren-upgrade",
+  "choices": [
+   {
+    "name": "sixth-layer",
+    "unlock": [
+     "cridren-sixth-layer-ethylene-chlorohydrin",
+     "cridren-sixth-layer-organic-acid-anhydride"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "neural-cranio",
+    "unlock": [],
+    "replace": {
+     "cridren-1": "cridren-1-neural-cranio",
+     "cridren-2": "cridren-2-neural-cranio",
+     "cridren-3": "cridren-3-neural-cranio",
+     "cridren-4": "cridren-4-neural-cranio"
+    }
+   },
+   {
+    "name": "mufflers",
+    "unlock": [],
+    "replace": {
+     "cridren-enclosure-mk01": "cridren-enclosure-mk01-with-mufflers",
+     "cridren-enclosure-mk02": "cridren-enclosure-mk02-with-mufflers",
+     "cridren-enclosure-mk03": "cridren-enclosure-mk03-with-mufflers",
+     "cridren-enclosure-mk04": "cridren-enclosure-mk04-with-mufflers"
+    }
+   }
+  ]
+ },
+ {
+  "name": "data-array-upgrade",
+  "choices": [
+   {
+    "name": "booster",
+    "unlock": [],
+    "replace": {}
+   },
+   {
+    "name": "dbwt",
+    "unlock": [
+     "earth-generic-sample-duplication"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "solar-p",
+    "unlock": [
+     "solar-panel-equipment-cheap"
+    ],
+    "replace": {
+     "data-array": "data-array-with-solar"
+    }
+   }
+  ]
+ },
+ {
+  "name": "dhilmos-upgrade",
+  "choices": [
+   {
+    "name": "cover",
+    "unlock": [],
+    "replace": {
+     "dhilmos-1": "dhilmos-1-cover",
+     "dhilmos-2": "dhilmos-2-cover",
+     "dhilmos-3": "dhilmos-3-cover",
+     "dhilmos-4": "dhilmos-4-cover"
+    }
+   },
+   {
+    "name": "skimmer",
+    "unlock": [],
+    "replace": {
+     "dhilmos-1": "dhilmos-1-skimmer",
+     "dhilmos-2": "dhilmos-2-skimmer",
+     "dhilmos-3": "dhilmos-3-skimmer",
+     "dhilmos-4": "dhilmos-4-skimmer",
+     "dhilmos-egg-1": "dhilmos-egg-1-skimmer",
+     "dhilmos-egg-2": "dhilmos-egg-2-skimmer",
+     "dhilmos-egg-3": "dhilmos-egg-3-skimmer",
+     "dhilmos-egg-4": "dhilmos-egg-4-skimmer"
+    }
+   },
+   {
+    "name": "double-intake",
+    "unlock": [],
+    "replace": {
+     "dhilmos-1": "dhilmos-1-double-intake",
+     "dhilmos-2": "dhilmos-2-double-intake",
+     "dhilmos-3": "dhilmos-3-double-intake",
+     "dhilmos-4": "dhilmos-4-double-intake"
+    }
+   }
+  ]
+ },
+ {
+  "name": "dingrits-upgrade",
+  "choices": [
+   {
+    "name": "alpha",
+    "unlock": [
+     "dingrits-alpha"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "c-mutation",
+    "unlock": [],
+    "replace": {
+     "snarer-heart": "snarer-heart-mutation",
+     "space-suit": "space-suit-mutation",
+     "space-dingrit": "space-dingrit-mutation"
+    }
+   },
+   {
+    "name": "training",
+    "unlock": [],
+    "replace": {
+     "dingrits-1": "dingrits-1-training",
+     "dingrits-2": "dingrits-2-training",
+     "dingrits-3": "dingrits-3-training",
+     "dingrits-4": "dingrits-4-training"
+    }
+   }
+  ]
+ },
+ {
+  "name": "fast-wood-forestry-upgrade",
+  "choices": [
+   {
+    "name": "dry-storage",
+    "unlock": [],
+    "replace": {
+     "fiber-01": "fiber-dry-storage"
+    }
+   },
+   {
+    "name": "selective-heads",
+    "unlock": [],
+    "replace": {
+     "log-wood": "log-wood-fast"
+    }
+   },
+   {
+    "name": "self-generation",
+    "unlock": [],
+    "replace": {
+     "fwf-mk01": "fwf-mk01-with-furnace",
+     "log3": "log3-cheap",
+     "log6": "log6-cheap"
+    }
+   }
+  ]
+ },
+ {
+  "name": "fawogae-upgrade",
+  "choices": [
+   {
+    "name": "n2-ferti",
+    "unlock": [],
+    "replace": {
+     "fawogae-1": "fawogae-1-nitrogen",
+     "fawogae-2": "fawogae-2-nitrogen",
+     "fawogae-3": "fawogae-3-nitrogen",
+     "fawogae-4": "fawogae-4-nitrogen",
+     "fawogae-5": "fawogae-5-nitrogen"
+    }
+   },
+   {
+    "name": "acidosis",
+    "unlock": [
+     "desulfurizator-unit",
+     "acid-gas-fawogae",
+     "xeno-codex"
+    ],
+    "replace": {
+     "fawogae-sample": "fawogae-sample-with-xeno-codex",
+     "fawogae-mk02": "fawogae-mk02-with-xeno-codex",
+     "fawogae-mk03": "fawogae-mk03-with-xeno-codex",
+     "fawogae-mk04": "fawogae-mk04-with-xeno-codex"
+    }
+   },
+   {
+    "name": "dry",
+    "unlock": [
+     "coal-fawogae-buffed"
+    ],
+    "replace": {
+     "fawogae-plantation-mk01": "fawogae-plantation-mk01-with-pressure-pump",
+     "fawogae-plantation-mk02": "fawogae-plantation-mk02-with-pressure-pump",
+     "fawogae-plantation-mk03": "fawogae-plantation-mk03-with-pressure-pump",
+     "fawogae-plantation-mk04": "fawogae-plantation-mk04-with-pressure-pump"
+    }
+   }
+  ]
+ },
+ {
+  "name": "fish-upgrade",
+  "choices": [
+   {
+    "name": "a-select",
+    "unlock": [],
+    "replace": {
+     "breed-fish-1": "breed-fish-1-agressive-selection",
+     "breed-fish-2": "breed-fish-2-agressive-selection",
+     "breed-fish-3": "breed-fish-3-agressive-selection",
+     "breed-fish-4": "breed-fish-4-agressive-selection"
+    }
+   },
+   {
+    "name": "temp-control",
+    "unlock": [
+     "cyanic-acid-from-fish-hydrolysate"
+    ],
+    "replace": {
+     "fish-hydrolysate": "fish-hydrolysate-cooling"
+    }
+   },
+   {
+    "name": "dosing-pump",
+    "unlock": [],
+    "replace": {
+     "breed-fish-egg-1": "breed-fish-egg-1-doused",
+     "breed-fish-egg-2": "breed-fish-egg-2-doused",
+     "breed-fish-egg-3": "breed-fish-egg-3-doused",
+     "breed-fish-egg-4": "breed-fish-egg-4-doused"
+    }
+   }
+  ]
+ },
+ {
+  "name": "genlab-upgrade",
+  "choices": [
+   {
+    "name": "hsn",
+    "unlock": [],
+    "replace": {
+     "adam42-gen": "adam42-gen-laser"
+    }
+   },
+   {
+    "name": "enn",
+    "unlock": [],
+    "replace": {
+     "enzyme-pks": "enzyme-pks-nickel-carbonyl"
+    }
+   },
+   {
+    "name": "dwx",
+    "unlock": [],
+    "replace": {
+     "hmas": "hmas-pvp"
+    }
+   }
+  ]
+ },
+ {
+  "name": "grod-upgrade",
+  "choices": [
+   {
+    "name": "hi-sprinkler",
+    "unlock": [],
+    "replace": {
+     "grod-1": "grod-1-pressured",
+     "grod-2": "grod-2-pressured",
+     "grod-3": "grod-3-pressured",
+     "grod-4": "grod-4-pressured"
+    }
+   },
+   {
+    "name": "ground-irrigation",
+    "unlock": [],
+    "replace": {
+     "grod-al": "grod-al-tailings",
+     "grod-pb": "grod-pb-tailings",
+     "grod-sn": "grod-sn-tailings",
+     "grod-al-2": "grod-al-2-tailings",
+     "grod-pb-2": "grod-pb-2-tailings",
+     "grod-sn-2": "grod-sn-2-tailings",
+     "grod-al-3": "grod-al-3-tailings",
+     "grod-pb-3": "grod-pb-3-tailings",
+     "grod-sn-3": "grod-sn-3-tailings"
+    }
+   },
+   {
+    "name": "carbide-c",
+    "unlock": [],
+    "replace": {
+     "grod-seeds": "grod-seeds-heavy-water",
+     "grod-1": "grod-1-dry",
+     "grod-2": "grod-2-dry",
+     "grod-3": "grod-3-dry",
+     "grod-4": "grod-4-dry"
+    }
+   }
+  ]
+ },
+ {
+  "name": "guar-upgrade",
+  "choices": [
+   {
+    "name": "guarpulse",
+    "unlock": [
+     "alcl3",
+     "fungicide"
+    ],
+    "replace": {
+     "guar-1": "guar-1-guarpulse",
+     "guar-2": "guar-2-guarpulse",
+     "guar-3": "guar-3-guarpulse",
+     "guar-4": "guar-4-guarpulse"
+    }
+   },
+   {
+    "name": "aquaguar",
+    "unlock": [],
+    "replace": {
+     "guar-1": "guar-1-aquaguar",
+     "guar-2": "guar-2-aquaguar",
+     "guar-3": "guar-3-aquaguar",
+     "guar-4": "guar-4-aquaguar"
+    }
+   },
+   {
+    "name": "hh",
+    "unlock": [],
+    "replace": {
+     "guar-gum-plantation": "guar-gum-plantation-with-bots",
+     "guar-gum-plantation-mk02": "guar-gum-plantation-mk02-with-bots",
+     "guar-gum-plantation-mk03": "guar-gum-plantation-mk03-with-bots",
+     "guar-gum-plantation-mk04": "guar-gum-plantation-mk04-with-bots"
+    }
+   }
+  ]
+ },
+ {
+  "name": "incubator-upgrade",
+  "choices": [
+   {
+    "name": "gs",
+    "unlock": [],
+    "replace": {
+     "manure-bacteria": "manure-bacteria-fish"
+    }
+   },
+   {
+    "name": "zero",
+    "unlock": [],
+    "replace": {
+     "zogna-bacteria": "zogna-bacteria-darkness"
+    }
+   },
+   {
+    "name": "icd",
+    "unlock": [],
+    "replace": {
+     "bio-sample": "bio-sample-icd"
+    }
+   }
+  ]
+ },
+ {
+  "name": "kicalk-upgrade",
+  "choices": [
+   {
+    "name": "wire-netting",
+    "unlock": [
+     "biomass-kicalk-dry",
+     "kicalk-dry-bedding",
+     "heatsink",
+     "heating-system-cheap"
+    ],
+    "replace": {
+     "kicalk-plantation-mk01": "kicalk-plantation-mk01-with-mesh",
+     "kicalk-plantation-mk02": "kicalk-plantation-mk02-with-mesh",
+     "kicalk-plantation-mk03": "kicalk-plantation-mk03-with-mesh",
+     "kicalk-plantation-mk04": "kicalk-plantation-mk04-with-mesh",
+     "kicalk-1": "kicalk-1-dry",
+     "kicalk-2": "kicalk-2-dry",
+     "kicalk-3": "kicalk-3-dry",
+     "kicalk-4": "kicalk-4-dry",
+     "kicalk-5": "kicalk-5-dry"
+    }
+   },
+   {
+    "name": "extra-water",
+    "unlock": [],
+    "replace": {
+     "kicalk-1": "kicalk-1-saline",
+     "kicalk-2": "kicalk-2-saline",
+     "kicalk-3": "kicalk-3-saline",
+     "kicalk-4": "kicalk-4-saline",
+     "kicalk-5": "kicalk-5-saline"
+    }
+   },
+   {
+    "name": "crop-rotation",
+    "unlock": [],
+    "replace": {
+     "kicalk-1": "kicalk-1-rotation",
+     "kicalk-2": "kicalk-2-rotation",
+     "kicalk-3": "kicalk-3-rotation",
+     "kicalk-4": "kicalk-4-rotation",
+     "kicalk-5": "kicalk-5-rotation"
+    }
+   }
+  ]
+ },
+ {
+  "name": "kmauts-upgrade",
+  "choices": [
+   {
+    "name": "sex-ratio",
+    "unlock": [],
+    "replace": {
+     "kmauts-cub-1": "kmauts-cub-1-ratio",
+     "kmauts-cub-2": "kmauts-cub-2-ratio",
+     "kmauts-cub-3": "kmauts-cub-3-ratio",
+     "kmauts-cub-4": "kmauts-cub-4-ratio",
+     "kmauts-1": "kmauts-1-ratio",
+     "kmauts-2": "kmauts-2-ratio",
+     "kmauts-3": "kmauts-3-ratio",
+     "kmauts-4": "kmauts-4-ratio"
+    }
+   },
+   {
+    "name": "eye-out",
+    "unlock": [],
+    "replace": {
+     "kmauts-cub-1": "kmauts-cub-1-eye-out",
+     "kmauts-cub-2": "kmauts-cub-2-eye-out",
+     "kmauts-cub-3": "kmauts-cub-3-eye-out",
+     "kmauts-cub-4": "kmauts-cub-4-eye-out"
+    }
+   },
+   {
+    "name": "moult-recycle",
+    "unlock": [],
+    "replace": {
+     "kmauts-ration": "kmauts-ration-chitin"
+    }
+   }
+  ]
+ },
+ {
+  "name": "korlex-upgrade",
+  "choices": [
+   {
+    "name": "multi-tit",
+    "unlock": [],
+    "replace": {
+     "korlex-milk-1": "korlex-milk-1-doubled",
+     "korlex-milk-2": "korlex-milk-2-doubled",
+     "korlex-milk-3": "korlex-milk-3-doubled",
+     "korlex-milk-4": "korlex-milk-4-doubled",
+     "korlex-1": "korlex-1-slowed",
+     "korlex-2": "korlex-2-slowed",
+     "korlex-3": "korlex-3-slowed",
+     "korlex-4": "korlex-4-slowed"
+    }
+   },
+   {
+    "name": "high-pressure",
+    "unlock": [
+     "kimberlite-into-lime"
+    ],
+    "replace": {
+     "korlex-milk-1": "korlex-milk-1-pressured",
+     "korlex-milk-2": "korlex-milk-2-pressured",
+     "korlex-milk-3": "korlex-milk-3-pressured",
+     "korlex-milk-4": "korlex-milk-4-pressured"
+    }
+   },
+   {
+    "name": "nx-heat-pump",
+    "unlock": [],
+    "replace": {
+     "ez-ranch-mk01": "ez-ranch-mk01-with-nexelit",
+     "ez-ranch-mk02": "ez-ranch-mk02-with-nexelit",
+     "ez-ranch-mk03": "ez-ranch-mk03-with-nexelit",
+     "ez-ranch-mk04": "ez-ranch-mk04-with-nexelit"
+    }
+   }
+  ]
+ },
+ {
+  "name": "moondrop-upgrade",
+  "choices": [
+   {
+    "name": "cu",
+    "unlock": [],
+    "replace": {
+     "moondrop-1": "moondrop-1-cu",
+     "moondrop-2": "moondrop-2-cu",
+     "moondrop-3": "moondrop-3-cu",
+     "moondrop-4": "moondrop-4-cu",
+     "moondrop-5": "moondrop-5-cu"
+    }
+   },
+   {
+    "name": "moon",
+    "unlock": [
+     "methane-co2-with-lamp"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "carbon-capture",
+    "unlock": [
+     "moondrop-co2"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "moss-upgrade",
+  "choices": [
+   {
+    "name": "spores",
+    "unlock": [
+     "chlorinated-water"
+    ],
+    "replace": {
+     "Moss-1": "Moss-1-chlorinated",
+     "Moss-2": "Moss-2-chlorinated",
+     "Moss-3": "Moss-3-chlorinated",
+     "Moss-4": "Moss-4-chlorinated",
+     "Moss-5": "Moss-5-chlorinated"
+    }
+   },
+   {
+    "name": "hd-moss",
+    "unlock": [],
+    "replace": {
+     "Moss-1": "Moss-1-without-sludge",
+     "Moss-2": "Moss-2-without-sludge",
+     "Moss-3": "Moss-3-without-sludge",
+     "Moss-4": "Moss-4-without-sludge",
+     "Moss-5": "Moss-5-without-sludge"
+    }
+   },
+   {
+    "name": "inbuilt-moss",
+    "unlock": [
+     "unrefine-refsyngas",
+     "unrefine-refined-natural-gas"
+    ],
+    "replace": {
+     "moss-farm-mk01": "moss-farm-mk01-with-bioreactor",
+     "moss-farm-mk02": "moss-farm-mk02-with-bioreactor",
+     "moss-farm-mk03": "moss-farm-mk03-with-bioreactor",
+     "moss-farm-mk04": "moss-farm-mk04-with-bioreactor"
+    }
+   },
+   {
+    "name": "remove-muddy-sludge",
+    "unlock": [],
+    "replace": {
+     "Moss-1": "Moss-1-without-sludge-for-real",
+     "Moss-2": "Moss-2-without-sludge-for-real",
+     "Moss-3": "Moss-3-without-sludge-for-real",
+     "Moss-4": "Moss-4-without-sludge-for-real",
+     "Moss-5": "Moss-5-without-sludge-for-real"
+    }
+   }
+  ]
+ },
+ {
+  "name": "mukmoux-upgrade",
+  "choices": [
+   {
+    "name": "zero-cross",
+    "unlock": [
+     "artifical-insemination"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "bip",
+    "unlock": [],
+    "replace": {
+     "mukmoux-1": "mukmoux-1-bip",
+     "mukmoux-2": "mukmoux-2-bip",
+     "mukmoux-3": "mukmoux-3-bip",
+     "mukmoux-4": "mukmoux-4-bip",
+     "mukmoux-manure-1": "mukmoux-manure-1-mukmoux-turd",
+     "mukmoux-manure-2": "mukmoux-manure-2-mukmoux-turd",
+     "mukmoux-manure-3": "mukmoux-manure-3-mukmoux-turd",
+     "mukmoux-manure-4": "mukmoux-manure-4-mukmoux-turd",
+     "mukmoux-pasture-mk01": "mukmoux-pasture-mk01-with-electronics",
+     "mukmoux-pasture-mk02": "mukmoux-pasture-mk02-with-electronics",
+     "mukmoux-pasture-mk03": "mukmoux-pasture-mk03-with-electronics",
+     "mukmoux-pasture-mk04": "mukmoux-pasture-mk04-with-electronics"
+    }
+   },
+   {
+    "name": "think-collar",
+    "unlock": [],
+    "replace": {
+     "mukmoux-calf-1": "mukmoux-calf-1-microchip",
+     "mukmoux-calf-2": "mukmoux-calf-2-microchip",
+     "mukmoux-calf-3": "mukmoux-calf-3-microchip",
+     "mukmoux-calf-4": "mukmoux-calf-4-microchip"
+    }
+   }
+  ]
+ },
+ {
+  "name": "navens-upgrade",
+  "choices": [
+   {
+    "name": "cytotoxicity",
+    "unlock": [
+     "pre-pesticide-01-navens"
+    ],
+    "replace": {
+     "navens-sample": "navens-sample-with-vonix-gen"
+    }
+   },
+   {
+    "name": "pre-sterilization",
+    "unlock": [],
+    "replace": {
+     "navens-spore": "navens-spore-sterilization",
+     "navens-spore-mk02": "navens-spore-mk02-sterilization",
+     "navens-spore-mk03": "navens-spore-mk03-sterilization",
+     "navens-spore-mk04": "navens-spore-mk04-sterilization"
+    }
+   },
+   {
+    "name": "lichen",
+    "unlock": [
+     "full-render-navens-abomination"
+    ],
+    "replace": {
+     "navens-1": "navens-1-abomination",
+     "navens-2": "navens-2-abomination",
+     "navens-3": "navens-3-abomination",
+     "navens-4": "navens-4-abomination"
+    }
+   }
+  ]
+ },
+ {
+  "name": "numal-upgrade",
+  "choices": [
+   {
+    "name": "d2o",
+    "unlock": [
+     "aeroorgan-ink"
+    ],
+    "replace": {
+     "aeroorgan": "aeroorgan-buffed",
+     "numal-raising-1": "numal-raising-1-deuterium",
+     "numal-raising-2": "numal-raising-2-deuterium",
+     "numal-raising-3": "numal-raising-3-deuterium",
+     "numal-raising-4": "numal-raising-4-deuterium",
+     "numal-raising-5": "numal-raising-5-deuterium",
+     "numal-raising-6": "numal-raising-6-deuterium"
+    }
+   },
+   {
+    "name": "nc",
+    "unlock": [],
+    "replace": {
+     "numal": "numal-neutron",
+     "numal-mk02": "numal-mk02-neutron",
+     "numal-mk03": "numal-mk03-neutron",
+     "numal-mk04": "numal-mk04-neutron",
+     "numal-egg-1": "numal-egg-1-neutron",
+     "numal-egg-2": "numal-egg-2-neutron",
+     "numal-egg-3": "numal-egg-3-neutron",
+     "numal-egg-4": "numal-egg-4-neutron",
+     "numal-egg-5": "numal-egg-5-neutron",
+     "numal-egg-6": "numal-egg-6-neutron"
+    }
+   },
+   {
+    "name": "neutron-bombardment",
+    "unlock": [],
+    "replace": {
+     "ex-gut-num": "ex-gut-num-neodymium"
+    }
+   }
+  ]
+ },
+ {
+  "name": "phadai-upgrade",
+  "choices": [
+   {
+    "name": "ethanol-boost",
+    "unlock": [],
+    "replace": {
+     "energy-drink": "energy-drinkb"
+    }
+   },
+   {
+    "name": "piezoelectric-floor",
+    "unlock": [],
+    "replace": {
+     "Phadai-Dance-Dance-Revolution-1": "Phadai-Dance-Dance-Revolution-1-piezoelectric",
+     "Phadai-Dance-Dance-Revolution-2": "Phadai-Dance-Dance-Revolution-2-piezoelectric",
+     "Phadai-Dance-Dance-Revolution-3": "Phadai-Dance-Dance-Revolution-3-piezoelectric",
+     "Phadai-Dance-Dance-Revolution-4": "Phadai-Dance-Dance-Revolution-4-piezoelectric"
+    }
+   },
+   {
+    "name": "dubstep-track",
+    "unlock": [],
+    "replace": {
+     "Phadai-Dance-Dance-Revolution-1": "Phadai-Dance-Dance-Revolution-1-dubstep",
+     "Phadai-Dance-Dance-Revolution-2": "Phadai-Dance-Dance-Revolution-2-dubstep",
+     "Phadai-Dance-Dance-Revolution-3": "Phadai-Dance-Dance-Revolution-3-dubstep",
+     "Phadai-Dance-Dance-Revolution-4": "Phadai-Dance-Dance-Revolution-4-dubstep"
+    }
+   }
+  ]
+ },
+ {
+  "name": "phagnot-upgrade",
+  "choices": [
+   {
+    "name": "leader",
+    "unlock": [
+     "gas-bladder-to-deuterium",
+     "gas-bladder-to-dry-gas-stream"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "socialization",
+    "unlock": [],
+    "replace": {
+     "phagnot-cub-1": "phagnot-cub-1-fast",
+     "phagnot-cub-2": "phagnot-cub-2-fast",
+     "phagnot-cub-3": "phagnot-cub-3-fast",
+     "phagnot-cub-4": "phagnot-cub-4-fast"
+    }
+   },
+   {
+    "name": "hr",
+    "unlock": [],
+    "replace": {
+     "phagnot-1": "phagnot-1-kicalk",
+     "phagnot-2": "phagnot-2-kicalk",
+     "phagnot-3": "phagnot-3-kicalk",
+     "phagnot-4": "phagnot-4-kicalk",
+     "phagnot-cub-1": "phagnot-cub-1-kicalk",
+     "phagnot-cub-2": "phagnot-cub-2-kicalk",
+     "phagnot-cub-3": "phagnot-cub-3-kicalk",
+     "phagnot-cub-4": "phagnot-cub-4-kicalk",
+     "phagnot-food-01": "phagnot-food-01-kicalk",
+     "phagnot-food-02": "phagnot-food-02-kicalk"
+    }
+   }
+  ]
+ },
+ {
+  "name": "ralesia-upgrade",
+  "choices": [
+   {
+    "name": "improved-burst",
+    "unlock": [
+     "paper-towel"
+    ],
+    "replace": {
+     "ralesia-seeds": "ralesia-seeds-paper-towel"
+    }
+   },
+   {
+    "name": "sun-concentration",
+    "unlock": [],
+    "replace": {
+     "ralesia-plantation-mk01": "ralesia-plantation-mk01-with-ceramic",
+     "ralesia-plantation-mk02": "ralesia-plantation-mk02-with-ceramic",
+     "ralesia-plantation-mk03": "ralesia-plantation-mk03-with-ceramic",
+     "ralesia-plantation-mk04": "ralesia-plantation-mk04-with-ceramic"
+    }
+   },
+   {
+    "name": "h2-recycle",
+    "unlock": [],
+    "replace": {
+     "ralesia-1": "ralesia-1-hydrogen-burn",
+     "ralesia-2": "ralesia-2-hydrogen-burn",
+     "ralesia-3": "ralesia-3-hydrogen-burn",
+     "ralesia-4": "ralesia-4-hydrogen-burn"
+    }
+   }
+  ]
+ },
+ {
+  "name": "rennea-upgrade",
+  "choices": [
+   {
+    "name": "deadheading",
+    "unlock": [
+     "deadhead-recycle"
+    ],
+    "replace": {
+     "rennea-1": "rennea-1-deadhead",
+     "rennea-2": "rennea-2-deadhead",
+     "rennea-3": "rennea-3-deadhead",
+     "rennea-4": "rennea-4-deadhead"
+    }
+   },
+   {
+    "name": "alltime",
+    "unlock": [],
+    "replace": {
+     "rennea-1": "rennea-1-hydrophile",
+     "rennea-2": "rennea-2-hydrophile",
+     "rennea-3": "rennea-3-hydrophile",
+     "rennea-4": "rennea-4-hydrophile"
+    }
+   },
+   {
+    "name": "aphid-cleaning",
+    "unlock": [],
+    "replace": {
+     "rennea-seeds": "rennea-seeds-venom"
+    }
+   }
+  ]
+ },
+ {
+  "name": "research-upgrade",
+  "choices": [
+   {
+    "name": "unstable",
+    "unlock": [],
+    "replace": {
+     "py-science-pack-1": "py-science-pack-1-turd"
+    }
+   },
+   {
+    "name": "ms",
+    "unlock": [],
+    "replace": {
+     "py-science-pack-2": "py-science-pack-2-turd"
+    }
+   },
+   {
+    "name": "spg",
+    "unlock": [],
+    "replace": {
+     "py-science-pack-3": "py-science-pack-3-turd"
+    }
+   },
+   {
+    "name": "mci",
+    "unlock": [],
+    "replace": {
+     "py-science-pack-4": "py-science-pack-4-turd"
+    }
+   }
+  ]
+ },
+ {
+  "name": "sap-upgrade",
+  "choices": [
+   {
+    "name": "inoculator",
+    "unlock": [
+     "ash-sap"
+    ],
+    "replace": {
+     "fts-reactor": "fts-reactor-with-centrifuge",
+     "fts-reactor-mk02": "fts-reactor-mk02-with-centrifuge",
+     "fts-reactor-mk03": "fts-reactor-mk03-with-centrifuge",
+     "fts-reactor-mk04": "fts-reactor-mk04-with-centrifuge"
+    }
+   },
+   {
+    "name": "patch",
+    "unlock": [
+     "nano-cellulose-sap"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "bark",
+    "unlock": [
+     "sap-tree-mulch-mk01",
+     "sap-tree-mulch-mk02",
+     "sap-tree-mulch-mk03",
+     "sap-tree-mulch-mk04"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "schrodinger-antelope-upgrade",
+  "choices": [
+   {
+    "name": "pentadimensional",
+    "unlock": [],
+    "replace": {
+     "caged-antelope-1": "caged-antelope-1-5th-dimension",
+     "caged-antelope-2": "caged-antelope-2-5th-dimension",
+     "caged-antelope-3": "caged-antelope-3-5th-dimension",
+     "caged-antelope-4": "caged-antelope-4-5th-dimension",
+     "caged-antelope-5": "caged-antelope-5-5th-dimension",
+     "caged-antelope-6": "caged-antelope-6-5th-dimension",
+     "caged-antelope-7": "caged-antelope-7-5th-dimension",
+     "caged-antelope-8": "caged-antelope-8-5th-dimension"
+    }
+   },
+   {
+    "name": "existential-hazard",
+    "unlock": [],
+    "replace": {
+     "full-render-antelope": "full-render-antelope-existential"
+    }
+   },
+   {
+    "name": "higgs-field",
+    "unlock": [
+     "quantum-dots-folding-1",
+     "quantum-dots-folding-2",
+     "quantum-dots-folding-3",
+     "quantum-dots-folding-4"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "scrondrix-upgrade",
+  "choices": [
+   {
+    "name": "boronb",
+    "unlock": [],
+    "replace": {
+     "Scrondrix-cub-1": "Scrondrix-cub-1-boron",
+     "Scrondrix-cub-2": "Scrondrix-cub-2-boron",
+     "Scrondrix-cub-3": "Scrondrix-cub-3-boron",
+     "Scrondrix-cub-4": "Scrondrix-cub-4-boron",
+     "Scrondrix-1": "Scrondrix-1-boron",
+     "Scrondrix-2": "Scrondrix-2-boron",
+     "Scrondrix-3": "Scrondrix-3-boron",
+     "Scrondrix-4": "Scrondrix-4-boron",
+     "scrondrix-mk02": "scrondrix-mk02-boron",
+     "scrondrix-mk03": "scrondrix-mk03-boron",
+     "scrondrix-mk04": "scrondrix-mk04-boron"
+    }
+   },
+   {
+    "name": "hspa",
+    "unlock": [],
+    "replace": {
+     "Scrondrix-cub-1": "Scrondrix-cub-1-vegan",
+     "Scrondrix-cub-2": "Scrondrix-cub-2-vegan",
+     "Scrondrix-cub-3": "Scrondrix-cub-3-vegan",
+     "Scrondrix-cub-4": "Scrondrix-cub-4-vegan",
+     "Scrondrix-1": "Scrondrix-1-vegan",
+     "Scrondrix-2": "Scrondrix-2-vegan",
+     "Scrondrix-3": "Scrondrix-3-vegan",
+     "Scrondrix-4": "Scrondrix-4-vegan",
+     "scrondrix-mk02": "scrondrix-mk02-vegan",
+     "scrondrix-mk03": "scrondrix-mk03-vegan",
+     "scrondrix-mk04": "scrondrix-mk04-vegan"
+    }
+   },
+   {
+    "name": "neuron",
+    "unlock": [],
+    "replace": {
+     "ex-bra-scro": "scrondrix-brain-slaughterhouse-ex",
+     "Caged-scrondrix-9": "scrondrix-experimental-treatment"
+    }
+   }
+  ]
+ },
+ {
+  "name": "seaweed-upgrade",
+  "choices": [
+   {
+    "name": "improved-pathfinding",
+    "unlock": [],
+    "replace": {
+     "seaweed-crop-mk01": "seaweed-crop-mk01-with-ai",
+     "seaweed-crop-mk02": "seaweed-crop-mk02-with-ai",
+     "seaweed-crop-mk03": "seaweed-crop-mk03-with-ai",
+     "seaweed-crop-mk04": "seaweed-crop-mk04-with-ai"
+    }
+   },
+   {
+    "name": "precise-cutting",
+    "unlock": [
+     "carbon-dust",
+     "slacked-lime-seaweed-recycle",
+     "slacked-lime-from-seaweed"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "recirculation-pump",
+    "unlock": [],
+    "replace": {
+     "seaweed-1": "seaweed-1-dry",
+     "seaweed-2": "seaweed-2-dry",
+     "seaweed-3": "seaweed-3-dry",
+     "seaweed-4": "seaweed-4-dry",
+     "seaweed-5": "seaweed-5-dry"
+    }
+   }
+  ]
+ },
+ {
+  "name": "simik-digestion-mk01",
+  "choices": [
+   {
+    "name": "simik-iron",
+    "unlock": [
+     "simik-iron"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-copper",
+    "unlock": [
+     "simik-copper"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-quartz",
+    "unlock": [
+     "simik-quartz"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "simik-digestion-mk02",
+  "choices": [
+   {
+    "name": "simik-coal",
+    "unlock": [
+     "simik-coal"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-tin",
+    "unlock": [
+     "simik-tin"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-aluminium",
+    "unlock": [
+     "simik-aluminium"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "simik-digestion-mk03",
+  "choices": [
+   {
+    "name": "simik-boron",
+    "unlock": [
+     "simik-boron"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-chromium",
+    "unlock": [
+     "simik-chromium"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-molybdenum",
+    "unlock": [
+     "simik-molybdenum"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "simik-digestion-mk04",
+  "choices": [
+   {
+    "name": "simik-zinc",
+    "unlock": [
+     "simik-zinc"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-nickel",
+    "unlock": [
+     "simik-nickel"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-lead",
+    "unlock": [
+     "simik-lead"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "simik-digestion-mk05",
+  "choices": [
+   {
+    "name": "simik-titanium",
+    "unlock": [
+     "simik-titanium"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-niobium",
+    "unlock": [
+     "simik-niobium"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-nexelit",
+    "unlock": [
+     "simik-nexelit"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "simik-digestion-mk06",
+  "choices": [
+   {
+    "name": "simik-silver",
+    "unlock": [
+     "simik-silver"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-gold",
+    "unlock": [
+     "simik-gold"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "simik-uranium",
+    "unlock": [
+     "simik-uranium"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "simik-upgrade",
+  "choices": []
+ },
+ {
+  "name": "slaughterhouse-upgrade",
+  "choices": [
+   {
+    "name": "laser-cutting",
+    "unlock": [],
+    "replace": {}
+   },
+   {
+    "name": "mercy-killing",
+    "unlock": [],
+    "replace": {}
+   },
+   {
+    "name": "lard-machine",
+    "unlock": [],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "sponge-upgrade",
+  "choices": [
+   {
+    "name": "flagellum",
+    "unlock": [
+     "sponge-pure-sand",
+     "sponge-stone-brick",
+     "sponge-rich-clay"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "fragmentation",
+    "unlock": [],
+    "replace": {
+     "sea-sponge-sprouts": "sea-sponge-sprouts-flagellum",
+     "sea-sponge-sprouts-2": "sea-sponge-sprouts-2-flagellum",
+     "sea-sponge-sprouts-3": "sea-sponge-sprouts-3-flagellum",
+     "sea-sponge-sprouts-4": "sea-sponge-sprouts-4-flagellum"
+    }
+   },
+   {
+    "name": "bacterial",
+    "unlock": [],
+    "replace": {
+     "sea-sponge-1": "sea-sponge-1-no-zonga",
+     "sea-sponge-2": "sea-sponge-2-no-zonga"
+    }
+   }
+  ]
+ },
+ {
+  "name": "trits-upgrade",
+  "choices": [
+   {
+    "name": "mgo",
+    "unlock": [],
+    "replace": {
+     "trits-cub-1": "trits-cub-1-mgo",
+     "trits-cub-2": "trits-cub-2-mgo",
+     "trits-cub-3": "trits-cub-3-mgo",
+     "trits-cub-4": "trits-cub-4-mgo"
+    }
+   },
+   {
+    "name": "dc",
+    "unlock": [],
+    "replace": {
+     "trits-1": "trits-1-dc",
+     "trits-2": "trits-2-dc",
+     "trits-3": "trits-3-dc",
+     "trits-4": "trits-4-dc"
+    }
+   },
+   {
+    "name": "nexelit-axis",
+    "unlock": [],
+    "replace": {
+     "trits-reef-mk01": "trits-reef-mk01-with-nexelit",
+     "trits-reef-mk02": "trits-reef-mk02-with-nexelit",
+     "trits-reef-mk03": "trits-reef-mk03-with-nexelit",
+     "trits-reef-mk04": "trits-reef-mk04-with-nexelit"
+    }
+   }
+  ]
+ },
+ {
+  "name": "tuuphra-upgrade",
+  "choices": [
+   {
+    "name": "fi",
+    "unlock": [],
+    "replace": {
+     "tuuphra-seeds": "tuuphra-seeds-with-water"
+    }
+   },
+   {
+    "name": "fungicide",
+    "unlock": [
+     "alcl3",
+     "fungicide"
+    ],
+    "replace": {
+     "tuuphra-1": "tuuphra-1-fungicide",
+     "tuuphra-2": "tuuphra-2-fungicide",
+     "tuuphra-3": "tuuphra-3-fungicide",
+     "tuuphra-4": "tuuphra-4-fungicide"
+    }
+   },
+   {
+    "name": "tr",
+    "unlock": [
+     "tuuphra-grease"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "ulric-upgrade",
+  "choices": [
+   {
+    "name": "dummy-ulric",
+    "unlock": [
+     "noooo-dont-turn-that-horse-into-glue"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "heated-pads",
+    "unlock": [
+     "saddle",
+     "saddle-b"
+    ],
+    "replace": {
+     "ulric-cub-1": "ulric-cub-1-saddle",
+     "ulric-cub-2": "ulric-cub-2-saddle",
+     "ulric-cub-3": "ulric-cub-3-saddle",
+     "ulric-cub-4": "ulric-cub-4-saddle"
+    }
+   },
+   {
+    "name": "scraping-bots",
+    "unlock": [],
+    "replace": {
+     "ulric-1": "ulric-1-manure",
+     "ulric-2": "ulric-2-manure",
+     "ulric-3": "ulric-3-manure",
+     "ulric-4": "ulric-4-manure"
+    }
+   }
+  ]
+ },
+ {
+  "name": "vonix-upgrade",
+  "choices": [
+   {
+    "name": "evoa",
+    "unlock": [
+     "vonix-direct-raising"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "uge",
+    "unlock": [],
+    "replace": {
+     "vonix-raising-1": "vonix-raising-1-cancer",
+     "vonix-raising-2": "vonix-raising-2-cancer",
+     "vonix-raising-3": "vonix-raising-3-cancer"
+    }
+   },
+   {
+    "name": "dermal",
+    "unlock": [
+     "vonix-den-mk04-free"
+    ],
+    "replace": {
+     "vonix-den-mk01": "vonix-den-mk01-free",
+     "vonix-den-mk02": "vonix-den-mk02-free",
+     "vonix-den-mk03": "vonix-den-mk03-free"
+    }
+   }
+  ]
+ },
+ {
+  "name": "vrauks-upgrade",
+  "choices": [
+   {
+    "name": "reuse-water",
+    "unlock": [],
+    "replace": {
+     "vrauks-1": "vrauks-1-no-water",
+     "vrauks-2": "vrauks-2-no-water",
+     "vrauks-3": "vrauks-3-no-water",
+     "vrauks-4": "vrauks-4-no-water",
+     "vrauks-5": "vrauks-5-no-water",
+     "vrauks-cocoon-1": "vrauks-cocoon-1-no-water",
+     "vrauks-cocoon-2": "vrauks-cocoon-2-no-water",
+     "vrauks-cocoon-3": "vrauks-cocoon-3-no-water",
+     "vrauks-cocoon-4": "vrauks-cocoon-4-no-water",
+     "vrauks-cocoon-5": "vrauks-cocoon-5-no-water"
+    }
+   },
+   {
+    "name": "natural-cycle",
+    "unlock": [],
+    "replace": {
+     "vrauks-paddock-mk01": "vrauks-paddock-mk01-with-lamp",
+     "vrauks-paddock-mk02": "vrauks-paddock-mk02-with-lamp",
+     "vrauks-paddock-mk03": "vrauks-paddock-mk03-with-lamp",
+     "vrauks-paddock-mk04": "vrauks-paddock-mk04-with-lamp"
+    }
+   },
+   {
+    "name": "cyanic-recycling",
+    "unlock": [
+     "ammonia-from-cyanic"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "wood-processing-unit-upgrade",
+  "choices": [
+   {
+    "name": "biosynthetic-nylon",
+    "unlock": [
+     "biosynthetic-nylon"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "sawblades",
+    "unlock": [
+     "py-sawblade-module-mk01",
+     "py-sawblade-module-mk02",
+     "py-sawblade-module-mk03",
+     "py-sawblade-module-mk04"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "carbonefarious",
+    "unlock": [
+     "lacquer-resin",
+     "lacquer-resin-to-formica",
+     "phenolicboard-with-laquer",
+     "high-distillate-to-anthracene-oil"
+    ],
+    "replace": {
+     "wood-seedling": "wood-seedling-turd",
+     "wood-seedling-mk02": "wood-seedling-mk02-turd",
+     "wood-seedling-mk03": "wood-seedling-mk03-turd",
+     "wood-seedling-mk04": "wood-seedling-mk04-turd"
+    }
+   }
+  ]
+ },
+ {
+  "name": "xeno-upgrade",
+  "choices": [
+   {
+    "name": "ap",
+    "unlock": [],
+    "replace": {
+     "caged-xeno-1": "caged-xeno-1-dna-polymerase",
+     "caged-xeno-2": "caged-xeno-2-dna-polymerase",
+     "caged-xeno-3": "caged-xeno-3-dna-polymerase",
+     "caged-xeno-4": "caged-xeno-4-dna-polymerase"
+    }
+   },
+   {
+    "name": "herm",
+    "unlock": [
+     "xeno-rc-breeding"
+    ],
+    "replace": {
+     "xeno-egg-1": "xeno-egg-1-cheap",
+     "xeno-egg-2": "xeno-egg-2-cheap",
+     "xeno-egg-3": "xeno-egg-3-cheap",
+     "xeno-egg-4": "xeno-egg-4-cheap"
+    }
+   },
+   {
+    "name": "hive",
+    "unlock": [],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "xyhiphoe-upgrade",
+  "choices": [
+   {
+    "name": "temp-c",
+    "unlock": [],
+    "replace": {
+     "xyhiphoe-1": "xyhiphoe-1-hot-cold",
+     "xyhiphoe-2": "xyhiphoe-2-hot-cold",
+     "xyhiphoe-3": "xyhiphoe-3-hot-cold",
+     "xyhiphoe-4": "xyhiphoe-4-hot-cold"
+    }
+   },
+   {
+    "name": "rst",
+    "unlock": [
+     "xyhiphoe-single"
+    ],
+    "replace": {}
+   },
+   {
+    "name": "reuse-ev",
+    "unlock": [],
+    "replace": {
+     "xyhiphoe-cub-1": "xyhiphoe-cub-1-acetone",
+     "xyhiphoe-cub-2": "xyhiphoe-cub-2-acetone",
+     "xyhiphoe-cub-3": "xyhiphoe-cub-3-acetone",
+     "xyhiphoe-cub-4": "xyhiphoe-cub-4-acetone"
+    }
+   }
+  ]
+ },
+ {
+  "name": "yaedols-upgrade",
+  "choices": [
+   {
+    "name": "sub-s",
+    "unlock": [],
+    "replace": {
+     "yaedols-spores": "yaedols-spores-coke-oven-gas",
+     "yaedols-spore-mk02": "yaedols-spore-mk02-coke-oven-gas",
+     "yaedols-spore-mk03": "yaedols-spore-mk03-coke-oven-gas",
+     "yaedols-spore-mk04": "yaedols-spore-mk04-coke-oven-gas"
+    }
+   },
+   {
+    "name": "duct",
+    "unlock": [],
+    "replace": {
+     "yaedols-1": "yaedols-1-hot-air",
+     "yaedols-2": "yaedols-2-hot-air",
+     "yaedols-3": "yaedols-3-hot-air",
+     "yaedols-4": "yaedols-4-hot-air"
+    }
+   },
+   {
+    "name": "humidity-control",
+    "unlock": [
+     "yaedols-spore-4"
+    ],
+    "replace": {}
+   }
+  ]
+ },
+ {
+  "name": "yotoi-upgrade",
+  "choices": [
+   {
+    "name": "cryopreservation",
+    "unlock": [],
+    "replace": {
+     "yotoi-seeds": "yotoi-seeds-cold"
+    }
+   },
+   {
+    "name": "harvest",
+    "unlock": [],
+    "replace": {
+     "yotoi-1": "yotoi-1-free-leaves",
+     "yotoi-2": "yotoi-2-free-leaves",
+     "yotoi-3": "yotoi-3-free-leaves",
+     "yotoi-4": "yotoi-4-free-leaves"
+    }
+   },
+   {
+    "name": "nutrinet",
+    "unlock": [
+     "nutrient"
+    ],
+    "replace": {
+     "yotoi-aloe-orchard-mk01": "yotoi-aloe-orchard-mk01-with-nutrient",
+     "yotoi-aloe-orchard-mk02": "yotoi-aloe-orchard-mk02-with-nutrient",
+     "yotoi-aloe-orchard-mk03": "yotoi-aloe-orchard-mk03-with-nutrient",
+     "yotoi-aloe-orchard-mk04": "yotoi-aloe-orchard-mk04-with-nutrient",
+     "yotoi-2": "yotoi-2-nutrient",
+     "yotoi-3": "yotoi-3-nutrient",
+     "yotoi-4": "yotoi-4-nutrient",
+     "yotoi-fruit-2": "yotoi-fruit-2-nutrient",
+     "yotoi-fruit-3": "yotoi-fruit-3-nutrient",
+     "yotoi-fruit-4": "yotoi-fruit-4-nutrient"
+    }
+   }
+  ]
+ },
+ {
+  "name": "zipir-upgrade",
+  "choices": [
+   {
+    "name": "suicide",
+    "unlock": [],
+    "replace": {
+     "zipir-a-1": "zipir-a-1-suicide",
+     "zipir-a-2": "zipir-a-2-suicide",
+     "zipir-a-3": "zipir-a-3-suicide",
+     "zipir-a-4": "zipir-a-4-suicide",
+     "zipir-a-5": "zipir-a-5-suicide",
+     "zipir-a-6": "zipir-a-6-suicide"
+    }
+   },
+   {
+    "name": "sr",
+    "unlock": [],
+    "replace": {
+     "zipir-eggs-1": "zipir-eggs-1-trits-gen",
+     "zipir-eggs-2": "zipir-eggs-2-trits-gen",
+     "zipir-eggs-3": "zipir-eggs-3-trits-gen",
+     "zipir-eggs-4": "zipir-eggs-4-trits-gen",
+     "zipir-eggs-5": "zipir-eggs-5-trits-gen"
+    }
+   },
+   {
+    "name": "hatchery",
+    "unlock": [],
+    "replace": {
+     "zipir1-pyvoid": "zipir1-pyvoid-hatchery",
+     "zipir-reef-mk01": "zipir-reef-mk01-with-rc",
+     "zipir-reef-mk02": "zipir-reef-mk02-with-rc",
+     "zipir-reef-mk03": "zipir-reef-mk03-with-rc",
+     "zipir-reef-mk04": "zipir-reef-mk04-with-rc"
+    }
+   }
+  ]
+ },
+ {
+  "name": "zungror-upgrade",
+  "choices": [
+   {
+    "name": "geooxidation",
+    "unlock": [],
+    "replace": {
+     "zungror": "zungror-with-yaedols-codex",
+     "zungror-cocoon-1": "zungror-cocoon-1-rich-clay",
+     "zungror-cocoon-2": "zungror-cocoon-2-rich-clay",
+     "zungror-cocoon-3": "zungror-cocoon-3-rich-clay"
+    }
+   },
+   {
+    "name": "genooscillation",
+    "unlock": [],
+    "replace": {
+     "vsk": "vsk-duplicated"
+    }
+   },
+   {
+    "name": "oviduct-bombardment",
+    "unlock": [],
+    "replace": {
+     "pre-fiber-1": "pre-fiber-1-buffed",
+     "zungror-raising-1": "zungror-raising-1-with-funny-rock",
+     "zungror-raising-2": "zungror-raising-2-with-funny-rock",
+     "zungror-raising-3": "zungror-raising-3-with-funny-rock"
+    }
+   }
+  ]
+ }
+]

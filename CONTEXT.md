@@ -21,8 +21,16 @@ A step's item that a step it feeds — or the step itself — takes again (arqad
 _Avoid_: cycle (the chain's word for what comes by train)
 
 **Chain Choices**:
-What the user chose about the Production Chain beside its Goals: the items made in the block, each step's Recipe Selection, the Byproduct and General Uses, what leaves by train too, and the Destroyed Fluids. They stay as chosen while Maximize scales the Goals.
+What the user chose about the Production Chain beside its Goals: the items made in the block, each step's Recipe Selection, the Byproduct and General Uses, what leaves by train too, the Destroyed Fluids, the Science Packs and the TURD Upgrades. They stay as chosen while Maximize scales the Goals.
 _Avoid_: options (the chain's other settings), state (the page's whole saved state)
+
+**Science Packs**:
+The packs the user researches with. Only recipes and buildings on at start, or unlocked by a technology they research (its prerequisites' packs counted), are offered; one no research unlocks (a mod's script: Py's TURD upgrades) is not. None chosen (every pack ticked), every one (ADR 0121).
+_Avoid_: research, tech level
+
+**TURD Upgrades**:
+Py's technology upgrades: researching one (kicalk upgrade) the player chooses one of its choices (wire netting), which unlocks recipes and replaces others. Optionally chosen beside the Science Packs: then only the chosen choices' recipes are offered, those they replace no longer (ADR 0122).
+_Avoid_: sub-tech (Py's word for a choice)
 
 **Train Input**:
 An item the Production Chain does not make but receives by train: an ingredient of a step that the user has not chosen to make here (the default), one no recipe makes, or a Recipe Loop's that cannot feed itself (a fluid, or one taking more than it makes). Train Inputs are what the Side Input carries.

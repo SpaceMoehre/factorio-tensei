@@ -12,13 +12,48 @@ const MAX_STEPS = 60;
 
 // Which recipes make each item (best first) and which buildings can run each recipe (slowest
 // first): a recipe named after the item, then one whose first product it is. Built once per
-// catalog (thousands of recipes and buildings in a big mod set).
+// catalog, Science Packs and TURD choices (thousands of recipes and buildings in a big mod set).
+// sciencePacks: the packs the user researches with (ADR 0121): only recipes on at start or
+// researched with them are offered (one no research unlocks, a mod's script's: Py's TURD upgrades,
+// not); none given, every one. A building is offered while a recipe making it is.
+// turds: Py's TURD upgrades chosen, { [upgrade technology]: its choice } (ADR 0122): a recipe a TURD
+// choice unlocks is offered only where it is chosen (and its technology researched with the packs),
+// one it replaces no longer; none given, as above.
 const optionsOf = new WeakMap();
-export function recipeOptions(catalog) {
-  if (optionsOf.has(catalog)) return optionsOf.get(catalog);
+export function recipeOptions(catalog, sciencePacks = null, turds = null) {
+  const key = `${sciencePacks ? [...sciencePacks].sort().join() : '*'}|${turds ? Object.entries(turds).sort().join(';') : '*'}`;
+  if (!optionsOf.has(catalog)) optionsOf.set(catalog, new Map());
+  const kept = optionsOf.get(catalog);
+  if (kept.has(key)) return kept.get(key);
+  const owned = sciencePacks && new Set((catalog.sciencePacks ?? []).flatMap((p, i) => (sciencePacks.includes(p) ? [i] : [])));
+  const researched = entry => !owned || !entry.unlock || entry.unlock.some(set => set.every(i => owned.has(i)));
+  // TURD: every recipe a choice unlocks (or brings in its replacement), those the chosen ones do,
+  // and those the chosen ones replace.
+  const ofTurds = new Set();
+  const granted = new Set();
+  const replaced = new Set();
+  if (turds) {
+    for (const u of catalog.turds ?? []) {
+      for (const c of u.choices) {
+        const brought = [...c.unlock, ...Object.values(c.replace)];
+        for (const r of brought) ofTurds.add(r);
+        if (turds[u.name] !== c.name || !researched(u)) continue;
+        for (const r of brought) granted.add(r);
+        for (const r of Object.keys(c.replace)) replaced.add(r);
+      }
+    }
+  }
+  const unlocked = recipe => {
+    if (replaced.has(recipe.name)) return false;
+    if (granted.has(recipe.name)) return true;
+    // (A TURD recipe research unlocks too stays: Py's heatsink.)
+    if (ofTurds.has(recipe.name) && recipe.unlock?.length === 0) return false;
+    return researched(recipe);
+  };
+  const made = b => !b.madeBy || b.madeBy.some(r => catalog.recipes[r] && unlocked(catalog.recipes[r]));
   // Buildings by crafting category, slowest first.
   const byCategory = new Map();
-  const sorted = Object.values(catalog.buildings).sort((a, b) => a.craftingSpeed - b.craftingSpeed || a.name.localeCompare(b.name));
+  const sorted = Object.values(catalog.buildings).filter(made).sort((a, b) => a.craftingSpeed - b.craftingSpeed || a.name.localeCompare(b.name));
   for (const b of sorted) {
     for (const category of new Set(b.categories)) {
       if (!byCategory.has(category)) byCategory.set(category, []);
@@ -30,6 +65,7 @@ export function recipeOptions(catalog) {
   // And which recipes take each item, by name (a Byproduct Use's choices).
   const consumers = new Map();
   for (const recipe of Object.values(catalog.recipes)) {
+    if (!unlocked(recipe)) continue;
     // A building runs the recipe where its fluid boxes take the recipe's fluids.
     const buildings = (byCategory.get(recipe.category) ?? []).filter(b => assignFluidBoxes(recipe, b));
     if (!buildings.length || !recipe.products.length) continue;
@@ -48,7 +84,7 @@ export function recipeOptions(catalog) {
   const rank = (item, recipe) => (catalog.recipes[recipe].category === 'offshore' ? -1 : recipe === item ? 0 : catalog.recipes[recipe].products[0].name === item ? 1 : 2);
   for (const [item, recipes] of producers) recipes.sort((a, b) => rank(item, a) - rank(item, b) || a.localeCompare(b));
   const index = { producers, buildingsFor, consumers };
-  optionsOf.set(catalog, index);
+  kept.set(key, index);
   return index;
 }
 
@@ -63,7 +99,9 @@ export function recipeOptions(catalog) {
 //              out. Without `from`, a General Use: one step of `recipe` takes all of `item` every
 //              step (and Use) makes besides its own item, but where a Use names that step for it
 //              (and a step of `recipe` itself), its key useKey(EVERY, item),
-//            index: recipeOptions(catalog),
+//            sciencePacks: the packs researched with, null for every one (ADR 0121),
+//            turds: Py's TURD upgrades chosen, { [technology]: choice }, null for every one (ADR 0122),
+//            index: recipeOptions(catalog, sciencePacks, turds),
 //            extra: { [item]: rate } an Extension's: so much more of a step's item made, not taken
 //              (its entry's goal.extra),
 //            belt: the belt the block is built with, else logistics.belt (a Recycled Byproduct's
@@ -112,7 +150,7 @@ export function useKey(from, item) {
 
 // The chain, its Recipe Loops fed in the block (or with `loopsByTrain`, by train); null when they
 // cannot be (a loop takes more than it makes).
-function expand(goals, catalog, { made = [], selections = {}, uses = [], index = recipeOptions(catalog), extra = {}, belt = null, exports = [], voids = [], valves = true, logistics = null }, loopsByTrain) {
+function expand(goals, catalog, { made = [], selections = {}, uses = [], sciencePacks = null, turds = null, index = recipeOptions(catalog, sciencePacks, turds), extra = {}, belt = null, exports = [], voids = [], valves = true, logistics = null }, loopsByTrain) {
   belt ??= logistics?.belt ?? null;
   const valved = valves && valvesOf(catalog) !== null;
   const makeHere = new Set([...made, ...goals.map(g => g.item)]);
@@ -210,7 +248,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], index =
     const selection = selectionFor(item);
     if (!isGoal && !makeHere.has(item)) return toTrain(item, selection ? 'import' : 'no recipe');
     if (!selection) {
-      if (isGoal) throw new Error(`no recipe and building can produce “${item}”`);
+      if (isGoal) throw new Error(index !== recipeOptions(catalog) && recipeOptions(catalog).producers.has(item) ? `nothing the science packs and TURD upgrades chosen unlock makes “${item}”` : `no recipe and building can produce “${item}”`);
       return toTrain(item, 'no recipe');
     }
     tooMany();

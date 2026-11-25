@@ -72,6 +72,17 @@ export function normalized(saved, catalog) {
   // leave by train destroyed instead (a sinkhole, a gas vent) (ADR 0062).
   state.exports ??= [];
   state.voids ??= [];
+  // The Science Packs researched with (ADR 0121): those the catalog knows; none saved (or none the
+  // catalog knows, or all of them), every one.
+  if (state.sciencePacks) state.sciencePacks = state.sciencePacks.filter(p => catalog.sciencePacks?.includes(p));
+  if (state.sciencePacks && (!state.sciencePacks.length || state.sciencePacks.length === catalog.sciencePacks.length)) delete state.sciencePacks;
+  // Py's TURD upgrades chosen (ADR 0122), { [technology]: choice }: those the catalog knows; none
+  // saved (or a catalog without them), every TURD recipe as the packs offer it.
+  if (state.turds) {
+    const known = new Map((catalog.turds ?? []).map(u => [u.name, u.choices.map(c => c.name)]));
+    state.turds = Object.fromEntries(Object.entries(state.turds).filter(([u, c]) => known.get(u)?.includes(c)));
+    if (!known.size) delete state.turds;
+  }
   // The City Block to build in: its blueprint string (or a size, without one), the Buffer and
   // whether to look for the highest rate that fits.
   state.city = { on: false, blueprint: '', w: 100, h: 100, buffer: 2, maximize: false, ...state.city };
@@ -86,7 +97,7 @@ export function normalized(saved, catalog) {
 }
 
 // What a build takes of a saved state: { goals (those with an item and a rate), choices (the
-// Chain Choices: { made, selections, uses, exports, voids }), logistics (without the budget),
+// Chain Choices: { made, selections, uses, exports, voids, sciencePacks?, turds? }), logistics (without the budget),
 // budget (seconds), city ({ on, blueprint, w, h, buffer, maximize }) }.
 export function setupOf(saved, catalog) {
   return setupFrom(normalized(saved, catalog));
@@ -95,9 +106,9 @@ export function setupOf(saved, catalog) {
 // The same of a state normalized already (the page's own), read as it is.
 export function setupFrom(state) {
   const { budget, ...logistics } = state.logistics;
-  const { made, selections, uses, exports, voids } = state;
+  const { made, selections, uses, exports, voids, sciencePacks, turds } = state;
   const goals = state.goals.filter(g => g.item && g.rate > 0);
   // The Goals' items that ask for a belt balancer built into the factory (ADR 0092), with the rest of what lays it out.
   const balance = goals.filter(g => g.balance).map(g => g.item);
-  return { goals, choices: { made, selections, uses, exports, voids }, logistics: balance.length ? { ...logistics, balance } : logistics, budget, city: state.city };
+  return { goals, choices: { made, selections, uses, exports, voids, ...(sciencePacks ? { sciencePacks } : {}), ...(turds ? { turds } : {}) }, logistics: balance.length ? { ...logistics, balance } : logistics, budget, city: state.city };
 }

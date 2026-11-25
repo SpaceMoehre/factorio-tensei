@@ -5,8 +5,9 @@ function expectedAmount(p) {
 
 // locale: Factorio's prototype locale dump (`--dump-prototype-locale`, script-output/
 // prototype-locale.json), for the names the game shows; without it the page makes words of the
-// prototype names.
-export function buildCatalog(raw, locale = null) {
+// prototype names. turds: Py's TURD upgrades as scripts/py-turds.mjs reads them from the source
+// (data/py-turds.json), else none.
+export function buildCatalog(raw, locale = null, turds = null) {
   const recipes = {};
   for (const r of Object.values(raw.recipe)) {
     if (r.hidden || r.parameter) continue;
@@ -29,6 +30,11 @@ export function buildCatalog(raw, locale = null) {
       ...(r.allow_productivity && { allowProductivity: true }),
     };
   }
+  const sciencePacks = packsOf(raw);
+  const { researched, needOf } = research(raw, sciencePacks);
+  // A recipe off at start: the sets of Science Packs researching it (ADR 0121); one no research
+  // unlocks (a mod's script may: Py's TURD upgrades), none.
+  for (const r of Object.values(raw.recipe)) if (recipes[r.name] && r.enabled === false) recipes[r.name].unlock = researched.get(r.name) ?? [];
   const buildings = {};
   for (const b of [...Object.values(raw['assembling-machine']), ...Object.values(raw.furnace)]) {
     // Hidden: not built in this game (Py hides base's chemical plant and oil refinery for its own).
@@ -70,6 +76,7 @@ export function buildCatalog(raw, locale = null) {
     };
   }
   offshorePumps(raw, recipes, buildings);
+  placedBy(raw, recipes, buildings);
   const poles = {};
   for (const p of Object.values(raw['electric-pole'])) {
     poles[p.name] = {
@@ -122,7 +129,7 @@ export function buildCatalog(raw, locale = null) {
   }
   // Each fluid's default temperature: what it comes at by train, or from a recipe naming none.
   const temperatures = Object.fromEntries(Object.values(raw.fluid ?? {}).filter(p => !p.hidden).map(p => [p.name, p.default_temperature ?? 15]));
-  return { recipes, buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw), ...(locale ? localeNames(raw, locale) : {}) };
+  return { recipes, sciencePacks, ...(turds ? { turds: turdsOf(turds, recipes, needOf) } : {}), buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw), ...(locale ? localeNames(raw, locale) : {}) };
 }
 
 // The names the game shows, from its locale dump: `names` (items and fluids first, then buildings
@@ -282,6 +289,94 @@ function energy(text) {
   const [, value, prefix] = /^([\d.]+)\s*([kMGTP]?)[WJ]$/.exec(text) ?? [];
   if (value === undefined) throw new Error(`unreadable energy value "${text}"`);
   return Math.round(Number(value) * SI[prefix]);
+}
+
+// Science Packs (ADR 0121): the tools research takes, in the game's order (by subgroup, then their
+// own order).
+function packsOf(raw) {
+  const used = new Set(Object.values(raw.technology ?? {}).flatMap(t => list(t.unit?.ingredients).map(ingredientName)));
+  const ordered = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  const group = p => raw['item-subgroup']?.[p.subgroup]?.order ?? '';
+  return Object.values(raw.tool ?? {}).filter(p => used.has(p.name))
+    .sort((a, b) => ordered(group(a), group(b)) || ordered(a.order ?? '', b.order ?? '') || ordered(a.name, b.name))
+    .map(p => p.name);
+}
+const ingredientName = i => (Array.isArray(i) ? i[0] : i.name);
+
+// Each recipe a technology unlocks: the sets of Science Packs (indices into `packs`) that research
+// it, the fewest: a technology takes its own packs and every prerequisite's (one researched by a
+// trigger, crafting or mining, takes none of its own). A technology off (enabled false, hidden), or
+// needing one off, unlocks nothing.
+function research(raw, packs) {
+  const techs = raw.technology ?? {};
+  const index = new Map(packs.map((p, i) => [p, i]));
+  const need = new Map();
+  const needOf = (name, path = new Set()) => {
+    if (need.has(name)) return need.get(name);
+    const t = techs[name];
+    if (!t || t.enabled === false || t.hidden || path.has(name)) return null;
+    path.add(name);
+    let set = new Set(list(t.unit?.ingredients).map(i => index.get(ingredientName(i))).filter(i => i !== undefined));
+    for (const pre of list(t.prerequisites)) {
+      const more = needOf(pre, path);
+      if (!more) { set = null; break; }
+      for (const i of more) set.add(i);
+    }
+    path.delete(name);
+    need.set(name, set);
+    return set;
+  };
+  const researched = new Map();
+  for (const t of Object.values(techs)) {
+    const set = needOf(t.name);
+    if (!set) continue;
+    for (const e of list(t.effects)) if (e.type === 'unlock-recipe') researched.set(e.recipe, fewest([...(researched.get(e.recipe) ?? []), [...set].sort((a, b) => a - b)]));
+  }
+  return { researched, needOf };
+}
+
+// Py's TURD upgrades (ADR 0122): each upgrade technology the dump has, with the packs researching
+// it (`unlock`), and its choices: the recipes each unlocks and replaces (old → new), those the
+// catalog has.
+function turdsOf(turds, recipes, needOf) {
+  return turds.flatMap(u => {
+    const set = needOf(u.name);
+    if (!set) return [];
+    return [{
+      name: u.name, unlock: [[...set].sort((a, b) => a - b)],
+      choices: u.choices.map(c => ({
+        name: c.name,
+        unlock: c.unlock.filter(r => recipes[r]),
+        replace: Object.fromEntries(Object.entries(c.replace).filter(([old, now]) => recipes[old] && recipes[now])),
+      })),
+    }];
+  });
+}
+
+// Sets of packs with none holding another (a set needing more is never the way).
+function fewest(sets) {
+  const holds = (a, b) => b.every(i => a.includes(i));
+  const kept = sets.filter((s, k) => !sets.some((o, j) => j !== k && holds(s, o) && (o.length < s.length || j < k)));
+  const order = (a, b) => (a.length && b.length ? a[0] - b[0] || order(a.slice(1), b.slice(1)) : a.length - b.length);
+  return kept.sort(order);
+}
+
+// A building's `madeBy`: the recipes making the items that place it, where every one is off at
+// start (the building offered while one of them is, ADR 0121); one placed by no item a recipe makes,
+// or by one a recipe on at start makes, has none: always offered.
+function placedBy(raw, recipes, buildings) {
+  const makers = new Map();
+  for (const r of Object.values(recipes)) for (const p of r.products) (makers.get(p.name) ?? makers.set(p.name, []).get(p.name)).push(r);
+  const by = new Map();
+  for (const type of ITEM_TYPES) {
+    for (const item of Object.values(raw[type] ?? {})) {
+      if (!buildings[item.place_result] || !makers.get(item.name)?.length) continue;
+      by.set(item.place_result, [...(by.get(item.place_result) ?? []), ...makers.get(item.name)]);
+    }
+  }
+  for (const [name, list] of by) {
+    if (list.every(r => r.unlock)) buildings[name].madeBy = [...new Set(list.map(r => r.name))].sort();
+  }
 }
 
 const ITEM_TYPES = [

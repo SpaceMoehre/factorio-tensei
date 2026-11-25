@@ -42,12 +42,14 @@ crypto.subtle?.digest('SHA-256', raw).then(d => { catalogId = [...new Uint8Array
 // A catalog built before v2 has no inserters, power draw or fuel; the search needs all three.
 const outdated = !catalog.inserters || !catalog.fuels;
 if (outdated) Object.assign(catalog, { inserters: {}, fuels: {} });
-const index = recipeOptions(catalog);
 const choices = logisticsOptions(catalog);
 // The saved state, every default filled in (setup.js). (Saves from before listed Train Inputs
 // instead of `made`; that list is dropped.)
 const state = normalized(load() ?? { goals: [], logistics: {} }, catalog);
 delete state.inputs;
+// The recipes and buildings offered: those the Science Packs chosen research (ADR 0121), with
+// the TURD upgrades chosen (ADR 0122).
+let index = recipeOptions(catalog, state.sciencePacks, state.turds);
 // Inserter Clocks: the signal chosen for each clock (by its key, "items/seconds"), kept from one
 // build to the next.
 state.clocks ??= {};
@@ -147,6 +149,63 @@ $('handSize').addEventListener('change', () => {
   $('handSize').value = String(state.logistics.handSize);
   save();
 });
+// Science Packs (ADR 0121): the recipes and buildings offered are those researched with the packs
+// ticked; every one ticked, all (packs a catalog adds later too).
+{
+  const packs = catalog.sciencePacks ?? [];
+  const boxes = packs.map(name => {
+    const box = el('input', { type: 'checkbox', checked: !state.sciencePacks || state.sciencePacks.includes(name) });
+    box.dataset.pack = name;
+    return box;
+  });
+  $('packs').prepend(...packs.map((name, i) => el('label', { className: 'check', title: label(name) }, boxes[i], iconOf(name))));
+  $('packs').hidden = $('packs-label').hidden = !packs.length;
+  for (const box of boxes) {
+    box.addEventListener('change', () => {
+      const ticked = boxes.filter(b => b.checked).map(b => b.dataset.pack);
+      if (ticked.length === packs.length) delete state.sciencePacks;
+      else state.sciencePacks = ticked;
+      offer();
+    });
+  }
+}
+// Py's TURD upgrades (ADR 0122), chosen optionally: off, every TURD recipe the packs allow (all with
+// every pack ticked, else none); on, those of the choices made, for each upgrade the packs research.
+$('turds').hidden = $('turds-label').hidden = !catalog.turds?.length;
+$('turds-on').checked = Boolean(state.turds);
+$('turds-on').addEventListener('change', () => {
+  if ($('turds-on').checked) state.turds ??= {};
+  else delete state.turds;
+  offer();
+});
+function renderTurds() {
+  $('turd-pick').hidden = !state.turds;
+  const owned = state.sciencePacks && new Set((catalog.sciencePacks ?? []).flatMap((p, i) => (state.sciencePacks.includes(p) ? [i] : [])));
+  const shown = (catalog.turds ?? []).filter(u => !owned || u.unlock.some(set => set.every(i => owned.has(i))));
+  const rows = shown.flatMap(u => {
+    const select = el('select', { ariaLabel: label(u.name) }, el('option', { value: '', textContent: 'Not chosen' }),
+      ...u.choices.map(c => el('option', { value: c.name, textContent: label(c.name) })));
+    select.value = state.turds?.[u.name] ?? '';
+    select.addEventListener('change', () => {
+      state.turds ??= {};
+      if (select.value) state.turds[u.name] = select.value;
+      else delete state.turds[u.name];
+      offer();
+    });
+    return [el('span', { textContent: label(u.name) }), select];
+  });
+  const chosen = shown.filter(u => state.turds?.[u.name]).length;
+  $('turd-summary').textContent = `${chosen} of ${shown.length} upgrades the packs research chosen`;
+  $('turd-list').replaceChildren(...rows);
+}
+renderTurds();
+// The packs or TURD upgrades changed: the offer again, the Goals' chooser and the chain with it.
+function offer() {
+  index = recipeOptions(catalog, state.sciencePacks, state.turds);
+  renderTurds();
+  renderGoals();
+  save();
+}
 $('budget').value = String(state.logistics.budget);
 $('budget').addEventListener('change', () => { state.logistics.budget = Math.max(1, Number($('budget').value) || 10); save(); });
 $('add-goal').addEventListener('click', () => chooseGoal('', item => {
@@ -615,7 +674,9 @@ function trainRow(input) {
   return el('div', { className: 'step train' },
     el('div', { className: 'step-head' }, iconOf(input.item), el('span', { className: 'name', textContent: label(input.item), title: input.item }), el('span', { className: 'rate' }), infoButton(input.item), make),
     el('div', { className: 'hint info-text', textContent: (input.fill ? `a closed loop: the train only fills it, through a top-up valve into the ${label(input.topUp).toLowerCase()} step's pipe`
-      : input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve` : TRAIN_REASON[input.reason] ?? 'by train') + atTemperature(input.temperature) }));
+      : input.topUp ? `makes up what the ${label(input.topUp).toLowerCase()} step gives back, through a top-up valve`
+      : input.reason === 'no recipe' && index !== recipeOptions(catalog) && recipeOptions(catalog).producers.has(input.item) ? 'by train — the science packs and TURD upgrades chosen unlock nothing making it'
+      : TRAIN_REASON[input.reason] ?? 'by train') + atTemperature(input.temperature) }));
 }
 
 // An item's icon from sprites/ (only its first mipmap is shown), or an empty square.

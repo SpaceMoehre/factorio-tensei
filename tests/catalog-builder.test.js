@@ -423,3 +423,93 @@ test('the locale dump gives the names the game shows', async () => {
   for (const locale of shapes) assert.deepEqual(localeNames(raw, locale), want);
   assert.throws(() => localeNames(raw, { version: 1 }), /names nothing/);
 });
+
+// Science Packs (ADR 0121): the packs research takes, in the game's order; a recipe's `unlock` the
+// sets of packs (indices into them) that research it, each with its prerequisites' packs.
+test('science packs: a recipe off at start carries the packs of each technology unlocking it, prerequisites\' packs included', () => {
+  const pack = (name, order) => ({ name, type: 'tool', subgroup: 'science-pack', order });
+  const recipe = (name, enabled) => ({ name, ...(enabled === undefined ? {} : { enabled }), ingredients: [], results: [{ type: 'item', name, amount: 1 }] });
+  const tech = (name, packs, prerequisites = [], recipes = [], more = {}) => ({
+    name, prerequisites, effects: recipes.map(r => ({ type: 'unlock-recipe', recipe: r })),
+    unit: { count: 10, ingredients: packs.map(p => [p, 1]), time: 5 }, ...more,
+  });
+  const { recipes, sciencePacks } = buildCatalog(dataRaw({
+    tool: { red: pack('red', 'a'), green: pack('green', 'c'), pyred: pack('pyred', 'b'), blue: pack('blue', 'd') },
+    'item-subgroup': { 'science-pack': { name: 'science-pack', group: 'intermediate-products' } },
+    recipe: {
+      gear: recipe('gear'), plate: recipe('plate', true), belt: recipe('belt', false), inserter: recipe('inserter', false),
+      wire: recipe('wire', false), lost: recipe('lost', false), pump: recipe('pump', false), chip: recipe('chip', false),
+    },
+    technology: {
+      // Researched by crafting, no packs.
+      steam: { name: 'steam', effects: [{ type: 'unlock-recipe', recipe: 'pump' }], research_trigger: { type: 'craft-item', item: 'plate' } },
+      logistics: tech('logistics', ['red'], ['steam'], ['belt']),
+      // Its own packs red and green; its prerequisite's pyred too.
+      fast: tech('fast', ['red', 'green'], ['logistics', 'py'], ['inserter']),
+      py: tech('py', ['red', 'pyred'], [], ['wire']),
+      // Two ways to the chip: green alone after logistics, or blue.
+      chips: tech('chips', ['red', 'green'], ['logistics'], ['chip']),
+      chips2: tech('chips2', ['blue'], [], ['chip']),
+      // Off in this game: unlocks nothing, nor does what needs it.
+      off: tech('off', ['red'], [], ['lost'], { enabled: false }),
+      after: tech('after', ['red'], ['off'], ['lost']),
+      blue: tech('blue', ['red', 'green', 'pyred', 'blue'], ['fast']),
+    },
+  }));
+  assert.deepEqual(sciencePacks, ['red', 'pyred', 'green', 'blue']);
+  assert.equal(recipes.gear.unlock, undefined);
+  assert.equal(recipes.plate.unlock, undefined);
+  assert.deepEqual(recipes.pump.unlock, [[]]);
+  assert.deepEqual(recipes.belt.unlock, [[0]]);
+  assert.deepEqual(recipes.wire.unlock, [[0, 1]]);
+  assert.deepEqual(recipes.inserter.unlock, [[0, 1, 2]]);
+  assert.deepEqual(recipes.chip.unlock, [[0, 2], [3]]);
+  assert.deepEqual(recipes.lost.unlock, []);
+});
+
+test('science packs: a building names the recipes making the items placing it, where none is on at start', () => {
+  const made = (name, enabled) => ({ name, enabled, ingredients: [], results: [{ type: 'item', name, amount: 1 }] });
+  const { buildings } = buildCatalog(dataRaw({
+    tool: { red: { name: 'red', type: 'tool', order: 'a' } },
+    item: {
+      'assembler-item': { name: 'assembler-item', place_result: 'assembler' },
+      // Two items placing one building, one made from the start: always offered.
+      'free-item': { name: 'free-item', place_result: 'free' }, 'free-item-2': { name: 'free-item-2', place_result: 'free' },
+    },
+    recipe: { 'assembler-item': made('assembler-item', false), 'free-item': made('free-item', true), 'free-item-2': made('free-item-2', false) },
+    technology: { automation: { name: 'automation', effects: [{ type: 'unlock-recipe', recipe: 'assembler-item' }], unit: { count: 10, ingredients: [['red', 1]], time: 10 } } },
+    'assembling-machine': {
+      assembler: { name: 'assembler', collision_box: [[-1.4, -1.4], [1.4, 1.4]], crafting_speed: 0.5, crafting_categories: ['crafting'], energy_source: { type: 'electric' }, energy_usage: '75kW' },
+      free: { name: 'free', collision_box: [[-1.4, -1.4], [1.4, 1.4]], crafting_speed: 1, crafting_categories: ['crafting'], energy_source: { type: 'electric' }, energy_usage: '75kW' },
+      // Placed by no item a recipe makes: left to the user.
+      other: { name: 'other', collision_box: [[-1.4, -1.4], [1.4, 1.4]], crafting_speed: 1, crafting_categories: ['crafting'], energy_source: { type: 'electric' }, energy_usage: '75kW' },
+    },
+  }));
+  assert.deepEqual(buildings.assembler.madeBy, ['assembler-item']);
+  assert.equal(buildings.free.madeBy, undefined);
+  assert.equal(buildings.other.madeBy, undefined);
+});
+
+// Py's TURD upgrades (ADR 0122): from the source's tables, each upgrade technology with the packs
+// researching it, its choices' recipes those the catalog has.
+test('TURD upgrades: each upgrade the dump has, with its packs and its choices\' recipes', () => {
+  const made = name => ({ name, enabled: false, ingredients: [], results: [{ type: 'item', name, amount: 1 }] });
+  const { turds } = buildCatalog(dataRaw({
+    tool: { red: { name: 'red', type: 'tool', order: 'a' }, green: { name: 'green', type: 'tool', order: 'b' } },
+    recipe: { 'kicalk-1': made('kicalk-1'), 'kicalk-1-dry': made('kicalk-1-dry'), bedding: made('bedding') },
+    technology: {
+      'kicalk-mk01': { name: 'kicalk-mk01', effects: [{ type: 'unlock-recipe', recipe: 'kicalk-1' }], unit: { count: 1, ingredients: [['red', 1]], time: 1 } },
+      'kicalk-upgrade': { name: 'kicalk-upgrade', is_turd: true, prerequisites: ['kicalk-mk01'], effects: [{ type: 'nothing' }], unit: { count: 1, ingredients: [['green', 1]], time: 1 } },
+    },
+  }), null, [
+    { name: 'kicalk-upgrade', choices: [
+      { name: 'wire-netting', unlock: ['bedding', 'gone'], replace: { 'kicalk-1': 'kicalk-1-dry', 'kicalk-2': 'kicalk-2-dry' } },
+      { name: 'extra-water', unlock: [], replace: {} },
+    ] },
+    { name: 'not-in-this-game', choices: [] },
+  ]);
+  assert.deepEqual(turds, [{ name: 'kicalk-upgrade', unlock: [[0, 1]], choices: [
+    { name: 'wire-netting', unlock: ['bedding'], replace: { 'kicalk-1': 'kicalk-1-dry' } },
+    { name: 'extra-water', unlock: [], replace: {} },
+  ] }]);
+});
