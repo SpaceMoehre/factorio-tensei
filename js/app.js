@@ -1,5 +1,6 @@
 import { simulate } from './sim.js';
 import { expandChain, recipeOptions, useKey, EVERY } from './chain.js';
+import { processByproducts } from './byproducts.js';
 import { machineEffect, moduleOptions } from './modules.js';
 import { burnerFuel, fuelsFor } from './plan.js';
 import { useNames, displayName } from './names.js';
@@ -38,6 +39,8 @@ const catalog = JSON.parse(new TextDecoder().decode(raw));
 useNames(catalog);
 // The catalog's fingerprint in a shared setup: the first 12 hex digits of its SHA-256.
 let catalogId = null;
+// What the Process button did last (ADR 0126).
+let processNote = '';
 crypto.subtle?.digest('SHA-256', raw).then(d => { catalogId = [...new Uint8Array(d)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 12); }, () => {});
 // A catalog built before v2 has no inserters, power draw or fuel; the search needs all three.
 const outdated = !catalog.inserters || !catalog.fuels;
@@ -497,7 +500,9 @@ function drawChain() {
   const list = $('chain');
   if (!chain || chain.error) {
     chainRows.clear();
-    list.replaceChildren(el('p', { className: 'hint', textContent: chain?.error ?? 'Add a goal to see how it is made.' }));
+    // (Byproduct Uses that do not balance: the button decides them anew, ADR 0126.)
+    const fix = chain?.error && /Byproduct Uses/.test(chain.error) ? [el('div', { className: 'train-head' }, processButton())] : [];
+    list.replaceChildren(el('p', { className: 'hint', textContent: chain?.error ?? 'Add a goal to see how it is made.' }), ...fix, ...(processNote ? [el('p', { className: 'hint', textContent: processNote })] : []));
     return;
   }
   const rows = [];
@@ -514,7 +519,7 @@ function drawChain() {
     const key = use?.key ?? goal.item;
     const recipes = use ? index.consumers.get(use.item).filter(r => index.buildingsFor.has(r)) : index.producers.get(goal.item);
     const buildings = index.buildingsFor.get(selection.recipe);
-    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, use?.sources ?? use?.from ?? null, state.exports.includes(goal.item), goal.overflow ?? [], state.voids]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection, goal.overflow)));
+    const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, use?.sources ?? use?.from ?? null, use?.share ?? 1, state.exports.includes(goal.item), goal.overflow ?? [], state.voids]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection, goal.overflow)));
     const building = catalog.buildings[selection.building];
     const recipe = catalog.recipes[selection.recipe];
     const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules, selection.bonus);
@@ -557,7 +562,10 @@ function drawChain() {
     if (seen) Object.assign(seen, { rate: seen.rate + b.rate, from: [...seen.from, b.from] });
     else byproducts.set(b.item, { item: b.item, type: b.type, rate: b.rate, from: [b.from], recipes: b.recipes });
   }
-  if (byproducts.size) row('byproduct-head', 'byproduct-head', () => el('div', { className: 'train-head', textContent: 'Leaves by train' }));
+  if (byproducts.size) {
+    row('byproduct-head', JSON.stringify(['byproduct-head', state.goals[0]?.item, processNote]), () => el('div', { className: 'train-head' }, el('span', { textContent: 'Leaves by train' }), processButton()));
+    if (processNote) row('process-note', JSON.stringify(['process-note', processNote]), () => el('p', { className: 'hint', textContent: processNote }));
+  }
   for (const b of byproducts.values()) {
     const shown = row(`byproduct:${b.item}`, JSON.stringify(['byproduct', b.item, b.recipes, state.voids.includes(b.item)]), () => byproductRow(b));
     shown.querySelector('.rate').textContent = `${fmt(b.rate)}/min`;
@@ -566,6 +574,30 @@ function drawChain() {
   rows.forEach(syncInfo);
   for (const k of [...chainRows.keys()]) if (!seen.has(k)) chainRows.delete(k);
   if (rows.some((row, i) => list.children[i] !== row) || list.children.length !== rows.length) list.replaceChildren(...rows);
+}
+
+// Byproducts Processed into the Goal (ADR 0126): the button deciding the Byproduct Uses that make
+// the most of the first Goal from the chain's byproducts, and what it did (`processNote`, above).
+function processButton() {
+  const goal = state.goals[0]?.item;
+  const b = el('button', { type: 'button', className: 'swap', textContent: `Process into ${label(goal).toLowerCase()}`, title: `Add the Byproduct Uses that turn the byproducts into as much ${label(goal).toLowerCase()} as they can (those of its byproducts already chosen give way)` });
+  b.addEventListener('click', () => {
+    const { goals, choices, logistics } = setupFrom(state);
+    let done = null;
+    try {
+      done = processByproducts(goals, catalog, choices, logistics);
+    } catch (e) {
+      processNote = `Not processed: ${e.message}.`;
+    }
+    if (done) {
+      state.uses = done.uses;
+      const named = done.added.map(u => `${label(u.item).toLowerCase()} → ${label(u.recipe).toLowerCase()}${u.share ? ` (${Math.round(u.share * 100)}%)` : ''}`).join(', ');
+      processNote = `${label(goal)}'s own step now makes ${fmt(done.after)}/min of it, not ${fmt(done.before)}/min: ${named}.`;
+    } else if (!processNote) processNote = `No recipe makes more ${label(goal).toLowerCase()} from the byproducts.`;
+    renderChain();
+    save();
+  });
+  return b;
 }
 
 function reuse(id, key, make) {
@@ -626,7 +658,7 @@ function useRow({ goal, selection, use }, recipes, buildings) {
     renderChain();
     save();
   });
-  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes all the ${label(use.item).toLowerCase()} ${stepsNamed(use.sources ?? [use.from])} make${(use.sources ?? [use.from]).length > 1 ? '' : 's'}`);
+  const row = stepBody(goal.item, recipes, buildings, selection, choose, remove, `takes ${use.share ? `${Math.round(use.share * 100)}% of` : 'all'} the ${label(use.item).toLowerCase()} ${stepsNamed(use.sources ?? [use.from])} make${(use.sources ?? [use.from]).length > 1 ? '' : 's'}`);
   return row;
 }
 

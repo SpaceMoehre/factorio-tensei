@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v111: Byproducts processed into the Goal (implemented)
+
+The chain's *Process into …* button (beside "Leaves by train", and below the error where Byproduct Uses do not balance) adds the Byproduct Uses that turn the byproducts into as much of the first Goal as they can: a linear program over the recipes taking them (three deep, those leading to the Goal), each byproduct taken no faster than made. A Use may take a share of its item (`share`); a byproduct another Use takes a share of comes off that Use's belt to the steps taking it as another ingredient. A chain whose Recipe Loops or Uses feed back more than they take is an error naming the Use without which it balances, not "Add a goal" and a crash. Py pu-238 at 60/min: the user's four shuffles did not balance; processed, the separation makes 0.83/min, not 60, with nothing by train. Its layout does not build yet: the isotopes' belts form loops whose joins the layout drops. ADR 0126.
+
 ## v110: The game's names from the mods' locale (implemented)
 
 Items, fluids, buildings and recipes are named as the game names them, not made of their prototype names: Py's reo is "Rare earth oxides", not "Reo"; the TURD upgrades and choices by their technologies' names ("Intentional colony collapse", "C.A.G.S."). With no `factorio --dump-prototype-locale` at hand, scripts/mod-locale.mjs makes the same names from the mods' English locale files and the dump's `localised_name`s. The game's own locale dump (`<type>-locale.json` beside the data dump) comes first where present, the mods' names filling what it lacks (TURD choices): every item and fluid a recipe makes is named. ADR 0125.

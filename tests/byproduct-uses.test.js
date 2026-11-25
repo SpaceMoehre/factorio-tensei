@@ -72,3 +72,18 @@ test('a General Use of a byproduct: the byproduct filtered off to it, its belt c
   assert.ok(block.entities.some(e => e.kind === 'splitter' && e.filter === 'pyrite'));
   assertValid(block, shipped, logistics);
 });
+
+// Py's plutonium: each isotope a Byproduct Use of a shuffle. Each Use takes all of its isotope and
+// its recipe's other ingredients by train, so pu-242's shuffle feeds back twice what it takes: no
+// rates balance. Said, naming the Use without which it balances, not a chain of nothing (ADR 0126).
+test('Byproduct Uses feeding back more than they take: an error naming the Use, not no chain', () => {
+  const uses = [
+    { item: 'pu-239', recipe: 'plutonium-shuffle-1' },
+    { item: 'pu-240', recipe: 'plutonium-shuffle-2' },
+    { item: 'pu-241', recipe: 'plutonium-shuffle-1' },
+    { item: 'pu-242', recipe: 'plutonium-shuffle-3' },
+  ];
+  const options = { made: ['plutonium-oxide', 'plutonium-peroxide'], selections: { 'pu-238': { recipe: 'plutonium-seperation', building: '' } } };
+  assert.throws(() => expandChain([{ item: 'pu-238', rate: 60 }], shipped, { ...options, uses }), /no rates balance this chain.*without the Use of Pu 242 by Plutonium shuffle 3 it balances/);
+  assert.ok(expandChain([{ item: 'pu-238', rate: 60 }], shipped, { ...options, uses: uses.slice(0, 3) }).entries.length);
+});
