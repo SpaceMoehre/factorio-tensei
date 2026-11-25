@@ -513,3 +513,35 @@ test('TURD upgrades: each upgrade the dump has, with its packs and its choices\'
     { name: 'extra-water', unlock: [], replace: {} },
   ] }]);
 });
+
+// TURD choices' effects (ADR 0123): a choice giving the affected buildings its hidden module's effect
+// (`<choice>-module`, else one a tier), and one replacing buildings; a building another one's item
+// places (placeable_by) made by that item's recipes.
+test('TURD upgrades: a choice\'s effect on each affected building, and the buildings it replaces', () => {
+  const machine = name => ({ name, collision_box: [[-1.4, -1.4], [1.4, 1.4]], crafting_speed: 1, crafting_categories: ['compost'], energy_source: { type: 'electric' }, energy_usage: '75kW' });
+  const { turds, buildings } = buildCatalog(dataRaw({
+    tool: { red: { name: 'red', type: 'tool', order: 'a' } },
+    item: { 'plant-1': { name: 'plant-1', place_result: 'plant-1' }, 'plant-2': { name: 'plant-2', place_result: 'plant-2' } },
+    recipe: { 'plant-1': { name: 'plant-1', enabled: false, ingredients: [], results: [{ type: 'item', name: 'plant-1', amount: 1 }] } },
+    'assembling-machine': { 'plant-1': machine('plant-1'), 'plant-2': machine('plant-2'), 'plant-1-turd': { ...machine('plant-1-turd'), placeable_by: { item: 'plant-1', count: 1 } } },
+    module: {
+      'constant-module': { name: 'constant-module', hidden: true, effect: { speed: 0.3, consumption: 0.45, productivity: 0, pollution: -0.1, quality: 0 } },
+      'tiered-module-mk01': { name: 'tiered-module-mk01', hidden: true, effect: { speed: 1 } },
+      'tiered-module-mk02': { name: 'tiered-module-mk02', hidden: true, effect: { speed: 4 } },
+    },
+    technology: {
+      'plants': { name: 'plants', effects: [{ type: 'unlock-recipe', recipe: 'plant-1' }], unit: { count: 1, ingredients: [['red', 1]], time: 1 } },
+      'compost-upgrade': { name: 'compost-upgrade', is_turd: true, effects: [], unit: { count: 1, ingredients: [['red', 1]], time: 1 } },
+    },
+  }), null, [{ name: 'compost-upgrade', affected: ['plant-1', 'plant-2', 'gone'], choices: [
+    { name: 'constant', unlock: [], replace: {}, machines: {}, modules: true },
+    { name: 'tiered', unlock: [], replace: {}, machines: {}, modules: true },
+    { name: 'humus', unlock: [], replace: {}, machines: { 'plant-1': 'plant-1-turd', 'plant-2': 'plant-2-turd' }, modules: false },
+  ] }]);
+  assert.deepEqual(turds[0].choices, [
+    { name: 'constant', unlock: [], replace: {}, effects: { 'plant-1': { speed: 0.3, consumption: 0.45 }, 'plant-2': { speed: 0.3, consumption: 0.45 } } },
+    { name: 'tiered', unlock: [], replace: {}, effects: { 'plant-1': { speed: 1 }, 'plant-2': { speed: 4 } } },
+    { name: 'humus', unlock: [], replace: {}, machines: { 'plant-1': 'plant-1-turd' } },
+  ]);
+  assert.deepEqual(buildings['plant-1-turd'].madeBy, ['plant-1']);
+});

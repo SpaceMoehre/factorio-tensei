@@ -44,9 +44,10 @@ export function defaultModules(catalog, recipeName, buildingName) {
 }
 
 // Multipliers on the machine's speed and power draw, and its productivity bonus. Effects add up
-// from the building's base effect and each module; speed and consumption stop at -80% (or the
-// building's own lower speed limit), productivity counts only where the recipe allows it.
-export function machineEffect(catalog, recipeName, buildingName, modules = []) {
+// from the building's base effect, each module and `bonus` (a TURD choice's effect on the building,
+// ADR 0123: those the building allows); speed and consumption stop at -80% (or the building's own
+// lower speed limit), productivity counts only where the recipe allows it.
+export function machineEffect(catalog, recipeName, buildingName, modules = [], bonus = null) {
   const building = catalog.buildings[buildingName];
   const recipe = catalog.recipes[recipeName];
   const total = { speed: 0, productivity: 0, consumption: 0, ...building.baseEffect };
@@ -58,6 +59,9 @@ export function machineEffect(catalog, recipeName, buildingName, modules = []) {
     const module = catalog.modules?.[name];
     if (!module || !fits(module, building, recipe)) throw new Error(`${building.name} cannot take ${name} for ${recipeName}`);
     for (const [effect, value] of Object.entries(module.effect)) total[effect] = (total[effect] ?? 0) + value * count;
+  }
+  for (const [effect, value] of Object.entries(bonus ?? {})) {
+    if (!building.allowedEffects || building.allowedEffects.includes(effect)) total[effect] = (total[effect] ?? 0) + value;
   }
   return {
     speed: Math.max(1 + total.speed, 1 + (building.speedLow ?? -0.8)),

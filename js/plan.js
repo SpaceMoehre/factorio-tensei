@@ -31,7 +31,7 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
     if (!boxes) throw new Error(`${selection.building} cannot take the fluids of ${selection.recipe}${liquid ? ` and burn ${liquid.name}` : ''}`);
     // A selection that names no modules gets the step's default (a Py farm full of its first plant).
     const modules = selection.modules ?? defaultModules(catalog, selection.recipe, selection.building);
-    const effect = machineEffect(catalog, selection.recipe, selection.building, modules);
+    const effect = machineEffect(catalog, selection.recipe, selection.building, modules, selection.bonus);
     // Productivity adds to every product of a craft.
     const perCraft = recipe.products.find(p => p.name === goal.item).amount * (1 + effect.productivity);
     const perMachinePerMinute = (building.craftingSpeed * effect.speed / recipe.time) * perCraft * 60;
@@ -67,6 +67,8 @@ export function planSubBlocks(entries, catalog, logistics = {}) {
       recipe: selection.recipe,
       building: selection.building,
       modules,
+      // A TURD choice's effect on the building (ADR 0123).
+      ...(selection.bonus ? { bonus: selection.bonus } : {}),
       // Which of the building's fluid boxes each fluid takes (fluidboxes.js).
       boxes,
       count,
@@ -141,10 +143,16 @@ export function partByConsumer(entries, catalog, logistics) {
 }
 
 // The Liquid Fuel a machine burning a fluid burns: its energy source's own fluid, else the one
-// chosen.
+// chosen. A machine heated by its fluid (ADR 0123) takes its filter's fluid at its `heatMax`
+// (`temperature`), each unit giving its heat above the fluid's default temperature.
 function liquidFuelOf(building, catalog, name) {
   if (!catalog.fluidFuels) throw new Error('catalog is missing liquid fuel data — regenerate it');
-  if (building.heats) throw new Error(`${building.name} is heated by its fluid's temperature, which is not supported`);
+  if (building.heats) {
+    const fluid = building.fuelFilter;
+    const heat = (building.heatMax ?? 0) - (catalog.temperatures?.[fluid] ?? 15);
+    if (!fluid || !(heat > 0)) throw new Error(`${building.name} is heated by its fluid's temperature with no limit, which is not supported`);
+    return { name: fluid, fuelValue: (catalog.heatCapacities?.[fluid] ?? 1000) * heat, temperature: building.heatMax };
+  }
   const fuel = catalog.fluidFuels[building.fuelFilter ?? name];
   if (!fuel) throw new Error(building.fuelFilter ? `${building.name} burns ${building.fuelFilter}, which has no fuel value` : `${building.name} burns a fluid; choose a Liquid Fuel`);
   return fuel;
@@ -160,7 +168,7 @@ export function fuelOf(building, catalog, logistics = {}) {
   }
   if (building.energy !== 'fluid') return null;
   const liquid = liquidFuelOf(building, catalog, logistics.liquidFuel);
-  return { name: liquid.name, perMinute: building.energyUsage / (liquid.fuelValue * building.effectivity) * 60 };
+  return { name: liquid.name, perMinute: building.energyUsage / (liquid.fuelValue * building.effectivity) * 60, ...(liquid.temperature !== undefined ? { temperature: liquid.temperature } : {}) };
 }
 
 // The Fuel item a burner burns: the Fuel, or where it cannot burn that (Py's biomass powerplant

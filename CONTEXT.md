@@ -29,7 +29,7 @@ The packs the user researches with. Only recipes and buildings on at start, or u
 _Avoid_: research, tech level
 
 **TURD Upgrades**:
-Py's technology upgrades: researching one (kicalk upgrade) the player chooses one of its choices (wire netting), which unlocks recipes and replaces others. Optionally chosen beside the Science Packs: then only the chosen choices' recipes are offered, those they replace no longer (ADR 0122).
+Py's technology upgrades: researching one (kicalk upgrade) the player chooses one of its choices (wire netting), which unlocks recipes and replaces others. Optionally chosen beside the Science Packs: then only the chosen choices' recipes are offered, those they replace no longer (ADR 0122); a choice's buildings replace those it names, and the buildings it affects take its effect on speed, productivity and power, as Py's hidden beacon gives it (ADR 0123).
 _Avoid_: sub-tech (Py's word for a choice)
 
 **Train Input**:
@@ -90,7 +90,7 @@ The item a burner machine burns, treated as one more ingredient of its recipe, a
 _Avoid_: fuel for inserters (burner inserters are never used)
 
 **Liquid Fuel**:
-The fluid a machine burning one burns (Py's glassworks and smelters): one more fluid ingredient of its recipe, at the rate its power draw requires, made in the block where the user makes it, else by train, on a pipe of its own into its energy source's box. The user's choice, unless the machine burns one fluid only; chosen only where a machine of the chain burns a fluid.
+The fluid a machine burning one burns (Py's glassworks and smelters): one more fluid ingredient of its recipe, at the rate its power draw requires, made in the block where the user makes it, else by train, on a pipe of its own into its energy source's box. The user's choice, unless the machine burns one fluid only; chosen only where a machine of the chain burns a fluid. A machine heated by its fluid (Py's compost plant TURD) takes its heat instead: the fluid comes at the machine's top temperature, each unit giving the heat above its default (ADR 0123).
 
 **Joined Through**:
 Machines of a row standing against each other whose box for a fluid has connections on their west and east sides that let it through both ways: their boxes join without a pipe, and the row takes the fluid by one connection, east of its last machine. Machines whose west and east connections carry other fluids (Py's agitators) keep a column between them instead: two pipes side by side would join (ADR 0053).

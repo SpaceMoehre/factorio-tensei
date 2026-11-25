@@ -53,10 +53,11 @@ export function buildCatalog(raw, locale = null, turds = null) {
       // Liquid Fuel: a machine burning a fluid (Py's glassworks and smelters) takes it through a
       // box of its energy source, the last of its fluidBoxes (production 'fuel'); its filter, where
       // it burns one fluid only. One heated by its fluid's temperature (burns_fluid false) burns
-      // none (heats).
+      // none (heats): it takes the heat above the fluid's default temperature, up to its
+      // `heatMax` (Py's compost plant TURD on sweet syrup at 10°, ADR 0123).
       ...(b.energy_source.type === 'fluid' && {
         effectivity: b.energy_source.effectivity ?? 1,
-        ...(b.energy_source.burns_fluid ? {} : { heats: true }),
+        ...(b.energy_source.burns_fluid ? {} : { heats: true, ...(b.energy_source.maximum_temperature > 0 && { heatMax: b.energy_source.maximum_temperature }) }),
         ...(b.energy_source.fluid_box.filter && { fuelFilter: b.energy_source.fluid_box.filter }),
       }),
       // Modules: slots, which effects and categories fit, and the effect the machine has built in
@@ -129,7 +130,9 @@ export function buildCatalog(raw, locale = null, turds = null) {
   }
   // Each fluid's default temperature: what it comes at by train, or from a recipe naming none.
   const temperatures = Object.fromEntries(Object.values(raw.fluid ?? {}).filter(p => !p.hidden).map(p => [p.name, p.default_temperature ?? 15]));
-  return { recipes, sciencePacks, ...(turds ? { turds: turdsOf(turds, recipes, needOf) } : {}), buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw), ...(locale ? localeNames(raw, locale) : {}) };
+  // A fluid's heat capacity (J a unit and degree) where it is not the game's 1 kJ.
+  const heatCapacities = Object.fromEntries(Object.values(raw.fluid ?? {}).filter(p => !p.hidden && p.heat_capacity && energy(p.heat_capacity) !== 1000).map(p => [p.name, energy(p.heat_capacity)]));
+  return { recipes, sciencePacks, ...(turds ? { turds: turdsOf(turds, recipes, buildings, needOf, raw) } : {}), buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, heatCapacities, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw), ...(locale ? localeNames(raw, locale) : {}) };
 }
 
 // The names the game shows, from its locale dump: `names` (items and fluids first, then buildings
@@ -337,18 +340,31 @@ function research(raw, packs) {
 
 // Py's TURD upgrades (ADR 0122): each upgrade technology the dump has, with the packs researching
 // it (`unlock`), and its choices: the recipes each unlocks and replaces (old → new), those the
-// catalog has.
-function turdsOf(turds, recipes, needOf) {
+// catalog has; the buildings it replaces (`machines`, old → new, ADR 0123); and the effect it gives
+// each building it affects (`effects`: its hidden module's, `<choice>-module`, else
+// `<choice>-module-mk0<tier>`, the building's tier its place in `affected`; in a hidden beacon of
+// effectivity 1 on each, so the module's effect whole).
+function turdsOf(turds, recipes, buildings, needOf, raw) {
+  const effectOf = module => Object.fromEntries(['speed', 'productivity', 'consumption'].filter(k => module?.effect?.[k]).map(k => [k, module.effect[k]]));
   return turds.flatMap(u => {
     const set = needOf(u.name);
     if (!set) return [];
     return [{
       name: u.name, unlock: [[...set].sort((a, b) => a - b)],
-      choices: u.choices.map(c => ({
-        name: c.name,
-        unlock: c.unlock.filter(r => recipes[r]),
-        replace: Object.fromEntries(Object.entries(c.replace).filter(([old, now]) => recipes[old] && recipes[now])),
-      })),
+      choices: u.choices.map(c => {
+        const effects = Object.fromEntries((c.modules ? u.affected ?? [] : []).flatMap((b, i) => {
+          const effect = effectOf(raw.module?.[`${c.name}-module`] ?? raw.module?.[`${c.name}-module-mk0${i + 1}`]);
+          return buildings[b] && Object.keys(effect).length ? [[b, effect]] : [];
+        }));
+        const machines = Object.fromEntries(Object.entries(c.machines ?? {}).filter(([old, now]) => buildings[old] && buildings[now]));
+        return {
+          name: c.name,
+          unlock: c.unlock.filter(r => recipes[r]),
+          replace: Object.fromEntries(Object.entries(c.replace).filter(([old, now]) => recipes[old] && recipes[now])),
+          ...(Object.keys(machines).length ? { machines } : {}),
+          ...(Object.keys(effects).length ? { effects } : {}),
+        };
+      }),
     }];
   });
 }
@@ -361,9 +377,10 @@ function fewest(sets) {
   return kept.sort(order);
 }
 
-// A building's `madeBy`: the recipes making the items that place it, where every one is off at
-// start (the building offered while one of them is, ADR 0121); one placed by no item a recipe makes,
-// or by one a recipe on at start makes, has none: always offered.
+// A building's `madeBy`: the recipes making the items that place it (its own, or those it names
+// `placeable_by`: Py's TURD buildings, placed by the building they replace), where every one is off
+// at start (the building offered while one of them is, ADR 0121); one placed by no item a recipe
+// makes, or by one a recipe on at start makes, has none: always offered.
 function placedBy(raw, recipes, buildings) {
   const makers = new Map();
   for (const r of Object.values(recipes)) for (const p of r.products) (makers.get(p.name) ?? makers.set(p.name, []).get(p.name)).push(r);
@@ -372,6 +389,11 @@ function placedBy(raw, recipes, buildings) {
     for (const item of Object.values(raw[type] ?? {})) {
       if (!buildings[item.place_result] || !makers.get(item.name)?.length) continue;
       by.set(item.place_result, [...(by.get(item.place_result) ?? []), ...makers.get(item.name)]);
+    }
+  }
+  for (const b of [...Object.values(raw['assembling-machine'] ?? {}), ...Object.values(raw.furnace ?? {})]) {
+    for (const { item } of [b.placeable_by ?? []].flat()) {
+      if (buildings[b.name] && makers.get(item)?.length) by.set(b.name, [...(by.get(b.name) ?? []), ...makers.get(item)]);
     }
   }
   for (const [name, list] of by) {

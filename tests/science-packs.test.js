@@ -2,7 +2,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { expandChain, recipeOptions } from '../js/chain.js';
 import { setupOf } from '../js/setup.js';
-import { catalog as base } from './fixtures/catalog.js';
+import { machineEffect } from '../js/modules.js';
+import { planSubBlocks } from '../js/plan.js';
+import { catalog as base, logistics } from './fixtures/catalog.js';
 
 // Science Packs (ADR 0121): the user's packs decide which recipes and buildings the chain is
 // offered. A recipe or building's `unlock`: the sets of packs (indices into sciencePacks)
@@ -116,4 +118,63 @@ test('TURD: the choices are a Chain Choice, those the catalog knows; a Goal noth
   assert.deepEqual(choices.turds, { 'circuit-upgrade': 'wire-netting' });
   assert.ok(!('turds' in setupOf({ goals: [], logistics: {} }, turdCatalog).choices));
   assert.throws(() => expandChain([{ item: 'bedding', rate: 60 }], turdCatalog, { turds: {} }), /nothing the science packs and TURD upgrades chosen unlock makes/);
+});
+
+// TURD choices' effects (ADR 0123): the buildings a chosen choice affects take its effect, those it
+// replaces give way to their TURD buildings.
+const effectCatalog = {
+  ...catalog,
+  buildings: {
+    ...catalog.buildings,
+    'asm-1-turd': { ...machine('asm-1-turd', 0.5), allowedEffects: ['speed'] },
+  },
+  turds: [{ name: 'asm-upgrade', unlock: [[0]], choices: [
+    { name: 'faster', unlock: [], replace: {}, effects: { 'asm-1': { speed: 1, consumption: 2 }, 'asm-1-turd': { speed: 1, productivity: 0.5 } } },
+    { name: 'humus', unlock: [], replace: {}, machines: { 'asm-1': 'asm-1-turd' } },
+  ] }],
+};
+
+test('TURD: a chosen choice\'s effect rides on the selection and speeds its machines', () => {
+  const goal = [{ item: 'circuit', rate: 60 }];
+  const none = expandChain(goal, effectCatalog, { turds: {} }).entries[0];
+  assert.deepEqual([none.selection.building, none.selection.bonus], ['asm-1', undefined]);
+  const faster = expandChain(goal, effectCatalog, { turds: { 'asm-upgrade': 'faster' } }).entries[0];
+  assert.deepEqual(faster.selection.bonus, { speed: 1, consumption: 2 });
+  assert.deepEqual(machineEffect(effectCatalog, faster.selection.recipe, 'asm-1', [], faster.selection.bonus), { speed: 2, productivity: 0, consumption: 3 });
+  // Half the machines at twice the speed (60/min: 1 a second, a machine 0.5 a second, then 1).
+  const [slow] = planSubBlocks([none], effectCatalog, logistics);
+  const [fast] = planSubBlocks([faster], effectCatalog, logistics);
+  assert.deepEqual([slow.count, fast.count, fast.bonus], [2, 1, { speed: 1, consumption: 2 }]);
+  // Only the effects the building allows (no productivity in asm-1-turd).
+  assert.deepEqual(machineEffect({ ...effectCatalog, recipes: { ...effectCatalog.recipes, 'circuit-slow': { ...effectCatalog.recipes['circuit-slow'], allowProductivity: true } } }, 'circuit-slow', 'asm-1-turd', [], { speed: 1, productivity: 0.5 }).productivity, 0);
+});
+
+test('TURD: a choice replacing a building offers its TURD building instead; none chosen, the plain one', () => {
+  assert.deepEqual(recipeOptions(effectCatalog).buildingsFor.get('circuit-slow'), ['asm-1', 'asm-1-turd', 'asm-2']);
+  assert.deepEqual(recipeOptions(effectCatalog, null, {}).buildingsFor.get('circuit-slow'), ['asm-1', 'asm-2']);
+  assert.deepEqual(recipeOptions(effectCatalog, null, { 'asm-upgrade': 'humus' }).buildingsFor.get('circuit-slow'), ['asm-1-turd', 'asm-2']);
+  const selections = { circuit: { recipe: 'circuit-slow', building: 'asm-1' } };
+  const entry = expandChain([{ item: 'circuit', rate: 60 }], effectCatalog, { selections, turds: { 'asm-upgrade': 'humus' } }).entries[0];
+  assert.equal(entry.selection.building, 'asm-1-turd');
+});
+
+// A machine heated by its fluid (Py's compost plant TURD, ADR 0123): each unit gives its heat above
+// the fluid's default temperature, up to the machine's heatMax, and comes that hot.
+test('a machine heated by its fluid takes it at its heatMax, the heat above the default its energy', () => {
+  const heated = {
+    ...catalog,
+    temperatures: { ...catalog.temperatures, syrup: 0 }, fluidFuels: {},
+    recipes: { 'circuit-slow': { ...catalog.recipes['circuit-slow'], time: 60 } },
+    buildings: {
+      composter: {
+        ...machine('composter', 1), energy: 'fluid', energyUsage: 1e6, effectivity: 1000, heats: true, heatMax: 10, fuelFilter: 'syrup',
+        fluidBoxes: [{ production: 'fuel', connections: [{ x: 0, y: -1, direction: 0 }] }],
+      },
+    },
+  };
+  const { entries, trainInputs } = expandChain([{ item: 'circuit', rate: 1 }], heated, { logistics });
+  // 1 MW over 10 kJ a degree for 10° times 1000: 0.1 a second, 6 a minute busy.
+  assert.deepEqual(trainInputs.find(t => t.item === 'syrup'), { item: 'syrup', rate: 6, reason: 'no recipe', temperature: { min: 10 } });
+  const [sb] = planSubBlocks(entries, heated, logistics);
+  assert.equal(sb.inputs.find(i => i.name === 'syrup').rate, 6);
 });

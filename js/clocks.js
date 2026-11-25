@@ -45,7 +45,7 @@ function fullSpeed(sb, catalog) {
   const recipe = catalog.recipes?.[sb.recipe], building = catalog.buildings?.[sb.building];
   const product = recipe?.products.find(p => p.name === sb.item);
   if (!product || !building || !(sb.rate > 0)) return null;
-  const effect = machineEffect(catalog, sb.recipe, sb.building, sb.modules ?? []);
+  const effect = machineEffect(catalog, sb.recipe, sb.building, sb.modules ?? [], sb.bonus);
   const made = building.craftingSpeed * effect.speed / recipe.time * product.amount * (1 + effect.productivity);
   const rates = flows => new Map(flows.map(f => [f.name, f.rate * made / sb.rate]));
   return { input: rates(sb.inputs ?? []), output: rates(sb.outputs ?? []) };

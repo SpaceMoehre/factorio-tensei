@@ -456,13 +456,13 @@ function drawChain() {
     const shown = row(`step:${key}`, JSON.stringify(['step', key, goal.item, recipes, selection, buildings, use?.sources ?? use?.from ?? null, state.exports.includes(goal.item), goal.overflow ?? [], state.voids]), () => (use ? useRow(entry, recipes, buildings) : stepRow(goal.item, recipes, buildings, selection, goal.overflow)));
     const building = catalog.buildings[selection.building];
     const recipe = catalog.recipes[selection.recipe];
-    const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
+    const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules, selection.bonus);
     const perMachine = building.craftingSpeed * effect.speed / recipe.time
       * recipe.products.find(p => p.name === goal.item).amount * (1 + effect.productivity) * 60;
     // The Count, and the machine's speed with its modules (Py farms: their plants and animals).
     shown.querySelector('.rate').textContent = `${fmt(goal.rate)}/min · ${count(Math.ceil(goal.rate / perMachine - 1e-9), 'machine')}`;
     shown.querySelector('.speed').textContent = `${speed(building.craftingSpeed * effect.speed)}`
-      + (effect.speed !== 1 ? ` (${speed(building.craftingSpeed)} × ${speed(effect.speed)} with modules)` : '') + ` · ${fmt(perMachine)}/min a machine`;
+      + (effect.speed !== 1 ? ` (${speed(building.craftingSpeed)} × ${speed(effect.speed)} with modules${selection.bonus ? ' and TURD' : ''})` : '') + ` · ${fmt(perMachine)}/min a machine`;
     // A Recipe Loop: what of this step's item goes back into the loop.
     // And the byproducts it takes from a step making them (Recycled Byproducts), not by train.
     const back = use ? [] : chain.loops.filter(l => l.item === goal.item);

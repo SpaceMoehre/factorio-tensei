@@ -1,6 +1,9 @@
 // Py's TURD upgrades (Alien Life's technology upgrades) from the Pyanodons source, for the catalog
-// (ADR 0122): each upgrade technology and its sub-technologies, the user choosing one of them, with
-// the recipes each unlocks and those it replaces (old → new). The game's data dump names the
+// (ADR 0122, 0123): each upgrade technology, the buildings it affects (`affected`, in tier order) and
+// its sub-technologies, the user choosing one of them, with the recipes each unlocks and those it
+// replaces (old → new), the buildings it replaces, and whether it gives the affected buildings a
+// module's effect (Py puts its hidden module, `<choice>-module` or `-mk0<tier>`, in a hidden beacon
+// on each). The game's data dump names the
 // upgrade technologies (`is_turd`) but not what each choice unlocks: Py's script does that.
 //   git clone https://github.com/pyanodon/pyalienlife
 //   node scripts/py-turds.mjs <pyalienlife folder> [out.json]
@@ -59,10 +62,13 @@ for (const name of readdirSync(dir).filter(f => f.endsWith('.lua')).sort()) {
   if (!upgrade?.master_tech?.name) continue;
   upgrades.push({
     name: upgrade.master_tech.name,
+    affected: list(upgrade.affected_entities),
     choices: list(upgrade.sub_techs).map(sub => ({
       name: sub.name,
       unlock: list(sub.effects).filter(e => e.type === 'unlock-recipe').map(e => e.recipe),
       replace: Object.fromEntries(list(sub.effects).filter(e => e.type === 'recipe-replacement').map(e => [e.old, e.new])),
+      machines: Object.fromEntries(list(sub.effects).filter(e => e.type === 'machine-replacement').map(e => [e.old, e.new])),
+      modules: list(sub.effects).some(e => e.type === 'module-effects'),
     })),
   });
 }

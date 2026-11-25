@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v108: TURD choices' effects (implemented)
+
+A chosen TURD choice's effect on the buildings it affects (its hidden module, in Py a hidden beacon on each: speed, productivity, power) adds to their modules' in every rate, Count and Inserter Clock, and the step's speed says "with modules and TURD"; a choice replacing buildings offers its TURD buildings instead (bio-reactors, compost plants, fish farms, wood processing units), placed by the item of the building they replace. Machines heated by their fluid's temperature are built: Py's compost plant TURD on sweet syrup at 10° (6/min a busy plant). Py compost upgrade, humus, 1200/min biomass from used comb: failure ("heated by its fluid's temperature, which is not supported") → 2 TURD compost plants, valid, starving nothing. ADR 0123.
+
 ## v107: TURD upgrades chosen (implemented)
 
 Optionally ("TURD upgrades", Logistics), the user chooses a choice for each of Py's TURD upgrades the packs research: only the chosen choices' recipes (and the buildings they make) are offered, the recipes they replace no longer. The upgrades and their recipes come from the Py source (`node scripts/py-turds.mjs <pyalienlife folder>` → `data/py-turds.json`, read by `build-catalog`): the game's dump does not say what each choice unlocks. Py, every pack: none chosen 6220 recipes offered, of 6843. ADR 0122.

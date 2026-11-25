@@ -26,5 +26,5 @@ Layouts are the same: no suite setup chooses upgrades.
 Tests: the catalog's upgrades (the dump's alone, their packs, their choices' recipes the catalog has; catalog-builder.test.js); the offer (none chosen: every TURD recipe as the packs offer it; on: a choice's recipes and buildings only where chosen, the one it replaces gone, another choice bringing none, an upgrade the packs do not research counting for nothing), the choices a Chain Choice, a Goal nothing chosen makes told so (science-packs.test.js).
 
 Still:
-- A choice's module effects (Py's TURD modules: a farm's speed, productivity) and machine replacements are not applied.
+- A choice's module effects and machine replacements: ADR 0123.
 - data/py-turds.json is pyalienlife master's; regenerate with the Py version installed (a dump's upgrades and recipes it lacks are left out).

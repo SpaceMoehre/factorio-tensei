@@ -18,7 +18,9 @@ const MAX_STEPS = 60;
 // not); none given, every one. A building is offered while a recipe making it is.
 // turds: Py's TURD upgrades chosen, { [upgrade technology]: its choice } (ADR 0122): a recipe a TURD
 // choice unlocks is offered only where it is chosen (and its technology researched with the packs),
-// one it replaces no longer; none given, as above.
+// one it replaces no longer; so too the buildings a choice replaces (Py's -turd machines, ADR 0123),
+// and the buildings a chosen choice affects take its effect (`bonus`, by building: a selection's
+// `bonus`, machineEffect's); none given, as above.
 const optionsOf = new WeakMap();
 export function recipeOptions(catalog, sciencePacks = null, turds = null) {
   const key = `${sciencePacks ? [...sciencePacks].sort().join() : '*'}|${turds ? Object.entries(turds).sort().join(';') : '*'}`;
@@ -32,14 +34,29 @@ export function recipeOptions(catalog, sciencePacks = null, turds = null) {
   const ofTurds = new Set();
   const granted = new Set();
   const replaced = new Set();
+  // The same of buildings, and each building's effect from the chosen choices (summed).
+  const turdMachines = new Set();
+  const machinesGranted = new Set();
+  const machinesReplaced = new Set();
+  const bonus = new Map();
   if (turds) {
     for (const u of catalog.turds ?? []) {
       for (const c of u.choices) {
         const brought = [...c.unlock, ...Object.values(c.replace)];
         for (const r of brought) ofTurds.add(r);
+        for (const b of Object.values(c.machines ?? {})) turdMachines.add(b);
         if (turds[u.name] !== c.name || !researched(u)) continue;
         for (const r of brought) granted.add(r);
         for (const r of Object.keys(c.replace)) replaced.add(r);
+        for (const [old, now] of Object.entries(c.machines ?? {})) {
+          machinesReplaced.add(old);
+          machinesGranted.add(now);
+        }
+        for (const [b, effect] of Object.entries(c.effects ?? {})) {
+          const sum = { ...bonus.get(b) };
+          for (const [k, v] of Object.entries(effect)) sum[k] = (sum[k] ?? 0) + v;
+          bonus.set(b, sum);
+        }
       }
     }
   }
@@ -50,7 +67,10 @@ export function recipeOptions(catalog, sciencePacks = null, turds = null) {
     if (ofTurds.has(recipe.name) && recipe.unlock?.length === 0) return false;
     return researched(recipe);
   };
-  const made = b => !b.madeBy || b.madeBy.some(r => catalog.recipes[r] && unlocked(catalog.recipes[r]));
+  const made = b => {
+    if (machinesReplaced.has(b.name) || (turdMachines.has(b.name) && !machinesGranted.has(b.name))) return false;
+    return !b.madeBy || b.madeBy.some(r => catalog.recipes[r] && unlocked(catalog.recipes[r]));
+  };
   // Buildings by crafting category, slowest first.
   const byCategory = new Map();
   const sorted = Object.values(catalog.buildings).filter(made).sort((a, b) => a.craftingSpeed - b.craftingSpeed || a.name.localeCompare(b.name));
@@ -83,7 +103,7 @@ export function recipeOptions(catalog, sciencePacks = null, turds = null) {
   // (An offshore pump's water first: nothing simpler makes it.)
   const rank = (item, recipe) => (catalog.recipes[recipe].category === 'offshore' ? -1 : recipe === item ? 0 : catalog.recipes[recipe].products[0].name === item ? 1 : 2);
   for (const [item, recipes] of producers) recipes.sort((a, b) => rank(item, a) - rank(item, b) || a.localeCompare(b));
-  const index = { producers, buildingsFor, consumers };
+  const index = { producers, buildingsFor, consumers, bonus };
   kept.set(key, index);
   return index;
 }
@@ -165,8 +185,10 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
   const selectionOf = (recipe, wanted) => {
     const buildings = index.buildingsFor.get(recipe);
     const building = buildings.includes(wanted?.building) ? wanted.building : buildings[0];
-    if (!catalog.buildings[building].moduleSlots) return { recipe, building };
-    return { recipe, building, modules: wanted?.modules ? fitting(wanted.modules, recipe, building) : defaultModules(catalog, recipe, building) };
+    // (A TURD choice's effect on the building, ADR 0123.)
+    const bonus = index.bonus?.get(building);
+    if (!catalog.buildings[building].moduleSlots) return { recipe, building, ...(bonus ? { bonus } : {}) };
+    return { recipe, building, modules: wanted?.modules ? fitting(wanted.modules, recipe, building) : defaultModules(catalog, recipe, building), ...(bonus ? { bonus } : {}) };
   };
   const selectionFor = item => {
     const recipes = index.producers.get(item) ?? [];
@@ -198,12 +220,14 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
     try { fuel = logistics && fuelOf(building, catalog, logistics); } catch { fuel = null; }
     let list = recipe.ingredients;
     if (fuel) {
-      const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
+      const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules, selection.bonus);
       const amount = fuel.perMinute * effect.consumption * recipe.time / (building.craftingSpeed * effect.speed * 60);
       const type = building.energy === 'burner' ? 'item' : 'fluid';
+      // (A fluid heating its machine comes at its temperature or hotter, ADR 0123.)
+      const hot = fuel.temperature !== undefined ? { minTemperature: fuel.temperature } : {};
       list = list.some(i => i.name === fuel.name)
-        ? list.map(i => (i.name === fuel.name ? { ...i, amount: i.amount + amount } : i))
-        : [...list, { type, name: fuel.name, amount }];
+        ? list.map(i => (i.name === fuel.name ? { ...i, amount: i.amount + amount, ...hot } : i))
+        : [...list, { type, name: fuel.name, amount, ...hot }];
     }
     withFuel.set(key, list);
     return list;
@@ -221,7 +245,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
     const burnt = fuel && catalog.fuels?.[fuel.name]?.burntResult;
     let list = recipe.products;
     if (burnt) {
-      const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules);
+      const effect = machineEffect(catalog, selection.recipe, selection.building, selection.modules, selection.bonus);
       const amount = fuel.perMinute * effect.consumption * recipe.time / (building.craftingSpeed * effect.speed * 60);
       list = [...list, { type: 'item', name: burnt, amount, burnt: true }];
     }
@@ -324,7 +348,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
   const productsOf = key => productsFor(stepOf(key).selection);
   const productivity = keys.map(key => {
     const { selection } = stepOf(key);
-    return 1 + machineEffect(catalog, selection.recipe, selection.building, selection.modules).productivity;
+    return 1 + machineEffect(catalog, selection.recipe, selection.building, selection.modules, selection.bonus).productivity;
   });
   const makes = (key, item) => productsOf(key).filter(p => p.name === item).reduce((sum, p) => sum + p.amount * (p.burnt ? 1 : productivity[at.get(key)]), 0);
   const perCraft = keys.map(key => makes(key, itemOf(key)));
