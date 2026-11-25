@@ -210,7 +210,7 @@ function renderResearch() {
   $('turd-body').hidden = !state.turds;
   if (!state.turds) return;
   const query = $('turd-filter').value.trim().toLowerCase();
-  const matches = u => !query || [u.name, ...u.choices.map(c => c.name)].some(n => label(n).toLowerCase().includes(query) || n.includes(query));
+  const matches = u => !query || [u.name, ...u.choices.map(c => c.name)].some(n => techLabel(n).toLowerCase().includes(query) || n.includes(query));
   const card = u => {
     const open = researched(u);
     const needs = open ? [] : (u.unlock[0] ?? []).filter(i => !has(i)).map(i => packs[i]);
@@ -227,9 +227,9 @@ function renderResearch() {
       return b;
     };
     return el('div', { className: open ? 'upgrade' : 'upgrade locked' },
-      el('div', { className: 'upgrade-head' }, iconOf(u.affected?.[0] ?? ''), el('span', { textContent: label(u.name) }),
+      el('div', { className: 'upgrade-head' }, iconOf(u.affected?.[0] ?? ''), el('span', { textContent: techLabel(u.name) }),
         ...(needs.length ? [el('span', { className: 'needs' }, 'needs', ...needs.map(p => iconOf(p)))] : [])),
-      el('div', { className: 'turd-choices' }, button('', 'Not chosen', 'none of its recipes'), ...u.choices.map(c => button(c.name, label(c.name), choiceNote(c)))));
+      el('div', { className: 'turd-choices' }, button('', 'Not chosen', 'none of its recipes'), ...u.choices.map(c => button(c.name, techLabel(c.name), choiceNote(c)))));
   };
   const shown = turds.filter(matches);
   const open = shown.filter(researched);
@@ -762,6 +762,12 @@ function trainEdges(sides) {
 
 function label(name) {
   return displayName(name);
+}
+
+// A TURD upgrade's or choice's name: its technology's (a choice may share its name with an item:
+// Py's cags), else made of its prototype name (ADR 0125).
+function techLabel(name) {
+  return catalog.technologyNames?.[name] ?? label(name);
 }
 
 // An icon with its amount in the corner, as the game shows a recipe's.

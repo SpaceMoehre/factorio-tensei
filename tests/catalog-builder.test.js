@@ -494,14 +494,14 @@ test('science packs: a building names the recipes making the items placing it, w
 // researching it, its choices' recipes those the catalog has.
 test('TURD upgrades: each upgrade the dump has, with its packs and its choices\' recipes', () => {
   const made = name => ({ name, enabled: false, ingredients: [], results: [{ type: 'item', name, amount: 1 }] });
-  const { turds } = buildCatalog(dataRaw({
+  const { turds, technologyNames } = buildCatalog(dataRaw({
     tool: { red: { name: 'red', type: 'tool', order: 'a' }, green: { name: 'green', type: 'tool', order: 'b' } },
     recipe: { 'kicalk-1': made('kicalk-1'), 'kicalk-1-dry': made('kicalk-1-dry'), bedding: made('bedding') },
     technology: {
       'kicalk-mk01': { name: 'kicalk-mk01', effects: [{ type: 'unlock-recipe', recipe: 'kicalk-1' }], unit: { count: 1, ingredients: [['red', 1]], time: 1 } },
       'kicalk-upgrade': { name: 'kicalk-upgrade', is_turd: true, prerequisites: ['kicalk-mk01'], effects: [{ type: 'nothing' }], unit: { count: 1, ingredients: [['green', 1]], time: 1 } },
     },
-  }), null, [
+  }), { item: { names: { bedding: 'Bedding' } }, technology: { names: { 'kicalk-upgrade': 'Kicalk upgrade', 'wire-netting': 'Wire netting', 'kicalk-mk01': 'Kicalk' } } }, [
     { name: 'kicalk-upgrade', choices: [
       { name: 'wire-netting', unlock: ['bedding', 'gone'], replace: { 'kicalk-1': 'kicalk-1-dry', 'kicalk-2': 'kicalk-2-dry' } },
       { name: 'extra-water', unlock: [], replace: {} },
@@ -512,6 +512,8 @@ test('TURD upgrades: each upgrade the dump has, with its packs and its choices\'
     { name: 'wire-netting', unlock: ['bedding'], replace: { 'kicalk-1': 'kicalk-1-dry' } },
     { name: 'extra-water', unlock: [], replace: {} },
   ] }]);
+  // Technologies' names (ADR 0125) only for the upgrades and choices the Research dialog shows.
+  assert.deepEqual(technologyNames, { 'kicalk-upgrade': 'Kicalk upgrade', 'wire-netting': 'Wire netting' });
 });
 
 // TURD choices' effects (ADR 0123): a choice giving the affected buildings its hidden module's effect

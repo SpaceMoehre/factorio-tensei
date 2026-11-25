@@ -2,11 +2,12 @@ import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { buildCatalog } from '../js/catalog-builder.js';
 
-// The game's names come from its locale dump (`factorio --dump-prototype-locale`) beside the data
+// The game's names come from its locale dump (`factorio --dump-prototype-locale`, or one
+// scripts/mod-locale.mjs makes from the mods' locale files, ADR 0125) beside the data
 // dump, or the path given second.
 const [dumpPath = `${process.env.HOME}/.factorio/script-output/data-raw-dump.json`, localePath = join(dirname(dumpPath), 'prototype-locale.json')] = process.argv.slice(2);
 const locale = existsSync(localePath) ? JSON.parse(readFileSync(localePath, 'utf8')) : null;
-if (!locale) console.warn(`no ${localePath}: names are made of prototype names (run factorio --dump-prototype-locale)`);
+if (!locale) console.warn(`no ${localePath}: names are made of prototype names (run factorio --dump-prototype-locale, or scripts/mod-locale.mjs on the mods' sources)`);
 // Py's TURD upgrades (ADR 0122), as scripts/py-turds.mjs reads them from the Py source.
 const turdsPath = new URL('../data/py-turds.json', import.meta.url);
 const turds = existsSync(turdsPath) ? JSON.parse(readFileSync(turdsPath, 'utf8')) : null;
