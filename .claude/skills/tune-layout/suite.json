@@ -528,6 +528,28 @@
         "entities": 13557,
         "hash": "6e9bec51af93"
       }
+    },
+    {
+      "name": "pu238-processed-116",
+      "file": "pu238-processed-116.json",
+      "what": "Py pu-238 among 32 poles, 116², its byproducts processed (ADR 0126): the four plutonium shuffles in a ring, each isotope made by up to three and taken by two, tapped off each maker into each taker (ADR 0127)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 1800,
+      "result": {
+        "secs": 70.5,
+        "tries": 13,
+        "rate": 3.59,
+        "machines": 1,
+        "failure": null,
+        "delivered": 3.59,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "110x99",
+        "entities": 3236,
+        "hash": "dd23aa5fbdf6"
+      }
     }
   ]
 }

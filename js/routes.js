@@ -71,8 +71,10 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
         const consumers = internalConsumers(o.name);
         const shared = consumers.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === o.name).length > 1;
         const own = joins('item').filter(j => j.item === o.name);
+        // (All of it tapped off into its takers: on to the train all the same, a belt to tap, ADR 0127.)
+        const tappedOff = !consumers.length && (flows.feedback ?? []).some(e => e.tapped && e.from === i && e.item === o.name);
         add({
-          kind: 'belt', source: i, sink: leavesBlock(o) ? 'side-output' : null, product: o.name,
+          kind: 'belt', source: i, sink: leavesBlock(o) || tappedOff ? 'side-output' : null, product: o.name,
           items: [{ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' }],
           consumers, ...(shared ? { portion: true } : {}),
           ...(o.name === sb.item && sb.exports?.includes(sb.item) && consumers.length && !leavesBlock(o) ? { exported: sb.item } : {}),
@@ -88,6 +90,9 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
       // (compose.js), so the path may run on parallel belts (Py's ball mills' molybdenite dust
       // with gravel).
       const left = solidOut.filter(leavesBlock);
+      // (Every product tapped off it into its takers, none riding on: the belt still runs on to the
+      // train, a belt to tap them off, ADR 0127.)
+      const tappedOff = !consumers.length && !left.length && (flows.feedback ?? []).some(e => e.tapped && e.from === i);
       const sorted = consumers.length === 1 && left.length === 1 && left[0].name !== sb.item
         && !plan[consumers[0]].inputs.some(x => x.name === left[0].name)
         && solidOut.reduce((sum, o) => sum + o.rate, 0) > 2 * laneCapacity + 1e-6;
@@ -95,7 +100,7 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
       const shared = solidOut.length === 1 && consumers.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === solidOut[0].name).length > 1;
       // Output inserters drop every product onto the far lane, so the products share it.
       add({
-        kind: 'belt', source: i, sink: left.length ? 'side-output' : null,
+        kind: 'belt', source: i, sink: left.length || tappedOff ? 'side-output' : null,
         items: solidOut.map(o => ({ item: o.name, rate: o.rate, supply: o.rate, capacity: laneCapacity, lane: 'far' })),
         consumers, ...(sorted ? { sorted: left[0].name } : {}), ...(shared ? { portion: true } : {}),
         // (Its item the user wants leaving by train too, where its consumers take it all: what

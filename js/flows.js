@@ -37,6 +37,75 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   // no step of the Dependency Order.)
   const fedBack = new Set([...closing].filter(e => e.type === 'fluid' && (plan[e.from].overflow?.includes(e.item) || plan[e.from].closed?.includes(e.item))));
   for (const e of fedBack) closing.delete(e);
+  // Byproducts joined in a loop (ADR 0127): where an item other Sub-Blocks' of it join (Supplied
+  // Items, a General Use's sources) goes to a Sub-Block closing a loop, or to one leading back to a
+  // joining Sub-Block (Py's plutonium shuffles: each isotope made by three, taken by two, in a
+  // ring), it cannot join before them. Each maker's (the one joined into, every joining one) is
+  // tapped off its own belt into each taker instead, its share of what each takes (a belt of its
+  // own: no step of the Dependency Order). Once one item pools so, one whose takers lead back to
+  // the Sub-Block joined into pools too (the ring's other isotopes). Only where the makers cover
+  // what the takers take.
+  // (By items only: a loop closed by a fluid, Py coke's quench steam back to the ovens, closes as
+  // before, the join riding on.)
+  const leadsTo = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a) && edges.some(e => e.from === a && e.type !== 'fluid' && leadsTo(e.to, b, seen)));
+  const joinersOf = new Map();
+  plan.forEach((sb, from) => {
+    for (const [item, into] of Object.entries(sb.joins ?? {})) {
+      if (typeof into !== 'number' || !sb.outputs.some(o => o.name === item && o.type === 'item')) continue;
+      const k = `${item}|${into}`;
+      joinersOf.set(k, [...joinersOf.get(k) ?? [], from]);
+    }
+  });
+  const makesOf = (i, item) => plan[i].outputs.find(o => o.name === item)?.rate ?? 0;
+  const takersOf = (item, into) => edges.filter(e => e.from === into && e.item === item);
+  const covered = (k, joiners) => {
+    const [item, at] = k.split('|');
+    const into = Number(at);
+    const made = [into, ...joiners].reduce((sum, i) => sum + makesOf(i, item), 0);
+    const taken = takersOf(item, into).reduce((sum, e) => sum + e.rate, 0);
+    return taken > 0 && made >= taken * (1 - 1e-6);
+  };
+  const pools = new Map();
+  for (const ring of [false, true]) {
+    if (ring && !pools.size) break;
+    for (const [k, joiners] of joinersOf) {
+      if (pools.has(k)) continue;
+      const [item, at] = k.split('|');
+      const into = Number(at);
+      const takers = takersOf(item, into);
+      const looping = takers.some(e => (closing.has(e) && e.type !== 'fluid') || joiners.some(j => leadsTo(e.to, j)) || (ring && leadsTo(e.to, into)));
+      if (looping && covered(k, joiners)) pools.set(k, joiners);
+    }
+  }
+  const unjoined = new Set();
+  for (const [k, joiners] of pools) {
+    const [item, at] = k.split('|');
+    const into = Number(at);
+    // (Each taker filled from the makers in turn, most first: as few belts as there are makers and
+    // takers less one. Never from itself.)
+    const makers = [into, ...joiners].map(i => ({ i, left: makesOf(i, item) })).sort((a, b) => b.left - a.left);
+    for (const e of takersOf(item, into).sort((a, b) => b.rate - a.rate)) {
+      edges.splice(edges.indexOf(e), 1);
+      closing.delete(e);
+      const mine = [];
+      let want = e.rate;
+      for (const m of makers) {
+        if (want <= 1e-9 * Math.max(1, e.rate)) break;
+        const rate = Math.min(want, m.left);
+        if (m.i === e.to || !(rate > 1e-9 * Math.max(1, e.rate))) continue;
+        mine.push({ from: m.i, to: e.to, item, type: e.type, rate, split: true });
+        m.left -= rate;
+        want -= rate;
+      }
+      // (Rounding: the last of its belts brings the rest; a real shortfall from the one joined
+      // into, as before.)
+      if (mine.length && want <= 1e-6 * e.rate) mine.at(-1).rate += want;
+      else if (want > 1e-9 * Math.max(1, e.rate)) mine.push({ ...e, rate: want });
+      edges.push(...mine);
+    }
+    for (const j of joiners) unjoined.add(`${j}|${item}`);
+  }
+  const joinsOf = (sb, from) => Object.entries(sb.joins ?? {}).filter(([item]) => !unjoined.has(`${from}|${item}`));
   // A byproduct taken by a Sub-Block that takes nothing else off its producer's belt, while that
   // belt goes on to others with what they take: tapped off it right after the producers (a
   // filter splitter, as a Recipe Loop's feedback is), not riding on through them. Its surplus
@@ -47,8 +116,9 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   // machines from either (Py's BOFs taking coal from crushers and screeners, ADR 0064).
   const solidsOf = i => new Set(plan[i].outputs.filter(o => o.type === 'item').map(o => o.name));
   const tapped = edges.filter(e => {
+    if (e.split) return true;
     if (closing.has(e) || e.type === 'fluid' || e.item === plan[e.from].item) return false;
-    if (plan.some(sb => sb.joins?.[e.item] === e.from) && !(e.rate > belt + 1e-6)) return false;
+    if (plan.some((sb, i) => joinsOf(sb, i).some(([item, into]) => item === e.item && into === e.from)) && !(e.rate > belt + 1e-6)) return false;
     const solids = solidsOf(e.from);
     return !plan[e.to].inputs.some(x => x.name !== e.item && solids.has(x.name))
       && edges.some(o => o.from === e.from && o.to !== e.to && o.type !== 'fluid' && o.item !== e.item);
@@ -57,7 +127,7 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   // off the other's, each their share, ADR 0068.)
   const fed = plan.flatMap((sb, from) => Object.entries(sb.feeds ?? {}).flatMap(([item, into]) => {
     const o = sb.outputs.find(o => o.name === item);
-    const takers = edges.filter(e => e.from === into && e.item === item && !closing.has(e));
+    const takers = edges.filter(e => e.from === into && e.item === item && !closing.has(e) && !e.split);
     const all = takers.reduce((sum, e) => sum + e.rate, 0);
     if (!o || !all) return [];
     return takers.map(e => {
@@ -66,7 +136,7 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
       return { from, to: e.to, item, type: o.type, rate };
     });
   }));
-  const own = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
+  const own = plan.flatMap((sb, from) => joinsOf(sb, from).flatMap(([item, into]) => {
     const on = tapped.find(e => e.from === into && e.item === item);
     const o = sb.outputs.find(o => o.name === item);
     if (!on || !o) return [];
@@ -75,7 +145,8 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   }));
   // (A producer putting each product on a belt of its own: nothing to tap off, each a belt of
   // that product into the step, ADR 0066.)
-  const off = e => !apart(e.from);
+  // (A pool's taps a belt of their own whatever the producer, ADR 0127.)
+  const off = e => e.split || !apart(e.from);
   const sameAs = (a, b) => a.from === b.from && a.to === b.to && a.item === b.item;
   const internal = [
     ...edges.filter(e => !closing.has(e) && !tapped.some(t => off(t) && sameAs(t, e))).map(e => tapped.find(t => sameAs(t, e)) ?? e),
@@ -84,7 +155,7 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   ];
   const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...[...tapped, ...own].filter(off).map(e => ({ ...e, tapped: true }))];
   // (Only into an Internal Path: one of the item's consumers' takes it from there.)
-  const joined = plan.flatMap((sb, from) => Object.entries(sb.joins ?? {}).flatMap(([item, into]) => {
+  const joined = plan.flatMap((sb, from) => joinsOf(sb, from).flatMap(([item, into]) => {
     const o = sb.outputs.find(o => o.name === item);
     return o && internal.some(e => e.from === into && e.item === item) && !own.some(e => e.from === from && e.item === item) ? [{ from, into, item, type: o.type, rate: o.rate }] : [];
   }));

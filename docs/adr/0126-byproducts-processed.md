@@ -29,6 +29,6 @@ The linear program alone, on what 200 separations a minute make: shuffle 2 at 13
 Tests: simplex; the plutonium chain processed (the four shuffles, a Use of another step's byproduct kept, the separation below 1/min, no isotope by train, one belt each isotope; byproducts.test.js); a share's rest by train; the error naming pu-242's Use (byproduct-uses.test.js).
 
 Still:
-- The processed chain does not lay out: the isotopes' belts form loops (shuffle 1 → 2 → 3 → 1), the belt closing a loop is laid as feedback, and what joins it is dropped (flows.js `joined`: into an Internal Path only), so a try at 1 separation starves (pu-242 3.54 of 6.4). Layout for byproduct networks with loops is the next step.
+- The processed chain did not lay out: the isotopes' belts form loops (shuffle 1 → 2 → 3 → 1), the belt closing a loop is laid as feedback, and what joins it is dropped (flows.js `joined`: into an Internal Path only), so a try at 1 separation starved (pu-242 3.54 of 6.4). Laid out since ADR 0127.
 - The program ignores productivity and the byproducts of what the Uses add (their plutonium peroxide's sb-phosphate).
 - Recipes three deep from the byproducts, 3000 at most before those not leading to the Goal are dropped.
