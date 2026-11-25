@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v113: Steps' byproducts supplied (implemented)
+
+A step's solid byproduct that another step of the chain makes as its item joins that step's (a Supplied Item, as a Byproduct Use's product does), the step making that much less, instead of leaving by train while a step makes it; not one the step takes itself through the steps before it (a loop), and not where the step would then make none. Py antimony oxide at 60/min: the grade 1 screeners' grade 2 joins the jaw crushers', the grade 3 screeners' grade 4 the secondary crushers': jaw crushers 2678.57 → 233.81/min, ore by train 2678.57 → 233.81/min; the layout builds valid, starving nothing. ADR 0128.
+
 ## v112: Byproducts joined in a loop (implemented)
 
 Where byproducts' belts form a loop (Py's plutonium shuffles: each isotope made by up to three Sub-Blocks and taken by two, in a ring), each maker's is tapped off its own belt into each taker, its share (as few belts as makers and takers less one), instead of joining another's belt that runs on into a loop: no join comes after its takers, and none of those belts is a step of the Dependency Order. A belt every product of which is tapped off runs on to the train, so it can be tapped. Py pu-238 processed, 116² among 32 poles: no layout without starvation → 4.79/min, valid, starving nothing (the same block without the shuffles makes 13.05/min, from 72× the plutonium oxide). ADR 0127.

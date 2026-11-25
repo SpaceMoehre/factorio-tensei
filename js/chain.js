@@ -404,6 +404,20 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
       supplies.push({ from: key, item: p.name, type: p.type, per: makes(key, p.name) / perCraft[at.get(key)] });
     }
   }
+  // A step's solid byproduct that another step makes as its item too (ADR 0128): a Supplied
+  // Item as a Use's, that step making that much less (Py antimony: the grade 1 screeners' grade 2
+  // joins the jaw crushers', the grade 3 screeners' grade 4 the secondary crushers'), not leaving
+  // by train while a step makes it. Not one the step takes itself, through the steps before it
+  // (a loop: Py's sb-dust's grade 4, the crushed antimony it takes made of it).
+  const takesOf = (key, item, seen = new Set()) => ingredientsOf(key).some(({ name }) => steps.has(name) && !stepOf(key).byTrain.has(name)
+    && (name === item || (!seen.has(name) && seen.add(name) && takesOf(name, item, seen))));
+  for (const key of order) {
+    for (const p of productsOf(key)) {
+      if (p.type !== 'item' || p.name === key || !steps.has(p.name) || takenBy(key, p.name) || takesOf(key, p.name)
+        || supplies.some(s => s.from === key && s.item === p.name)) continue;
+      supplies.push({ from: key, item: p.name, type: p.type, per: makes(key, p.name) / perCraft[at.get(key)] });
+    }
+  }
   // Fed-back fluids (ADR 0062): a fluid a step makes besides its item, that a step of the chain
   // makes for the steps taking it (no Goal's, none a Use takes), goes to those steps first, the
   // step making it making only the rest: through a top-up valve into the byproduct's pipe, its

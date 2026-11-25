@@ -192,3 +192,21 @@ test('One Item a Belt: a byproduct\'s own belt snakes through the copies by its 
   };
   assert.ok(stacks.some(snakes), 'no stack of copies whose stone belt snakes through them');
 });
+
+// A step's byproduct another step makes as its item (ADR 0128): Py antimony, the grade 1
+// screeners make grade 2 besides, the grade 3 screeners grade 4 besides. Each joins the step's
+// of it, the step making that much less, none leaving by train. (Not the sb-dust's grade 4: the
+// crushed antimony it takes is made of it, a loop.)
+test('a step\'s byproduct another step makes joins that step\'s, none leaving by train', () => {
+  const goals = [{ item: 'sb-oxide', rate: 60 }];
+  const options = { selections: { 'sb-oxide': { recipe: 'sb-oxide-01', building: '' } }, made: ['sb-grade-04', 'sb-grade-03', 'sb-grade-02', 'sb-grade-01'] };
+  const chain = expandChain(goals, shipped, { ...options, uses: [] });
+  assert.deepEqual(chain.byproducts.filter(b => b.item.startsWith('sb-grade')), []);
+  const supplies = /** @type {any[]} */ (chain.supplies);
+  assert.deepEqual(supplies.map(s => [s.from, s.item]).sort(), [['sb-grade-01', 'sb-grade-02'], ['sb-grade-03', 'sb-grade-04']]);
+  // (Each step making the rest: the ore 9375 → 818/min.)
+  const ore = chain.trainInputs.find(t => t.item === 'antimonium-ore').rate;
+  assert.ok(ore < 1000, `${ore}/min of ore`);
+  const entries = entriesOf(chain);
+  for (const s of supplies) assert.ok(rate(chain, s.item) > 0 && entries.find(e => e.goal.item === s.from).goal.joins?.[s.item] !== undefined, `${s.item} from ${s.from}`);
+});
