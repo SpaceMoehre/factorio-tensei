@@ -18,6 +18,7 @@ import { riding } from '../js/layout/score.js';
 import { setupOf } from '../js/setup.js';
 import { catalog as vanilla, logistics, pyCatalog } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
+import { slowest } from './support/slowest.js';
 
 const catalog = { ...vanilla, poles: { ...vanilla.poles, substation: { name: 'substation', size: { w: 2, h: 2 }, supplyRadius: 9, wireReach: 18 } } };
 const asm2 = (item, rate) => ({ goal: { item, rate }, selection: { recipe: item, building: 'assembling-machine-2' } });
@@ -1031,7 +1032,7 @@ test('Layers weighs a bounded number of ways: Py titanium plate\'s 21 Sub-Blocks
   const { made, selections, uses } = JSON.parse(readFileSync(new URL('./fixtures/titanium-plate-uses.json', import.meta.url), 'utf8'));
   const site = siteOf({ area: { x: 0, y: 0, w: 236, h: 236 }, fixtures: [] }, 4);
   const py = { belt: 'transport-belt', pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', pole: 'medium-electric-pole', inserter: 'fast-inserter', longInserter: 'long-handed-inserter', fuel: 'coal', liquidFuel: 'natural-gas', rightAngle: true, handSize: 1, mixedOutputs: true };
-  const plan = planner([{ item: 'titanium-plate', rate: 60 }], shipped, py, { made, selections, uses, site });
+  const plan = planner([{ item: 'titanium-plate', rate: 60 }], shipped, py, { ...slowest([{ item: 'titanium-plate', rate: 60 }], shipped, { made, selections, uses }), site });
   const started = Date.now();
   const { block, failure } = attempt(plan, 1, { site, budgetMs: 60000, unsorted: true });
   assert.ok(block, failure?.message);

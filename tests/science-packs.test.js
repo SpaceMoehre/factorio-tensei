@@ -6,6 +6,7 @@ import { machineEffect } from '../js/modules.js';
 import { planSubBlocks } from '../js/plan.js';
 import { catalog as base, logistics } from './fixtures/catalog.js';
 
+
 // Science Packs (ADR 0121): the user's packs decide which recipes and buildings the chain is
 // offered. A recipe or building's `unlock`: the sets of packs (indices into sciencePacks)
 // researching it; none, on at start.
@@ -139,9 +140,11 @@ const effectCatalog = {
 
 test('TURD: a chosen choice\'s effect rides on the selection and speeds its machines', () => {
   const goal = [{ item: 'circuit', rate: 60 }];
-  const none = expandChain(goal, effectCatalog, { turds: {} }).entries[0];
+  // (In asm-1, the building the choices affect, ADR 0129.)
+  const selections = { circuit: { recipe: 'circuit-slow', building: 'asm-1' } };
+  const none = expandChain(goal, effectCatalog, { selections, turds: {} }).entries[0];
   assert.deepEqual([none.selection.building, none.selection.bonus], ['asm-1', undefined]);
-  const faster = expandChain(goal, effectCatalog, { turds: { 'asm-upgrade': 'faster' } }).entries[0];
+  const faster = expandChain(goal, effectCatalog, { selections, turds: { 'asm-upgrade': 'faster' } }).entries[0];
   assert.deepEqual(faster.selection.bonus, { speed: 1, consumption: 2 });
   assert.deepEqual(machineEffect(effectCatalog, faster.selection.recipe, 'asm-1', [], faster.selection.bonus), { speed: 2, productivity: 0, consumption: 3 });
   // Half the machines at twice the speed (60/min: 1 a second, a machine 0.5 a second, then 1).

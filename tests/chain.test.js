@@ -211,3 +211,23 @@ test('a Supplied Item more than a lane: on a belt of its own into its takers, no
   const takes = plan[towers].inputs.find(i => i.name === 'redhot-coke').rate;
   assert.ok(Math.abs(into.reduce((sum, e) => sum + e.rate, 0) - takes) < 1e-6);
 });
+
+// A step's building where none is chosen (ADR 0129): the fastest researched; a building chosen
+// for another recipe that runs this one too, before it. Py's copper cable runs in assembling
+// machines 1–3 and automated factories mk01–mk04.
+test('a step\'s building is the fastest researched, else one chosen for another recipe', () => {
+  const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
+  const goals = [{ item: 'small-parts-01', rate: 120 }];
+  const made = ['iron-gear-wheel', 'copper-cable', 'bolts'];
+  const building = (chain, item) => /** @type {any[]} */ (chain.entries).find(e => e.goal.item === item).selection.building;
+  const free = expandChain(goals, shipped, { made });
+  const speeds = item => shipped.buildings[building(free, item)].craftingSpeed;
+  for (const item of ['small-parts-01', ...made]) {
+    const recipe = /** @type {any[]} */ (free.entries).find(e => e.goal.item === item).selection.recipe;
+    const top = Math.max(...Object.values(shipped.buildings).filter(b => b.categories.includes(shipped.recipes[recipe].category)).map(b => b.craftingSpeed));
+    assert.equal(speeds(item), top, `${item}: ${building(free, item)}`);
+  }
+  // (The automated factory mk01 chosen for the small parts: every other step's too.)
+  const chosen = expandChain(goals, shipped, { made, selections: { 'small-parts-01': { recipe: 'small-parts-01', building: 'automated-factory-mk01' } } });
+  for (const item of ['small-parts-01', ...made]) assert.equal(building(chosen, item), 'automated-factory-mk01', item);
+});

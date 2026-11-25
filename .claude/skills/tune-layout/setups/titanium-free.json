@@ -106,38 +106,23 @@
   "sand-casting"
  ],
  "selections": {
-  "water": {
-   "recipe": "offshore-water",
-   "building": ""
-  },
-  "molten-titanium": {
-   "recipe": "molten-titanium-01",
-   "building": ""
-  },
-  "acetone": {
-   "recipe": "propene-to-acetone",
-   "building": ""
-  },
-  "sand": {
-   "recipe": "gravel-to-sand",
-   "building": ""
-  }
+   "water": {"recipe":"offshore-water","building":"offshore-pump"},
+   "molten-titanium": {"recipe":"molten-titanium-01","building":"advanced-foundry-mk01"},
+   "acetone": {"recipe":"propene-to-acetone","building":"wet-scrubber-mk01"},
+   "sand": {"recipe":"gravel-to-sand","building":"jaw-crusher"},
+   "titanium-plate": {"recipe":"hotair-titanium-plate-3","building":"casting-unit-mk01"},
+   "sand-casting": {"recipe":"sand-casting","building":"tar-processing-unit"},
+   "ti-enriched-dust": {"recipe":"ti-enriched-dust","building":"automated-screener-mk01"},
+   "powdered-ti": {"recipe":"powdered-ti","building":"jig-mk01"},
+   "mibc": {"recipe":"mibc","building":"mixer-mk01"},
+   "pressured-air": {"recipe":"pressured-air","building":"vacuum-pump-mk01"},
+   "grade-4-ti": {"recipe":"grade-4-ti","building":"ball-mill-mk01"},
+   "grade-3-ti": {"recipe":"grade-3-ti","building":"automated-screener-mk01"},
+   "grade-1-ti": {"recipe":"grade-1-ti","building":"automated-screener-mk01"}
  },
  "uses": [
-  {
-   "from": "grade-3-ti",
-   "item": "ti-rejects",
-   "recipe": "ti-rejects-recrush"
-  },
-  {
-   "from": "grade-3-ti > ti-rejects",
-   "item": "grade-3-ti",
-   "recipe": "grade-4-ti"
-  },
-  {
-   "from": "powdered-ti",
-   "item": "ti-pulp-03",
-   "recipe": "titanium-pulp-stage-3-void"
-  }
+   {"from":"grade-3-ti","item":"ti-rejects","recipe":"ti-rejects-recrush","building":"secondary-crusher-mk01"},
+   {"from":"grade-3-ti > ti-rejects","item":"grade-3-ti","recipe":"grade-4-ti","building":"ball-mill-mk01"},
+   {"from":"powdered-ti","item":"ti-pulp-03","recipe":"titanium-pulp-stage-3-void","building":"centrifugal-pan-mk01"}
  ]
 }

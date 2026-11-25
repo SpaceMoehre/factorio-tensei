@@ -9,7 +9,7 @@ An item and a target production rate (items/minute), independent of how it is pr
 _Avoid_: recipe rate, item goal (when a recipe is implied)
 
 **Recipe Selection**:
-The recipe (and building tier) currently chosen to make an item of the Production Chain — a Goal or an ingredient made in the block. Re-choosable without changing the Goal itself — each step has exactly one active Recipe Selection at a time. Multiple recipes may be able to produce the same item; picking among them is a separate concern from stating the Goal.
+The recipe (and building tier) currently chosen to make an item of the Production Chain — a Goal or an ingredient made in the block. Re-choosable without changing the Goal itself — each step has exactly one active Recipe Selection at a time. Multiple recipes may be able to produce the same item; picking among them is a separate concern from stating the Goal. A step whose building is not chosen runs in a building the user chose for another recipe that runs it too (the one chosen for most), else in the fastest one the Science Packs research (ADR 0129).
 _Avoid_: baking a fixed recipe into Goal identity
 
 **Production Chain**:

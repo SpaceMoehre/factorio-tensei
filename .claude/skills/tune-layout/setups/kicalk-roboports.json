@@ -117,28 +117,11 @@
   "steam"
  ],
  "selections": {
-  "steam": {
-   "recipe": "electric-boiler-water-to-steam",
-   "building": ""
-  },
-  "kicalk": {
-   "recipe": "kicalk-1",
-   "building": "kicalk-plantation-mk02",
-   "modules": [
-    {
-     "name": "kicalk-mk02",
-     "count": 40
-    }
-   ]
-  },
-  "water": {
-   "recipe": "offshore-water",
-   "building": ""
-  },
-  "kicalk-seeds": {
-   "recipe": "kicalk-seeds",
-   "building": "botanical-nursery-mk02"
-  }
+   "steam": {"recipe":"electric-boiler-water-to-steam","building":"py-electric-boiler"},
+   "kicalk": {"recipe":"kicalk-1","building":"kicalk-plantation-mk02","modules":[{"name":"kicalk-mk02","count":40}]},
+   "water": {"recipe":"offshore-water","building":"offshore-pump"},
+   "kicalk-seeds": {"recipe":"kicalk-seeds","building":"botanical-nursery-mk02"},
+   "clay": {"recipe":"clay","building":"clay-pit-mk01"}
  },
  "uses": [
   {

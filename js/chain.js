@@ -40,6 +40,8 @@ export function recipeOptions(catalog, sciencePacks = null, turds = null) {
   const machinesGranted = new Set();
   const machinesReplaced = new Set();
   const bonus = new Map();
+  // (A building a chosen choice replaces: its TURD building, by name, ADR 0129.)
+  const replacedBy = new Map();
   if (turds) {
     for (const u of catalog.turds ?? []) {
       for (const c of u.choices) {
@@ -52,6 +54,7 @@ export function recipeOptions(catalog, sciencePacks = null, turds = null) {
         for (const [old, now] of Object.entries(c.machines ?? {})) {
           machinesReplaced.add(old);
           machinesGranted.add(now);
+          replacedBy.set(old, now);
         }
         for (const [b, effect] of Object.entries(c.effects ?? {})) {
           const sum = { ...bonus.get(b) };
@@ -104,7 +107,7 @@ export function recipeOptions(catalog, sciencePacks = null, turds = null) {
   // (An offshore pump's water first: nothing simpler makes it.)
   const rank = (item, recipe) => (catalog.recipes[recipe].category === 'offshore' ? -1 : recipe === item ? 0 : catalog.recipes[recipe].products[0].name === item ? 1 : 2);
   for (const [item, recipes] of producers) recipes.sort((a, b) => rank(item, a) - rank(item, b) || a.localeCompare(b));
-  const index = { producers, buildingsFor, consumers, bonus };
+  const index = { producers, buildingsFor, consumers, bonus, replacedBy };
   kept.set(key, index);
   return index;
 }
@@ -192,10 +195,23 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
   const loops = [];
   // The Byproduct Uses in the chain, by key.
   const used = new Map();
-  // A recipe's building and modules: the wanted ones where it takes them.
+  // The buildings the user chose, each with how many recipes it was chosen for.
+  const chosen = new Map();
+  // (One a chosen TURD choice replaces: its TURD building, ADR 0123.)
+  const builtAs = b => index.replacedBy?.get(b) ?? b;
+  for (const s of [...Object.values(selections), ...uses]) {
+    if (s?.building && catalog.buildings[s.building]) chosen.set(builtAs(s.building), (chosen.get(builtAs(s.building)) ?? 0) + 1);
+  }
+  // A recipe's building and modules: the wanted ones where it takes them. Else a building the user
+  // chose for another recipe that runs this one too (the one chosen for most, then the fastest),
+  // else the fastest one researched (ADR 0129: Py's automated factory mk01 chosen for small parts
+  // runs the gears too; none chosen, the mk04 where the packs unlock it).
   const selectionOf = (recipe, wanted) => {
     const buildings = index.buildingsFor.get(recipe);
-    const building = buildings.includes(wanted?.building) ? wanted.building : buildings[0];
+    const mine = buildings.filter(b => chosen.has(b));
+    const building = buildings.includes(wanted?.building) ? wanted.building
+      : wanted?.building && buildings.includes(builtAs(wanted.building)) ? builtAs(wanted.building)
+        : mine.length ? mine.reduce((best, b) => (chosen.get(b) >= chosen.get(best) ? b : best)) : buildings.at(-1);
     // (A TURD choice's effect on the building, ADR 0123.)
     const bonus = index.bonus?.get(building);
     if (!catalog.buildings[building].moduleSlots) return { recipe, building, ...(bonus ? { bonus } : {}) };

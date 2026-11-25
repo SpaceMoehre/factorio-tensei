@@ -89,201 +89,52 @@
   "pressured-air"
  ],
  "selections": {
-  "steam": {
-   "recipe": "electric-boiler-water-to-steam",
-   "building": ""
-  },
-  "copper-cable": {
-   "recipe": "copper-cable",
-   "building": "automated-factory-mk01"
-  },
-  "electronic-circuit": {
-   "recipe": "electronic-circuit-2",
-   "building": ""
-  },
-  "wood": {
-   "recipe": "log-wood",
-   "building": "wpu-mk01"
-  },
-  "fungal-substrate": {
-   "recipe": "fungal-substrate",
-   "building": "automated-factory-mk01"
-  },
-  "yaedols": {
-   "recipe": "yaedols-1",
-   "building": "yaedols-culture-mk01"
-  },
-  "paragen": {
-   "recipe": "cottongut-science-green-seeds",
-   "building": ""
-  },
-  "decalin": {
-   "recipe": "decalin",
-   "building": "chemical-plant-mk01"
-  },
-  "sea-sponge": {
-   "recipe": "sea-sponge-1",
-   "building": ""
-  },
-  "fertilizer": {
-   "recipe": "fertilizer-1",
-   "building": ""
-  },
-  "small-lamp": {
-   "recipe": "small-lamp",
-   "building": "automated-factory-mk01"
-  },
-  "urea": {
-   "recipe": "waste-water-urea",
-   "building": ""
-  },
-  "kicalk": {
-   "recipe": "kicalk-1",
-   "building": "kicalk-plantation-mk01",
-   "modules": [
-    {
-     "name": "kicalk-mk02",
-     "count": 20
-    }
-   ]
-  },
-  "cdna": {
-   "recipe": "cdna",
-   "building": "genlab-mk01",
-   "modules": []
-  },
-  "cocoon": {
-   "recipe": "vrauks-cocoon-2",
-   "building": "rc-mk01",
-   "modules": [
-    {
-     "name": "vrauks-mk02",
-     "count": 2
-    }
-   ]
-  },
-  "moss": {
-   "recipe": "Moss-1",
-   "building": "moss-farm-mk01",
-   "modules": [
-    {
-     "name": "moss",
-     "count": 15
-    }
-   ]
-  },
-  "carbon-dioxide": {
-   "recipe": "moondrop-co2",
-   "building": "moondrop-greenhouse-mk01",
-   "modules": [
-    {
-     "name": "moondrop-mk02",
-     "count": 16
-    }
-   ]
-  },
-  "lab-instrument": {
-   "recipe": "lab-instrument",
-   "building": "automated-factory-mk01"
-  },
-  "saps": {
-   "recipe": "sap-01",
-   "building": "sap-extractor-mk01",
-   "modules": [
-    {
-     "name": "sap-tree-mk02",
-     "count": 2
-    }
-   ]
-  },
-  "nexelit-plate": {
-   "recipe": "nexelit-plate-2",
-   "building": ""
-  },
-  "vrauks": {
-   "recipe": "vrauks-2",
-   "building": "vrauks-paddock-mk01",
-   "modules": [
-    {
-     "name": "vrauks-mk02",
-     "count": 10
-    }
-   ]
-  },
-  "wood-seeds": {
-   "recipe": "wood-seeds",
-   "building": "automated-factory-mk01"
-  },
-  "vrauks-food-01": {
-   "recipe": "vrauks-food-01",
-   "building": "automated-factory-mk01"
-  },
-  "small-parts-01": {
-   "recipe": "small-parts-01",
-   "building": "automated-factory-mk01"
-  },
-  "bolts": {
-   "recipe": "bolts",
-   "building": "automated-factory-mk01"
-  },
-  "iron-stick": {
-   "recipe": "iron-stick",
-   "building": "automated-factory-mk01"
-  },
-  "iron-gear-wheel": {
-   "recipe": "iron-gear-wheel",
-   "building": "automated-factory-mk01"
-  },
-  "molten-iron": {
-   "recipe": "molten-iron-06",
-   "building": ""
-  },
-  "unslimed-iron": {
-   "recipe": "unslimed-iron",
-   "building": ""
-  },
-  "gasoline": {
-   "recipe": "gasoline-cellulose",
-   "building": ""
-  },
-  "log": {
-   "recipe": "log5",
-   "building": "fwf-mk01",
-   "modules": [
-    {
-     "name": "tree-mk02",
-     "count": 10
-    }
-   ]
-  },
-  "cellulose": {
-   "recipe": "cellulose-02",
-   "building": ""
-  },
-  "sodium-hydroxide": {
-   "recipe": "py-sodium-hydroxide",
-   "building": "chemical-plant-mk01"
-  },
-  "molten-glass": {
-   "recipe": "glass-3",
-   "building": ""
-  },
-  "sand": {
-   "recipe": "soil-washing",
-   "building": ""
-  },
-  "seaweed": {
-   "recipe": "seaweed-4",
-   "building": ""
-  },
-  "nitrogen": {
-   "recipe": "nitrogen",
-   "building": ""
-  },
-  "purest-nitrogen-gas": {
-   "recipe": "purest-nitrogen-gas",
-   "building": ""
-  }
+   "steam": {"recipe":"electric-boiler-water-to-steam","building":""},
+   "copper-cable": {"recipe":"copper-cable","building":"automated-factory-mk01"},
+   "electronic-circuit": {"recipe":"electronic-circuit-2","building":""},
+   "wood": {"recipe":"log-wood","building":"wpu-mk01"},
+   "fungal-substrate": {"recipe":"fungal-substrate","building":"automated-factory-mk01"},
+   "yaedols": {"recipe":"yaedols-1","building":"yaedols-culture-mk01"},
+   "paragen": {"recipe":"cottongut-science-green-seeds","building":""},
+   "decalin": {"recipe":"decalin","building":"chemical-plant-mk01"},
+   "sea-sponge": {"recipe":"sea-sponge-1","building":""},
+   "fertilizer": {"recipe":"fertilizer-1","building":""},
+   "small-lamp": {"recipe":"small-lamp","building":"automated-factory-mk01"},
+   "urea": {"recipe":"waste-water-urea","building":""},
+   "kicalk": {"recipe":"kicalk-1","building":"kicalk-plantation-mk01","modules":[{"name":"kicalk-mk02","count":20}]},
+   "cdna": {"recipe":"cdna","building":"genlab-mk01","modules":[]},
+   "cocoon": {"recipe":"vrauks-cocoon-2","building":"rc-mk01","modules":[{"name":"vrauks-mk02","count":2}]},
+   "moss": {"recipe":"Moss-1","building":"moss-farm-mk01","modules":[{"name":"moss","count":15}]},
+   "carbon-dioxide": {"recipe":"moondrop-co2","building":"moondrop-greenhouse-mk01","modules":[{"name":"moondrop-mk02","count":16}]},
+   "lab-instrument": {"recipe":"lab-instrument","building":"automated-factory-mk01"},
+   "saps": {"recipe":"sap-01","building":"sap-extractor-mk01","modules":[{"name":"sap-tree-mk02","count":2}]},
+   "nexelit-plate": {"recipe":"nexelit-plate-2","building":""},
+   "vrauks": {"recipe":"vrauks-2","building":"vrauks-paddock-mk01","modules":[{"name":"vrauks-mk02","count":10}]},
+   "wood-seeds": {"recipe":"wood-seeds","building":"automated-factory-mk01"},
+   "vrauks-food-01": {"recipe":"vrauks-food-01","building":"automated-factory-mk01"},
+   "small-parts-01": {"recipe":"small-parts-01","building":"automated-factory-mk01"},
+   "bolts": {"recipe":"bolts","building":"automated-factory-mk01"},
+   "iron-stick": {"recipe":"iron-stick","building":"automated-factory-mk01"},
+   "iron-gear-wheel": {"recipe":"iron-gear-wheel","building":"automated-factory-mk01"},
+   "molten-iron": {"recipe":"molten-iron-06","building":""},
+   "unslimed-iron": {"recipe":"unslimed-iron","building":""},
+   "gasoline": {"recipe":"gasoline-cellulose","building":""},
+   "log": {"recipe":"log5","building":"fwf-mk01","modules":[{"name":"tree-mk02","count":10}]},
+   "cellulose": {"recipe":"cellulose-02","building":""},
+   "sodium-hydroxide": {"recipe":"py-sodium-hydroxide","building":"chemical-plant-mk01"},
+   "molten-glass": {"recipe":"glass-3","building":""},
+   "sand": {"recipe":"soil-washing","building":""},
+   "seaweed": {"recipe":"seaweed-4","building":""},
+   "nitrogen": {"recipe":"nitrogen","building":"carbon-filter"},
+   "purest-nitrogen-gas": {"recipe":"purest-nitrogen-gas","building":"distilator"},
+   "molybdenum-oxide": {"recipe":"molybdenum-oxide","building":"hpf"},
+   "molybdenum-sulfide": {"recipe":"molybdenum-filtration","building":"carbon-filter"},
+   "molybdenum-pulp": {"recipe":"molybdenum-pulp","building":"thickener-mk01"},
+   "molybdenum-concentrate": {"recipe":"molybdenum-concentrate","building":"hydrocyclone-mk01"},
+   "pressured-air": {"recipe":"pressured-air","building":"vacuum-pump-mk01"},
+   "molybdenite-pulp": {"recipe":"molybdenite-pulp","building":"agitator-mk01"},
+   "molybdenite-dust": {"recipe":"milling-molybdenite","building":"ball-mill-mk01"},
+   "crushed-molybdenite": {"recipe":"crushing-molybdenite","building":"jaw-crusher"}
  },
  "city": {
   "on": true,

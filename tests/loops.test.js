@@ -8,6 +8,7 @@ import { simulate } from '../js/sim.js';
 import { encodeBlueprint } from '../js/blueprint.js';
 import { catalog, logistics } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
+import { slowest } from './support/slowest.js';
 
 // A Recipe Loop in assembling machines: a takes one b and an iron plate, b takes one a for every
 // two b. For 30 a a minute the block makes 60 and feeds 30 back into b.
@@ -73,7 +74,7 @@ test('Py hot air: coke oven gas round its loop of temperatures, every stone bric
   const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
   const py = { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', liquidFuel: 'methane', handSize: 1 };
   const made = ['pressured-air', 'warmer-stone-brick', 'warm-stone-brick', 'coke-oven-gas'];
-  const chain = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, { made, selections: { 'hot-air': { recipe: 'warmer-air-2' } }, logistics: py });
+  const chain = expandChain([{ item: 'hot-air', rate: 6000 }], shipped, slowest([{ item: 'hot-air', rate: 6000 }], shipped, { made, selections: { 'hot-air': { recipe: 'warmer-air-2' } }, logistics: py }));
   const step = recipe => chain.entries.findIndex(e => e.selection.recipe === recipe);
   const [warmer, warm, reheat] = ['warmer-stone-brick-1', 'warm-stone-brick-1', 'reheat-coke-gas'].map(step);
   assert.equal(chain.entries[warm].goal.from['coke-oven-gas'], warmer);

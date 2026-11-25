@@ -5,6 +5,7 @@ import { expandChain } from '../js/chain.js';
 import { context, designStep, designOf, random } from '../js/design.js';
 import { prepare } from '../js/layout/compose.js';
 import { logistics as base } from './fixtures/catalog.js';
+import { slowest } from './support/slowest.js';
 
 const pyCatalog = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, belt: 'transport-belt', inserter: 'fast-inserter', longInserter: 'long-handed-inserter', pole: 'medium-electric-pole', handSize: 2 };
@@ -15,7 +16,7 @@ const made = ['mosfet', 'resistor2', 'capacitor2', 'diode', 'inductor2', 'microc
 
 test('machines no whole module of routes repeat a module of one, the copies abreast', () => {
   for (const [rate, count] of [[120, 2], [240, 4]]) {
-    const chain = expandChain([{ item: 'advanced-circuit', rate }], pyCatalog, { made });
+    const chain = expandChain([{ item: 'advanced-circuit', rate }], pyCatalog, slowest([{ item: 'advanced-circuit', rate }], pyCatalog, { made }));
     const ctx = context(chain.entries, pyCatalog, logistics);
     const i = ctx.plan.findIndex(sb => sb.item === 'advanced-circuit');
     assert.equal(ctx.plan[i].count, count);

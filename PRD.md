@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v114: Buildings by default (implemented)
+
+A step whose building is not chosen runs in a building the user chose for another recipe that runs it too (the one chosen for the most recipes, then the fastest), else in the fastest building the chosen Science Packs research, not the slowest. Py: the automated factory mk01 chosen for the small parts makes the gears, cable and bolts too; with every pack, a Py step runs in its mk04. The suite's setups and the tests' fixtures keep the buildings they were laid out with (written into their selections). ADR 0129.
+
 ## v113: Steps' byproducts supplied (implemented)
 
 A step's solid byproduct that another step of the chain makes as its item joins that step's (a Supplied Item, as a Byproduct Use's product does), the step making that much less, instead of leaving by train while a step makes it (one the step takes itself through the steps before it tapped off into those taking it, a loop), not where the step would then make none. Py antimony oxide at 60/min: the grade 1 screeners' grade 2 joins the jaw crushers', the grade 3 screeners' and the sb-dust's grade 4 the secondary crushers': jaw crushers 2678.57 → 222.12/min, ore by train 2678.57 → 222.12/min, no grade by train; the layout builds valid, starving nothing. Py advanced circuits in 116²: 44.96 → 60/min. ADR 0128.

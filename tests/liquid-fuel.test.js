@@ -11,6 +11,7 @@ import { expandChain } from '../js/chain.js';
 import { context, designStep, designOf, random } from '../js/design.js';
 import { turnCopies } from '../js/layout/edit.js';
 import { scoreOf } from '../js/layout/score.js';
+import { slowest } from './support/slowest.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe', liquidFuel: 'natural-gas' };
@@ -133,7 +134,7 @@ test('byproduct pipes of one fluid join: blood from two Sub-Blocks to the east e
 // byproducts joining one belt where it has room. Before, the route ran as one belt and every
 // design starved.
 test('a byproduct on more than one belt: each of the Internal Path\'s belts sorts it out, nothing starves', () => {
-  const entries = expandChain([{ item: 'molybdenite-pulp', rate: 9000 }], shipped, { made: ['molybdenite-dust', 'crushed-molybdenite'], selections: {} }).entries;
+  const entries = expandChain([{ item: 'molybdenite-pulp', rate: 9000 }], shipped, slowest([{ item: 'molybdenite-pulp', rate: 9000 }], shipped, { made: ['molybdenite-dust', 'crushed-molybdenite'], selections: {} })).entries;
   let best = null;
   const run = search(entries, shipped, { ...mixed, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 }, { seed: 1, maxCandidates: 4 });
   for (let step = run.next(); !step.done; step = run.next()) best = step.value;
@@ -158,7 +159,7 @@ test('a byproduct on more than one belt: each of the Internal Path\'s belts sort
 // join them, starves nothing.
 test('an Internal Path cut unevenly at both ends: its design counts on a splitter joining its belts', () => {
   const made = ['molybdenum-sulfide', 'molybdenum-pulp', 'molybdenum-concentrate', 'nitrogen', 'purest-nitrogen-gas', 'pressured-air', 'molybdenite-pulp', 'molybdenite-dust', 'crushed-molybdenite'];
-  const entries = expandChain([{ item: 'molybdenum-oxide', rate: 400 }], shipped, { made, selections: {} }).entries;
+  const entries = expandChain([{ item: 'molybdenum-oxide', rate: 400 }], shipped, slowest([{ item: 'molybdenum-oxide', rate: 400 }], shipped, { made, selections: {} })).entries;
   const ctx = context(entries, shipped, { ...logistics, pipe: 'niobium-pipe-to-ground', plainPipe: 'niobium-pipe', handSize: 1 });
   const i = ctx.plan.findIndex(sb => sb.recipe === 'molybdenum-concentrate');
   assert.equal(ctx.plan[i].count, 10);

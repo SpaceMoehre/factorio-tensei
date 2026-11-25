@@ -72,7 +72,8 @@
     "benzene": {"recipe":"btx-to-benzene","building":""},
     "coke": {"recipe":"quench-redcoke","building":""},
     "hot-air": {"recipe":"warmer-air-2","building":""},
-    "trits": {"recipe":"trits-1","building":""}
+    "trits": {"recipe":"trits-1","building":"trits-reef-mk01"},
+    "trits-pup": {"recipe":"trits-cub-1","building":"rc-mk01"}
   },
   "city": {
     "on": true,
@@ -88,7 +89,7 @@
     {"item":"pyrite","recipe":"p2s5"},
     {"item":"biomass","recipe":"flue-gas-1"},
     {"item":"coal","recipe":"redhot-coke"},
-    {"item":"waste-water","recipe":"waste-water-urea"}
+    {"item":"waste-water","recipe":"waste-water-urea","building":"evaporator"}
   ],
   "exports": [],
   "voids": []

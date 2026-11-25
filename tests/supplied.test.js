@@ -5,6 +5,7 @@ import { search } from '../js/search.js';
 import { expandChain } from '../js/chain.js';
 import { logistics as base } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
+import { slowest } from './support/slowest.js';
 
 const shipped = JSON.parse(readFileSync(new URL('../data/catalog.json', import.meta.url), 'utf8'));
 const logistics = { ...base, plainPipe: 'pipe' };
@@ -151,7 +152,7 @@ test('One Item a Belt: each product its own belt, the BOFs taking coal off two p
   const made = ['redhot-coke', 'coal', 'coarse-coal', 'crushed-coal', 'pressured-air', 'steam', 'water'];
   const selections = { coke: { recipe: 'quench-redcoke' }, steam: { recipe: 'electric-boiler-water-to-steam' }, water: { recipe: 'offshore-water' } };
   const uses = [{ item: 'coal', recipe: 'redhot-coke' }];
-  const { entries } = expandChain([{ item: 'coke', rate: 1440 }], shipped, { made, selections, uses, logistics: coke });
+  const { entries } = expandChain([{ item: 'coke', rate: 1440 }], shipped, slowest([{ item: 'coke', rate: 1440 }], shipped, { made, selections, uses, logistics: coke }));
   const ctx = context(entries, shipped, coke);
   const use = ctx.plan.findIndex(sb => sb.use);
   const coal = ctx.routes.filter(r => r.kind === 'belt' && r.consumers.includes(use) && r.items.some(i => i.item === 'coal'));

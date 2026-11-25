@@ -8,7 +8,7 @@
   },
   "made": ["pcb1","vacuum","vacuum-tube","graphite","inductor1","ceramic","clay","capacitor1","resistor1","yaedols","fungal-substrate","yaedols-spores","cytostatics","artificial-blood","flutec-pp6","decalin","sea-sponge","soil","sea-sponge-sprouts","kicalk-seeds","retrovirus","cocoon","lab-instrument","equipment-chassi","bio-sample","bio-container","plasmids","polybutadiene","carbon-black","latex","latex-slab","creamy-latex","sodium-alginate","clean-nexelit","vrauks-food-01","wood-seeds","agar","saps","iron-gear-wheel","copper-cable","bolts","iron-stick","unslimed-iron","iron-slime","wood-seedling","moss","wood","lime","pure-sand","powdered-quartz","sand","molybdenum-sulfide","molybdenum-pulp","molybdenum-concentrate","purest-nitrogen-gas","molybdenite-pulp","molybdenite-dust","crushed-molybdenite","pressured-air","moondrop-seeds","boric-acid","diborane","casein","casein-pulp-02","casein-pulp-01","casein-mixture","slacked-lime","tpa","liquid-nitrogen","nitrogen","water","molten-titanium","ti-enriched-dust","powdered-ti","grade-4-ti","grade-3-ti","grade-1-ti","mibc","acetone","sand-casting","molten-stainless-steel","fecr-alloy","carbon-sulfide","propene","ammonia","fiber","carbon-dioxide","steam","blood-meal","phenol","lignin","fiberboard","treated-wood","crmoni","nbalti","ptcda","navens-spore","fungal-substrate-02","sb-pulp-01","sb-dust","lead-acetate","sb-crushed","acetic-acid","hydrogen-peroxide","anthraquinone","ethylene-glycol","eg-si","pure-trichlorosilane","p2s5","fatty-acids","middle-processed-lard","trichlorosilane","vanadium-oxide","vpulp-precip","vpulp2","vpulp1","blue-liquor","vanabins"],
   "selections": {
-    "steam": {"recipe":"electric-boiler-water-to-steam","building":""},
+    "steam": {"recipe":"electric-boiler-water-to-steam","building":"py-electric-boiler"},
     "copper-cable": {"recipe":"copper-cable","building":"automated-factory-mk01"},
     "electronic-circuit": {"recipe":"electronic-circuit-2","building":""},
     "wood": {"recipe":"log-wood","building":"wpu-mk01"},
@@ -48,10 +48,10 @@
     "purest-nitrogen-gas": {"recipe":"purest-nitrogen-gas","building":""},
     "moondrop": {"recipe":"moondrop-1","building":"moondrop-greenhouse-mk01","modules":[{"name":"moondrop-mk02","count":16}]},
     "hydrogen-chloride": {"recipe":"boric-acid-hcl","building":""},
-    "ammonia": {"recipe":"ammonia-urea","building":""},
+    "ammonia": {"recipe":"ammonia-urea","building":"chemical-plant-mk01"},
     "plastic-bar": {"recipe":"plastic-from-casein","building":""},
     "casein-mixture": {"recipe":"casein-mixture-02","building":""},
-    "water": {"recipe":"offshore-water","building":""},
+    "water": {"recipe":"offshore-water","building":"offshore-pump"},
     "molten-titanium": {"recipe":"molten-titanium-01","building":""},
     "acetone": {"recipe":"propene-to-acetone","building":""},
     "stainless-steel": {"recipe":"hotair-stainless-steel","building":""},
@@ -63,9 +63,13 @@
     "navens": {"recipe":"navens-1","building":""},
     "fatty-acids": {"recipe":"skin-fatty-acids","building":""},
     "silicon-wafer": {"recipe":"silicon-wafer","building":"automated-factory-mk01"},
-    "anthraquinone": {"recipe":"anthraquinone-from-naphthalene","building":""},
+    "anthraquinone": {"recipe":"anthraquinone-from-naphthalene","building":"reformer-mk01"},
     "vpulp-precip": {"recipe":"vpulp-precip","building":""},
-    "vanadium-oxide": {"recipe":"vpulp3","building":""}
+    "vanadium-oxide": {"recipe":"vpulp3","building":"agitator-mk01"},
+    "vpulp2": {"recipe":"vpulp2","building":"agitator-mk01"},
+    "vpulp1": {"recipe":"vpulp1","building":"agitator-mk01"},
+    "blue-liquor": {"recipe":"blue-liquor","building":"thickener-mk01"},
+    "vanabins": {"recipe":"vanabins","building":"centrifuge-mk01"}
   },
   "city": {
     "on": true,
@@ -78,7 +82,7 @@
     {"from":"powdered-ti","item":"ti-pulp-03","recipe":"titanium-pulp-stage-3-void"},
     {"item":"black-liquor","recipe":"black-liquor"},
     {"item":"sb-58-conc","recipe":"sb-oxide-02a"},
-    {"item":"vpulp3","recipe":"vanadium-pulp-3-void"}
+    {"item":"vpulp3","recipe":"vanadium-pulp-3-void","building":"agitator-mk01"}
   ],
   "result": {
     "status": "Done after 143 layouts. Highest rate that fits: 3937.5/min (2 machines). 9937.5/min does not fit: vanadium-pulp-3-void: vpulp3: connection at 6,3 is blocked. Best: 34 machines, 110×98 tiles. No starvation."
