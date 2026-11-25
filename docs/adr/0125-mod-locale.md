@@ -17,8 +17,10 @@ What changed:
 
 Py (Factorio 2.0 dump, nine Py mods' locale, 7,370 keys): 3,299 names, 6,843 recipe names, 242 TURD names; 2,872 of the 3,519 items and fluids recipes make are named; of the 647 left, 630 are base's (some with Py's icons) and 17 other mods' (AAI loaders, inserter cranes, safefill), whose sources were not read. The catalog 3.81 → 4.26 MB. Layouts are the same: names are not read by the search.
 
+**The game's own locale dump, after** (the user ran `factorio --dump-prototype-locale`: a `<type>-locale.json` each, `{ names, descriptions }`, beside the data dump): build-catalog.mjs reads those first and prototype-locale.json (the mods' made) only for what they lack, Py's TURD choices (not technologies in the game). The mods' names had matched the game's on 2,605 of 2,607 items (two wagons renamed since) and differed on 222 recipe names (the source being Py's current master, the game's 2.0 versions); the game's win. Item groups' names (item-group-locale.json) are the chooser's tabs' (`groups[].title`: "Py Alien Life", not "Py alienlife"), kept apart from the items' names. Every one of the 3,519 items and fluids recipes make is now named (base's too: stone-wall "Wall", small-lamp "Lamp"): 4,448 names; the catalog 4.37 MB.
+
 Tests: locale files to names (a later mod's key winning, a localised name joined and with parameters, an item named by what it places, a recipe by its main product, a technology's level; mod-locale.test.js); technologies' names kept for TURD upgrades and choices only (catalog-builder.test.js).
 
 Still:
-- Base's locale is not in wube's factorio-data: base items keep names made of their prototype names ("Stone wall", the game's "Wall"). A real `--dump-prototype-locale` beside the data dump replaces all of this.
-- The Py sources are their current master (pyalienlife 3.1.9), not the dump's exact versions.
+- TURD choices' names come from Py's current master (pyalienlife 3.1.9), not the game's 2.0 versions (3.0.67).
+- The game's dump is in script-output/ (git-ignored); a catalog rebuilt without it falls back to the mods' names, and without either to prototype names.

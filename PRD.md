@@ -87,7 +87,7 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 
 ## v110: The game's names from the mods' locale (implemented)
 
-Items, fluids, buildings and recipes are named as the game names them, not made of their prototype names: Py's reo is "Rare earth oxides", not "Reo"; the TURD upgrades and choices by their technologies' names ("Intentional colony collapse", "C.A.G.S."). With no `factorio --dump-prototype-locale` at hand, scripts/mod-locale.mjs makes the same names from the mods' English locale files and the dump's `localised_name`s. Base's locale is not public (wube's factorio-data leaves it out): base prototypes keep names made of their prototype names. ADR 0125.
+Items, fluids, buildings and recipes are named as the game names them, not made of their prototype names: Py's reo is "Rare earth oxides", not "Reo"; the TURD upgrades and choices by their technologies' names ("Intentional colony collapse", "C.A.G.S."). With no `factorio --dump-prototype-locale` at hand, scripts/mod-locale.mjs makes the same names from the mods' English locale files and the dump's `localised_name`s. The game's own locale dump (`<type>-locale.json` beside the data dump) comes first where present, the mods' names filling what it lacks (TURD choices): every item and fluid a recipe makes is named. ADR 0125.
 
 ## v109: The Research dialog (implemented)
 

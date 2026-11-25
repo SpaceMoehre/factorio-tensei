@@ -415,7 +415,7 @@ function renderGoals() {
 // menu's tabs).
 function goalGroups() {
   const made = name => index.producers.has(name);
-  const groups = (catalog.groups ?? []).map(g => ({ name: g.name, icon: g.icon, items: g.items.filter(made) })).filter(g => g.items.length);
+  const groups = (catalog.groups ?? []).map(g => ({ name: g.name, title: g.title, icon: g.icon, items: g.items.filter(made) })).filter(g => g.items.length);
   const grouped = new Set(groups.flatMap(g => g.items));
   const rest = [...index.producers.keys()].filter(name => !grouped.has(name)).sort();
   return rest.length ? [...groups, { name: 'other', icon: null, items: rest }] : groups;
@@ -836,8 +836,9 @@ function openChooser({ title, groups, kind = 'grid', current, pick }) {
   $('chooser-filter').value = '';
   $('chooser-tabs').hidden = groups.length < 2;
   $('chooser-tabs').replaceChildren(...groups.map((g, i) => {
-    const b = el('button', { type: 'button', className: 'tab', role: 'tab', title: label(g.name), ariaLabel: label(g.name) },
-      g.icon ? el('img', { src: `sprites/${g.icon}`, alt: '' }) : el('span', { textContent: label(g.name) }));
+    const name = g.title ?? label(g.name);
+    const b = el('button', { type: 'button', className: 'tab', role: 'tab', title: name, ariaLabel: name },
+      g.icon ? el('img', { src: `sprites/${g.icon}`, alt: '' }) : el('span', { textContent: name }));
     b.addEventListener('click', () => {
       choosing.tab = i;
       $('chooser-filter').value = '';

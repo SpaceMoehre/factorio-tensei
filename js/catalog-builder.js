@@ -132,11 +132,12 @@ export function buildCatalog(raw, locale = null, turds = null) {
   const temperatures = Object.fromEntries(Object.values(raw.fluid ?? {}).filter(p => !p.hidden).map(p => [p.name, p.default_temperature ?? 15]));
   // A fluid's heat capacity (J a unit and degree) where it is not the game's 1 kJ.
   const heatCapacities = Object.fromEntries(Object.values(raw.fluid ?? {}).filter(p => !p.hidden && p.heat_capacity && energy(p.heat_capacity) !== 1000).map(p => [p.name, energy(p.heat_capacity)]));
-  // Technologies' names kept only for the TURD upgrades and choices the Research dialog shows (ADR 0125).
+  // Technologies' names kept only for the TURD upgrades and choices the Research dialog shows, item
+  // groups' as their `title` (ADR 0125).
   const upgrades = turds ? turdsOf(turds, recipes, buildings, needOf, raw) : null;
-  const { technologyNames, ...named } = locale ? localeNames(raw, locale) : {};
+  const { technologyNames, groupNames, ...named } = locale ? localeNames(raw, locale) : {};
   const turdNames = upgrades && technologyNames && Object.fromEntries(upgrades.flatMap(u => [u.name, ...u.choices.map(c => c.name)]).filter(n => technologyNames[n]).map(n => [n, technologyNames[n]]));
-  return { recipes, sciencePacks, ...(upgrades ? { turds: upgrades } : {}), buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, heatCapacities, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw), art: art(raw), footprints: footprints(raw), ...named, ...(turdNames && Object.keys(turdNames).length ? { technologyNames: turdNames } : {}) };
+  return { recipes, sciencePacks, ...(upgrades ? { turds: upgrades } : {}), buildings, poles, belts, pipes, plainPipes, inserters, fuels, fluidFuels, temperatures, heatCapacities, modules, valves: valves(raw), voids: voids(raw, buildings), signals: virtualSignals(raw), icons: spriteIcons(raw), tiers: tiers(raw), groups: itemGroups(raw).map(g => (groupNames?.[g.name] ? { ...g, title: groupNames[g.name] } : g)), art: art(raw), footprints: footprints(raw), ...named, ...(turdNames && Object.keys(turdNames).length ? { technologyNames: turdNames } : {}) };
 }
 
 // The names the game shows, from its locale dump: `names` (items and fluids first, then buildings
@@ -165,12 +166,12 @@ export function localeNames(raw, locale) {
     else if (key.includes('.')) flat({ [key]: value });
   }
   const itemTypes = Object.keys(raw).filter(t => Object.values(raw[t] ?? {}).some(p => p?.stack_size !== undefined));
-  const order = ['fluid', ...itemTypes, 'item', 'any', ...Object.keys(byType).filter(t => t !== 'recipe' && t !== 'technology' && !itemTypes.includes(t))];
+  const order = ['fluid', ...itemTypes, 'item', 'any', ...Object.keys(byType).filter(t => t !== 'recipe' && t !== 'technology' && t !== 'item-group' && !itemTypes.includes(t))];
   const names = {};
   for (const type of new Set(order)) for (const [name, text] of Object.entries(byType[type] ?? {})) names[name] ??= text;
   const recipeNames = Object.fromEntries(Object.entries(byType.recipe ?? {}).filter(([name, text]) => names[name] !== text));
   if (!Object.keys(names).length && !Object.keys(recipeNames).length) throw new Error('the locale dump names nothing in a shape this reads');
-  return { names, recipeNames, ...(byType.technology ? { technologyNames: byType.technology } : {}) };
+  return { names, recipeNames, ...(byType.technology ? { technologyNames: byType.technology } : {}), ...(byType['item-group'] ? { groupNames: byType['item-group'] } : {}) };
 }
 
 // Valves one can build (Py's overflow and underflow valves; base 2.0's are hidden): { [name]:

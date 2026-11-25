@@ -37,4 +37,8 @@ test('mod locale: each prototype named as the game names it', () => {
   const named = localeNames(raw, locale);
   assert.equal(named.names.reo, 'Rare earth oxides');
   assert.deepEqual(named.recipeNames, { 'syrup-2': 'Sweet syrup', mixed: 'Sweet syrup from Rare earth oxides' });
+  // The game's own dump: item groups' names apart (the chooser's tabs), not among the items'.
+  const game = localeNames(raw, { ...locale, 'item-group': { names: { 'py-alienlife': 'Py Alien Life' }, descriptions: {} } });
+  assert.deepEqual(game.groupNames, { 'py-alienlife': 'Py Alien Life' });
+  assert.equal(game.names['py-alienlife'], undefined);
 });
