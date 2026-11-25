@@ -149,60 +149,121 @@ $('handSize').addEventListener('change', () => {
   $('handSize').value = String(state.logistics.handSize);
   save();
 });
-// Science Packs (ADR 0121): the recipes and buildings offered are those researched with the packs
-// ticked; every one ticked, all (packs a catalog adds later too).
-{
+// Research (ADR 0121, 0122): a dialog of the Science Packs the user has and their TURD upgrades;
+// the recipes and buildings offered are those they unlock. Every pack ticked saves none (packs a
+// catalog adds later count too); TURD upgrades are chosen only once the user says they choose them.
+const researchTab = { at: 'packs' };
+const EFFECT_NAMES = { speed: 'speed', productivity: 'productivity', consumption: 'power' };
+// The packs held, as indices into the catalog's (null: every one).
+const ownedPacks = () => state.sciencePacks && new Set((catalog.sciencePacks ?? []).flatMap((p, i) => (state.sciencePacks.includes(p) ? [i] : [])));
+// What a TURD choice does, in a few words: its effect on the buildings it affects (the first one's
+// where tiers differ), the buildings it replaces, the recipes it unlocks and replaces.
+function choiceNote(c) {
+  const parts = [];
+  const effects = Object.values(c.effects ?? {});
+  if (effects.length) {
+    const first = effects[0];
+    const tiered = effects.some(e => JSON.stringify(e) !== JSON.stringify(first));
+    parts.push(Object.entries(first).map(([k, v]) => `${EFFECT_NAMES[k] ?? k} ${v > 0 ? '+' : ''}${Math.round(v * 100)}%`).join(', ') + (tiered ? ' (mk01)' : ''));
+  }
+  const machines = Object.keys(c.machines ?? {}).length;
+  if (machines) parts.push(`TURD ${machines === 1 ? 'machine' : 'machines'} for ${label(Object.keys(c.machines)[0]).replace(/ mk0?\d+$/i, '').toLowerCase()}`);
+  const replaced = Object.keys(c.replace).length;
+  if (c.unlock.length) parts.push(`${c.unlock.length} ${c.unlock.length === 1 ? 'recipe' : 'recipes'}`);
+  if (replaced) parts.push(`${replaced} ${replaced === 1 ? 'recipe' : 'recipes'} replaced`);
+  return parts.join(' · ') || 'no recipes or effects here';
+}
+function renderResearch() {
   const packs = catalog.sciencePacks ?? [];
-  const boxes = packs.map(name => {
-    const box = el('input', { type: 'checkbox', checked: !state.sciencePacks || state.sciencePacks.includes(name) });
-    box.dataset.pack = name;
-    return box;
-  });
-  $('packs').prepend(...packs.map((name, i) => el('label', { className: 'check', title: label(name) }, boxes[i], iconOf(name))));
-  $('packs').hidden = $('packs-label').hidden = !packs.length;
-  for (const box of boxes) {
-    box.addEventListener('change', () => {
-      const ticked = boxes.filter(b => b.checked).map(b => b.dataset.pack);
+  const owned = ownedPacks();
+  const has = i => !owned || owned.has(i);
+  const turds = catalog.turds ?? [];
+  const researched = u => !owned || u.unlock.some(set => set.every(i => owned.has(i)));
+  const chosen = turds.filter(u => state.turds?.[u.name] && researched(u)).length;
+  const held = owned ? owned.size : packs.length;
+  $('research-open').hidden = !packs.length;
+  $('research-count').textContent = `${held}/${packs.length}${state.turds ? ` · ${chosen} TURD` : ''}`;
+  $('research-packs-count').textContent = `${held}/${packs.length}`;
+  $('research-turds-count').textContent = state.turds ? String(chosen) : '';
+  $('research-tabs').hidden = !turds.length;
+  for (const tab of $('research-tabs').children) tab.setAttribute('aria-selected', String(tab.dataset.tab === researchTab.at));
+  $('research-packs').hidden = researchTab.at !== 'packs';
+  $('research-turds').hidden = researchTab.at !== 'turds';
+  // The packs, in the game's order, each a toggle.
+  $('pack-grid').replaceChildren(...packs.map((name, i) => {
+    const tile = el('button', { type: 'button', className: 'pack', title: name }, iconOf(name), el('span', { textContent: label(name) }));
+    tile.setAttribute('aria-pressed', String(has(i)));
+    tile.addEventListener('click', () => {
+      const ticked = packs.filter((p, k) => (k === i ? !has(k) : has(k)));
       if (ticked.length === packs.length) delete state.sciencePacks;
       else state.sciencePacks = ticked;
       offer();
     });
-  }
+    return tile;
+  }));
+  // The TURD upgrades: those the packs research first, each with its choices; the others after,
+  // with the packs they still need.
+  $('turds-on').checked = Boolean(state.turds);
+  $('turds-hint').textContent = state.turds
+    ? 'Only the recipes of the choices made are offered; the recipes and machines a choice replaces no longer are, and the machines it affects run with its effect. A choice of an upgrade your packs do not research counts for nothing.'
+    : 'Off: TURD recipes are offered with every pack ticked (all of them), and none otherwise.';
+  $('turd-body').hidden = !state.turds;
+  if (!state.turds) return;
+  const query = $('turd-filter').value.trim().toLowerCase();
+  const matches = u => !query || [u.name, ...u.choices.map(c => c.name)].some(n => label(n).toLowerCase().includes(query) || n.includes(query));
+  const card = u => {
+    const open = researched(u);
+    const needs = open ? [] : (u.unlock[0] ?? []).filter(i => !has(i)).map(i => packs[i]);
+    const pick = name => {
+      state.turds ??= {};
+      if (name) state.turds[u.name] = name;
+      else delete state.turds[u.name];
+      offer();
+    };
+    const button = (name, text, note) => {
+      const b = el('button', { type: 'button', className: 'turd-choice', disabled: !open }, el('span', { textContent: text }), el('small', { textContent: note }));
+      b.setAttribute('aria-pressed', String((state.turds?.[u.name] ?? '') === name));
+      b.addEventListener('click', () => pick(name));
+      return b;
+    };
+    return el('div', { className: open ? 'upgrade' : 'upgrade locked' },
+      el('div', { className: 'upgrade-head' }, iconOf(u.affected?.[0] ?? ''), el('span', { textContent: label(u.name) }),
+        ...(needs.length ? [el('span', { className: 'needs' }, 'needs', ...needs.map(p => iconOf(p)))] : [])),
+      el('div', { className: 'turd-choices' }, button('', 'Not chosen', 'none of its recipes'), ...u.choices.map(c => button(c.name, label(c.name), choiceNote(c)))));
+  };
+  const shown = turds.filter(matches);
+  const open = shown.filter(researched);
+  const locked = shown.filter(u => !researched(u));
+  $('turd-list').replaceChildren(
+    ...open.map(card),
+    ...(locked.length ? [el('h4', { textContent: 'Needs more science packs' }), ...locked.map(card)] : []),
+    ...(shown.length ? [] : [el('p', { className: 'hint', textContent: 'No upgrade matches.' })]));
 }
-// Py's TURD upgrades (ADR 0122), chosen optionally: off, every TURD recipe the packs allow (all with
-// every pack ticked, else none); on, those of the choices made, for each upgrade the packs research.
-$('turds').hidden = $('turds-label').hidden = !catalog.turds?.length;
-$('turds-on').checked = Boolean(state.turds);
+$('research-open').addEventListener('click', () => {
+  renderResearch();
+  $('research').showModal();
+});
+$('research-close').addEventListener('click', () => $('research').close());
+$('research').addEventListener('click', e => { if (e.target === $('research')) $('research').close(); });
+for (const tab of $('research-tabs').children) {
+  tab.addEventListener('click', () => {
+    researchTab.at = tab.dataset.tab;
+    renderResearch();
+  });
+}
+$('packs-all').addEventListener('click', () => { delete state.sciencePacks; offer(); });
+$('packs-none').addEventListener('click', () => { state.sciencePacks = []; offer(); });
 $('turds-on').addEventListener('change', () => {
   if ($('turds-on').checked) state.turds ??= {};
   else delete state.turds;
   offer();
 });
-function renderTurds() {
-  $('turd-pick').hidden = !state.turds;
-  const owned = state.sciencePacks && new Set((catalog.sciencePacks ?? []).flatMap((p, i) => (state.sciencePacks.includes(p) ? [i] : [])));
-  const shown = (catalog.turds ?? []).filter(u => !owned || u.unlock.some(set => set.every(i => owned.has(i))));
-  const rows = shown.flatMap(u => {
-    const select = el('select', { ariaLabel: label(u.name) }, el('option', { value: '', textContent: 'Not chosen' }),
-      ...u.choices.map(c => el('option', { value: c.name, textContent: label(c.name) })));
-    select.value = state.turds?.[u.name] ?? '';
-    select.addEventListener('change', () => {
-      state.turds ??= {};
-      if (select.value) state.turds[u.name] = select.value;
-      else delete state.turds[u.name];
-      offer();
-    });
-    return [el('span', { textContent: label(u.name) }), select];
-  });
-  const chosen = shown.filter(u => state.turds?.[u.name]).length;
-  $('turd-summary').textContent = `${chosen} of ${shown.length} upgrades the packs research chosen`;
-  $('turd-list').replaceChildren(...rows);
-}
-renderTurds();
+$('turd-filter').addEventListener('input', renderResearch);
+renderResearch();
 // The packs or TURD upgrades changed: the offer again, the Goals' chooser and the chain with it.
 function offer() {
   index = recipeOptions(catalog, state.sciencePacks, state.turds);
-  renderTurds();
+  renderResearch();
   renderGoals();
   save();
 }

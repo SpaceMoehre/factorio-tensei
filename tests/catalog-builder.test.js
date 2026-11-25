@@ -508,7 +508,7 @@ test('TURD upgrades: each upgrade the dump has, with its packs and its choices\'
     ] },
     { name: 'not-in-this-game', choices: [] },
   ]);
-  assert.deepEqual(turds, [{ name: 'kicalk-upgrade', unlock: [[0, 1]], choices: [
+  assert.deepEqual(turds, [{ name: 'kicalk-upgrade', unlock: [[0, 1]], affected: [], choices: [
     { name: 'wire-netting', unlock: ['bedding'], replace: { 'kicalk-1': 'kicalk-1-dry' } },
     { name: 'extra-water', unlock: [], replace: {} },
   ] }]);

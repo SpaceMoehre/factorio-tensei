@@ -73,9 +73,7 @@
   .sides { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
   .budget.sides input { width: 16px; }
   .sides .hint { flex-basis: 100%; }
-  #turds .check .hint { flex-basis: auto; }
-  #turd-pick { flex-basis: 100%; }
-  .turd-list { display: grid; grid-template-columns: auto auto; gap: 4px 12px; align-items: center; margin-top: 6px; }
+
   .budget { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: center; }
   .budget input { width: 80px; }
 
@@ -329,7 +327,28 @@
 
 
   /* Saved blueprints: Save beside a blueprint, and the library dialog. */
-  .lib-open { flex: none; margin-left: auto; align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+  .head-buttons { flex: none; margin-left: auto; align-self: flex-start; display: flex; gap: 6px; }
+  /* Research: the science packs and TURD upgrades the user has (ADR 0121, 0122). */
+  #research .picker-list { padding-top: 8px; }
+  .pack-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+  .pack { display: flex; gap: 8px; align-items: center; text-align: left; padding: 6px 8px; background: var(--inset); font-size: 13px; }
+  .pack .sprite { width: 28px; height: 28px; flex: none; }
+  .pack[aria-pressed=true] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .pack[aria-pressed=false] { color: var(--muted); }
+  .pack[aria-pressed=false] .sprite { opacity: .45; filter: grayscale(1); }
+  .research-tools { margin-top: 10px; gap: 6px; }
+  .turd-on { margin: 2px 0 4px; font-weight: 600; }
+  #turd-filter { width: 100%; padding: 8px 10px; margin: 6px 0 4px; }
+  .upgrade { padding: 10px 0; border-top: 1px solid var(--border-soft); }
+  .upgrade-head { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; font-weight: 600; }
+  .upgrade-head .needs { margin-left: auto; display: flex; gap: 2px; align-items: center; color: var(--muted); font-weight: 400; font-size: 12px; }
+  .upgrade-head .needs .sprite { width: 18px; height: 18px; }
+  .upgrade.locked { opacity: .55; }
+  .turd-choices { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 6px; }
+  .turd-choice { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; text-align: left; padding: 6px 8px; background: var(--inset); font-size: 13px; }
+  .turd-choice small { color: var(--muted); font-size: 11.5px; line-height: 1.3; }
+  .turd-choice[aria-pressed=true] { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+  .lib-open { flex: none; align-self: flex-start; display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
   .badge { display: inline-grid; place-items: center; min-width: 20px; height: 18px; padding: 0 5px; border-radius: 5px; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 600; line-height: 1; }
   .badge:empty { display: none; }
   button.save.is-saved { color: var(--ok); border-color: rgba(145,196,122,.45); }
@@ -386,7 +405,10 @@
         <h1>Factory Block Planner</h1>
         <p>Pick what to make. Get a compact, belted, piped and powered block as a blueprint.</p>
       </div>
-      <button id="library-open" class="lib-open" type="button" title="Saved blueprints: city blocks and factory blocks kept in this browser">Saved <span class="badge" id="library-count">0</span></button>
+      <div class="head-buttons">
+        <button id="research-open" class="lib-open" type="button" title="Research: the science packs you have and your TURD upgrades decide which recipes and machines are offered">Research <span class="badge" id="research-count"></span></button>
+        <button id="library-open" class="lib-open" type="button" title="Saved blueprints: city blocks and factory blocks kept in this browser">Saved <span class="badge" id="library-count">0</span></button>
+      </div>
     </header>
 
     <section class="card" aria-labelledby="goals-title">
@@ -441,11 +463,6 @@
         <label class="check"><input type="checkbox" id="right-angle"> <span class="hint">needs the Inserter_Config mod</span></label>
         <label for="one-item">One item a belt</label>
         <label class="check"><input type="checkbox" id="one-item"> <span class="hint">each product its own belt, byproducts sorted out</span></label>
-        <span class="label" id="packs-label">Science packs</span>
-        <span class="budget sides" id="packs" role="group" aria-labelledby="packs-label"><span class="hint">researched: only recipes and machines these unlock are offered</span></span>
-        <span class="label" id="turds-label">TURD upgrades</span>
-        <span class="budget sides" id="turds"><label class="check"><input type="checkbox" id="turds-on"> <span class="hint">choose mine: only the chosen upgrades' recipes are offered</span></label>
-          <details id="turd-pick"><summary id="turd-summary"></summary><span class="turd-list" id="turd-list"></span></details></span>
         <label for="budget">Search time</label>
         <span class="budget"><input type="number" id="budget" min="1" step="1" aria-label="Search time in seconds"> <span class="hint">seconds</span></span>
       </div>
@@ -592,6 +609,31 @@
     </div>
     <div class="picker-list" id="chooser-list"></div>
     <div class="chooser-foot" id="chooser-foot"></div>
+  </div>
+</dialog>
+<dialog id="research" aria-labelledby="research-title">
+  <div class="picker">
+    <div class="picker-head">
+      <h3 id="research-title">Research</h3>
+      <button type="button" class="icon" id="research-close" aria-label="Close">×</button>
+    </div>
+    <div class="segmented" id="research-tabs" role="tablist" aria-label="Research">
+      <button type="button" role="tab" data-tab="packs" aria-selected="true">Science packs <span class="badge" id="research-packs-count"></span></button>
+      <button type="button" role="tab" data-tab="turds" aria-selected="false">TURD upgrades <span class="badge" id="research-turds-count"></span></button>
+    </div>
+    <div class="picker-list" id="research-packs" role="tabpanel">
+      <p class="hint">The packs you research with. Only recipes and machines on at start, or unlocked by a technology these research (its prerequisites' packs too), are offered.</p>
+      <div class="pack-grid" id="pack-grid"></div>
+      <div class="row research-tools"><button type="button" class="ghost" id="packs-all">All</button><button type="button" class="ghost" id="packs-none">None</button></div>
+    </div>
+    <div class="picker-list" id="research-turds" role="tabpanel" hidden>
+      <label class="check turd-on"><input type="checkbox" id="turds-on"> <span>I choose my TURD upgrades</span></label>
+      <p class="hint" id="turds-hint"></p>
+      <div id="turd-body">
+        <input type="search" id="turd-filter" placeholder="Search upgrades and choices…" aria-label="Search TURD upgrades" autocomplete="off">
+        <div id="turd-list"></div>
+      </div>
+    </div>
   </div>
 </dialog>
 <dialog id="library" aria-labelledby="library-title">

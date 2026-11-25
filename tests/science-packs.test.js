@@ -70,6 +70,9 @@ test('the packs chosen are a Chain Choice; none chosen, every one', () => {
   // Every pack saved, or none the catalog knows: every one.
   assert.ok(!('sciencePacks' in setupOf({ goals: [], logistics: {}, sciencePacks: ['red', 'green', 'blue'] }, catalog).choices));
   assert.ok(!('sciencePacks' in setupOf({ goals: [], logistics: {}, sciencePacks: ['purple'] }, catalog).choices));
+  // None researched: only what is on at start.
+  assert.deepEqual(setupOf({ goals: [], logistics: {}, sciencePacks: [] }, catalog).choices.sciencePacks, []);
+  assert.deepEqual(recipeOptions(catalog, []).producers.get('circuit'), ['circuit-slow']);
   // (A catalog built before Science Packs: every recipe.)
   assert.ok(!('sciencePacks' in setupOf({ goals: [], logistics: {}, sciencePacks: ['red'] }, base).choices));
 });
@@ -163,7 +166,7 @@ test('TURD: a choice replacing a building offers its TURD building instead; none
 test('a machine heated by its fluid takes it at its heatMax, the heat above the default its energy', () => {
   const heated = {
     ...catalog,
-    temperatures: { ...catalog.temperatures, syrup: 0 }, fluidFuels: {},
+    temperatures: { syrup: 0 }, fluidFuels: {},
     recipes: { 'circuit-slow': { ...catalog.recipes['circuit-slow'], time: 60 } },
     buildings: {
       composter: {

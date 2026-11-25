@@ -72,10 +72,13 @@ export function normalized(saved, catalog) {
   // leave by train destroyed instead (a sinkhole, a gas vent) (ADR 0062).
   state.exports ??= [];
   state.voids ??= [];
-  // The Science Packs researched with (ADR 0121): those the catalog knows; none saved (or none the
-  // catalog knows, or all of them), every one.
-  if (state.sciencePacks) state.sciencePacks = state.sciencePacks.filter(p => catalog.sciencePacks?.includes(p));
-  if (state.sciencePacks && (!state.sciencePacks.length || state.sciencePacks.length === catalog.sciencePacks.length)) delete state.sciencePacks;
+  // The Science Packs researched with (ADR 0121): those the catalog knows; none saved (or some, none
+  // of them the catalog's, or all of them), every one; an empty list, none (only what is on at start).
+  if (state.sciencePacks) {
+    const known = state.sciencePacks.filter(p => catalog.sciencePacks?.includes(p));
+    if (!catalog.sciencePacks?.length || known.length === catalog.sciencePacks.length || (state.sciencePacks.length && !known.length)) delete state.sciencePacks;
+    else state.sciencePacks = known;
+  }
   // Py's TURD upgrades chosen (ADR 0122), { [technology]: choice }: those the catalog knows; none
   // saved (or a catalog without them), every TURD recipe as the packs offer it.
   if (state.turds) {

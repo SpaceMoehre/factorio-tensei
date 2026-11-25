@@ -351,6 +351,8 @@ function turdsOf(turds, recipes, buildings, needOf, raw) {
     if (!set) return [];
     return [{
       name: u.name, unlock: [[...set].sort((a, b) => a - b)],
+      // (The buildings it affects, for the page's picture of it.)
+      affected: (u.affected ?? []).filter(b => buildings[b]),
       choices: u.choices.map(c => {
         const effects = Object.fromEntries((c.modules ? u.affected ?? [] : []).flatMap((b, i) => {
           const effect = effectOf(raw.module?.[`${c.name}-module`] ?? raw.module?.[`${c.name}-module-mk0${i + 1}`]);
