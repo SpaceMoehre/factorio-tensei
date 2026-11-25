@@ -195,8 +195,7 @@ test('One Item a Belt: a byproduct\'s own belt snakes through the copies by its 
 
 // A step's byproduct another step makes as its item (ADR 0128): Py antimony, the grade 1
 // screeners make grade 2 besides, the grade 3 screeners grade 4 besides. Each joins the step's
-// of it, the step making that much less, none leaving by train. (Not the sb-dust's grade 4: the
-// crushed antimony it takes is made of it, a loop.)
+// of it, the step making that much less, none leaving by train.
 test('a step\'s byproduct another step makes joins that step\'s, none leaving by train', () => {
   const goals = [{ item: 'sb-oxide', rate: 60 }];
   const options = { selections: { 'sb-oxide': { recipe: 'sb-oxide-01', building: '' } }, made: ['sb-grade-04', 'sb-grade-03', 'sb-grade-02', 'sb-grade-01'] };
@@ -209,4 +208,14 @@ test('a step\'s byproduct another step makes joins that step\'s, none leaving by
   assert.ok(ore < 1000, `${ore}/min of ore`);
   const entries = entriesOf(chain);
   for (const s of supplies) assert.ok(rate(chain, s.item) > 0 && entries.find(e => e.goal.item === s.from).goal.joins?.[s.item] !== undefined, `${s.item} from ${s.from}`);
+});
+
+// (And one the step takes itself through the steps before it: the sb-dust's grade 4, the crushed
+// antimony it takes made of it. Its join is in a loop: tapped off into the ball mills, ADR 0127.)
+test('a step\'s byproduct it takes itself through the steps before it joins too', () => {
+  const goals = [{ item: 'sb-oxide', rate: 60 }];
+  const made = ['sb-pulp-02', 'sb-pulp-01', 'sb-dust', 'lead-acetate', 'sb-crushed', 'sb-grade-04', 'sb-grade-03', 'sb-grade-02', 'sb-grade-01'];
+  const chain = expandChain(goals, shipped, { selections: { 'sb-oxide': { recipe: 'sb-oxide-02', building: '' } }, made, uses: [] });
+  assert.deepEqual(chain.byproducts.filter(b => b.item.startsWith('sb-grade')), []);
+  assert.ok(/** @type {any[]} */ (chain.supplies).some(s => s.from === 'sb-dust' && s.item === 'sb-grade-04'));
 });
