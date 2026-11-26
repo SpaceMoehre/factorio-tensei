@@ -341,6 +341,12 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
   const addUse = (u, from) => {
     const key = useKey(from ?? EVERY, u.item);
     if (used.has(key) || !index.consumers.get(u.item)?.includes(u.recipe) || !index.buildingsFor.has(u.recipe)) return false;
+    // (A General Use of a fluid by a recipe a step or another Use runs already is that one's, not
+    // a second step of it: the fluid is fed back to it as any byproduct would be, through valves,
+    // the train bringing the rest (Py's purex antimony void taking the sb phosphate 2 and the
+    // purex concentrate both, antimony phosphate the phosphoric acid; ADR 0130). A solid's stays
+    // a step of its own: fed back it must cover all its step takes.)
+    if (!from && valved && catalog.recipes[u.recipe].ingredients.some(i => i.name === u.item && i.type === 'fluid') && [...steps.values(), ...used.values()].some(s => s.selection.recipe === u.recipe)) return false;
     if (from ? !byproductsOf(from).some(p => p.name === u.item) || !fits(u, from) : !sourcesOf(u, key).length) return false;
     tooMany();
     const selection = selectionOf(u.recipe, u);

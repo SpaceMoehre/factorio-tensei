@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v115: Uses of a recipe a step runs (implemented)
+
+A General Use of a fluid by a recipe a step (or another Use) of the chain runs already is not a second step of it: the fluid is fed back to that one, the train bringing the rest. Py pu-238 + fuel rods with the oxidation's byproducts processed (purex antimony void taking sb phosphate 2 and purex concentrate, the phosphoric acid back to antimony phosphate): no rates balanced → 3.59/min each in 116², valid, starving 0. ADR 0130.
+
 ## v114: Buildings by default (implemented)
 
 A step whose building is not chosen runs in a building the user chose for another recipe that runs it too (the one chosen for the most recipes, then the fastest), else in the fastest building the chosen Science Packs research, not the slowest. Py: the automated factory mk01 chosen for the small parts makes the gears, cable and bolts too; with every pack, a Py step runs in its mk04. The suite's setups and the tests' fixtures keep the buildings they were laid out with (written into their selections). ADR 0129.

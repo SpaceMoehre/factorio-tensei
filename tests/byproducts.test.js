@@ -54,3 +54,26 @@ test('a Byproduct Use\'s share: it takes that much, the rest leaving by train', 
   assert.ok(Math.abs(left(half) - rate(half, '* > pu-240')) < 1e-6, 'half of the pu-240 leaves by train');
   assert.ok(rate(half, 'pu-238') > rate(all, 'pu-238'), 'the separation makes more');
 });
+
+// A General Use of a fluid by a recipe a step or another Use runs already is that one's (ADR
+// 0130): Py's purex antimony void takes the plutonium oxidation's sb phosphate 2 and the antimony
+// phosphate's purex concentrate both, one step; antimony phosphate the phosphoric acid made of its
+// phosphorous acid, fed back. Two steps of each fed back more than they took: no rates balanced.
+test('a General Use of a fluid by a recipe a step runs is that step\'s, fed back to it', () => {
+  const goals = [{ item: 'pu-238', rate: 60 }];
+  const choices = {
+    made: ['plutonium-oxide', 'plutonium-peroxide', 'sb-hpo-pu'],
+    selections: { 'pu-238': { recipe: 'plutonium-seperation', building: '' }, 'plutonium-peroxide': { recipe: 'plutonium-oxidation', building: '' } },
+    uses: [{ item: 'sb-phosphate-2', recipe: 'purex-antimony-void' }, { item: 'purex-concentrate-1', recipe: 'purex-antimony-void' },
+      { item: 'phosphorous-acid', recipe: 'phosphoric-acid' }, { item: 'phosphoric-acid', recipe: 'antimony-phosphate' }],
+    sciencePacks: ['automation-science-pack', 'py-science-pack-1', 'logistic-science-pack', 'military-science-pack', 'py-science-pack-2'],
+  };
+  const chain = expandChain(goals, shipped, choices);
+  const entries = /** @type {any[]} */ (chain.entries);
+  assert.equal(entries.filter(e => e.selection.recipe === 'purex-antimony-void').length, 1);
+  assert.equal(entries.filter(e => e.selection.recipe === 'antimony-phosphate').length, 1);
+  const recycled = item => chain.recycled.find(r => r.item === item);
+  assert.equal(recycled('purex-concentrate-1')?.from, 'sb-hpo-pu');
+  assert.deepEqual(recycled('phosphoric-acid')?.into, ['sb-hpo-pu']);
+  assert.ok(!chain.trainInputs.some(t => t.item === 'sb-phosphate-2'), 'sb phosphate 2 by train');
+});

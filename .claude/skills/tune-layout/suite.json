@@ -550,6 +550,28 @@
         "entities": 3236,
         "hash": "dd23aa5fbdf6"
       }
+    },
+    {
+      "name": "pu238-fuelrods-116",
+      "file": "pu238-fuelrods-116.json",
+      "what": "Py pu-238 and fuel rods mk01 among 32 poles, 116², the oxidation byproducts processed: General Uses of sb phosphate 2 and purex concentrate by one purex antimony void, phosphoric acid fed back to antimony phosphate (ADR 0130)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 1800,
+      "result": {
+        "secs": 150.1,
+        "tries": 12,
+        "rate": 3.59,
+        "machines": 1,
+        "failure": null,
+        "delivered": 3.59,
+        "valid": true,
+        "starving": 0,
+        "riding": 1,
+        "bounds": "110x97",
+        "entities": 3954,
+        "hash": "e080a699c66a"
+      }
     }
   ]
 }
