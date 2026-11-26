@@ -27,4 +27,4 @@ Tests: byproducts.test.js: the Uses above make one purex antimony void and one a
 Still:
 - The second antimony phosphate's concentrate (72/min) leaves by train while the train brings as much to purex antimony void: a fluid is fed back from one maker only.
 - A solid fed back must cover all its taker takes: the antimony oxide (3.6 of 10.8/min) goes to a second step, not the first.
-- 2 separations: no room among the 32 poles (ADR 0127).
+- Past 1 separation (4.16–5.85/min tried): placement alone fits 1.16, but no try routes; 1000 random candidates more (patience 12 → 1000) fit neither 1.16 nor 1.33: the shuffles' room and the plutonium peroxide's pipe round 18 Sub-Blocks and 32 poles.
