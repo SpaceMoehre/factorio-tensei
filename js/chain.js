@@ -146,8 +146,23 @@ export function recipeOptions(catalog, sciencePacks = null, turds = null) {
 // it }: what a step makes besides its item, a Byproduct Use's every product, but those used).
 // Loops that take more of their items than they make come by train instead, as fluids do.
 export function expandChain(goals, catalog, options = {}) {
-  const chain = expand(goals, catalog, options, false) ?? expand(goals, catalog, options, true);
-  if (chain) return chain;
+  // A step all of whose item a Byproduct Use's (or a step's byproduct) would cover is not made
+  // here: its item comes from that one as a Recycled Byproduct, the spare leaving by train,
+  // rather than that leaving by train while the step makes it (Py tin: the gravel's sand for
+  // the sand casting, no soil washing; ADR 0131). Its own steps go with it.
+  // (Where without it no rates balance, as it was.)
+  const expanded = made => expand(goals, catalog, { ...options, made }, false) ?? expand(goals, catalog, { ...options, made }, true);
+  let chain = expanded(options.made ?? []);
+  for (let made = options.made ?? []; chain?.idle;) {
+    const { idle, ...rest } = chain;
+    const fewer = made.filter(i => !idle.includes(i));
+    chain = fewer.length < made.length ? expanded(fewer) ?? rest : rest;
+    made = fewer;
+  }
+  if (chain) {
+    delete chain.idle;
+    return chain;
+  }
   // No rates balance it even with the loops by train: what a Recipe Loop or a Byproduct Use feeds
   // back grows without end. Said with the Uses the chain balances without (ADR 0126).
   const uses = options.uses ?? [];
@@ -298,6 +313,10 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
     if (steps.has(item)) return false;
     const selection = selectionFor(item);
     if (!isGoal && !makeHere.has(item)) return toTrain(item, selection ? 'import' : 'no recipe');
+    // (One a step makes already by the recipe chosen for it is that step's byproduct, not a second
+    // step of it: fed back from it as one not made here, the train bringing the rest. Two steps of
+    // one recipe each supplying the other what it makes are no system of rates, ADR 0130.)
+    if (!isGoal && selection && [...steps.values()].some(s => s.selection.recipe === selection.recipe && productsFor(s.selection).some(p => p.name === item))) return toTrain(item, 'import');
     if (!selection) {
       if (isGoal) throw new Error(index !== recipeOptions(catalog) && recipeOptions(catalog).producers.has(item) ? `nothing the science packs and TURD upgrades chosen unlock makes “${item}”` : `no recipe and building can produce “${item}”`);
       return toTrain(item, 'no recipe');
@@ -459,6 +478,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
     }
   }
   const supply = (s, sign) => { a[at.get(s.item)][at.get(s.from)] -= sign * s.per; };
+  const idle = new Set();
   // What a fluid fed back to some only (`takers`) is taken of by them, at the rates.
   const takenAt = s => s.takers.reduce((sum, k) => sum + ingredientsOf(k).filter(i => i.name === s.item).reduce((t, i) => t + i.amount, 0) * rates[at.get(k)] / perCraft[at.get(k)], 0);
   supplies.forEach(s => supply(s, 1));
@@ -485,6 +505,8 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
     }
     if (over.length) continue;
     if (!off.length) break;
+    // (A solid one covering all its step makes: that step is not needed, ADR 0131.)
+    for (const s of off) if (rates && s.type === 'item' && !s.valve && !(rates[at.get(s.item)] > 1e-6) && !goals.some(g => g.item === s.item)) idle.add(s.item);
     off.forEach(s => supply(s, -1));
     supplies = supplies.filter(s => !off.includes(s));
   }
@@ -631,6 +653,7 @@ function expand(goals, catalog, { made = [], selections = {}, uses = [], science
     };
   };
   return {
+    ...(idle.size ? { idle: [...idle] } : {}),
     entries: [
       ...[...order].reverse().map(item => ({
         goal: { item, rate: rates[at.get(item)], ...fromOf(item), ...joinsOf(item), ...valvesOfStep(item), ...(extra[item] > 0 ? { extra: extra[item] } : {}) }, selection: steps.get(item).selection,

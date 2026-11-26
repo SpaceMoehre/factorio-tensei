@@ -11,6 +11,10 @@ Before: every General Use was a step of its own, taking all of its item, its rec
 What changed:
 - **chain.js** `expand` `addUse`: a General Use of a fluid by a recipe a step of the chain or another Use runs already (valves buildable) is not a step: the fluid is that one's, fed back to it as any byproduct would be (a Recycled Byproduct through valves, the train bringing the rest). A solid's stays a step of its own (fed back a solid must cover all its taker takes): Py's antimony oxide into a second antimony phosphate, its sb-hpo-pu joining the step's.
 
+- **chain.js** `expand` `visit`: an item made by the recipe chosen for it that a step of the chain runs already, and makes, is that step's byproduct, not a second step of it: it comes as one not made here does (recycled from that step, the train bringing the rest). The user's purex concentrate made by antimony phosphate, the sb-hpo-pu step's recipe: two steps of it, each supplying the other what it makes, were no system of rates (singular): every supply dropped and the separation ran at 4.79/min, 72 times the rate (phosphoric acid 60,012/min by train).
+
+Py pu-238 + fuel rods, the loop closed (purex concentrate made, sb-hpo-pu by a second plutonium oxidation), 116², 32 poles: no rates balance → 4.72/min each, 16 shuffle 2s, 109×108, valid, starving 0, 302 s.
+
 Py pu-238 + fuel rods, 116², 32 poles (page budget, 3 tries at once):
 
 | | before | after |
@@ -20,7 +24,7 @@ Py pu-238 + fuel rods, 116², 32 poles (page budget, 3 tries at once):
 | antimony phosphate | 3 steps | 2 (431.87 of 539.84 phosphoric acid fed back) |
 | layout | none | 3.59/min pu-238 + 3.58 fuel rods, 1 separation, 110×97, valid, starving 0, 565 s |
 
-Every suite setup's and test fixture's chain is the same step by step.
+Every suite setup's and test fixture's chain is the same step by step. Suite: new setups pu238-fuelrods-116 (3.59/min) and pu238-fuelrods-loop-116 (1.58/min at K 20; the page's search 4.72).
 
 Tests: byproducts.test.js: the Uses above make one purex antimony void and one antimony phosphate, the concentrate and phosphoric acid fed back.
 

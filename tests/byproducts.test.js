@@ -77,3 +77,22 @@ test('a General Use of a fluid by a recipe a step runs is that step\'s, fed back
   assert.deepEqual(recycled('phosphoric-acid')?.into, ['sb-hpo-pu']);
   assert.ok(!chain.trainInputs.some(t => t.item === 'sb-phosphate-2'), 'sb phosphate 2 by train');
 });
+
+// An item made by the recipe a step runs already, and made by it, is that step's byproduct (ADR
+// 0130): Py's purex concentrate made by antimony phosphate, the sb-hpo-pu's recipe. Two steps of
+// it each supplying the other were no system of rates: every supply dropped, the separation at
+// 72 times the rate.
+test('an item a step makes by the recipe chosen for it is that step\'s byproduct, not a second step', () => {
+  const goals = [{ item: 'pu-238', rate: 60 }];
+  const choices = {
+    made: ['plutonium-oxide', 'plutonium-peroxide', 'sb-hpo-pu', 'purex-concentrate-1'],
+    selections: { 'pu-238': { recipe: 'plutonium-seperation', building: '' }, 'plutonium-peroxide': { recipe: 'plutonium-oxidation', building: '' },
+      'purex-concentrate-1': { recipe: 'antimony-phosphate', building: '' } },
+    uses: [{ item: 'sb-phosphate-2', recipe: 'purex-antimony-void' }],
+    sciencePacks: ['automation-science-pack', 'py-science-pack-1', 'logistic-science-pack', 'military-science-pack', 'py-science-pack-2'],
+  };
+  const chain = expandChain(goals, shipped, choices);
+  const entries = /** @type {any[]} */ (chain.entries);
+  assert.equal(entries.filter(e => e.selection.recipe === 'antimony-phosphate').length, 1);
+  assert.equal(chain.recycled.find(r => r.item === 'purex-concentrate-1')?.from, 'sb-hpo-pu');
+});

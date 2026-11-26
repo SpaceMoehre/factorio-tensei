@@ -85,9 +85,13 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v116: Steps a Use covers (implemented)
+
+A step all of whose item a Byproduct Use's product covers is not made here: the item is a Recycled Byproduct from the Use, only what is left over leaving by train, the step and its own steps gone. Py tin plate: the gravel's sand for the sand casting, no soil washing; 7.5 → 5.12 sand/min by train. ADR 0131.
+
 ## v115: Uses of a recipe a step runs (implemented)
 
-A General Use of a fluid by a recipe a step (or another Use) of the chain runs already is not a second step of it: the fluid is fed back to that one, the train bringing the rest. Py pu-238 + fuel rods with the oxidation's byproducts processed (purex antimony void taking sb phosphate 2 and purex concentrate, the phosphoric acid back to antimony phosphate): no rates balanced → 3.59/min each in 116², valid, starving 0. ADR 0130.
+A General Use of a fluid by a recipe a step (or another Use) of the chain runs already is not a second step of it: the fluid is fed back to that one, the train bringing the rest. Py pu-238 + fuel rods with the oxidation's byproducts processed (purex antimony void taking sb phosphate 2 and purex concentrate, the phosphoric acid back to antimony phosphate): no rates balanced → 3.59/min each in 116², valid, starving 0. An item made by the recipe a step runs already, which that step makes, is that step's byproduct, not a second step: with the purex concentrate made by antimony phosphate too, 4.72/min each. ADR 0130.
 
 ## v114: Buildings by default (implemented)
 

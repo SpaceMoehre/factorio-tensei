@@ -572,6 +572,50 @@
         "entities": 3954,
         "hash": "e080a699c66a"
       }
+    },
+    {
+      "name": "pu238-fuelrods-loop-116",
+      "file": "pu238-fuelrods-loop-116.json",
+      "what": "Py pu-238 and fuel rods mk01 among 32 poles, 116², the antimony loop closed: purex concentrate made by antimony phosphate (the sb-hpo-pu step's recipe, its byproduct), the sb-hpo-pu of the second antimony phosphate into a second plutonium oxidation (ADR 0130)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 1800,
+      "result": {
+        "secs": 136.8,
+        "tries": 15,
+        "rate": 1.58,
+        "machines": 1,
+        "failure": null,
+        "delivered": 1.58,
+        "valid": true,
+        "starving": 0,
+        "riding": 1,
+        "bounds": "101x104",
+        "entities": 2849,
+        "hash": "81ef819bb7e6"
+      }
+    },
+    {
+      "name": "tin-plate-116",
+      "file": "tin-plate-116.json",
+      "what": "Py tin plate among 32 poles, 116²: the screeners' byproducts crushed to stone, gravel and sand, the gravel's sand covering the sand casting's (no soil washing), the spare by train (ADR 0131)",
+      "K": 20,
+      "tier": "fast",
+      "timeout": 1800,
+      "result": {
+        "secs": 37,
+        "tries": 12,
+        "rate": 674.33,
+        "machines": 1,
+        "failure": null,
+        "delivered": 674.33,
+        "valid": true,
+        "starving": 0,
+        "riding": 0,
+        "bounds": "107x108",
+        "entities": 1868,
+        "hash": "5ce10ae5e72f"
+      }
     }
   ]
 }

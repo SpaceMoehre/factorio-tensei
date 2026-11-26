@@ -220,3 +220,20 @@ test('a step\'s byproduct it takes itself through the steps before it joins too'
   assert.deepEqual(chain.byproducts.filter(b => b.item.startsWith('sb-grade')), []);
   assert.ok(/** @type {any[]} */ (chain.supplies).some(s => s.from === 'sb-dust' && s.item === 'sb-grade-04'));
 });
+
+// A step all of whose item a Use makes more of is not made here (ADR 0131): Py tin plate, the
+// gravel's sand for the sand casting, the soil washing and its soil gone, the spare by train.
+test('a step a Use\'s product covers is not made: its item recycled from the Use, the spare by train', () => {
+  const chain = expandChain([{ item: 'tin-plate', rate: 60 }], shipped, {
+    made: ['sand-casting', 'sand', 'soil', 'molten-tin', 'graphite', 'tin-dust', 'grade-4-tin', 'grade-3-tin', 'grade-1-tin', 'water'],
+    selections: { 'molten-tin': { recipe: 'molten-tin-01', building: '' }, sand: { recipe: 'soil-washing', building: '' } },
+    uses: [{ item: 'grade-2-tin', recipe: 'grade-2-crush-tin' }, { item: 'tin-ore-rejects', recipe: 'tin-ore-rejects' }, { item: 'stone', recipe: 'stone-to-gravel' }, { item: 'gravel', recipe: 'gravel-to-sand' }],
+    sciencePacks: ['automation-science-pack', 'py-science-pack-1', 'logistic-science-pack', 'military-science-pack', 'py-science-pack-2'],
+  });
+  const entries = entriesOf(chain);
+  assert.ok(!entries.some(e => !e.use && ['sand', 'soil'].includes(e.goal.item)), 'soil washing still made');
+  const sand = chain.recycled.find(r => r.item === 'sand');
+  assert.equal(sand?.from, '* > gravel');
+  const spare = chain.byproducts.find(b => b.item === 'sand');
+  assert.ok(spare && Math.abs(spare.rate + sand.rate - rate(chain, '* > gravel')) < 1e-6, 'all the sand made: taken or by train');
+});
