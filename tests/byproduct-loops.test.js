@@ -60,7 +60,9 @@ test('byproducts joined in a loop, each product on a belt of its own: taps all t
   const plan = processed(3.59);
   const apart = () => true;
   const flows = buildFlows(plan, 900, apart);
-  for (const item of ISOTOPES) assert.ok(!flows.internal.some(e => e.item === item), `${item} on an Internal Path`);
+  // (But a belt of its own all tapped off ends in a taker not leading back to it, out of the
+  // Dependency Order, ADR 0132: the separation's.)
+  for (const item of ISOTOPES) assert.ok(flows.internal.every(e => e.item !== item || e.loose), `${item} on an Internal Path`);
   for (const r of buildRoutes(plan, flows, 450, apart).filter(r => r.kind === 'belt' && typeof r.source === 'number')) {
     assert.ok(r.sink !== null || r.consumers.length, `Sub-Block ${r.source}'s belt of ${r.product} goes nowhere`);
   }

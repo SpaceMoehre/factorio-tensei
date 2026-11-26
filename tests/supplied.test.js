@@ -3,6 +3,9 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { search } from '../js/search.js';
 import { expandChain } from '../js/chain.js';
+import { planSubBlocks } from '../js/plan.js';
+import { buildFlows } from '../js/flows.js';
+import { buildRoutes } from '../js/routes.js';
 import { logistics as base } from './fixtures/catalog.js';
 import { assertValid } from './support/invariants.js';
 import { slowest } from './support/slowest.js';
@@ -236,4 +239,30 @@ test('a step a Use\'s product covers is not made: its item recycled from the Use
   assert.equal(sand?.from, '* > gravel');
   const spare = chain.byproducts.find(b => b.item === 'sand');
   assert.ok(spare && Math.abs(spare.rate + sand.rate - rate(chain, '* > gravel')) < 1e-6, 'all the sand made: taken or by train');
+});
+
+// A belt every product of which is tapped off goes into one of its takers itself (ADR 0132): Py
+// tin's grade 1 screeners, their grade 2 tapped off to the crushers, their grade 1 on into the
+// grade 3 screeners, never on to the train with nothing on it; out of the Dependency Order.
+test('a belt all of whose products are tapped off ends in a taker, not at the train', () => {
+  const chain = expandChain([{ item: 'tin-plate', rate: 60 }], shipped, {
+    made: ['sand-casting', 'sand', 'soil', 'molten-tin', 'graphite', 'tin-dust', 'grade-4-tin', 'grade-3-tin', 'grade-1-tin', 'water'],
+    selections: { 'molten-tin': { recipe: 'molten-tin-01', building: '' }, sand: { recipe: 'soil-washing', building: '' } },
+    uses: [{ item: 'grade-2-tin', recipe: 'grade-2-crush-tin' }, { item: 'tin-ore-rejects', recipe: 'tin-ore-rejects' },
+      { item: 'stone', recipe: 'stone-to-gravel' }, { item: 'gravel', recipe: 'gravel-to-sand' }],
+    sciencePacks: ['automation-science-pack', 'py-science-pack-1', 'logistic-science-pack', 'military-science-pack', 'py-science-pack-2'],
+  });
+  const plan = planSubBlocks(chain.entries, shipped, logistics);
+  const flows = buildFlows(plan, 900);
+  const routes = buildRoutes(plan, flows, 450);
+  const screeners = plan.findIndex(sb => sb.item === 'grade-1-tin' && !sb.use);
+  const belt = routes.find(r => r.kind === 'belt' && r.source === screeners);
+  assert.equal(belt.sink, null, 'on to the train');
+  assert.deepEqual(belt.consumers, [plan.findIndex(sb => sb.item === 'grade-3-tin')]);
+  assert.ok(belt.portion, 'the taps into it bring the rest');
+  assert.ok(flows.feedback.some(e => e.from === screeners && e.item === 'grade-2-tin' && e.tapped), 'grade 2 not tapped off');
+  // (Nothing split off before rides on to the train.)
+  for (const r of routes.filter(r => r.kind === 'belt' && r.sink === 'side-output')) {
+    assert.ok(!r.items.some(i => ['grade-2-tin', 'stone'].includes(i.item)), `${r.items.map(i => i.item)} by train`);
+  }
 });

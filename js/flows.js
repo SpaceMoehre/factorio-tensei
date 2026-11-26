@@ -154,6 +154,34 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
     ...fed,
   ];
   const feedback = [...edges.filter(e => closing.has(e) && e.type !== 'fluid'), ...[...tapped, ...own].filter(off).map(e => ({ ...e, tapped: true }))];
+  // A belt every product of which would be tapped off, none left for the train, goes into one of its takers itself, the
+  // biggest whose steps lead not back to it (a ring's taps stay as they are: Py's plutonium
+  // shuffles), the others tapped off before it (each the filtered item off it, the rest going on):
+  // not on to the train with nothing on it (Py tin's grade 1 screeners' grade 2 to the crushers,
+  // their grade 1 on into the grade 3 screeners, ADR 0132). A producer putting each product on a
+  // belt of its own: each such belt. (Not an item tapped into several: a filter splitter sends all
+  // of it one way.) Placed as a tap was, free of the Dependency Order (`loose`): a step of it, the
+  // steps between stood in one row too long to place.
+  const loose = new Set();
+  const back = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a) && edges.some(e => e.from === a && back(e.to, b, seen)));
+  plan.forEach((_, i) => {
+    const solids = new Set(plan[i].outputs.filter(o => o.type === 'item').map(o => o.name));
+    for (const belt of apart(i) ? [...solids].map(item => new Set([item])) : [solids]) {
+      if (internal.some(e => e.from === i && belt.has(e.item))) continue;
+      // (Only one bringing nothing on to the train: else it runs there, with what it brings.)
+      const sent = item => [...internal, ...feedback].filter(e => e.from === i && e.item === item).reduce((sum, e) => sum + e.rate, 0);
+      if (plan[i].outputs.some(o => belt.has(o.name) && o.rate - (o.name === plan[i].item ? plan[i].extra ?? 0 : 0) - sent(o.name) > 1e-9 * Math.max(1, o.rate))) continue;
+      const taps = feedback.filter(e => e.tapped && e.from === i && belt.has(e.item));
+      const into = taps.filter(e => taps.filter(t => t.item === e.item).length === 1 && !back(e.to, i)).sort((a, b) => b.rate - a.rate)[0];
+      if (!into) continue;
+      feedback.splice(feedback.indexOf(into), 1);
+      const { tapped: _t, split: _s, ...rest } = into;
+      // (Bringing its share of what its taker takes, as the tap did: `loose`.)
+      const plain = { ...rest, loose: true };
+      internal.push(plain);
+      loose.add(plain);
+    }
+  });
   // (Only into an Internal Path: one of the item's consumers' takes it from there.)
   const joined = plan.flatMap((sb, from) => joinsOf(sb, from).flatMap(([item, into]) => {
     const o = sb.outputs.find(o => o.name === item);
@@ -185,7 +213,7 @@ export function buildFlows(plan, belt = Infinity, apart = /** @type {(i: number)
   // cycle: its belt joins theirs before them.)
   const reaches = (a, b, seen = new Set()) => a === b || (!seen.has(a) && seen.add(a) && internal.some(e => e.from === a && reaches(e.to, b, seen)));
   const ahead = joined.filter(j => typeof j.from === 'number').flatMap(j => internal.filter(e => e.from === j.into && e.item === j.item && !reaches(e.to, j.from)).map(e => ({ from: j.from, to: e.to })));
-  return { order: dependencyOrder(plan.length, [...internal.filter(e => !fedBack.has(e)), ...ahead]), fedBack: [...fedBack], internal, feedback, joined, sideInput, sideOutput };
+  return { order: dependencyOrder(plan.length, [...internal.filter(e => !fedBack.has(e) && !loose.has(e)), ...ahead]), fedBack: [...fedBack], internal, feedback, joined, sideInput, sideOutput };
 }
 
 // What Byproduct Uses' Supplied Items bring a Sub-Block's route of an item.

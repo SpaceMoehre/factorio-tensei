@@ -405,18 +405,18 @@
       "tier": "full",
       "timeout": 3600,
       "result": {
-        "secs": 557.1,
-        "tries": 22,
-        "rate": 60,
-        "machines": 1,
+        "secs": 1016.9,
+        "tries": 17,
+        "rate": 69.37,
+        "machines": 2,
         "failure": null,
-        "delivered": 60,
+        "delivered": 69.37,
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "228x112",
-        "entities": 7351,
-        "hash": "c3a7f92ed3a9"
+        "bounds": "208x111",
+        "entities": 5852,
+        "hash": "64e3484b11dc"
       }
     },
     {
@@ -603,18 +603,18 @@
       "tier": "fast",
       "timeout": 1800,
       "result": {
-        "secs": 37,
-        "tries": 12,
-        "rate": 674.33,
+        "secs": 63.6,
+        "tries": 14,
+        "rate": 598.76,
         "machines": 1,
         "failure": null,
-        "delivered": 674.33,
+        "delivered": 598.76,
         "valid": true,
         "starving": 0,
         "riding": 0,
-        "bounds": "107x108",
-        "entities": 1868,
-        "hash": "5ce10ae5e72f"
+        "bounds": "106x106",
+        "entities": 1799,
+        "hash": "932b45443019"
       }
     }
   ]

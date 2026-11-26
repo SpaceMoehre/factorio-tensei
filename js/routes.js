@@ -69,7 +69,8 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
     if (apart(i) && solidOut.filter(o => o.rate > 1e-9).length > 1) {
       for (const o of [solidOut.find(o => o.name === sb.item), ...solidOut.filter(o => o.name !== sb.item)].filter(o => o && o.rate > 1e-9)) {
         const consumers = internalConsumers(o.name);
-        const shared = consumers.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === o.name).length > 1;
+        const shared = consumers.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === o.name).length > 1
+          || flows.internal.some(e => e.loose && e.from === i && e.item === o.name);
         const own = joins('item').filter(j => j.item === o.name);
         // (All of it tapped off into its takers: on to the train all the same, a belt to tap, ADR 0127.)
         const tappedOff = !consumers.length && (flows.feedback ?? []).some(e => e.tapped && e.from === i && e.item === o.name);
@@ -97,7 +98,9 @@ export function buildRoutes(plan, flows, laneCapacity, apart = /** @type {(i: nu
         && !plan[consumers[0]].inputs.some(x => x.name === left[0].name)
         && solidOut.reduce((sum, o) => sum + o.rate, 0) > 2 * laneCapacity + 1e-6;
       // (One of several producers' belts of its one item into its consumer: its share, ADR 0068.)
-      const shared = solidOut.length === 1 && consumers.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === solidOut[0].name).length > 1;
+      // (And a belt all tapped off ending in a taker, its share of what that takes, ADR 0132.)
+      const shared = consumers.length === 1 && ((solidOut.length === 1 && flows.internal.filter(e => e.to === consumers[0] && e.item === solidOut[0].name).length > 1)
+        || flows.internal.some(e => e.loose && e.from === i && e.to === consumers[0]));
       // Output inserters drop every product onto the far lane, so the products share it.
       add({
         kind: 'belt', source: i, sink: left.length || tappedOff ? 'side-output' : null,

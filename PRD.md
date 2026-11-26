@@ -85,6 +85,10 @@ v2 routed every belt of every Sub-Block for every candidate, so a big chain took
 - **Default modules:** a Recipe Selection that names no modules plans with the step's default ones (a Py farm full of its first plant or animal), as the app starts it.
 - **Unchanged:** planning, flows, routes and Belt Merge rules, validity rules, the simulation (lane capacities now come from the routed Modules), blueprint encoding, the map.
 
+## v117: Tapped belts end in a taker (implemented)
+
+A belt every product of which is tapped off, nothing left for the train, goes into one of its takers itself (its share of what that takes, out of the Dependency Order), the others filtered off before it, instead of running on to the train empty with the items split off shown on it; not into a ring. Py tin plate: 6 → 4 splitters, tin belts to the train 3 → 1; Py advanced circuits in 116²: 60 → 69.37/min. ADR 0132.
+
 ## v116: Steps a Use covers (implemented)
 
 A step all of whose item a Byproduct Use's product covers is not made here: the item is a Recycled Byproduct from the Use, only what is left over leaving by train, the step and its own steps gone. Py tin plate: the gravel's sand for the sand casting, no soil washing; 7.5 → 5.12 sand/min by train. ADR 0131.
